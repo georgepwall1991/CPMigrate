@@ -114,12 +114,12 @@ generate_demo() {
     local CAST_FILE="$DOCS_IMAGES_DIR/cpmigrate-demo.cast"
     local GIF_FILE="$DOCS_IMAGES_DIR/cpmigrate-demo.gif"
 
-    # Record the demo
+    # Record the demo (with pauses for readability)
     asciinema rec "$CAST_FILE" \
         --cols 80 \
         --rows 24 \
         --overwrite \
-        --command "dotnet run --project $PROJECT_ROOT/CPMigrate --framework net9.0 --no-build -- --dry-run --solution $PROJECT_ROOT"
+        --command "sleep 1; dotnet run --project $PROJECT_ROOT/CPMigrate --framework net9.0 --no-build -- --dry-run --solution $PROJECT_ROOT; sleep 3"
 
     echo -e "${CYAN}[>] Converting demo to GIF...${NC}"
 
@@ -128,8 +128,9 @@ generate_demo() {
         --cols 80 \
         --rows 24 \
         --font-size 14 \
-        --idle-time-limit 2.0 \
-        --speed 0.5
+        --idle-time-limit 3.0 \
+        --speed 0.5 \
+        --last-frame-duration 5
 
     echo -e "${GREEN}[OK] Demo GIF created: $GIF_FILE${NC}"
 }
@@ -146,12 +147,12 @@ generate_analyze() {
     local CAST_FILE="$DOCS_IMAGES_DIR/cpmigrate-analyze.cast"
     local GIF_FILE="$DOCS_IMAGES_DIR/cpmigrate-analyze.gif"
 
-    # Record the analyze
+    # Record the analyze (with pauses for readability)
     asciinema rec "$CAST_FILE" \
         --cols 80 \
         --rows 24 \
         --overwrite \
-        --command "dotnet run --project $PROJECT_ROOT/CPMigrate --framework net9.0 --no-build -- --analyze --solution $PROJECT_ROOT"
+        --command "sleep 1; dotnet run --project $PROJECT_ROOT/CPMigrate --framework net9.0 --no-build -- --analyze --solution $PROJECT_ROOT; sleep 3"
 
     echo -e "${CYAN}[>] Converting analyze to GIF...${NC}"
 
@@ -160,8 +161,9 @@ generate_analyze() {
         --cols 80 \
         --rows 24 \
         --font-size 14 \
-        --idle-time-limit 2.0 \
-        --speed 0.5
+        --idle-time-limit 3.0 \
+        --speed 0.5 \
+        --last-frame-duration 5
 
     echo -e "${GREEN}[OK] Analyze GIF created: $GIF_FILE${NC}"
 }
