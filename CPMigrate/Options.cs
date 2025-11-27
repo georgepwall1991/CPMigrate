@@ -40,14 +40,14 @@ public class Options
                    "the project file location option will be ignored.", Required = false, Default = ".")]
     public string SolutionFileDir { get; set; } = string.Empty;
 
-    [Option('p', "project", HelpText = "Specifies the directory to search for .csproj files.")]
+    [Option('p', "project", HelpText = "Specifies the directory to search for project files (.csproj, .fsproj, .vbproj).")]
     public string ProjectFileDir { get; set; } = string.Empty;
 
     [Option('o', "output-dir", HelpText = "The props file output directory.", Default = ".")]
     public string OutputDir { get; set; } = string.Empty;
 
     [Option('k', "keep-attrs", Default = false,
-        HelpText = "Keeps the 'Version' attribute in the .csproj files.")]
+        HelpText = "Keeps the 'Version' attribute in the project files.")]
     public bool KeepAttributes { get; set; }
 
     [Option('n', "no-backup", Default = false,
@@ -55,7 +55,7 @@ public class Options
     public bool NoBackup { get; set; }
 
     [Option("backup-dir", Default = ".",
-        HelpText = "The backup directory for .csproj files about to be changed.")]
+        HelpText = "The backup directory for project files about to be changed.")]
     public string BackupDir { get; set; } = string.Empty;
 
     [Option("add-gitignore", Default = false,
