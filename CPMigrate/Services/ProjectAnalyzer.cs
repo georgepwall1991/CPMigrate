@@ -63,14 +63,22 @@ public partial class ProjectAnalyzer
                 var extension = Path.GetExtension(project.AbsolutePath).ToLowerInvariant();
                 if (extension == ".csproj" || extension == ".fsproj" || extension == ".vbproj")
                 {
-                    projectPaths.Add(project.AbsolutePath);
-                    _consoleService.Info($"Found project: {project.ProjectName}");
+                    if (File.Exists(project.AbsolutePath))
+                    {
+                        projectPaths.Add(project.AbsolutePath);
+                        _consoleService.Info($"Found project: {project.ProjectName}");
+                    }
+                    else
+                    {
+                        _consoleService.Warning($"Project found in solution but file missing: {project.AbsolutePath}");
+                    }
                 }
             }
         }
         catch (Exception ex)
         {
-             _consoleService.Error($"Failed to parse solution file: {ex.Message}");
+            _consoleService.Error($"Failed to parse solution file: {ex.Message}");
+            throw;
         }
 
         return (basePath, projectPaths);
@@ -79,7 +87,7 @@ public partial class ProjectAnalyzer
     /// <summary>
     /// Discovers project path from a directory or direct file path.
     /// </summary>
-    /// <param name="projectPath">Path to project file or directory containing .csproj files.</param>
+    /// <param name="projectPath">Path to project file or directory containing project files.</param>
     /// <returns>Tuple of (base path, list of project file paths).</returns>
     public (string BasePath, List<string> ProjectPaths) DiscoverProjectFromPath(string projectPath)
     {
@@ -114,7 +122,7 @@ public partial class ProjectAnalyzer
     /// <summary>
     /// Processes a project file to extract package references and optionally remove version attributes.
     /// </summary>
-    /// <param name="projectFilePath">Full path to the .csproj file.</param>
+    /// <param name="projectFilePath">Full path to the project file.</param>
     /// <param name="packageVersions">Dictionary to accumulate package names to version sets.</param>
     /// <param name="keepVersionAttributes">If true, keeps Version attributes in the project file.</param>
     /// <returns>Modified project file content as a string.</returns>
@@ -160,7 +168,7 @@ public partial class ProjectAnalyzer
     /// Scans a project file to extract all package references without modifying the file.
     /// Used for analysis mode.
     /// </summary>
-    /// <param name="projectFilePath">Full path to the .csproj file.</param>
+    /// <param name="projectFilePath">Full path to the project file.</param>
     /// <returns>List of package references found in the project.</returns>
     public List<PackageReference> ScanProjectPackages(string projectFilePath)
     {
