@@ -132,13 +132,13 @@ Central Package Management (CPM) is a NuGet feature that allows you to manage al
 
 ## Screenshots
 
-![Main Interface](docs/images/main-interface.png)
+![Main Interface](./docs/images/main-interface.png)
 *The main migration interface showing progress bars and status.*
 
-![Version Conflicts](docs/images/conflict-resolution.png)
+![Version Conflicts](./docs/images/conflict-resolution.png)
 *Automatic detection and resolution of package version conflicts.*
 
-![Dry Run](docs/images/dry-run.png)
+![Dry Run](./docs/images/dry-run.png)
 *Dry-run mode previewing changes without modifying files.*
 
 The tool features a beautiful terminal UI with:
