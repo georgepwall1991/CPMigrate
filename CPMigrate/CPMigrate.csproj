@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>cpmigrate</ToolCommandName>
+        <PackageOutputPath>./nupkg</PackageOutputPath>
+
+        <OutputType>EXE</OutputType>
+
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <PackageId>CPMigrate</PackageId>
+        <Authors>George Wall</Authors>
+        <Company>George Wall</Company>
+        <Product>CPMigrate</Product>
+        <Description>A CLI tool to migrate .NET solutions to Central Package Management (CPM)</Description>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageProjectUrl>https://github.com/georgepwall1991/CPMigrate</PackageProjectUrl>
+        <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+        <RollForward>LatestMajor</RollForward>
+        <Version>1.0.0</Version>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <RepositoryUrl>https://github.com/georgepwall1991/CPMigrate</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <ApplicationIcon>cpmigrate.ico</ApplicationIcon>
+        <PackageTags>nuget;cpm;central-package-management;dotnet;cli</PackageTags>
+
+        <!-- Static Analysis -->
+        <EnableNETAnalyzers>true</EnableNETAnalyzers>
+        <AnalysisLevel>latest</AnalysisLevel>
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Buildalyzer" Version="7.1.0" />
+      <PackageReference Include="CommandLineParser" Version="2.9.1" />
+      <PackageReference Include="Spectre.Console" Version="0.49.1" />
+      <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="9.0.0">
+        <PrivateAssets>all</PrivateAssets>
+        <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+      </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="../README.md" Pack="true" PackagePath="\">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+</Project>
