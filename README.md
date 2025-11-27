@@ -30,6 +30,24 @@ cd CPMigrate
 dotnet build
 ```
 
+## Testing Locally
+
+To verify the tool works correctly on your machine before installing globally:
+
+```bash
+# Pack the tool
+dotnet pack CPMigrate/CPMigrate.csproj -o ./nupkg
+
+# Install to a local test path
+dotnet tool install CPMigrate --tool-path ./test-tool --add-source ./nupkg
+
+# Run the tool
+./test-tool/cpmigrate --help
+
+# Cleanup
+rm -rf ./test-tool ./nupkg
+```
+
 ## Usage
 
 ### Basic Usage
@@ -113,6 +131,15 @@ Central Package Management (CPM) is a NuGet feature that allows you to manage al
 ```
 
 ## Screenshots
+
+![Main Interface](docs/images/main-interface.png)
+*The main migration interface showing progress bars and status.*
+
+![Version Conflicts](docs/images/conflict-resolution.png)
+*Automatic detection and resolution of package version conflicts.*
+
+![Dry Run](docs/images/dry-run.png)
+*Dry-run mode previewing changes without modifying files.*
 
 The tool features a beautiful terminal UI with:
 
