@@ -2,34 +2,39 @@ using CommandLine;
 using CPMigrate;
 using CPMigrate.Services;
 
+// Setup composition root
+var versionResolver = new VersionResolver();
+var consoleService = new SpectreConsoleService(versionResolver);
+
 return await Parser.Default.ParseArguments<Options>(args)
     .MapResult(
-        async opt => await RunMigration(opt),
+        async opt => await RunMigration(opt, consoleService, versionResolver),
         _ => Task.FromResult(ExitCodes.ValidationError));
 
-static async Task<int> RunMigration(Options opt)
+static async Task<int> RunMigration(Options opt, IConsoleService consoleService, VersionResolver versionResolver)
 {
     try
     {
-        var migrationService = new MigrationService();
+        // Manual Dependency Injection
+        var migrationService = new MigrationService(consoleService, null, versionResolver);
         var result = await migrationService.ExecuteAsync(opt);
         return result.ExitCode;
     }
     catch (IOException ex)
     {
-        ConsoleOutput.Error($"\nFile operation error: {ex.Message}");
+        consoleService.Error($"\nFile operation error: {ex.Message}");
         Console.Error.WriteLine("\nSuggestion: Check file permissions and ensure no files are locked by another process.");
         return ExitCodes.FileOperationError;
     }
     catch (UnauthorizedAccessException ex)
     {
-        ConsoleOutput.Error($"\nPermission denied: {ex.Message}");
+        consoleService.Error($"\nPermission denied: {ex.Message}");
         Console.Error.WriteLine("\nSuggestion: Run with elevated permissions or check file/folder access rights.");
         return ExitCodes.FileOperationError;
     }
     catch (Exception ex)
     {
-        ConsoleOutput.Error($"\nUnexpected error: {ex.Message}");
+        consoleService.Error($"\nUnexpected error: {ex.Message}");
 #if DEBUG
         Console.Error.WriteLine(ex.StackTrace);
 #endif

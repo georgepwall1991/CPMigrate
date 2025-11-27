@@ -1,7 +1,9 @@
+using NuGet.Versioning;
+
 namespace CPMigrate.Services;
 
 /// <summary>
-/// Handles version conflict detection and resolution.
+/// Handles version conflict detection and resolution using NuGet.Versioning logic.
 /// </summary>
 public class VersionResolver
 {
@@ -27,33 +29,35 @@ public class VersionResolver
     /// <returns>The selected version based on the strategy.</returns>
     public string ResolveVersion(IEnumerable<string> versions, ConflictStrategy strategy)
     {
-        var sortedVersions = versions.OrderByDescending(ParseVersion).ToList();
-        return strategy switch
+        // Parse versions using NuGetVersion
+        var nuGetVersions = versions
+            .Select(v =>
+            {
+                if (NuGetVersion.TryParse(v, out var nuVer))
+                {
+                    return nuVer;
+                }
+                // Fallback for invalid versions, though ideally we shouldn't encounter them from csproj
+                // We create a "0.0.0" version to sort it lowest
+                return new NuGetVersion(0, 0, 0);
+            })
+            .OrderBy(v => v)
+            .ToList();
+
+        if (!nuGetVersions.Any())
         {
-            ConflictStrategy.Highest => sortedVersions.First(),
-            ConflictStrategy.Lowest => sortedVersions.Last(),
-            ConflictStrategy.Fail => sortedVersions.First(), // Won't be used if Fail
-            _ => sortedVersions.First()
+            // Should not happen given caller context, but return something safe
+            return "0.0.0"; 
+        }
+
+        var selectedVersion = strategy switch
+        {
+            ConflictStrategy.Highest => nuGetVersions.Last(),
+            ConflictStrategy.Lowest => nuGetVersions.First(),
+            ConflictStrategy.Fail => nuGetVersions.Last(), // Should be handled by caller logic
+            _ => nuGetVersions.Last()
         };
-    }
 
-    /// <summary>
-    /// Parses a version string into a comparable Version object.
-    /// Handles various version formats including prerelease tags.
-    /// </summary>
-    /// <param name="versionString">The version string to parse.</param>
-    /// <returns>A Version object for comparison, or 0.0.0 if parsing fails.</returns>
-    public static Version ParseVersion(string versionString)
-    {
-        // Remove common prefixes
-        var cleaned = versionString.TrimStart('v', 'V');
-
-        // Handle prerelease versions by taking only the numeric part
-        var dashIndex = cleaned.IndexOf('-');
-        if (dashIndex > 0)
-            cleaned = cleaned[..dashIndex];
-
-        // Try to parse as Version, fall back to 0.0.0 if invalid
-        return Version.TryParse(cleaned, out var version) ? version : new Version(0, 0, 0);
+        return selectedVersion.ToNormalizedString();
     }
 }

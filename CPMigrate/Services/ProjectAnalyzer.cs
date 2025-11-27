@@ -1,7 +1,5 @@
-using System.Text;
 using System.Text.RegularExpressions;
-using Buildalyzer;
-using Spectre.Console;
+using Microsoft.Build.Construction;
 
 namespace CPMigrate.Services;
 
@@ -10,11 +8,11 @@ namespace CPMigrate.Services;
 /// </summary>
 public partial class ProjectAnalyzer
 {
-    private readonly AnalyzerManager _analyzerManager;
+    private readonly IConsoleService _consoleService;
 
-    public ProjectAnalyzer(AnalyzerManager? analyzerManager = null)
+    public ProjectAnalyzer(IConsoleService consoleService)
     {
-        _analyzerManager = analyzerManager ?? new AnalyzerManager();
+        _consoleService = consoleService;
     }
 
     /// <summary>
@@ -32,7 +30,7 @@ public partial class ProjectAnalyzer
             var slnFiles = Directory.GetFiles(fullPath, "*.sln");
             if (slnFiles.Length == 0)
             {
-                ConsoleOutput.Info("No solution file found in the specified directory.");
+                _consoleService.Info("No solution file found in the specified directory.");
                 return (string.Empty, projectPaths);
             }
 
@@ -48,7 +46,7 @@ public partial class ProjectAnalyzer
 
         if (!File.Exists(fullPath))
         {
-            ConsoleOutput.Info("Solution file not found.");
+            _consoleService.Info("Solution file not found.");
             return (string.Empty, projectPaths);
         }
 
@@ -65,7 +63,7 @@ public partial class ProjectAnalyzer
             projectPath = projectPath.Replace('\\', Path.DirectorySeparatorChar);
             var projectFilePath = Path.GetFullPath(Path.Combine(basePath, projectPath));
             projectPaths.Add(projectFilePath);
-            ConsoleOutput.Info($"Found project: {match.Groups[2].Value}");
+            _consoleService.Info($"Found project: {match.Groups[2].Value}");
         }
 
         return (basePath, projectPaths);
@@ -86,7 +84,7 @@ public partial class ProjectAnalyzer
             var projFiles = Directory.GetFiles(fullPath, "*.csproj");
             if (projFiles.Length == 0)
             {
-                ConsoleOutput.Info("No project file found in the specified directory.");
+                _consoleService.Info("No project file found in the specified directory.");
                 return (string.Empty, projectPaths);
             }
             fullPath = projFiles[0];
@@ -94,7 +92,7 @@ public partial class ProjectAnalyzer
 
         if (!File.Exists(fullPath))
         {
-            ConsoleOutput.Info("Project file not found.");
+            _consoleService.Info("Project file not found.");
             return (string.Empty, projectPaths);
         }
 
@@ -114,38 +112,50 @@ public partial class ProjectAnalyzer
         Dictionary<string, HashSet<string>> packageVersions,
         bool keepVersionAttributes = false)
     {
-        var analyzer = _analyzerManager.GetProject(projectFilePath);
-        var stringBuilder = new StringBuilder(File.ReadAllText(projectFilePath));
+        // Use Microsoft.Build.Construction to parse the project file as XML
+        var projectRoot = ProjectRootElement.Open(projectFilePath);
+        bool modified = false;
 
-        foreach (var reference in analyzer.ProjectFile.PackageReferences)
+        foreach (var item in projectRoot.Items)
         {
-            if (packageVersions.TryGetValue(reference.Name, out var value))
-                value.Add(reference.Version);
-            else
-                packageVersions.Add(reference.Name, new HashSet<string> { reference.Version });
-
-            if (!keepVersionAttributes)
+            if (item.ItemType == "PackageReference")
             {
-                stringBuilder.Replace($"Version=\"{reference.Version}\"", "");
+                // Get the Version metadata (attribute or child element)
+                var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
+                
+                if (versionMetadata != null && !string.IsNullOrEmpty(versionMetadata.Value))
+                {
+                    var packageName = item.Include;
+                    var packageVersion = versionMetadata.Value;
+
+                    if (packageVersions.TryGetValue(packageName, out var value))
+                        value.Add(packageVersion);
+                    else
+                        packageVersions.Add(packageName, new HashSet<string> { packageVersion });
+
+                    if (!keepVersionAttributes)
+                    {
+                        // Remove the version metadata
+                        versionMetadata.Parent.RemoveChild(versionMetadata);
+                        modified = true;
+                    }
+                }
             }
         }
 
-        return stringBuilder.ToString();
+        return projectRoot.RawXml;
     }
 
     /// <summary>
     /// Prompts the user to select a solution file when multiple are found.
     /// </summary>
-    private static string PromptForSolutionSelection(string[] slnFiles)
+    private string PromptForSolutionSelection(string[] slnFiles)
     {
         var choices = slnFiles.Select(f => Path.GetFileName(f) ?? f).ToList();
 
-        var selection = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("[yellow]Multiple solution files found. Which one would you like to use?[/]")
-                .PageSize(10)
-                .HighlightStyle(new Style(Color.Cyan1))
-                .AddChoices(choices));
+        var selection = _consoleService.AskSelection(
+            "Multiple solution files found. Which one would you like to use?",
+            choices);
 
         return slnFiles.First(f => Path.GetFileName(f) == selection);
     }

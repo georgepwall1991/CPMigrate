@@ -4,6 +4,27 @@ using Xunit;
 
 namespace CPMigrate.Tests;
 
+public class FakeConsoleService : IConsoleService
+{
+    public void Info(string message) { }
+    public void Success(string message) { }
+    public void Warning(string message) { }
+    public void Error(string message) { }
+    public void Highlight(string message) { }
+    public void Dim(string message) { }
+    public void DryRun(string message) { }
+    public void WriteHeader() { }
+    public void Banner(string message) { }
+    public void Separator() { }
+    public void WriteConflictsTable(Dictionary<string, HashSet<string>> packageVersions, List<string> conflicts, ConflictStrategy strategy) { }
+    public void WriteSummaryTable(int projectCount, int packageCount, int conflictCount, string propsFilePath, string? backupPath, bool wasDryRun) { }
+    public void WriteProjectTree(List<string> projectPaths, string basePath) { }
+    public void WritePropsPreview(string content) { }
+    public void WriteMarkup(string message) { }
+    public void WriteLine(string message = "") { }
+    public string AskSelection(string title, IEnumerable<string> choices) => choices.FirstOrDefault() ?? "";
+}
+
 public class OptionsTests
 {
     #region Options Validation Tests
@@ -82,7 +103,7 @@ public class PropsGeneratorTests
     public void Generate_SinglePackage_GeneratesValidXml()
     {
         // Arrange
-        var packageVersions = new Dictionary<string, HashSet<string>>
+        var packageVersions = new Dictionary<string, HashSet<string>> 
         {
             ["Newtonsoft.Json"] = new() { "13.0.1" }
         };
@@ -101,7 +122,7 @@ public class PropsGeneratorTests
     public void Generate_MultiplePackages_GeneratesAllEntries()
     {
         // Arrange
-        var packageVersions = new Dictionary<string, HashSet<string>>
+        var packageVersions = new Dictionary<string, HashSet<string>> 
         {
             ["Newtonsoft.Json"] = new() { "13.0.1" },
             ["Serilog"] = new() { "3.0.0" },
@@ -138,7 +159,7 @@ public class PropsGeneratorTests
     public void Generate_PackageWithMultipleVersions_ResolvesToHighestByDefault()
     {
         // Arrange
-        var packageVersions = new Dictionary<string, HashSet<string>>
+        var packageVersions = new Dictionary<string, HashSet<string>> 
         {
             ["Newtonsoft.Json"] = new() { "12.0.0", "13.0.1" }
         };
@@ -156,7 +177,7 @@ public class PropsGeneratorTests
     public void Generate_PackagesAreSortedAlphabetically()
     {
         // Arrange
-        var packageVersions = new Dictionary<string, HashSet<string>>
+        var packageVersions = new Dictionary<string, HashSet<string>> 
         {
             ["Zulu"] = new() { "1.0.0" },
             ["Alpha"] = new() { "2.0.0" },
@@ -188,7 +209,7 @@ public class VersionResolverTests
     public void DetectConflicts_NoConflicts_ReturnsEmptyList()
     {
         // Arrange
-        var packageVersions = new Dictionary<string, HashSet<string>>
+        var packageVersions = new Dictionary<string, HashSet<string>> 
         {
             ["PackageA"] = new() { "1.0.0" },
             ["PackageB"] = new() { "2.0.0" }
@@ -205,7 +226,7 @@ public class VersionResolverTests
     public void DetectConflicts_WithConflicts_ReturnsConflictingPackages()
     {
         // Arrange
-        var packageVersions = new Dictionary<string, HashSet<string>>
+        var packageVersions = new Dictionary<string, HashSet<string>> 
         {
             ["PackageA"] = new() { "1.0.0", "2.0.0" },
             ["PackageB"] = new() { "3.0.0" },
@@ -226,7 +247,7 @@ public class VersionResolverTests
     public void DetectConflicts_ResultIsSortedAlphabetically()
     {
         // Arrange
-        var packageVersions = new Dictionary<string, HashSet<string>>
+        var packageVersions = new Dictionary<string, HashSet<string>> 
         {
             ["Zulu"] = new() { "1.0.0", "2.0.0" },
             ["Alpha"] = new() { "1.0.0", "2.0.0" },
@@ -302,7 +323,7 @@ public class VersionResolverTests
 
 public class ProjectAnalyzerTests
 {
-    private readonly ProjectAnalyzer _analyzer = new();
+    private readonly ProjectAnalyzer _analyzer = new(new FakeConsoleService());
 
     #region DiscoverProjectsFromSolution Tests
 
