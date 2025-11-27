@@ -19,4 +19,6 @@ public interface IConsoleService
     void WriteMarkup(string message);
     void WriteLine(string message = "");
     string AskSelection(string title, IEnumerable<string> choices);
+    bool AskConfirmation(string message);
+    void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath);
 }

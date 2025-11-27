@@ -10,6 +10,7 @@ A beautiful CLI tool to migrate .NET solutions to [Central Package Management (C
 - **Automatic Migration** - Scans your solution/projects and generates `Directory.Packages.props`
 - **Version Conflict Resolution** - Handles packages with different versions across projects
 - **Dry-Run Mode** - Preview changes before applying them
+- **Rollback Support** - Undo migrations and restore original project files
 - **Beautiful Terminal UI** - Progress bars, colored output, and ASCII art
 - **Cross-Platform** - Works on Windows, macOS, and Linux
 - **Backup Support** - Automatically backs up project files before modification
@@ -74,6 +75,7 @@ cpmigrate -p /path/to/project.csproj
 | `--project` | `-p` | Path to project file or directory | - |
 | `--output-dir` | `-o` | Output directory for Directory.Packages.props | `.` |
 | `--dry-run` | `-d` | Preview changes without modifying files | `false` |
+| `--rollback` | `-r` | Restore project files from backup and remove Directory.Packages.props | `false` |
 | `--keep-attrs` | `-k` | Keep Version attributes in .csproj files | `false` |
 | `--no-backup` | `-n` | Disable automatic backup | `false` |
 | `--backup-dir` | - | Backup directory location | `.` |
@@ -94,6 +96,12 @@ cpmigrate --no-backup
 
 # Migrate and add backup to .gitignore
 cpmigrate --add-gitignore
+
+# Rollback a migration (restore original project files)
+cpmigrate --rollback
+
+# Rollback with custom backup directory
+cpmigrate --rollback --backup-dir ./my-backups
 ```
 
 ## What is Central Package Management?

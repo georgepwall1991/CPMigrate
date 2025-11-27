@@ -38,14 +38,7 @@ public class MigrationService
         // Show header
         _consoleService.WriteHeader();
 
-        // Dry-run banner
-        if (options.DryRun)
-        {
-            _consoleService.Banner("DRY-RUN MODE - No files will be modified");
-            _consoleService.WriteLine();
-        }
-
-        // Validate options
+        // Validate options first
         try
         {
             options.Validate();
@@ -54,6 +47,19 @@ public class MigrationService
         {
             _consoleService.Error(ex.Message);
             return new MigrationResult { ExitCode = ExitCodes.ValidationError };
+        }
+
+        // Handle rollback mode
+        if (options.Rollback)
+        {
+            return await ExecuteRollbackAsync(options);
+        }
+
+        // Dry-run banner
+        if (options.DryRun)
+        {
+            _consoleService.Banner("DRY-RUN MODE - No files will be modified");
+            _consoleService.WriteLine();
         }
 
         // Discover projects with a spinner
@@ -106,7 +112,7 @@ public class MigrationService
         _consoleService.WriteLine();
 
         // Process each project with a nice progress bar
-        await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath);
+        var backupEntries = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath);
 
         // Handle version conflicts
         var conflicts = _versionResolver.DetectConflicts(packages);
@@ -124,6 +130,18 @@ public class MigrationService
 
         // Generate Directory.Packages.props
         var propsFilePath = await GeneratePropsFileAsync(options, packages);
+
+        // Write backup manifest for rollback support
+        if (!options.DryRun && !options.NoBackup && backupEntries.Count > 0 && !string.IsNullOrEmpty(backupPath))
+        {
+            var manifest = new BackupManifest
+            {
+                Timestamp = DateTime.Now.ToString("yyyyMMddHHmmss"),
+                PropsFilePath = propsFilePath,
+                Backups = backupEntries
+            };
+            await _backupManager.WriteManifestAsync(backupPath, manifest);
+        }
 
         // Add to .gitignore if requested
         if (!options.DryRun)
@@ -172,9 +190,12 @@ public class MigrationService
         return (string.Empty, new List<string>());
     }
 
-    private async Task ProcessProjectsWithProgressAsync(Options options, List<string> projectPaths,
+    private async Task<List<BackupEntry>> ProcessProjectsWithProgressAsync(Options options, List<string> projectPaths,
         Dictionary<string, HashSet<string>> packages, string? backupPath)
     {
+        var backupEntries = new List<BackupEntry>();
+        var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+
         await AnsiConsole.Progress()
             .AutoRefresh(true)
             .AutoClear(false)
@@ -196,7 +217,14 @@ public class MigrationService
                     // Backup
                     if (!options.DryRun && !options.NoBackup)
                     {
+                        var backupFileName = $"{projectName}.backup_{timestamp}";
                         _backupManager.CreateBackupForProject(options, projectFilePath, backupPath!);
+
+                        backupEntries.Add(new BackupEntry
+                        {
+                            OriginalPath = Path.GetFullPath(projectFilePath),
+                            BackupFileName = backupFileName
+                        });
                     }
 
                     // Process project file
@@ -216,6 +244,7 @@ public class MigrationService
             });
 
         _consoleService.WriteLine();
+        return backupEntries;
     }
 
     private async Task<string> GeneratePropsFileAsync(Options options,
@@ -239,5 +268,131 @@ public class MigrationService
         }
 
         return propsFilePath;
+    }
+
+    /// <summary>
+    /// Executes rollback to restore project files from backup.
+    /// </summary>
+    /// <param name="options">Options containing backup directory path.</param>
+    /// <returns>Migration result with exit code.</returns>
+    private async Task<MigrationResult> ExecuteRollbackAsync(Options options)
+    {
+        _consoleService.Banner("ROLLBACK MODE - Restoring from backup");
+        _consoleService.WriteLine();
+
+        var backupPath = _backupManager.GetBackupDirectoryPath(options);
+
+        // Check if backup directory exists
+        if (!Directory.Exists(backupPath))
+        {
+            _consoleService.Error($"No backup directory found at: {backupPath}");
+            _consoleService.WriteMarkup("[dim]Run a migration first to create backups.[/]\n");
+            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
+        }
+
+        // Read manifest
+        var manifest = await _backupManager.ReadManifestAsync(backupPath);
+        if (manifest == null)
+        {
+            _consoleService.Error("No backup manifest found or manifest is corrupted.");
+            _consoleService.WriteMarkup("[dim]Cannot determine which files to restore.[/]\n");
+            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
+        }
+
+        if (manifest.Backups.Count == 0)
+        {
+            _consoleService.Warning("No backup entries found in manifest.");
+            return new MigrationResult { ExitCode = ExitCodes.Success };
+        }
+
+        // Show preview
+        var filesToRestore = manifest.Backups.Select(b => b.OriginalPath).ToList();
+        _consoleService.WriteRollbackPreview(filesToRestore, manifest.PropsFilePath);
+
+        // Ask for confirmation
+        if (!_consoleService.AskConfirmation("Proceed with rollback?"))
+        {
+            _consoleService.Info("Rollback cancelled.");
+            return new MigrationResult { ExitCode = ExitCodes.Success };
+        }
+
+        _consoleService.WriteLine();
+
+        // Restore files with progress
+        var restoredCount = 0;
+        var failedCount = 0;
+
+        await AnsiConsole.Progress()
+            .AutoRefresh(true)
+            .AutoClear(false)
+            .HideCompleted(false)
+            .Columns(
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),
+                new PercentageColumn(),
+                new SpinnerColumn())
+            .StartAsync(async ctx =>
+            {
+                var task = ctx.AddTask("[cyan]Restoring files[/]", maxValue: manifest.Backups.Count);
+
+                foreach (var entry in manifest.Backups)
+                {
+                    var fileName = Path.GetFileName(entry.OriginalPath);
+                    task.Description = $"[cyan]Restoring[/] [white]{Markup.Escape(fileName)}[/]";
+
+                    try
+                    {
+                        _backupManager.RestoreFile(backupPath, entry);
+                        restoredCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _consoleService.Error($"Failed to restore {fileName}: {ex.Message}");
+                        failedCount++;
+                    }
+
+                    task.Increment(1);
+                    await Task.Delay(50);
+                }
+
+                task.Description = "[green]Restore complete[/]";
+            });
+
+        _consoleService.WriteLine();
+
+        // Delete Directory.Packages.props if it exists
+        if (!string.IsNullOrEmpty(manifest.PropsFilePath) && File.Exists(manifest.PropsFilePath))
+        {
+            try
+            {
+                File.Delete(manifest.PropsFilePath);
+                _consoleService.Success($"Deleted: {manifest.PropsFilePath}");
+            }
+            catch (Exception ex)
+            {
+                _consoleService.Warning($"Could not delete props file: {ex.Message}");
+            }
+        }
+
+        // Clean up backups
+        _backupManager.CleanupBackups(backupPath, manifest);
+        _consoleService.Dim("Cleaned up backup files.");
+
+        // Summary
+        _consoleService.WriteLine();
+        if (failedCount == 0)
+        {
+            _consoleService.Success($"Rollback complete! Restored {restoredCount} file(s).");
+        }
+        else
+        {
+            _consoleService.Warning($"Rollback completed with errors. Restored: {restoredCount}, Failed: {failedCount}");
+        }
+
+        return new MigrationResult
+        {
+            ProjectsProcessed = restoredCount,
+            ExitCode = failedCount == 0 ? ExitCodes.Success : ExitCodes.FileOperationError
+        };
     }
 }

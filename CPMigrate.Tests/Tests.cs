@@ -1,3 +1,5 @@
+using System.Text.Json;
+using CPMigrate.Models;
 using CPMigrate.Services;
 using FluentAssertions;
 using Xunit;
@@ -6,6 +8,8 @@ namespace CPMigrate.Tests;
 
 public class FakeConsoleService : IConsoleService
 {
+    public bool ConfirmationResponse { get; set; } = true;
+
     public void Info(string message) { }
     public void Success(string message) { }
     public void Warning(string message) { }
@@ -23,6 +27,8 @@ public class FakeConsoleService : IConsoleService
     public void WriteMarkup(string message) { }
     public void WriteLine(string message = "") { }
     public string AskSelection(string title, IEnumerable<string> choices) => choices.FirstOrDefault() ?? "";
+    public bool AskConfirmation(string message) => ConfirmationResponse;
+    public void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath) { }
 }
 
 public class OptionsTests
@@ -586,5 +592,254 @@ public class BackupManagerTests : IDisposable
         var filePath = Path.Combine(_testDirectory, fileName);
         File.WriteAllText(filePath, content);
         return filePath;
+    }
+
+    #region Manifest Tests
+
+    [Fact]
+    public async Task WriteManifestAsync_CreatesJsonFile()
+    {
+        // Arrange
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        var manifest = new BackupManifest
+        {
+            Timestamp = "20231127120000",
+            PropsFilePath = "/path/to/Directory.Packages.props",
+            Backups = new List<BackupEntry>
+            {
+                new() { OriginalPath = "/path/to/Project1.csproj", BackupFileName = "Project1.csproj.backup_20231127120000" },
+                new() { OriginalPath = "/path/to/Project2.csproj", BackupFileName = "Project2.csproj.backup_20231127120000" }
+            }
+        };
+
+        // Act
+        await _backupManager.WriteManifestAsync(backupDir, manifest);
+
+        // Assert
+        var manifestPath = Path.Combine(backupDir, "backup_manifest.json");
+        File.Exists(manifestPath).Should().BeTrue();
+
+        var content = await File.ReadAllTextAsync(manifestPath);
+        content.Should().Contain("timestamp");
+        content.Should().Contain("propsFilePath");
+        content.Should().Contain("backups");
+    }
+
+    [Fact]
+    public async Task ReadManifestAsync_ValidManifest_ReturnsManifest()
+    {
+        // Arrange
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        var manifest = new BackupManifest
+        {
+            Timestamp = "20231127120000",
+            PropsFilePath = "/path/to/Directory.Packages.props",
+            Backups = new List<BackupEntry>
+            {
+                new() { OriginalPath = "/path/to/Project1.csproj", BackupFileName = "Project1.csproj.backup_20231127120000" }
+            }
+        };
+
+        await _backupManager.WriteManifestAsync(backupDir, manifest);
+
+        // Act
+        var result = await _backupManager.ReadManifestAsync(backupDir);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Timestamp.Should().Be("20231127120000");
+        result.PropsFilePath.Should().Be("/path/to/Directory.Packages.props");
+        result.Backups.Should().HaveCount(1);
+        result.Backups[0].OriginalPath.Should().Be("/path/to/Project1.csproj");
+    }
+
+    [Fact]
+    public async Task ReadManifestAsync_NoManifest_ReturnsNull()
+    {
+        // Arrange
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        // Act
+        var result = await _backupManager.ReadManifestAsync(backupDir);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ReadManifestAsync_InvalidJson_ReturnsNull()
+    {
+        // Arrange
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        var manifestPath = Path.Combine(backupDir, "backup_manifest.json");
+        await File.WriteAllTextAsync(manifestPath, "not valid json {{{");
+
+        // Act
+        var result = await _backupManager.ReadManifestAsync(backupDir);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    #endregion
+
+    #region Restore Tests
+
+    [Fact]
+    public void RestoreFile_ValidBackup_RestoresFile()
+    {
+        // Arrange
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        var originalContent = "<Project><PropertyGroup></PropertyGroup></Project>";
+        var modifiedContent = "<Project><PropertyGroup>Modified</PropertyGroup></Project>";
+
+        var originalPath = Path.Combine(_testDirectory, "Test.csproj");
+        var backupFileName = "Test.csproj.backup_20231127120000";
+        var backupPath = Path.Combine(backupDir, backupFileName);
+
+        // Create the "modified" current file
+        File.WriteAllText(originalPath, modifiedContent);
+        // Create the backup with original content
+        File.WriteAllText(backupPath, originalContent);
+
+        var entry = new BackupEntry
+        {
+            OriginalPath = originalPath,
+            BackupFileName = backupFileName
+        };
+
+        // Act
+        _backupManager.RestoreFile(backupDir, entry);
+
+        // Assert
+        var restoredContent = File.ReadAllText(originalPath);
+        restoredContent.Should().Be(originalContent);
+    }
+
+    [Fact]
+    public void RestoreFile_BackupNotFound_ThrowsException()
+    {
+        // Arrange
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        var entry = new BackupEntry
+        {
+            OriginalPath = Path.Combine(_testDirectory, "Test.csproj"),
+            BackupFileName = "NonExistent.csproj.backup_20231127120000"
+        };
+
+        // Act & Assert
+        var action = () => _backupManager.RestoreFile(backupDir, entry);
+        action.Should().Throw<FileNotFoundException>();
+    }
+
+    #endregion
+
+    #region Cleanup Tests
+
+    [Fact]
+    public void CleanupBackups_RemovesBackupFilesAndManifest()
+    {
+        // Arrange
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        var backupFileName = "Test.csproj.backup_20231127120000";
+        var backupFilePath = Path.Combine(backupDir, backupFileName);
+        var manifestPath = Path.Combine(backupDir, "backup_manifest.json");
+
+        File.WriteAllText(backupFilePath, "content");
+        File.WriteAllText(manifestPath, "{}");
+
+        var manifest = new BackupManifest
+        {
+            Timestamp = "20231127120000",
+            PropsFilePath = "/path/to/props",
+            Backups = new List<BackupEntry>
+            {
+                new() { OriginalPath = "/path/to/Test.csproj", BackupFileName = backupFileName }
+            }
+        };
+
+        // Act
+        _backupManager.CleanupBackups(backupDir, manifest);
+
+        // Assert
+        File.Exists(backupFilePath).Should().BeFalse();
+        File.Exists(manifestPath).Should().BeFalse();
+        Directory.Exists(backupDir).Should().BeFalse(); // Empty directory should be deleted
+    }
+
+    #endregion
+}
+
+public class RollbackOptionsTests
+{
+    [Fact]
+    public void Validate_RollbackWithDryRun_ThrowsArgumentException()
+    {
+        // Arrange
+        var options = new Options
+        {
+            Rollback = true,
+            DryRun = true,
+            BackupDir = "."
+        };
+
+        // Act & Assert
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--rollback cannot be used with --dry-run*");
+    }
+
+    [Fact]
+    public void Validate_RollbackWithEmptyBackupDir_ThrowsArgumentException()
+    {
+        // Arrange
+        var options = new Options
+        {
+            Rollback = true,
+            BackupDir = ""
+        };
+
+        // Act & Assert
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*backup-dir must be specified for rollback*");
+    }
+
+    [Fact]
+    public void Validate_RollbackWithValidBackupDir_DoesNotThrow()
+    {
+        // Arrange
+        var options = new Options
+        {
+            Rollback = true,
+            BackupDir = "."
+        };
+
+        // Act & Assert
+        var action = () => options.Validate();
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Options_RollbackDefault_IsFalse()
+    {
+        // Arrange & Act
+        var options = new Options();
+
+        // Assert
+        options.Rollback.Should().BeFalse();
     }
 }

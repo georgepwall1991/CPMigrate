@@ -206,6 +206,35 @@ public class SpectreConsoleService : IConsoleService
         return selection;
     }
 
+    public bool AskConfirmation(string message)
+    {
+        return AnsiConsole.Confirm($"[yellow]{EscapeMarkup(message)}[/]", defaultValue: false);
+    }
+
+    public void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath)
+    {
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Color.Yellow)
+            .Title("[yellow]:leftwards_arrow_with_hook: Rollback Preview[/]")
+            .AddColumn(new TableColumn("[bold]Action[/]"))
+            .AddColumn(new TableColumn("[bold]File[/]"));
+
+        foreach (var file in filesToRestore)
+        {
+            table.AddRow("[green]Restore[/]", $"[white]{EscapeMarkup(file)}[/]");
+        }
+
+        if (!string.IsNullOrEmpty(propsFilePath))
+        {
+            table.AddRow("[red]Delete[/]", $"[white]{EscapeMarkup(propsFilePath)}[/]");
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+    }
+
     private static string EscapeMarkup(string text)
     {
         return Markup.Escape(text);

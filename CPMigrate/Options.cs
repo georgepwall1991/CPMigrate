@@ -73,6 +73,10 @@ public class Options
         HelpText = "How to handle version conflicts: Highest (default), Lowest, or Fail.")]
     public ConflictStrategy ConflictStrategy { get; set; }
 
+    [Option('r', "rollback", Default = false,
+        HelpText = "Restore project files from most recent backup and remove Directory.Packages.props.")]
+    public bool Rollback { get; set; }
+
     [Usage(ApplicationAlias = "cpmigrate")]
     public static IEnumerable<Example> Examples =>
         new List<Example>()
@@ -95,6 +99,23 @@ public class Options
     /// <exception cref="ArgumentException">Thrown when options are invalid.</exception>
     public void Validate()
     {
+        if (Rollback)
+        {
+            // Rollback mode has different validation rules
+            if (DryRun)
+            {
+                throw new ArgumentException("--rollback cannot be used with --dry-run.");
+            }
+
+            if (string.IsNullOrWhiteSpace(BackupDir))
+            {
+                throw new ArgumentException("backup-dir must be specified for rollback.");
+            }
+
+            // Other migration options are ignored in rollback mode
+            return;
+        }
+
         if (NoBackup && AddBackupToGitignore)
         {
             throw new ArgumentException("--add-gitignore cannot be used with --no-backup. " +
