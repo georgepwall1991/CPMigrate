@@ -7,7 +7,7 @@
 #   brew install agg
 #
 # Usage:
-#   ./scripts/generate-docs-media.sh [--skip-build] [--demo-only] [--analyze-only]
+#   ./scripts/generate-docs-media.sh [--skip-build] [--demo-only] [--analyze-only] [--interactive-only]
 
 set -e
 
@@ -27,6 +27,7 @@ NC='\033[0m' # No Color
 SKIP_BUILD=false
 DEMO_ONLY=false
 ANALYZE_ONLY=false
+INTERACTIVE_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -42,14 +43,19 @@ while [[ $# -gt 0 ]]; do
             ANALYZE_ONLY=true
             shift
             ;;
+        --interactive-only)
+            INTERACTIVE_ONLY=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --skip-build     Skip dotnet build step"
-            echo "  --demo-only      Only generate the demo (dry-run) GIF"
-            echo "  --analyze-only   Only generate the analyze GIF"
-            echo "  -h, --help       Show this help message"
+            echo "  --skip-build        Skip dotnet build step"
+            echo "  --demo-only         Only generate the demo (dry-run) GIF"
+            echo "  --analyze-only      Only generate the analyze GIF"
+            echo "  --interactive-only  Only generate the interactive wizard GIF"
+            echo "  -h, --help          Show this help message"
             exit 0
             ;;
         *)
@@ -75,6 +81,11 @@ check_prerequisites() {
 
     if ! command -v dotnet &> /dev/null; then
         echo -e "${RED}[X] dotnet not found. Install .NET SDK${NC}"
+        exit 1
+    fi
+
+    if ! command -v expect &> /dev/null; then
+        echo -e "${RED}[X] expect not found. Install with: brew install expect${NC}"
         exit 1
     fi
 
@@ -104,8 +115,8 @@ setup_temp() {
 
 # Generate demo (dry-run) recording
 generate_demo() {
-    if [ "$ANALYZE_ONLY" = true ]; then
-        echo -e "${YELLOW}[>] Skipping demo (--analyze-only)${NC}"
+    if [ "$ANALYZE_ONLY" = true ] || [ "$INTERACTIVE_ONLY" = true ]; then
+        echo -e "${YELLOW}[>] Skipping demo (--analyze-only or --interactive-only)${NC}"
         return
     fi
 
@@ -136,8 +147,8 @@ generate_demo() {
 
 # Generate analyze recording
 generate_analyze() {
-    if [ "$DEMO_ONLY" = true ]; then
-        echo -e "${YELLOW}[>] Skipping analyze (--demo-only)${NC}"
+    if [ "$DEMO_ONLY" = true ] || [ "$INTERACTIVE_ONLY" = true ]; then
+        echo -e "${YELLOW}[>] Skipping analyze (--demo-only or --interactive-only)${NC}"
         return
     fi
 
@@ -166,6 +177,129 @@ generate_analyze() {
     echo -e "${GREEN}[OK] Analyze GIF created: $GIF_FILE${NC}"
 }
 
+# Generate interactive wizard recording
+generate_interactive() {
+    if [ "$DEMO_ONLY" = true ] || [ "$ANALYZE_ONLY" = true ]; then
+        echo -e "${YELLOW}[>] Skipping interactive (--demo-only or --analyze-only)${NC}"
+        return
+    fi
+
+    echo -e "${CYAN}[>] Recording interactive wizard mode...${NC}"
+
+    local CAST_FILE="$DOCS_IMAGES_DIR/cpmigrate-interactive.cast"
+    local GIF_FILE="$DOCS_IMAGES_DIR/cpmigrate-interactive.gif"
+    local EXPECT_SCRIPT="$TEMP_DIR/interactive.exp"
+
+    # Create expect script for simulating user input through the wizard
+    # The wizard flow is:
+    # 1. Mode: "Migrate to Central Package Management" (first option - Enter)
+    # 2. Solution: CPMigrate.sln is auto-detected (first option - Enter)
+    # 3. Conflict: "Highest version" (first option - Enter)
+    # 4. Backup: "Yes (recommended)" (first option - Enter)
+    # 5. Backup dir: text input "./cpm-backup"
+    # 6. Gitignore: "No" (second option - Down+Enter)
+    # 7. Dry run: "Yes - preview" (first option - Enter)
+    # 8. Keep attrs: "No - remove them" (first option - Enter)
+    # 9. Confirm: "y"
+    cat > "$EXPECT_SCRIPT" << 'EXPECT_EOF'
+#!/usr/bin/expect -f
+set timeout 60
+set project_root [lindex $argv 0]
+
+# Spawn cpmigrate in interactive mode
+spawn dotnet run --project $project_root/CPMigrate --framework net9.0 --no-build
+
+# Wait for header to render
+sleep 3
+
+# Mode selection - Enter for first option (Migrate)
+send "\r"
+sleep 1.5
+
+# Solution selection - Enter for CPMigrate.sln
+expect {
+    "Select a solution" {
+        send "\r"
+        sleep 1.5
+    }
+    "No .sln files" {
+        # If no sln found, enter path manually
+        sleep 0.5
+        send "$project_root\r"
+        sleep 1.5
+    }
+}
+
+# Conflict strategy - Enter for Highest
+expect "Conflict"
+send "\r"
+sleep 1.5
+
+# Create backup - Enter for Yes
+expect "backup"
+send "\r"
+sleep 1.5
+
+# Backup directory - type path and Enter
+expect "Backup directory"
+send "./cpm-backup\r"
+sleep 1.5
+
+# Add to gitignore - Down arrow then Enter for No
+expect "gitignore"
+send "\033\[B"
+sleep 0.3
+send "\r"
+sleep 1.5
+
+# Dry run - Enter for Yes
+expect "dry-run"
+send "\r"
+sleep 1.5
+
+# Keep attributes - Enter for No (remove them)
+expect "version attributes"
+send "\r"
+sleep 1.5
+
+# Wait for summary to render
+sleep 2
+
+# Confirmation - y
+expect "Proceed"
+send "y\r"
+
+# Wait for migration to complete
+expect {
+    eof { }
+    timeout { }
+}
+EXPECT_EOF
+
+    chmod +x "$EXPECT_SCRIPT"
+
+    echo -e "${CYAN}[>] Running interactive wizard with expect...${NC}"
+
+    # Record with asciinema using expect script
+    asciinema rec "$CAST_FILE" \
+        --cols 100 \
+        --rows 30 \
+        --overwrite \
+        --command "expect $EXPECT_SCRIPT $PROJECT_ROOT"
+
+    echo -e "${CYAN}[>] Converting interactive to GIF...${NC}"
+
+    # Convert to GIF - real-time speed to show interaction naturally
+    agg "$CAST_FILE" "$GIF_FILE" \
+        --cols 100 \
+        --rows 30 \
+        --font-size 14 \
+        --speed 1.0 \
+        --last-frame-duration 5
+
+    echo -e "${GREEN}[OK] Interactive GIF created: $GIF_FILE${NC}"
+}
+
 # Show summary
 show_summary() {
     echo ""
@@ -185,12 +319,21 @@ show_summary() {
         echo -e "  - cpmigrate-analyze.gif ($ANALYZE_SIZE)"
     fi
 
+    if [ -f "$DOCS_IMAGES_DIR/cpmigrate-interactive.gif" ]; then
+        local INTERACTIVE_SIZE=$(du -h "$DOCS_IMAGES_DIR/cpmigrate-interactive.gif" | cut -f1)
+        echo -e "  - cpmigrate-interactive.gif ($INTERACTIVE_SIZE)"
+    fi
+
     if [ -f "$DOCS_IMAGES_DIR/cpmigrate-demo.cast" ]; then
         echo -e "  - cpmigrate-demo.cast (asciinema recording)"
     fi
 
     if [ -f "$DOCS_IMAGES_DIR/cpmigrate-analyze.cast" ]; then
         echo -e "  - cpmigrate-analyze.cast (asciinema recording)"
+    fi
+
+    if [ -f "$DOCS_IMAGES_DIR/cpmigrate-interactive.cast" ]; then
+        echo -e "  - cpmigrate-interactive.cast (asciinema recording)"
     fi
 
     echo ""
@@ -216,6 +359,7 @@ main() {
     setup_temp
     generate_demo
     generate_analyze
+    generate_interactive
     show_summary
     cleanup
 }

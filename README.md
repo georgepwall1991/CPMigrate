@@ -6,7 +6,7 @@ A stunning CLI tool to migrate .NET solutions to [Central Package Management (CP
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![NuGet](https://img.shields.io/nuget/v/CPMigrate.svg)](https://www.nuget.org/packages/CPMigrate/)
 
-![CPMigrate Demo](./docs/images/cpmigrate-demo.gif)
+![CPMigrate Interactive Wizard](./docs/images/cpmigrate-interactive.gif)
 
 ## Features
 
@@ -175,7 +175,13 @@ Central Package Management (CPM) is a NuGet feature that allows you to manage al
 
 ## Screenshots
 
-### Migration Mode
+### Interactive Wizard Mode
+
+![CPMigrate Interactive](./docs/images/cpmigrate-interactive.gif)
+
+*Interactive wizard with arrow-key navigation - no flags to remember!*
+
+### Migration Mode (CLI)
 
 ![CPMigrate Demo](./docs/images/cpmigrate-demo.gif)
 
@@ -207,15 +213,16 @@ To regenerate the GIFs and screenshots for the README:
 
 ```bash
 # Prerequisites
-brew install asciinema agg
+brew install asciinema agg expect
 
 # Generate all documentation media
 ./scripts/generate-docs-media.sh
 
 # Options
-./scripts/generate-docs-media.sh --skip-build    # Skip dotnet build
-./scripts/generate-docs-media.sh --demo-only     # Only generate demo GIF
-./scripts/generate-docs-media.sh --analyze-only  # Only generate analyze GIF
+./scripts/generate-docs-media.sh --skip-build        # Skip dotnet build
+./scripts/generate-docs-media.sh --demo-only         # Only generate demo GIF
+./scripts/generate-docs-media.sh --analyze-only      # Only generate analyze GIF
+./scripts/generate-docs-media.sh --interactive-only  # Only generate interactive wizard GIF
 ```
 
 ## License
