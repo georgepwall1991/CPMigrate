@@ -114,23 +114,22 @@ generate_demo() {
     local CAST_FILE="$DOCS_IMAGES_DIR/cpmigrate-demo.cast"
     local GIF_FILE="$DOCS_IMAGES_DIR/cpmigrate-demo.gif"
 
-    # Record the demo (with pauses for readability)
+    # Record the demo
     asciinema rec "$CAST_FILE" \
         --cols 80 \
         --rows 24 \
         --overwrite \
-        --command "sleep 2; dotnet run --project $PROJECT_ROOT/CPMigrate --framework net9.0 --no-build -- --dry-run --solution $PROJECT_ROOT; sleep 5"
+        --command "dotnet run --project $PROJECT_ROOT/CPMigrate --framework net9.0 --no-build -- --dry-run --solution $PROJECT_ROOT"
 
     echo -e "${CYAN}[>] Converting demo to GIF...${NC}"
 
-    # Convert to GIF with cyberpunk-friendly settings (very slow for readability)
+    # Convert to GIF at 0.10x speed (10x slower for readability)
     agg "$CAST_FILE" "$GIF_FILE" \
         --cols 80 \
         --rows 24 \
         --font-size 14 \
-        --idle-time-limit 5.0 \
-        --speed 0.25 \
-        --last-frame-duration 8
+        --speed 0.10 \
+        --last-frame-duration 5
 
     echo -e "${GREEN}[OK] Demo GIF created: $GIF_FILE${NC}"
 }
@@ -147,23 +146,22 @@ generate_analyze() {
     local CAST_FILE="$DOCS_IMAGES_DIR/cpmigrate-analyze.cast"
     local GIF_FILE="$DOCS_IMAGES_DIR/cpmigrate-analyze.gif"
 
-    # Record the analyze (with pauses for readability)
+    # Record the analyze
     asciinema rec "$CAST_FILE" \
         --cols 80 \
         --rows 24 \
         --overwrite \
-        --command "sleep 2; dotnet run --project $PROJECT_ROOT/CPMigrate --framework net9.0 --no-build -- --analyze --solution $PROJECT_ROOT; sleep 5"
+        --command "dotnet run --project $PROJECT_ROOT/CPMigrate --framework net9.0 --no-build -- --analyze --solution $PROJECT_ROOT"
 
     echo -e "${CYAN}[>] Converting analyze to GIF...${NC}"
 
-    # Convert to GIF (very slow for readability)
+    # Convert to GIF at 0.10x speed (10x slower for readability)
     agg "$CAST_FILE" "$GIF_FILE" \
         --cols 80 \
         --rows 24 \
         --font-size 14 \
-        --idle-time-limit 5.0 \
-        --speed 0.25 \
-        --last-frame-duration 8
+        --speed 0.10 \
+        --last-frame-duration 5
 
     echo -e "${GREEN}[OK] Analyze GIF created: $GIF_FILE${NC}"
 }
