@@ -22,6 +22,7 @@ public interface IConsoleService
     void WriteLine(string message = "");
     string AskSelection(string title, IEnumerable<string> choices);
     bool AskConfirmation(string message);
+    string AskText(string prompt, string defaultValue = "");
     void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath);
     void WriteAnalysisHeader(int projectCount, int packageCount);
     void WriteAnalyzerResult(AnalyzerResult result);

@@ -10,6 +10,8 @@ namespace CPMigrate.Tests;
 public class FakeConsoleService : IConsoleService
 {
     public bool ConfirmationResponse { get; set; } = true;
+    public Queue<string> TextResponses { get; set; } = new();
+    public Queue<string> SelectionResponses { get; set; } = new();
 
     public void Info(string message) { }
     public void Success(string message) { }
@@ -27,8 +29,19 @@ public class FakeConsoleService : IConsoleService
     public void WritePropsPreview(string content) { }
     public void WriteMarkup(string message) { }
     public void WriteLine(string message = "") { }
-    public string AskSelection(string title, IEnumerable<string> choices) => choices.FirstOrDefault() ?? "";
+    public string AskSelection(string title, IEnumerable<string> choices)
+    {
+        if (SelectionResponses.Count > 0)
+            return SelectionResponses.Dequeue();
+        return choices.FirstOrDefault() ?? "";
+    }
     public bool AskConfirmation(string message) => ConfirmationResponse;
+    public string AskText(string prompt, string defaultValue = "")
+    {
+        if (TextResponses.Count > 0)
+            return TextResponses.Dequeue();
+        return defaultValue;
+    }
     public void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath) { }
     public void WriteAnalysisHeader(int projectCount, int packageCount) { }
     public void WriteAnalyzerResult(AnalyzerResult result) { }

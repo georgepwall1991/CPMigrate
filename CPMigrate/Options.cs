@@ -82,6 +82,10 @@ public class Options
         HelpText = "Analyze packages for issues (version inconsistencies, duplicates, redundant references) without modifying files.")]
     public bool Analyze { get; set; }
 
+    [Option('i', "interactive", Default = false,
+        HelpText = "Run in interactive wizard mode with guided prompts.")]
+    public bool Interactive { get; set; }
+
     [Usage(ApplicationAlias = "cpmigrate")]
     public static IEnumerable<Example> Examples =>
         new List<Example>()
@@ -97,6 +101,8 @@ public class Options
                 new Options { ConflictStrategy = ConflictStrategy.Fail }),
             new("Analyze packages for issues without migrating",
                 new Options { Analyze = true }),
+            new("Run in interactive wizard mode",
+                new Options { Interactive = true }),
         };
 
     /// <summary>

@@ -5,11 +5,39 @@ using CPMigrate.Services;
 // Setup composition root
 var versionResolver = new VersionResolver();
 var consoleService = new SpectreConsoleService(versionResolver);
+var interactiveService = new InteractiveService(consoleService);
+
+// Check for interactive mode (no args or --interactive flag)
+if (args.Length == 0)
+{
+    return await RunInteractiveMode(consoleService, interactiveService, versionResolver);
+}
 
 return await Parser.Default.ParseArguments<Options>(args)
     .MapResult(
-        async opt => await RunMigration(opt, consoleService, versionResolver),
+        async opt =>
+        {
+            // Check if --interactive flag was passed
+            if (opt.Interactive)
+            {
+                return await RunInteractiveMode(consoleService, interactiveService, versionResolver);
+            }
+            return await RunMigration(opt, consoleService, versionResolver);
+        },
         _ => Task.FromResult(ExitCodes.ValidationError));
+
+static async Task<int> RunInteractiveMode(IConsoleService consoleService, IInteractiveService interactiveService, VersionResolver versionResolver)
+{
+    consoleService.WriteHeader();
+
+    var options = interactiveService.RunWizard();
+    if (options == null)
+    {
+        return ExitCodes.Success; // User cancelled
+    }
+
+    return await RunMigration(options, consoleService, versionResolver);
+}
 
 static async Task<int> RunMigration(Options opt, IConsoleService consoleService, VersionResolver versionResolver)
 {

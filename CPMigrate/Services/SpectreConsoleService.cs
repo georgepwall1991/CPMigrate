@@ -259,6 +259,19 @@ public class SpectreConsoleService : IConsoleService
         return AnsiConsole.Confirm($"[magenta1]>>> {EscapeMarkup(message)} <<<[/]", defaultValue: false);
     }
 
+    public string AskText(string prompt, string defaultValue = "")
+    {
+        var textPrompt = new TextPrompt<string>($"[magenta1]>>> {EscapeMarkup(prompt)} <<<[/]")
+            .PromptStyle(new Style(CyberColors.Secondary));
+
+        if (!string.IsNullOrEmpty(defaultValue))
+        {
+            textPrompt.DefaultValue(defaultValue);
+        }
+
+        return AnsiConsole.Prompt(textPrompt);
+    }
+
     public void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath)
     {
         var table = new Table()

@@ -10,6 +10,7 @@ A stunning CLI tool to migrate .NET solutions to [Central Package Management (CP
 
 ## Features
 
+- **Interactive Wizard Mode** - Guided setup with arrow-key navigation, no flags to remember
 - **Automatic Migration** - Scans your solution/projects and generates `Directory.Packages.props`
 - **Version Conflict Resolution** - Handles packages with different versions across projects
 - **Package Analysis** - Scan for package issues without migrating (version inconsistencies, duplicates, redundant references)
@@ -55,11 +56,33 @@ rm -rf ./test-tool ./nupkg
 
 ## Usage
 
-### Basic Usage
+### Interactive Mode (Recommended for New Users)
+
+Simply run `cpmigrate` with no arguments to start the interactive wizard:
+
+```bash
+cpmigrate
+```
+
+The wizard guides you through:
+1. Choosing an operation (Migrate, Analyze, or Rollback)
+2. Selecting your solution file
+3. Configuring options with arrow keys
+4. Reviewing settings before execution
+
+You can also explicitly enter interactive mode:
+
+```bash
+cpmigrate --interactive
+# or
+cpmigrate -i
+```
+
+### Command-Line Usage
 
 ```bash
 # Migrate current directory (looks for .sln file)
-cpmigrate
+cpmigrate -s .
 
 # Preview changes without modifying files
 cpmigrate --dry-run
@@ -75,6 +98,7 @@ cpmigrate -p /path/to/project.csproj
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
+| `--interactive` | `-i` | Run in interactive wizard mode | `false` |
 | `--solution` | `-s` | Path to solution file or directory | `.` |
 | `--project` | `-p` | Path to project file or directory | - |
 | `--output-dir` | `-o` | Output directory for Directory.Packages.props | `.` |
