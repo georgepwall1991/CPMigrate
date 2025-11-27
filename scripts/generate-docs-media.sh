@@ -123,13 +123,13 @@ generate_demo() {
 
     echo -e "${CYAN}[>] Converting demo to GIF...${NC}"
 
-    # Convert to GIF with cyberpunk-friendly settings
+    # Convert to GIF with cyberpunk-friendly settings (slowed down for readability)
     agg "$CAST_FILE" "$GIF_FILE" \
         --cols 80 \
         --rows 24 \
         --font-size 14 \
-        --idle-time-limit 0.5 \
-        --speed 1.0
+        --idle-time-limit 2.0 \
+        --speed 0.5
 
     echo -e "${GREEN}[OK] Demo GIF created: $GIF_FILE${NC}"
 }
@@ -155,13 +155,13 @@ generate_analyze() {
 
     echo -e "${CYAN}[>] Converting analyze to GIF...${NC}"
 
-    # Convert to GIF
+    # Convert to GIF (slowed down for readability)
     agg "$CAST_FILE" "$GIF_FILE" \
         --cols 80 \
         --rows 24 \
         --font-size 14 \
-        --idle-time-limit 0.5 \
-        --speed 1.0
+        --idle-time-limit 2.0 \
+        --speed 0.5
 
     echo -e "${GREEN}[OK] Analyze GIF created: $GIF_FILE${NC}"
 }
