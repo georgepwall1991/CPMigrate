@@ -11,6 +11,7 @@ public class InteractiveService : IInteractiveService
     private const string ModeMigrate = "Migrate to Central Package Management";
     private const string ModeAnalyze = "Analyze packages for issues";
     private const string ModeRollback = "Rollback a previous migration";
+    private const string ModeExit = "Exit";
 
     private const string ConflictHighest = "Highest version (recommended)";
     private const string ConflictLowest = "Lowest version";
@@ -32,6 +33,10 @@ public class InteractiveService : IInteractiveService
 
             // Step 1: Mode selection
             var mode = AskMode();
+            if (mode == ModeExit)
+            {
+                return null;
+            }
             ApplyMode(options, mode);
 
             // Step 2: Solution discovery
@@ -79,7 +84,7 @@ public class InteractiveService : IInteractiveService
     {
         return _console.AskSelection(
             "What would you like to do?",
-            new[] { ModeMigrate, ModeAnalyze, ModeRollback });
+            new[] { ModeMigrate, ModeAnalyze, ModeRollback, ModeExit });
     }
 
     private static void ApplyMode(Options options, string mode)

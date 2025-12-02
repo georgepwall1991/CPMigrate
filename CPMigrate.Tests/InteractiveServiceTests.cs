@@ -448,6 +448,25 @@ public class InteractiveServiceTests : IDisposable
     }
 
     [Fact]
+    public void RunWizard_ExitMode_ReturnsNull()
+    {
+        // Arrange - selecting Exit should return null immediately
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Exit"
+        });
+
+        var service = new InteractiveService(fakeConsole);
+
+        // Act
+        var options = service.RunWizard();
+
+        // Assert
+        options.Should().BeNull();
+    }
+
+    [Fact]
     public void RunWizard_EnterPathManually_UsesTextInput()
     {
         // Arrange - create a .sln file but select "Enter path manually..."

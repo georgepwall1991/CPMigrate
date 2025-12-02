@@ -30,13 +30,26 @@ static async Task<int> RunInteractiveMode(IConsoleService consoleService, IInter
 {
     consoleService.WriteHeader();
 
-    var options = interactiveService.RunWizard();
-    if (options == null)
+    // Loop to allow returning to menu after operations complete
+    while (true)
     {
-        return ExitCodes.Success; // User cancelled
-    }
+        var options = interactiveService.RunWizard();
+        if (options == null)
+        {
+            return ExitCodes.Success; // User cancelled or chose to exit
+        }
 
-    return await RunMigration(options, consoleService, versionResolver);
+        var result = await RunMigration(options, consoleService, versionResolver);
+
+        // Show result and prompt to continue
+        consoleService.WriteLine();
+        if (!consoleService.AskConfirmation("Return to main menu?"))
+        {
+            return result;
+        }
+
+        consoleService.WriteLine();
+    }
 }
 
 static async Task<int> RunMigration(Options opt, IConsoleService consoleService, VersionResolver versionResolver)
