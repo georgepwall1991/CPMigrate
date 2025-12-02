@@ -9,31 +9,41 @@ namespace CPMigrate;
 public class BackupManager
 {
     private const string ManifestFileName = "backup_manifest.json";
+    private const string BackupDirectoryName = ".cpmigrate_backup";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+
     /// <summary>
     /// Creates the backup directory if backups are enabled.
     /// </summary>
     /// <param name="options">Migration options containing backup settings.</param>
     /// <returns>The full path to the created backup directory, or empty string if backups are disabled.</returns>
+    /// <exception cref="IOException">Thrown when the backup directory cannot be created.</exception>
     public string CreateBackupDirectory(Options options)
     {
         if (options.NoBackup) return string.Empty;
 
         var backupPath = Path.Combine(
             Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),
-            ".cpmigrate_backup");
+            BackupDirectoryName);
 
-        if (!Directory.Exists(backupPath))
+        try
         {
-            Directory.CreateDirectory(backupPath);
-        }
+            if (!Directory.Exists(backupPath))
+            {
+                Directory.CreateDirectory(backupPath);
+            }
 
-        return backupPath;
+            return backupPath;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            throw new IOException($"Cannot create backup directory '{backupPath}': {ex.Message}", ex);
+        }
     }
 
     /// <summary>
@@ -47,7 +57,7 @@ public class BackupManager
         if (options.NoBackup) return;
 
         var fileName = Path.GetFileName(projectFilePath);
-        var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssZ");
         var backupFileName = $"{fileName}.backup_{timestamp}";
         var backupFilePath = Path.Combine(backupPath, backupFileName);
 
@@ -73,8 +83,15 @@ public class BackupManager
 
         if (File.Exists(gitignorePath))
         {
-            var content = await File.ReadAllTextAsync(gitignorePath);
-            if (content.Contains(backupDirName))
+            var lines = await File.ReadAllLinesAsync(gitignorePath);
+            // Check for exact line match (with or without trailing slash)
+            var alreadyExists = lines.Any(line =>
+            {
+                var trimmed = line.Trim();
+                return trimmed == backupDirName || trimmed == entryToAdd;
+            });
+
+            if (alreadyExists)
                 return; // Already in gitignore
 
             await File.AppendAllTextAsync(gitignorePath,
@@ -116,8 +133,10 @@ public class BackupManager
             var json = await File.ReadAllTextAsync(manifestPath);
             return JsonSerializer.Deserialize<BackupManifest>(json, JsonOptions);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            // Log the error details for debugging - manifest is likely corrupted
+            Console.Error.WriteLine($"Warning: Failed to parse backup manifest: {ex.Message}");
             return null;
         }
     }
@@ -131,7 +150,7 @@ public class BackupManager
     {
         return Path.Combine(
             Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),
-            ".cpmigrate_backup");
+            BackupDirectoryName);
     }
 
     /// <summary>

@@ -26,11 +26,14 @@ public class DuplicatePackageAnalyzer : IAnalyzer
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
 
+            // Defensive check - variations should never be empty given the Where clause
+            if (variations.Count == 0) continue;
+
             var description = $"Found {variations.Count} casing variations: {string.Join(", ", variations)}";
             var affectedProjects = group.Select(r => r.ProjectName).Distinct().ToList();
 
             issues.Add(new AnalysisIssue(
-                variations.First(), // Use the first variation as the canonical name
+                variations[0], // Use the first variation as the canonical name
                 description,
                 affectedProjects
             ));

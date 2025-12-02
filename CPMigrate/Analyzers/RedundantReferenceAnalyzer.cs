@@ -26,7 +26,11 @@ public class RedundantReferenceAnalyzer : IAnalyzer
 
             foreach (var packageGroup in redundantPackages)
             {
-                var projectName = projectGroup.First().ProjectName;
+                // GroupBy guarantees non-empty groups, but FirstOrDefault is defensive
+                var firstRef = projectGroup.FirstOrDefault();
+                if (firstRef == null) continue;
+
+                var projectName = firstRef.ProjectName;
                 var count = packageGroup.Count();
                 var versions = packageGroup.Select(r => r.Version).Distinct().ToList();
 

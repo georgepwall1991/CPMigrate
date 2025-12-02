@@ -27,6 +27,7 @@ public static class ExitCodes
     public const int VersionConflict = 3;
     public const int NoProjectsFound = 4;
     public const int AnalysisIssuesFound = 5;
+    public const int UnexpectedError = 6;
 }
 
 /// <summary>

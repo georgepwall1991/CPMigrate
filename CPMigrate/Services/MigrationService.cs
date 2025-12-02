@@ -25,7 +25,7 @@ public class MigrationService
         AnalysisService? analysisService = null)
     {
         _consoleService = consoleService;
-        _versionResolver = versionResolver ?? new VersionResolver();
+        _versionResolver = versionResolver ?? new VersionResolver(_consoleService);
         _projectAnalyzer = projectAnalyzer ?? new ProjectAnalyzer(_consoleService);
         _propsGenerator = propsGenerator ?? new PropsGenerator(_versionResolver);
         _backupManager = backupManager ?? new BackupManager();
@@ -67,7 +67,37 @@ public class MigrationService
 
         // Check if already migrated to CPM
         var outputDir = string.IsNullOrEmpty(options.OutputDir) ? "." : options.OutputDir;
-        var propsPath = Path.Combine(Path.GetFullPath(outputDir), "Directory.Packages.props");
+        var outputPath = Path.GetFullPath(outputDir);
+        var propsPath = Path.Combine(outputPath, "Directory.Packages.props");
+
+        // Validate output directory exists and is writable before making any changes
+        if (!options.DryRun)
+        {
+            if (!Directory.Exists(outputPath))
+            {
+                _consoleService.Error($"Output directory does not exist: {outputPath}");
+                return new MigrationResult { ExitCode = ExitCodes.ValidationError };
+            }
+
+            // Test write access by attempting to create and delete a temp file
+            var testFile = Path.Combine(outputPath, $".cpmigrate_test_{Guid.NewGuid():N}");
+            try
+            {
+                await File.WriteAllTextAsync(testFile, "test");
+            }
+            catch (Exception ex)
+            {
+                _consoleService.Error($"Cannot write to output directory: {outputPath}");
+                _consoleService.Dim($"Error: {ex.Message}");
+                return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
+            }
+            finally
+            {
+                // Always attempt cleanup even if an exception occurred after write
+                try { if (File.Exists(testFile)) File.Delete(testFile); } catch { /* Ignore cleanup errors */ }
+            }
+        }
+
         if (File.Exists(propsPath))
         {
             _consoleService.Warning("This solution has already been migrated to Central Package Management.");
@@ -159,7 +189,7 @@ public class MigrationService
         {
             var manifest = new BackupManifest
             {
-                Timestamp = DateTime.Now.ToString("yyyyMMddHHmmss"),
+                Timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssZ"),
                 PropsFilePath = propsFilePath,
                 Backups = backupEntries
             };
@@ -217,7 +247,7 @@ public class MigrationService
         Dictionary<string, HashSet<string>> packages, string? backupPath)
     {
         var backupEntries = new List<BackupEntry>();
-        var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssZ");
 
         await AnsiConsole.Progress()
             .AutoRefresh(true)
@@ -238,10 +268,10 @@ public class MigrationService
                     task.Description = $"[cyan]Processing[/] [white]{Markup.Escape(projectName)}[/]";
 
                     // Backup
-                    if (!options.DryRun && !options.NoBackup)
+                    if (!options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
                     {
                         var backupFileName = $"{projectName}.backup_{timestamp}";
-                        _backupManager.CreateBackupForProject(options, projectFilePath, backupPath!);
+                        _backupManager.CreateBackupForProject(options, projectFilePath, backupPath);
 
                         backupEntries.Add(new BackupEntry
                         {
@@ -325,7 +355,10 @@ public class MigrationService
 
         if (manifest.Backups.Count == 0)
         {
-            _consoleService.Warning("No backup entries found in manifest.");
+            _consoleService.Warning("No backup entries found in manifest - nothing to restore.");
+            _consoleService.Dim("The backup manifest exists but contains no files. This may indicate:");
+            _consoleService.Dim("  - A previous rollback already completed");
+            _consoleService.Dim("  - The migration was run with --no-backup");
             return new MigrationResult { ExitCode = ExitCodes.Success };
         }
 
@@ -384,23 +417,31 @@ public class MigrationService
 
         _consoleService.WriteLine();
 
-        // Delete Directory.Packages.props if it exists
-        if (!string.IsNullOrEmpty(manifest.PropsFilePath) && File.Exists(manifest.PropsFilePath))
+        // Only delete Directory.Packages.props if ALL files restored successfully
+        if (failedCount == 0)
         {
-            try
+            if (!string.IsNullOrEmpty(manifest.PropsFilePath) && File.Exists(manifest.PropsFilePath))
             {
-                File.Delete(manifest.PropsFilePath);
-                _consoleService.Success($"Deleted: {manifest.PropsFilePath}");
+                try
+                {
+                    File.Delete(manifest.PropsFilePath);
+                    _consoleService.Success($"Deleted: {manifest.PropsFilePath}");
+                }
+                catch (Exception ex)
+                {
+                    _consoleService.Warning($"Could not delete props file: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                _consoleService.Warning($"Could not delete props file: {ex.Message}");
-            }
-        }
 
-        // Clean up backups
-        _backupManager.CleanupBackups(backupPath, manifest);
-        _consoleService.Dim("Cleaned up backup files.");
+            // Clean up backups only on full success
+            _backupManager.CleanupBackups(backupPath, manifest);
+            _consoleService.Dim("Cleaned up backup files.");
+        }
+        else
+        {
+            _consoleService.Warning("Props file NOT deleted due to restore failures.");
+            _consoleService.Dim("Backup files retained for manual recovery.");
+        }
 
         // Summary
         _consoleService.WriteLine();
@@ -411,6 +452,7 @@ public class MigrationService
         else
         {
             _consoleService.Warning($"Rollback completed with errors. Restored: {restoredCount}, Failed: {failedCount}");
+            _consoleService.Dim("Manual intervention may be required. Check backup directory for original files.");
         }
 
         return new MigrationResult
@@ -448,6 +490,7 @@ public class MigrationService
 
         // Scan all packages
         var allReferences = new List<PackageReference>();
+        var scanFailures = 0;
 
         await AnsiConsole.Progress()
             .AutoRefresh(true)
@@ -467,8 +510,9 @@ public class MigrationService
                     var projectName = Path.GetFileName(projectPath);
                     task.Description = $"[cyan]Scanning[/] [white]{Markup.Escape(projectName)}[/]";
 
-                    var references = _projectAnalyzer.ScanProjectPackages(projectPath);
+                    var (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
                     allReferences.AddRange(references);
+                    if (!success) scanFailures++;
 
                     task.Increment(1);
                     await Task.Delay(30);
@@ -478,6 +522,17 @@ public class MigrationService
             });
 
         _consoleService.WriteLine();
+
+        // Warn if significant number of projects failed to scan
+        if (scanFailures > 0)
+        {
+            var failureRate = (double)scanFailures / projectPaths.Count * 100;
+            _consoleService.Warning($"{scanFailures} of {projectPaths.Count} projects ({failureRate:F0}%) failed to scan.");
+            if (failureRate > 50)
+            {
+                _consoleService.Warning("High failure rate detected - analysis results may be incomplete.");
+            }
+        }
 
         var packageInfo = new ProjectPackageInfo(allReferences);
 

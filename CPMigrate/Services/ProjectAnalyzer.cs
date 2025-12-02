@@ -37,6 +37,12 @@ public partial class ProjectAnalyzer
             if (slnFiles.Length > 1)
             {
                 fullPath = PromptForSolutionSelection(slnFiles);
+                // Re-validate selected file exists (defensive - shouldn't fail but protects against race conditions)
+                if (!File.Exists(fullPath))
+                {
+                    _consoleService.Error($"Selected solution file no longer exists: {Path.GetFileName(fullPath)}");
+                    return (string.Empty, projectPaths);
+                }
             }
             else
             {
@@ -50,9 +56,14 @@ public partial class ProjectAnalyzer
             return (string.Empty, projectPaths);
         }
 
-        var basePath = Path.GetDirectoryName(fullPath)!;
-        
-        try 
+        var basePath = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrEmpty(basePath))
+        {
+            _consoleService.Error("Invalid solution path: cannot determine directory.");
+            return (string.Empty, projectPaths);
+        }
+
+        try
         {
             var solution = SolutionFile.Parse(fullPath);
             
@@ -96,16 +107,21 @@ public partial class ProjectAnalyzer
 
         if (Directory.Exists(fullPath))
         {
-            var patterns = new[] { "*.csproj", "*.fsproj", "*.vbproj" };
-            var projFiles = patterns.SelectMany(p => Directory.GetFiles(fullPath, p)).ToArray();
-            
-            if (projFiles.Length == 0)
+            // Use EnumerateFiles for better performance - stops at first match
+            var projFile = Directory.EnumerateFiles(fullPath, "*.*proj")
+                .FirstOrDefault(f =>
+                {
+                    var ext = Path.GetExtension(f).ToLowerInvariant();
+                    return ext is ".csproj" or ".fsproj" or ".vbproj";
+                });
+
+            if (projFile == null)
             {
                 _consoleService.Info("No project file found in the specified directory.");
                 return (string.Empty, projectPaths);
             }
-            
-            fullPath = projFiles[0];
+
+            fullPath = projFile;
         }
 
         if (!File.Exists(fullPath))
@@ -115,7 +131,12 @@ public partial class ProjectAnalyzer
         }
 
         projectPaths.Add(fullPath);
-        var basePath = Path.GetDirectoryName(fullPath)!;
+        var basePath = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrEmpty(basePath))
+        {
+            _consoleService.Error("Invalid project path: cannot determine directory.");
+            return (string.Empty, new List<string>());
+        }
         return (basePath, projectPaths);
     }
 
@@ -169,8 +190,8 @@ public partial class ProjectAnalyzer
     /// Used for analysis mode.
     /// </summary>
     /// <param name="projectFilePath">Full path to the project file.</param>
-    /// <returns>List of package references found in the project.</returns>
-    public List<PackageReference> ScanProjectPackages(string projectFilePath)
+    /// <returns>Tuple of (package references, success status).</returns>
+    public (List<PackageReference> References, bool Success) ScanProjectPackages(string projectFilePath)
     {
         var references = new List<PackageReference>();
         var projectName = Path.GetFileName(projectFilePath);
@@ -195,13 +216,14 @@ public partial class ProjectAnalyzer
                     }
                 }
             }
+
+            return (references, true);
         }
         catch (Exception ex)
         {
             _consoleService.Warning($"Could not scan {projectName}: {ex.Message}");
+            return (references, false);
         }
-
-        return references;
     }
 
     /// <summary>

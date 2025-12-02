@@ -37,6 +37,10 @@ public class PropsGenerator
 
         foreach (var kvp in packageVersions.OrderBy(x => x.Key))
         {
+            // Skip packages with no versions (shouldn't happen, but defensive)
+            if (kvp.Value.Count == 0)
+                continue;
+
             // Resolve to single version if multiple exist
             var version = kvp.Value.Count > 1
                 ? _versionResolver.ResolveVersion(kvp.Value, strategy)

@@ -118,9 +118,10 @@ public class ProjectAnalyzerLogicTests : IDisposable
         var filePath = CreateTestProject("TestScan.csproj", projectContent);
 
         // Act
-        var references = _analyzer.ScanProjectPackages(filePath);
+        var (references, success) = _analyzer.ScanProjectPackages(filePath);
 
         // Assert
+        success.Should().BeTrue();
         references.Should().HaveCount(2); // Should skip NoVersionPackage
         references.Should().Contain(r => r.PackageName == "Newtonsoft.Json" && r.Version == "13.0.1");
         references.Should().Contain(r => r.PackageName == "Serilog" && r.Version == "2.10.0");
@@ -133,9 +134,10 @@ public class ProjectAnalyzerLogicTests : IDisposable
         var filePath = CreateTestProject("Malformed.csproj", "<Project><InvalidXml");
 
         // Act
-        var references = _analyzer.ScanProjectPackages(filePath);
+        var (references, success) = _analyzer.ScanProjectPackages(filePath);
 
         // Assert
+        success.Should().BeFalse();
         references.Should().BeEmpty();
     }
 

@@ -2,8 +2,8 @@ using CommandLine;
 using CPMigrate;
 using CPMigrate.Services;
 
-// Setup composition root
-var versionResolver = new VersionResolver();
+// Setup composition root - create console service first, then inject into version resolver
+var versionResolver = new VersionResolver(null); // Will be re-created with console service in MigrationService
 var consoleService = new SpectreConsoleService(versionResolver);
 var interactiveService = new InteractiveService(consoleService);
 
@@ -66,6 +66,7 @@ static async Task<int> RunMigration(Options opt, IConsoleService consoleService,
 #if DEBUG
         Console.Error.WriteLine(ex.StackTrace);
 #endif
-        return ExitCodes.FileOperationError;
+        Console.Error.WriteLine("\nSuggestion: Please report this issue at https://github.com/georgepwall1991/CPMigrate/issues");
+        return ExitCodes.UnexpectedError;
     }
 }

@@ -283,6 +283,206 @@ public class InteractiveServiceTests : IDisposable
             Directory.SetCurrentDirectory(originalDir);
         }
     }
+
+    [Fact]
+    public void RunWizard_MigrationMode_SetsOutputDirToSolutionPath()
+    {
+        // Arrange - verify OutputDir is set correctly for Directory.Packages.props generation
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Migrate to Central Package Management",
+            "Highest version (recommended)",
+            "No",  // No backup
+            "Yes - preview changes without modifying files",
+            "No - remove them (recommended for clean CPM)"
+        });
+        fakeConsole.TextResponses = new Queue<string>(new[] { _testDirectory });
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole);
+
+        // Act
+        var options = service.RunWizard();
+
+        // Assert
+        options.Should().NotBeNull();
+        options!.OutputDir.Should().Be(_testDirectory);
+        options.SolutionFileDir.Should().Be(_testDirectory);
+    }
+
+    [Fact]
+    public void RunWizard_AnalyzeMode_SetsOutputDirToSolutionPath()
+    {
+        // Arrange - verify OutputDir is set for analyze mode too
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Analyze packages for issues"
+        });
+        fakeConsole.TextResponses = new Queue<string>(new[] { _testDirectory });
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole);
+
+        // Act
+        var options = service.RunWizard();
+
+        // Assert
+        options.Should().NotBeNull();
+        options!.OutputDir.Should().Be(_testDirectory);
+    }
+
+    [Fact]
+    public void RunWizard_RollbackMode_SetsOutputDirToSolutionPath()
+    {
+        // Arrange - verify OutputDir is set for rollback mode
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Rollback a previous migration"
+        });
+        fakeConsole.TextResponses = new Queue<string>(new[]
+        {
+            _testDirectory,    // solution path
+            "./cpm-backup"     // backup directory
+        });
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole);
+
+        // Act
+        var options = service.RunWizard();
+
+        // Assert
+        options.Should().NotBeNull();
+        options!.OutputDir.Should().Be(_testDirectory);
+    }
+
+    [Fact]
+    public void RunWizard_MigrationWithBackupAndGitignore_SetsAllOptions()
+    {
+        // Arrange - full migration with backup and gitignore
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Migrate to Central Package Management",
+            "Highest version (recommended)",
+            "Yes (recommended)",  // backup
+            "Yes",                // add to gitignore
+            "No - make changes immediately",  // not dry run
+            "No - remove them (recommended for clean CPM)"
+        });
+        fakeConsole.TextResponses = new Queue<string>(new[]
+        {
+            _testDirectory,     // solution path
+            "./my-backup"       // custom backup directory
+        });
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole);
+
+        // Act
+        var options = service.RunWizard();
+
+        // Assert
+        options.Should().NotBeNull();
+        options!.NoBackup.Should().BeFalse();
+        options.BackupDir.Should().Be("./my-backup");
+        options.AddBackupToGitignore.Should().BeTrue();
+        options.GitignoreDir.Should().Be(".");
+        options.DryRun.Should().BeFalse();
+    }
+
+    [Fact]
+    public void RunWizard_MigrationWithBackupNoGitignore_SetsGitignoreFalse()
+    {
+        // Arrange - backup but no gitignore
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Migrate to Central Package Management",
+            "Highest version (recommended)",
+            "Yes (recommended)",  // backup
+            "No",                 // don't add to gitignore
+            "Yes - preview changes without modifying files",
+            "No - remove them (recommended for clean CPM)"
+        });
+        fakeConsole.TextResponses = new Queue<string>(new[]
+        {
+            _testDirectory,
+            "./cpm-backup"
+        });
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole);
+
+        // Act
+        var options = service.RunWizard();
+
+        // Assert
+        options.Should().NotBeNull();
+        options!.NoBackup.Should().BeFalse();
+        options.AddBackupToGitignore.Should().BeFalse();
+    }
+
+    [Fact]
+    public void RunWizard_EmptySolutionPath_ReturnsNull()
+    {
+        // Arrange - empty/whitespace solution path should cancel
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Analyze packages for issues"
+        });
+        fakeConsole.TextResponses = new Queue<string>(new[] { "   " }); // whitespace only
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole);
+
+        // Act
+        var options = service.RunWizard();
+
+        // Assert
+        options.Should().BeNull();
+    }
+
+    [Fact]
+    public void RunWizard_EnterPathManually_UsesTextInput()
+    {
+        // Arrange - create a .sln file but select "Enter path manually..."
+        var slnPath = Path.Combine(_testDirectory, "TestSolution.sln");
+        File.WriteAllText(slnPath, "Microsoft Visual Studio Solution File");
+
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Analyze packages for issues",
+            "Enter path manually..."  // Choose manual entry
+        });
+        fakeConsole.TextResponses = new Queue<string>(new[] { "/custom/path" });
+        fakeConsole.ConfirmationResponse = true;
+
+        var originalDir = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(_testDirectory);
+
+            var service = new InteractiveService(fakeConsole);
+
+            // Act
+            var options = service.RunWizard();
+
+            // Assert
+            options.Should().NotBeNull();
+            options!.SolutionFileDir.Should().Be("/custom/path");
+            options.OutputDir.Should().Be("/custom/path");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalDir);
+        }
+    }
 }
 
 public class InteractiveOptionsTests

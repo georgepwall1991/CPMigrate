@@ -256,7 +256,12 @@ public class SpectreConsoleService : IConsoleService
 
     public bool AskConfirmation(string message)
     {
-        return AnsiConsole.Confirm($"[magenta1]>>> {EscapeMarkup(message)} <<<[/]", defaultValue: false);
+        var prompt = new ConfirmationPrompt($"[magenta1]>>> {EscapeMarkup(message)} <<<[/]")
+        {
+            DefaultValue = false,
+            InvalidChoiceMessage = "[red]Invalid input.[/] Please enter [cyan]y[/] or [cyan]n[/]."
+        };
+        return AnsiConsole.Prompt(prompt);
     }
 
     public string AskText(string prompt, string defaultValue = "")

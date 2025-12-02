@@ -7,6 +7,13 @@ namespace CPMigrate.Services;
 /// </summary>
 public class VersionResolver
 {
+    private readonly IConsoleService? _consoleService;
+
+    public VersionResolver(IConsoleService? consoleService = null)
+    {
+        _consoleService = consoleService;
+    }
+
     /// <summary>
     /// Detects packages that have multiple versions across projects.
     /// </summary>
@@ -37,8 +44,9 @@ public class VersionResolver
                 {
                     return nuVer;
                 }
-                // Fallback for invalid versions, though ideally we shouldn't encounter them from csproj
-                // We create a "0.0.0" version to sort it lowest
+                // Log warning for invalid version format
+                _consoleService?.Warning($"Invalid version format '{v}' - treating as 0.0.0");
+                // Fallback for invalid versions, we create a "0.0.0" version to sort it lowest
                 return new NuGetVersion(0, 0, 0);
             })
             .OrderBy(v => v)
