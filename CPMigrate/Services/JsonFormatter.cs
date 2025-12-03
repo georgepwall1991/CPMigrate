@@ -28,16 +28,36 @@ public class JsonFormatter : IOutputFormatter
     }
 
     /// <inheritdoc />
-    public void Format(OperationResult result)
+    void IOutputFormatter.Format(OperationResult result)
     {
         var json = JsonSerializer.Serialize(result, _jsonOptions);
         _output.WriteLine(json);
     }
 
     /// <inheritdoc />
-    public void Format(BatchResult result)
+    void IOutputFormatter.Format(BatchResult result)
     {
         var json = JsonSerializer.Serialize(result, _jsonOptions);
         _output.WriteLine(json);
+    }
+
+    /// <summary>
+    /// Formats an operation result as JSON string.
+    /// </summary>
+    /// <param name="result">The result to format.</param>
+    /// <returns>JSON string representation.</returns>
+    public string Format(OperationResult result)
+    {
+        return JsonSerializer.Serialize(result, _jsonOptions);
+    }
+
+    /// <summary>
+    /// Formats a batch result as JSON string.
+    /// </summary>
+    /// <param name="result">The result to format.</param>
+    /// <returns>JSON string representation.</returns>
+    public string Format(BatchResult result)
+    {
+        return JsonSerializer.Serialize(result, _jsonOptions);
     }
 }
