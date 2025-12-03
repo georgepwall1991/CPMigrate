@@ -1,5 +1,6 @@
 using CommandLine;
 using CommandLine.Text;
+using CPMigrate.Services;
 
 namespace CPMigrate;
 
@@ -87,6 +88,74 @@ public class Options
         HelpText = "Run in interactive wizard mode with guided prompts.")]
     public bool Interactive { get; set; }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // v2.0 Options - Output Formatting
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Option("output", Default = OutputFormat.Terminal,
+        HelpText = "Output format: Terminal (default) or Json for CI/CD integration.")]
+    public OutputFormat Output { get; set; }
+
+    [Option("output-file",
+        HelpText = "Write output to file instead of stdout (only applies to JSON output).")]
+    public string? OutputFile { get; set; }
+
+    [Option('q', "quiet", Default = false,
+        HelpText = "Suppress non-essential output (progress bars, spinners). Useful for scripts.")]
+    public bool Quiet { get; set; }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v2.0 Options - Batch Processing
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Option("batch",
+        HelpText = "Scan directory recursively for .sln files and process each.")]
+    public string? BatchDir { get; set; }
+
+    [Option("batch-parallel", Default = false,
+        HelpText = "Process solutions in parallel (default: sequential).")]
+    public bool BatchParallel { get; set; }
+
+    [Option("batch-continue", Default = false,
+        HelpText = "Continue processing even if one solution fails.")]
+    public bool BatchContinue { get; set; }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v2.0 Options - Backup Management
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Option("prune-backups", Default = false,
+        HelpText = "Delete old backups, keeping only the most recent based on --retention.")]
+    public bool PruneBackups { get; set; }
+
+    [Option("prune-all", Default = false,
+        HelpText = "Delete ALL backups (requires confirmation unless --quiet is set).")]
+    public bool PruneAll { get; set; }
+
+    [Option("retention", Default = 5,
+        HelpText = "Number of backups to keep when pruning (default: 5, 0 = keep all).")]
+    public int Retention { get; set; }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v2.0 Options - Conflict Resolution
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Option("interactive-conflicts", Default = false,
+        HelpText = "Prompt for each version conflict instead of auto-resolving.")]
+    public bool InteractiveConflicts { get; set; }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v2.0 Options - Analysis & Auto-Fix
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Option("fix", Default = false,
+        HelpText = "Apply automatic fixes for detected issues (use with --analyze).")]
+    public bool Fix { get; set; }
+
+    [Option("fix-dry-run", Default = false,
+        HelpText = "Show what --fix would change without modifying files.")]
+    public bool FixDryRun { get; set; }
+
     [Usage(ApplicationAlias = "cpmigrate")]
     public static IEnumerable<Example> Examples =>
         new List<Example>()
@@ -104,6 +173,15 @@ public class Options
                 new Options { Analyze = true }),
             new("Run in interactive wizard mode",
                 new Options { Interactive = true }),
+            // v2.0 examples
+            new("Output JSON for CI/CD integration",
+                new Options { Output = OutputFormat.Json }),
+            new("Batch migrate all solutions in a directory",
+                new Options { BatchDir = Path.Combine("path", "to", "repo") }),
+            new("Analyze and auto-fix issues",
+                new Options { Analyze = true, Fix = true }),
+            new("Prune old backups, keeping last 3",
+                new Options { PruneBackups = true, Retention = 3 }),
         };
 
     /// <summary>
@@ -113,6 +191,95 @@ public class Options
     /// <exception cref="ArgumentException">Thrown when options are invalid.</exception>
     public void Validate()
     {
+        // ═══════════════════════════════════════════════════════════════════════
+        // v2.0 Validation - Output options
+        // ═══════════════════════════════════════════════════════════════════════
+
+        if (!string.IsNullOrEmpty(OutputFile) && Output != OutputFormat.Json)
+        {
+            throw new ArgumentException("--output-file can only be used with --output Json.");
+        }
+
+        if (Output == OutputFormat.Json && Interactive)
+        {
+            throw new ArgumentException("--output Json cannot be used with --interactive mode.");
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // v2.0 Validation - Batch options
+        // ═══════════════════════════════════════════════════════════════════════
+
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            if (!string.IsNullOrEmpty(SolutionFileDir) && SolutionFileDir != ".")
+            {
+                throw new ArgumentException("--batch cannot be used with --solution.");
+            }
+
+            if (!string.IsNullOrEmpty(ProjectFileDir))
+            {
+                throw new ArgumentException("--batch cannot be used with --project.");
+            }
+
+            if (Rollback)
+            {
+                throw new ArgumentException("--batch cannot be used with --rollback.");
+            }
+        }
+
+        if (BatchParallel && string.IsNullOrEmpty(BatchDir))
+        {
+            throw new ArgumentException("--batch-parallel requires --batch.");
+        }
+
+        if (BatchContinue && string.IsNullOrEmpty(BatchDir))
+        {
+            throw new ArgumentException("--batch-continue requires --batch.");
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // v2.0 Validation - Backup pruning options
+        // ═══════════════════════════════════════════════════════════════════════
+
+        if (PruneBackups || PruneAll)
+        {
+            // Prune mode - skip other validation
+            if (PruneBackups && PruneAll)
+            {
+                throw new ArgumentException("--prune-backups and --prune-all cannot be used together.");
+            }
+
+            if (Retention < 0)
+            {
+                throw new ArgumentException("--retention must be 0 or greater.");
+            }
+
+            return;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // v2.0 Validation - Fix options
+        // ═══════════════════════════════════════════════════════════════════════
+
+        if (Fix && !Analyze)
+        {
+            throw new ArgumentException("--fix requires --analyze.");
+        }
+
+        if (FixDryRun && !Analyze)
+        {
+            throw new ArgumentException("--fix-dry-run requires --analyze.");
+        }
+
+        if (Fix && FixDryRun)
+        {
+            throw new ArgumentException("--fix and --fix-dry-run cannot be used together.");
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // Original validation logic
+        // ═══════════════════════════════════════════════════════════════════════
+
         if (Analyze)
         {
             // Analyze mode has different validation rules
