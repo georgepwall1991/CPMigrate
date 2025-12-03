@@ -15,6 +15,7 @@ public class MigrationService
     private readonly BackupManager _backupManager;
     private readonly IConsoleService _consoleService;
     private readonly AnalysisService _analysisService;
+    private readonly bool _quietMode;
 
     public MigrationService(
         IConsoleService consoleService,
@@ -22,7 +23,8 @@ public class MigrationService
         VersionResolver? versionResolver = null,
         PropsGenerator? propsGenerator = null,
         BackupManager? backupManager = null,
-        AnalysisService? analysisService = null)
+        AnalysisService? analysisService = null,
+        bool quietMode = false)
     {
         _consoleService = consoleService;
         _versionResolver = versionResolver ?? new VersionResolver(_consoleService);
@@ -30,6 +32,7 @@ public class MigrationService
         _propsGenerator = propsGenerator ?? new PropsGenerator(_versionResolver);
         _backupManager = backupManager ?? new BackupManager();
         _analysisService = analysisService ?? new AnalysisService();
+        _quietMode = quietMode;
     }
 
     /// <summary>
@@ -39,8 +42,11 @@ public class MigrationService
     /// <returns>Migration result with exit code and statistics.</returns>
     public async Task<MigrationResult> ExecuteAsync(Options options)
     {
-        // Show header
-        _consoleService.WriteHeader();
+        // Show header (skip in quiet mode)
+        if (!_quietMode)
+        {
+            _consoleService.WriteHeader();
+        }
 
         // Validate options first
         try
@@ -109,24 +115,30 @@ public class MigrationService
         }
 
         // Dry-run banner
-        if (options.DryRun)
+        if (options.DryRun && !_quietMode)
         {
             _consoleService.Banner("DRY-RUN MODE - No files will be modified");
             _consoleService.WriteLine();
         }
 
-        // Discover projects with a spinner
-        // Note: Still using static AnsiConsole for complex status/progress as wrapping them is more involved
-        // and they are purely UI concerns specific to Spectre.Console.
-        // Ideally IConsoleService would return an IStatus/IProgress abstraction, but for now we rely on the implementation.
-        var (basePath, projectPaths) = await AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(Style.Parse("cyan"))
-            .StartAsync("Discovering projects...", async ctx =>
-            {
-                await Task.Delay(100); // Small delay for visual effect
-                return DiscoverProjects(options);
-            });
+        // Discover projects with a spinner (or silently in quiet mode)
+        (string BasePath, List<string> ProjectPaths) discoveryResult;
+        if (_quietMode)
+        {
+            discoveryResult = DiscoverProjects(options);
+        }
+        else
+        {
+            discoveryResult = await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("cyan"))
+                .StartAsync("Discovering projects...", async ctx =>
+                {
+                    await Task.Delay(100); // Small delay for visual effect
+                    return DiscoverProjects(options);
+                });
+        }
+        var (basePath, projectPaths) = discoveryResult;
 
         if (projectPaths.Count == 0)
         {
@@ -134,12 +146,15 @@ public class MigrationService
             return new MigrationResult { ExitCode = ExitCodes.NoProjectsFound };
         }
 
-        // Show discovered projects
-        _consoleService.WriteMarkup($"\n[green]:magnifying_glass_tilted_right: Found {projectPaths.Count} project(s)[/]\n");
-
-        if (!string.IsNullOrEmpty(basePath))
+        // Show discovered projects (skip in quiet mode)
+        if (!_quietMode)
         {
-            _consoleService.WriteProjectTree(projectPaths, basePath);
+            _consoleService.WriteMarkup($"\n[green]:magnifying_glass_tilted_right: Found {projectPaths.Count} project(s)[/]\n");
+
+            if (!string.IsNullOrEmpty(basePath))
+            {
+                _consoleService.WriteProjectTree(projectPaths, basePath);
+            }
         }
 
         var packages = new Dictionary<string, HashSet<string>>();
@@ -149,12 +164,12 @@ public class MigrationService
         if (!options.DryRun)
         {
             backupPath = _backupManager.CreateBackupDirectory(options);
-            if (!string.IsNullOrEmpty(backupPath))
+            if (!string.IsNullOrEmpty(backupPath) && !_quietMode)
             {
                 _consoleService.WriteMarkup($"[dim]:file_folder: Backup directory: {Markup.Escape(backupPath)}[/]\n");
             }
         }
-        else if (!options.NoBackup)
+        else if (!options.NoBackup && !_quietMode)
         {
             var potentialBackupPath = Path.Combine(
                 Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),
@@ -162,7 +177,10 @@ public class MigrationService
             _consoleService.DryRun($"Would create backup directory: {potentialBackupPath}");
         }
 
-        _consoleService.WriteLine();
+        if (!_quietMode)
+        {
+            _consoleService.WriteLine();
+        }
 
         // Process each project with a nice progress bar
         var backupEntries = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath);
@@ -171,12 +189,18 @@ public class MigrationService
         var conflicts = _versionResolver.DetectConflicts(packages);
         if (conflicts.Count > 0)
         {
-            _consoleService.WriteConflictsTable(packages, conflicts, options.ConflictStrategy);
+            if (!_quietMode)
+            {
+                _consoleService.WriteConflictsTable(packages, conflicts, options.ConflictStrategy);
+            }
 
             if (options.ConflictStrategy == ConflictStrategy.Fail)
             {
                 _consoleService.Error("Version conflicts detected and --conflict-strategy is set to Fail.");
-                _consoleService.WriteMarkup("[dim]Resolve the conflicts manually or use --conflict-strategy Highest|Lowest.[/]\n");
+                if (!_quietMode)
+                {
+                    _consoleService.WriteMarkup("[dim]Resolve the conflicts manually or use --conflict-strategy Highest|Lowest.[/]\n");
+                }
                 return new MigrationResult { ExitCode = ExitCodes.VersionConflict };
             }
         }
@@ -201,19 +225,22 @@ public class MigrationService
         {
             await _backupManager.ManageGitIgnore(options, backupPath);
         }
-        else if (options.AddBackupToGitignore && !options.NoBackup)
+        else if (options.AddBackupToGitignore && !options.NoBackup && !_quietMode)
         {
             _consoleService.DryRun("Would add backup directory to .gitignore");
         }
 
-        // Print summary
-        _consoleService.WriteSummaryTable(
-            projectPaths.Count,
-            packages.Count,
-            conflicts.Count,
-            propsFilePath,
-            backupPath,
-            options.DryRun);
+        // Print summary (skip in quiet mode)
+        if (!_quietMode)
+        {
+            _consoleService.WriteSummaryTable(
+                projectPaths.Count,
+                packages.Count,
+                conflicts.Count,
+                propsFilePath,
+                backupPath,
+                options.DryRun);
+        }
 
         return new MigrationResult
         {
@@ -248,6 +275,38 @@ public class MigrationService
     {
         var backupEntries = new List<BackupEntry>();
         var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssZ");
+
+        // Process without progress bar in quiet mode
+        if (_quietMode)
+        {
+            foreach (var projectFilePath in projectPaths)
+            {
+                var projectName = Path.GetFileName(projectFilePath);
+
+                // Backup
+                if (!options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
+                {
+                    var backupFileName = $"{projectName}.backup_{timestamp}";
+                    _backupManager.CreateBackupForProject(options, projectFilePath, backupPath);
+
+                    backupEntries.Add(new BackupEntry
+                    {
+                        OriginalPath = Path.GetFullPath(projectFilePath),
+                        BackupFileName = backupFileName
+                    });
+                }
+
+                // Process project file
+                var projectFileContent = _projectAnalyzer.ProcessProject(
+                    projectFilePath, packages, options.KeepAttributes);
+
+                if (!options.DryRun)
+                {
+                    await File.WriteAllTextAsync(projectFilePath, projectFileContent);
+                }
+            }
+            return backupEntries;
+        }
 
         await AnsiConsole.Progress()
             .AutoRefresh(true)
@@ -310,15 +369,21 @@ public class MigrationService
 
         if (options.DryRun)
         {
-            _consoleService.WriteLine();
-            _consoleService.DryRun($"Would create: {propsFilePath}");
-            _consoleService.WriteLine();
-            _consoleService.WritePropsPreview(updatedPackagePropsContent);
+            if (!_quietMode)
+            {
+                _consoleService.WriteLine();
+                _consoleService.DryRun($"Would create: {propsFilePath}");
+                _consoleService.WriteLine();
+                _consoleService.WritePropsPreview(updatedPackagePropsContent);
+            }
         }
         else
         {
             await File.WriteAllTextAsync(propsFilePath, updatedPackagePropsContent);
-            _consoleService.WriteMarkup($"\n[green]:page_facing_up: Generated:[/] [cyan]{Markup.Escape(propsFilePath)}[/]\n");
+            if (!_quietMode)
+            {
+                _consoleService.WriteMarkup($"\n[green]:page_facing_up: Generated:[/] [cyan]{Markup.Escape(propsFilePath)}[/]\n");
+            }
         }
 
         return propsFilePath;

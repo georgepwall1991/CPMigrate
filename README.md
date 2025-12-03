@@ -10,15 +10,22 @@ A stunning CLI tool to migrate .NET solutions to [Central Package Management (CP
 
 ## Features
 
-- **Interactive Wizard Mode** - Guided setup with arrow-key navigation, no flags to remember, with menu loop for multiple operations
+- **Interactive Wizard Mode** - Guided setup with arrow-key navigation, no flags to remember
 - **Automatic Migration** - Scans your solution/projects and generates `Directory.Packages.props`
 - **Version Conflict Resolution** - Handles packages with different versions across projects
-- **Package Analysis** - Scan for package issues without migrating (version inconsistencies, duplicates, redundant references)
+- **Package Analysis** - Scan for package issues without migrating
 - **Dry-Run Mode** - Preview changes before applying them
 - **Rollback Support** - Undo migrations and restore original project files
-- **Cyberpunk Terminal UI** - Stunning neon-styled interface with progress bars and ASCII art
+- **Cyberpunk Terminal UI** - Stunning neon-styled interface with progress bars
 - **Cross-Platform** - Works on Windows, macOS, and Linux
-- **Backup Support** - Automatically backs up project files before modification
+
+### New in v2.0
+
+- **JSON Output** - Machine-readable output for CI/CD integration (`--output json`)
+- **Config File Support** - Save settings in `.cpmigrate.json` for repeated use
+- **Batch Mode** - Migrate multiple solutions in a directory tree (`--batch`)
+- **Backup Pruning** - Clean up old backups with retention policies (`--prune-backups`)
+- **Quiet Mode** - Suppress progress output for scripts (`--quiet`)
 
 ## Installation
 
@@ -34,24 +41,6 @@ dotnet tool install --global CPMigrate
 git clone https://github.com/georgepwall1991/CPMigrate.git
 cd CPMigrate
 dotnet build
-```
-
-## Testing Locally
-
-To verify the tool works correctly on your machine before installing globally:
-
-```bash
-# Pack the tool
-dotnet pack CPMigrate/CPMigrate.csproj -o ./nupkg
-
-# Install to a local test path
-dotnet tool install CPMigrate --tool-path ./test-tool --add-source ./nupkg
-
-# Run the tool
-./test-tool/cpmigrate --help
-
-# Cleanup
-rm -rf ./test-tool ./nupkg
 ```
 
 ## Usage
@@ -71,14 +60,6 @@ The wizard guides you through:
 4. Reviewing settings before execution
 5. After completion, option to return to main menu or exit
 
-You can also explicitly enter interactive mode:
-
-```bash
-cpmigrate --interactive
-# or
-cpmigrate -i
-```
-
 ### Command-Line Usage
 
 ```bash
@@ -97,6 +78,8 @@ cpmigrate -p /path/to/project.csproj
 
 ### Options
 
+#### Core Options
+
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--interactive` | `-i` | Run in interactive wizard mode | `false` |
@@ -104,13 +87,37 @@ cpmigrate -p /path/to/project.csproj
 | `--project` | `-p` | Path to project file or directory | - |
 | `--output-dir` | `-o` | Output directory for Directory.Packages.props | `.` |
 | `--dry-run` | `-d` | Preview changes without modifying files | `false` |
-| `--rollback` | `-r` | Restore project files from backup and remove Directory.Packages.props | `false` |
-| `--analyze` | `-a` | Analyze packages for issues without modifying files | `false` |
+| `--rollback` | `-r` | Restore project files from backup | `false` |
+| `--analyze` | `-a` | Analyze packages for issues | `false` |
 | `--keep-attrs` | `-k` | Keep Version attributes in .csproj files | `false` |
 | `--no-backup` | `-n` | Disable automatic backup | `false` |
 | `--backup-dir` | - | Backup directory location | `.` |
 | `--add-gitignore` | - | Add backup directory to .gitignore | `false` |
-| `--conflict-strategy` | - | How to handle version conflicts: `Highest`, `Lowest`, or `Fail` | `Highest` |
+| `--conflict-strategy` | - | Version conflicts: `Highest`, `Lowest`, `Fail` | `Highest` |
+
+#### v2.0 Options - Output & CI/CD
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--output` | Output format: `Terminal` or `Json` | `Terminal` |
+| `--output-file` | Write JSON output to file instead of stdout | - |
+| `--quiet` | Suppress progress bars and spinners | `false` |
+
+#### v2.0 Options - Batch Processing
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--batch` | Scan directory for .sln files and process each | - |
+| `--batch-parallel` | Process solutions in parallel | `false` |
+| `--batch-continue` | Continue even if one solution fails | `false` |
+
+#### v2.0 Options - Backup Management
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--prune-backups` | Delete old backups, keeping most recent | `false` |
+| `--prune-all` | Delete ALL backups (requires confirmation) | `false` |
+| `--retention` | Number of backups to keep when pruning | `5` |
 
 ### Examples
 
@@ -124,25 +131,85 @@ cpmigrate --conflict-strategy Lowest
 # Migrate without creating backups
 cpmigrate --no-backup
 
-# Migrate and add backup to .gitignore
-cpmigrate --add-gitignore
-
-# Rollback a migration (restore original project files)
-cpmigrate --rollback
-
-# Rollback with custom backup directory
-cpmigrate --rollback --backup-dir ./my-backups
-
 # Analyze packages for issues without migrating
 cpmigrate --analyze
 
-# Analyze a specific solution
-cpmigrate --analyze -s /path/to/solution
+# Rollback a migration
+cpmigrate --rollback
+
+# === v2.0 Examples ===
+
+# Output JSON for CI/CD pipelines
+cpmigrate --analyze --output json
+
+# Save JSON output to file
+cpmigrate --output json --output-file results.json
+
+# Migrate all solutions in a monorepo
+cpmigrate --batch /path/to/monorepo
+
+# Batch migrate with continue-on-failure
+cpmigrate --batch /path/to/repo --batch-continue
+
+# Clean up old backups, keep last 3
+cpmigrate --prune-backups --retention 3
+
+# Delete all backups
+cpmigrate --prune-all
+
+# Quiet mode for scripts (no progress bars)
+cpmigrate -s . --quiet
+```
+
+## Configuration File
+
+Create a `.cpmigrate.json` file in your solution directory to save common settings:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate.schema.json",
+  "conflictStrategy": "Highest",
+  "backup": true,
+  "backupDir": ".cpmigrate_backup",
+  "addGitignore": true,
+  "keepVersionAttributes": false,
+  "outputFormat": "Terminal",
+  "retention": {
+    "enabled": true,
+    "maxBackups": 5
+  }
+}
+```
+
+CLI options override config file values.
+
+## JSON Output Schema
+
+When using `--output json`, CPMigrate outputs structured JSON:
+
+```json
+{
+  "version": "2.0.0",
+  "operation": "migrate",
+  "success": true,
+  "exitCode": 0,
+  "summary": {
+    "projectsProcessed": 5,
+    "packagesFound": 42,
+    "conflictsResolved": 3
+  },
+  "conflicts": [...],
+  "propsFile": {
+    "path": "/path/to/Directory.Packages.props"
+  },
+  "dryRun": false,
+  "timestamp": "2024-01-15T10:30:22Z"
+}
 ```
 
 ## What is Central Package Management?
 
-Central Package Management (CPM) is a NuGet feature that allows you to manage all package versions in a single `Directory.Packages.props` file at the root of your repository, rather than specifying versions in each `.csproj` file.
+Central Package Management (CPM) is a NuGet feature that allows you to manage all package versions in a single `Directory.Packages.props` file at the root of your repository.
 
 ### Before (Traditional)
 
@@ -218,12 +285,6 @@ brew install asciinema agg expect
 
 # Generate all documentation media
 ./scripts/generate-docs-media.sh
-
-# Options
-./scripts/generate-docs-media.sh --skip-build        # Skip dotnet build
-./scripts/generate-docs-media.sh --demo-only         # Only generate demo GIF
-./scripts/generate-docs-media.sh --analyze-only      # Only generate analyze GIF
-./scripts/generate-docs-media.sh --interactive-only  # Only generate interactive wizard GIF
 ```
 
 ## License

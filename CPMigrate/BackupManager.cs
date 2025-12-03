@@ -200,4 +200,279 @@ public class BackupManager
             Directory.Delete(backupPath);
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v2.0 - Backup Pruning and Retention
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Gets a list of all backup sets in the backup directory, sorted by timestamp (newest first).
+    /// </summary>
+    /// <param name="backupPath">Path to the backup directory.</param>
+    /// <returns>List of backup info with timestamps and file counts.</returns>
+    public List<BackupSetInfo> GetBackupHistory(string backupPath)
+    {
+        var backups = new Dictionary<string, BackupSetInfo>();
+
+        if (!Directory.Exists(backupPath))
+        {
+            return new List<BackupSetInfo>();
+        }
+
+        // Find all backup files and group by timestamp
+        foreach (var file in Directory.GetFiles(backupPath, "*.backup_*"))
+        {
+            var fileName = Path.GetFileName(file);
+            var timestampStart = fileName.LastIndexOf(".backup_", StringComparison.Ordinal);
+            if (timestampStart < 0) continue;
+
+            var timestamp = fileName[(timestampStart + 8)..]; // Skip ".backup_"
+
+            if (!backups.TryGetValue(timestamp, out var info))
+            {
+                info = new BackupSetInfo
+                {
+                    Timestamp = timestamp,
+                    Files = new List<string>()
+                };
+                backups[timestamp] = info;
+            }
+
+            info.Files.Add(file);
+        }
+
+        // Sort by timestamp descending (newest first)
+        return backups.Values
+            .OrderByDescending(b => b.Timestamp)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Prunes old backups, keeping only the specified number of most recent.
+    /// </summary>
+    /// <param name="backupPath">Path to the backup directory.</param>
+    /// <param name="keep">Number of backup sets to keep.</param>
+    /// <returns>Prune result with counts and freed space.</returns>
+    public PruneResult PruneBackups(string backupPath, int keep)
+    {
+        var result = new PruneResult();
+        var backups = GetBackupHistory(backupPath);
+
+        if (keep <= 0 || backups.Count <= keep)
+        {
+            result.KeptCount = backups.Count;
+            return result;
+        }
+
+        var toKeep = backups.Take(keep).ToList();
+        var toRemove = backups.Skip(keep).ToList();
+
+        result.KeptCount = toKeep.Count;
+
+        foreach (var backup in toRemove)
+        {
+            foreach (var file in backup.Files)
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(file);
+                    result.BytesFreed += fileInfo.Length;
+                    File.Delete(file);
+                    result.FilesRemoved++;
+                }
+                catch (Exception)
+                {
+                    // Track but continue
+                    result.Errors.Add($"Failed to delete: {file}");
+                }
+            }
+            result.BackupsRemoved++;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Deletes ALL backups in the backup directory.
+    /// </summary>
+    /// <param name="backupPath">Path to the backup directory.</param>
+    /// <returns>Prune result with counts and freed space.</returns>
+    public PruneResult PruneAllBackups(string backupPath)
+    {
+        var result = new PruneResult();
+
+        if (!Directory.Exists(backupPath))
+        {
+            return result;
+        }
+
+        var backups = GetBackupHistory(backupPath);
+
+        foreach (var backup in backups)
+        {
+            foreach (var file in backup.Files)
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(file);
+                    result.BytesFreed += fileInfo.Length;
+                    File.Delete(file);
+                    result.FilesRemoved++;
+                }
+                catch (Exception)
+                {
+                    result.Errors.Add($"Failed to delete: {file}");
+                }
+            }
+            result.BackupsRemoved++;
+        }
+
+        // Also delete manifest if it exists
+        var manifestPath = Path.Combine(backupPath, ManifestFileName);
+        if (File.Exists(manifestPath))
+        {
+            try
+            {
+                var fileInfo = new FileInfo(manifestPath);
+                result.BytesFreed += fileInfo.Length;
+                File.Delete(manifestPath);
+                result.FilesRemoved++;
+            }
+            catch (Exception)
+            {
+                result.Errors.Add($"Failed to delete manifest: {manifestPath}");
+            }
+        }
+
+        // Delete backup directory if empty
+        try
+        {
+            if (Directory.Exists(backupPath) && !Directory.EnumerateFileSystemEntries(backupPath).Any())
+            {
+                Directory.Delete(backupPath);
+            }
+        }
+        catch (Exception)
+        {
+            // Ignore - directory not empty or access denied
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Applies automatic retention after a successful migration.
+    /// </summary>
+    /// <param name="backupPath">Path to the backup directory.</param>
+    /// <param name="maxBackups">Maximum number of backups to retain.</param>
+    /// <returns>Prune result if any backups were removed.</returns>
+    public PruneResult ApplyRetention(string backupPath, int maxBackups)
+    {
+        if (maxBackups <= 0)
+        {
+            return new PruneResult(); // Retention disabled
+        }
+
+        return PruneBackups(backupPath, maxBackups);
+    }
+}
+
+/// <summary>
+/// Information about a backup set (all files from a single backup operation).
+/// </summary>
+public class BackupSetInfo
+{
+    /// <summary>
+    /// Timestamp of the backup (format: yyyyMMddHHmmssZ).
+    /// </summary>
+    public string Timestamp { get; init; } = string.Empty;
+
+    /// <summary>
+    /// List of backup file paths in this set.
+    /// </summary>
+    public List<string> Files { get; init; } = new();
+
+    /// <summary>
+    /// Number of files in this backup set.
+    /// </summary>
+    public int FileCount => Files.Count;
+
+    /// <summary>
+    /// Total size of all files in this backup set.
+    /// </summary>
+    public long TotalSize => Files.Sum(f => new FileInfo(f).Length);
+
+    /// <summary>
+    /// Parsed DateTime from the timestamp.
+    /// </summary>
+    public DateTime? ParsedTimestamp
+    {
+        get
+        {
+            if (DateTime.TryParseExact(Timestamp, "yyyyMMddHHmmssZ",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var dt))
+            {
+                return dt;
+            }
+            return null;
+        }
+    }
+}
+
+/// <summary>
+/// Result of a prune operation.
+/// </summary>
+public class PruneResult
+{
+    /// <summary>
+    /// Number of backup sets kept.
+    /// </summary>
+    public int KeptCount { get; set; }
+
+    /// <summary>
+    /// Number of backup sets removed.
+    /// </summary>
+    public int BackupsRemoved { get; set; }
+
+    /// <summary>
+    /// Number of files removed.
+    /// </summary>
+    public int FilesRemoved { get; set; }
+
+    /// <summary>
+    /// Total bytes freed by the prune operation.
+    /// </summary>
+    public long BytesFreed { get; set; }
+
+    /// <summary>
+    /// Errors encountered during pruning.
+    /// </summary>
+    public List<string> Errors { get; } = new();
+
+    /// <summary>
+    /// Whether the prune operation was successful (no errors).
+    /// </summary>
+    public bool Success => Errors.Count == 0;
+
+    /// <summary>
+    /// Human-readable string of bytes freed.
+    /// </summary>
+    public string BytesFreedFormatted
+    {
+        get
+        {
+            const long KB = 1024;
+            const long MB = KB * 1024;
+            const long GB = MB * 1024;
+
+            return BytesFreed switch
+            {
+                >= GB => $"{BytesFreed / (double)GB:F2} GB",
+                >= MB => $"{BytesFreed / (double)MB:F2} MB",
+                >= KB => $"{BytesFreed / (double)KB:F2} KB",
+                _ => $"{BytesFreed} bytes"
+            };
+        }
+    }
 }

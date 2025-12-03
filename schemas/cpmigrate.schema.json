@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate.schema.json",
+  "title": "CPMigrate Configuration",
+  "description": "Configuration file for CPMigrate - Central Package Management migration tool",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON schema reference for IDE autocomplete"
+    },
+    "conflictStrategy": {
+      "type": "string",
+      "enum": ["Highest", "Lowest", "Fail"],
+      "default": "Highest",
+      "description": "How to handle version conflicts: Highest (use latest), Lowest (use earliest), or Fail (stop migration)"
+    },
+    "backup": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to create backups before modifying files"
+    },
+    "backupDir": {
+      "type": "string",
+      "default": ".cpmigrate_backup",
+      "description": "Directory for backup files"
+    },
+    "addGitignore": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether to add backup directory to .gitignore"
+    },
+    "keepVersionAttributes": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether to keep Version attributes in project files after migration"
+    },
+    "outputFormat": {
+      "type": "string",
+      "enum": ["Terminal", "Json"],
+      "default": "Terminal",
+      "description": "Output format: Terminal (rich UI) or Json (for CI/CD)"
+    },
+    "retention": {
+      "type": "object",
+      "description": "Backup retention settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether automatic backup retention is enabled"
+        },
+        "maxBackups": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 5,
+          "description": "Maximum number of backups to keep"
+        }
+      },
+      "additionalProperties": false
+    },
+    "excludeDirectories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": ["node_modules", "bin", "obj", ".git", "packages"],
+      "description": "Directories to exclude when scanning for solutions in batch mode"
+    }
+  },
+  "additionalProperties": false
+}
