@@ -265,11 +265,12 @@ Central Package Management (CPM) is a NuGet feature that allows you to manage al
 
 The tool features a stunning cyberpunk-inspired terminal UI with:
 
-- Neon ASCII art header with magenta/cyan color scheme
-- Animated progress bars during project scanning
-- Status indicators: `[▓▓▓]` success, `[!]` warning, `[X]` error
-- Rich panel displays for file previews and summaries
-- Simulation mode visual cues for dry-run operations
+- **Modern "Slant" ASCII Logo** with Deep Pink neon styling
+- **Refined Color Palette** featuring Deep Pink, Electric Cyan, and Spring Green
+- **Clean Layouts** with framed panels, grids, and rule separators
+- **Animated Progress Bars** and spinners for long-running operations
+- **Rich Status Icons**: `✔` success, `!` warning, `✖` error, `🚀` migrate
+- **Visual Simulation Cues** clearly distinguishing dry-runs from actual execution
 
 ## Contributing
 
