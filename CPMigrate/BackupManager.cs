@@ -52,16 +52,25 @@ public class BackupManager
     /// <param name="options">Migration options containing backup settings.</param>
     /// <param name="projectFilePath">Full path to the project file to backup.</param>
     /// <param name="backupPath">Path to the backup directory.</param>
+    /// <exception cref="IOException">Thrown when the backup file cannot be created.</exception>
     public void CreateBackupForProject(Options options, string projectFilePath, string backupPath)
     {
         if (options.NoBackup) return;
 
         var fileName = Path.GetFileName(projectFilePath);
-        var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssZ");
+        // Use milliseconds for timestamp precision to avoid collisions in fast/parallel operations
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
         var backupFileName = $"{fileName}.backup_{timestamp}";
         var backupFilePath = Path.Combine(backupPath, backupFileName);
 
-        File.Copy(projectFilePath, backupFilePath, overwrite: true);
+        try
+        {
+            File.Copy(projectFilePath, backupFilePath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            throw new IOException($"Failed to create backup for '{projectFilePath}': {ex.Message}", ex);
+        }
     }
 
     /// <summary>
@@ -175,30 +184,56 @@ public class BackupManager
     /// </summary>
     /// <param name="backupPath">Path to the backup directory.</param>
     /// <param name="manifest">The manifest containing files to delete.</param>
-    public void CleanupBackups(string backupPath, BackupManifest manifest)
+    /// <returns>List of any errors encountered during cleanup (cleanup continues on errors).</returns>
+    public List<string> CleanupBackups(string backupPath, BackupManifest manifest)
     {
+        var errors = new List<string>();
+
         // Delete backup files
         foreach (var entry in manifest.Backups)
         {
             var backupFilePath = Path.Combine(backupPath, entry.BackupFileName);
-            if (File.Exists(backupFilePath))
+            try
             {
-                File.Delete(backupFilePath);
+                if (File.Exists(backupFilePath))
+                {
+                    File.Delete(backupFilePath);
+                }
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                errors.Add($"Failed to delete backup file '{entry.BackupFileName}': {ex.Message}");
             }
         }
 
         // Delete manifest
         var manifestPath = Path.Combine(backupPath, ManifestFileName);
-        if (File.Exists(manifestPath))
+        try
         {
-            File.Delete(manifestPath);
+            if (File.Exists(manifestPath))
+            {
+                File.Delete(manifestPath);
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            errors.Add($"Failed to delete manifest: {ex.Message}");
         }
 
         // Delete backup directory if empty
-        if (Directory.Exists(backupPath) && !Directory.EnumerateFileSystemEntries(backupPath).Any())
+        try
         {
-            Directory.Delete(backupPath);
+            if (Directory.Exists(backupPath) && !Directory.EnumerateFileSystemEntries(backupPath).Any())
+            {
+                Directory.Delete(backupPath);
+            }
         }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            errors.Add($"Failed to delete backup directory: {ex.Message}");
+        }
+
+        return errors;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -409,11 +444,16 @@ public class BackupSetInfo
     {
         get
         {
-            if (DateTime.TryParseExact(Timestamp, "yyyyMMddHHmmssZ",
-                System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.AssumeUniversal, out var dt))
+            // Try new format with milliseconds first, then legacy format
+            string[] formats = { "yyyyMMddHHmmssfff", "yyyyMMddHHmmssZ" };
+            foreach (var format in formats)
             {
-                return dt;
+                if (DateTime.TryParseExact(Timestamp, format,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal, out var dt))
+                {
+                    return dt;
+                }
             }
             return null;
         }

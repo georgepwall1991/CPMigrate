@@ -789,9 +789,10 @@ public class BackupManagerTests : IDisposable
         };
 
         // Act
-        _backupManager.CleanupBackups(backupDir, manifest);
+        var errors = _backupManager.CleanupBackups(backupDir, manifest);
 
         // Assert
+        errors.Should().BeEmpty();
         File.Exists(backupFilePath).Should().BeFalse();
         File.Exists(manifestPath).Should().BeFalse();
         Directory.Exists(backupDir).Should().BeFalse(); // Empty directory should be deleted
