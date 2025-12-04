@@ -36,36 +36,69 @@ public class VersionResolver
     /// <returns>The selected version based on the strategy.</returns>
     public string ResolveVersion(IEnumerable<string> versions, ConflictStrategy strategy)
     {
-        // Parse versions using NuGetVersion
-        var nuGetVersions = versions
-            .Select(v =>
-            {
-                if (NuGetVersion.TryParse(v, out var nuVer))
-                {
-                    return nuVer;
-                }
-                // Log warning for invalid version format
-                _consoleService?.Warning($"Invalid version format '{v}' - treating as 0.0.0");
-                // Fallback for invalid versions, we create a "0.0.0" version to sort it lowest
-                return new NuGetVersion(0, 0, 0);
-            })
-            .OrderBy(v => v)
-            .ToList();
+        var versionList = versions.ToList();
 
-        if (!nuGetVersions.Any())
+        if (versionList.Count == 0)
         {
             // Should not happen given caller context, but return something safe
-            return "0.0.0"; 
+            return "0.0.0";
+        }
+
+        // If there's only one version, return it as-is (preserves floating versions like 1.0.*)
+        if (versionList.Count == 1)
+        {
+            return versionList[0];
+        }
+
+        // Parse versions using NuGetVersion, tracking original strings for fallback
+        var parsedVersions = new List<(NuGetVersion? Parsed, string Original)>();
+
+        foreach (var v in versionList)
+        {
+            if (NuGetVersion.TryParse(v, out var nuVer))
+            {
+                parsedVersions.Add((nuVer, v));
+            }
+            else
+            {
+                // Log warning for invalid/floating version format but preserve original
+                _consoleService?.Warning($"Non-standard version format '{v}' - cannot compare, preserving as-is");
+                parsedVersions.Add((null, v));
+            }
+        }
+
+        // Separate parseable and unparseable versions
+        var parseableVersions = parsedVersions
+            .Where(p => p.Parsed != null)
+            .OrderBy(p => p.Parsed)
+            .ToList();
+
+        var unparseableVersions = parsedVersions
+            .Where(p => p.Parsed == null)
+            .Select(p => p.Original)
+            .ToList();
+
+        // If no versions could be parsed, return the first original version
+        if (parseableVersions.Count == 0)
+        {
+            _consoleService?.Warning($"No valid versions to compare - using first version: {versionList[0]}");
+            return versionList[0];
+        }
+
+        // Warn about unparseable versions that won't be considered in comparison
+        if (unparseableVersions.Count > 0)
+        {
+            _consoleService?.Warning($"Skipping {unparseableVersions.Count} non-standard version(s) in comparison: {string.Join(", ", unparseableVersions)}");
         }
 
         var selectedVersion = strategy switch
         {
-            ConflictStrategy.Highest => nuGetVersions.Last(),
-            ConflictStrategy.Lowest => nuGetVersions.First(),
-            ConflictStrategy.Fail => nuGetVersions.Last(), // Should be handled by caller logic
-            _ => nuGetVersions.Last()
+            ConflictStrategy.Highest => parseableVersions.Last(),
+            ConflictStrategy.Lowest => parseableVersions.First(),
+            ConflictStrategy.Fail => parseableVersions.Last(), // Should be handled by caller logic
+            _ => parseableVersions.Last()
         };
 
-        return selectedVersion.ToNormalizedString();
+        return selectedVersion.Parsed!.ToNormalizedString();
     }
 }

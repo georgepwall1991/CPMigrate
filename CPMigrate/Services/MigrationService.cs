@@ -499,8 +499,19 @@ public class MigrationService
             }
 
             // Clean up backups only on full success
-            _backupManager.CleanupBackups(backupPath, manifest);
-            _consoleService.Dim("Cleaned up backup files.");
+            var cleanupErrors = _backupManager.CleanupBackups(backupPath, manifest);
+            if (cleanupErrors.Count == 0)
+            {
+                _consoleService.Dim("Cleaned up backup files.");
+            }
+            else
+            {
+                _consoleService.Warning($"Cleanup completed with {cleanupErrors.Count} error(s):");
+                foreach (var error in cleanupErrors)
+                {
+                    _consoleService.Dim($"  - {error}");
+                }
+            }
         }
         else
         {

@@ -1,5 +1,6 @@
 using CPMigrate.Models;
 using Microsoft.Build.Construction;
+using Microsoft.Build.Evaluation;
 
 namespace CPMigrate.Services;
 
@@ -151,38 +152,46 @@ public partial class ProjectAnalyzer
         Dictionary<string, HashSet<string>> packageVersions,
         bool keepVersionAttributes = false)
     {
-        // Use Microsoft.Build.Construction to parse the project file as XML
-        var projectRoot = ProjectRootElement.Open(projectFilePath);
-        bool modified = false;
+        // Use a dedicated ProjectCollection to avoid polluting the global cache
+        // and ensure proper cleanup of resources
+        using var projectCollection = new ProjectCollection();
+        var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
 
-        foreach (var item in projectRoot.Items)
+        try
         {
-            if (item.ItemType == "PackageReference")
+            foreach (var item in projectRoot.Items)
             {
-                // Get the Version metadata (attribute or child element)
-                var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
-                
-                if (versionMetadata != null && !string.IsNullOrEmpty(versionMetadata.Value))
+                if (item.ItemType == "PackageReference")
                 {
-                    var packageName = item.Include;
-                    var packageVersion = versionMetadata.Value;
+                    // Get the Version metadata (attribute or child element)
+                    var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
 
-                    if (packageVersions.TryGetValue(packageName, out var value))
-                        value.Add(packageVersion);
-                    else
-                        packageVersions.Add(packageName, new HashSet<string> { packageVersion });
-
-                    if (!keepVersionAttributes)
+                    if (versionMetadata != null && !string.IsNullOrEmpty(versionMetadata.Value))
                     {
-                        // Remove the version metadata
-                        versionMetadata.Parent.RemoveChild(versionMetadata);
-                        modified = true;
+                        var packageName = item.Include;
+                        var packageVersion = versionMetadata.Value;
+
+                        if (packageVersions.TryGetValue(packageName, out var value))
+                            value.Add(packageVersion);
+                        else
+                            packageVersions.Add(packageName, new HashSet<string> { packageVersion });
+
+                        if (!keepVersionAttributes)
+                        {
+                            // Remove the version metadata
+                            versionMetadata.Parent.RemoveChild(versionMetadata);
+                        }
                     }
                 }
             }
-        }
 
-        return projectRoot.RawXml;
+            return projectRoot.RawXml;
+        }
+        finally
+        {
+            // Explicitly unload the project to release resources
+            projectCollection.UnloadAllProjects();
+        }
     }
 
     /// <summary>
@@ -198,26 +207,35 @@ public partial class ProjectAnalyzer
 
         try
         {
-            var projectRoot = ProjectRootElement.Open(projectFilePath);
+            // Use a dedicated ProjectCollection to avoid polluting the global cache
+            using var projectCollection = new ProjectCollection();
+            var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
 
-            foreach (var item in projectRoot.Items)
+            try
             {
-                if (item.ItemType == "PackageReference")
+                foreach (var item in projectRoot.Items)
                 {
-                    var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
-                    if (versionMetadata != null && !string.IsNullOrEmpty(versionMetadata.Value))
+                    if (item.ItemType == "PackageReference")
                     {
-                        references.Add(new PackageReference(
-                            item.Include,
-                            versionMetadata.Value,
-                            projectFilePath,
-                            projectName
-                        ));
+                        var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
+                        if (versionMetadata != null && !string.IsNullOrEmpty(versionMetadata.Value))
+                        {
+                            references.Add(new PackageReference(
+                                item.Include,
+                                versionMetadata.Value,
+                                projectFilePath,
+                                projectName
+                            ));
+                        }
                     }
                 }
-            }
 
-            return (references, true);
+                return (references, true);
+            }
+            finally
+            {
+                projectCollection.UnloadAllProjects();
+            }
         }
         catch (Exception ex)
         {

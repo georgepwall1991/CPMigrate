@@ -67,10 +67,29 @@ public class BatchService
         return solutions.OrderBy(s => s).ToList();
     }
 
-    private void DiscoverSolutionsRecursive(string directory, List<string> solutions, HashSet<string> excluded)
+    private void DiscoverSolutionsRecursive(string directory, List<string> solutions, HashSet<string> excluded, HashSet<string>? visitedPaths = null)
     {
+        // Track visited directories to avoid infinite loops from symlinks
+        visitedPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         try
         {
+            // Get the real path to detect symlink loops
+            var realPath = Path.GetFullPath(directory);
+            if (!visitedPaths.Add(realPath))
+            {
+                // Already visited this directory (circular symlink)
+                return;
+            }
+
+            // Check if this is a symlink/reparse point and skip if so
+            var dirInfo = new DirectoryInfo(directory);
+            if (dirInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                _consoleService.Dim($"  Skipping symlink: {directory}");
+                return;
+            }
+
             // Add solution files in current directory
             var slnFiles = Directory.GetFiles(directory, "*.sln", SearchOption.TopDirectoryOnly);
             solutions.AddRange(slnFiles);
@@ -81,7 +100,7 @@ public class BatchService
                 var dirName = Path.GetFileName(subDir);
                 if (!excluded.Contains(dirName))
                 {
-                    DiscoverSolutionsRecursive(subDir, solutions, excluded);
+                    DiscoverSolutionsRecursive(subDir, solutions, excluded, visitedPaths);
                 }
             }
         }
@@ -166,8 +185,8 @@ public class BatchService
 
             try
             {
-                // Create options for this solution
-                var solutionOptions = CloneOptionsForSolution(options, solutionDir);
+                // Create options for this solution (include solution name for unique backup dirs)
+                var solutionOptions = CloneOptionsForSolution(options, solutionDir, solutionName);
 
                 var migrationResult = await _migrationExecutor(solutionOptions);
 
@@ -215,50 +234,97 @@ public class BatchService
         var results = new ConcurrentBag<SolutionResult>();
         var batchDir = options.BatchDir!;
 
-        await Parallel.ForEachAsync(solutions, async (sln, _) =>
+        // Use a CancellationTokenSource to support early termination when --batch-continue is false
+        using var cts = new CancellationTokenSource();
+        var hasFailure = false;
+
+        var parallelOptions = new ParallelOptions
         {
-            var relativePath = Path.GetRelativePath(batchDir, sln);
-            var solutionName = Path.GetFileNameWithoutExtension(sln);
-            var solutionDir = Path.GetDirectoryName(sln) ?? ".";
+            CancellationToken = cts.Token,
+            MaxDegreeOfParallelism = Environment.ProcessorCount
+        };
 
-            try
+        try
+        {
+            await Parallel.ForEachAsync(solutions, parallelOptions, async (sln, ct) =>
             {
-                var solutionOptions = CloneOptionsForSolution(options, solutionDir);
-                var migrationResult = await _migrationExecutor(solutionOptions);
-
-                results.Add(new SolutionResult
+                // Check if we should stop due to a previous failure
+                if (ct.IsCancellationRequested)
                 {
-                    Path = sln,
-                    Name = solutionName,
-                    Success = migrationResult.ExitCode == ExitCodes.Success,
-                    ExitCode = migrationResult.ExitCode,
-                    Summary = new OperationSummary
+                    return;
+                }
+
+                var relativePath = Path.GetRelativePath(batchDir, sln);
+                var solutionName = Path.GetFileNameWithoutExtension(sln);
+                var solutionDir = Path.GetDirectoryName(sln) ?? ".";
+
+                try
+                {
+                    var solutionOptions = CloneOptionsForSolution(options, solutionDir, solutionName);
+                    var migrationResult = await _migrationExecutor(solutionOptions);
+
+                    results.Add(new SolutionResult
                     {
-                        ProjectsProcessed = migrationResult.ProjectsProcessed,
-                        PackagesFound = migrationResult.PackagesCentralized,
-                        ConflictsResolved = migrationResult.ConflictsResolved
-                    },
-                    PropsFile = migrationResult.PropsFilePath
-                });
-            }
-            catch (Exception ex)
-            {
-                results.Add(new SolutionResult
+                        Path = sln,
+                        Name = solutionName,
+                        Success = migrationResult.ExitCode == ExitCodes.Success,
+                        ExitCode = migrationResult.ExitCode,
+                        Summary = new OperationSummary
+                        {
+                            ProjectsProcessed = migrationResult.ProjectsProcessed,
+                            PackagesFound = migrationResult.PackagesCentralized,
+                            ConflictsResolved = migrationResult.ConflictsResolved
+                        },
+                        PropsFile = migrationResult.PropsFilePath
+                    });
+
+                    // Check for failure and cancel if --batch-continue is not set
+                    if (migrationResult.ExitCode != ExitCodes.Success && !options.BatchContinue)
+                    {
+                        hasFailure = true;
+                        cts.Cancel();
+                    }
+                }
+                catch (Exception ex)
                 {
-                    Path = sln,
-                    Name = solutionName,
-                    Success = false,
-                    ExitCode = ExitCodes.UnexpectedError,
-                    Error = ex.Message
-                });
+                    results.Add(new SolutionResult
+                    {
+                        Path = sln,
+                        Name = solutionName,
+                        Success = false,
+                        ExitCode = ExitCodes.UnexpectedError,
+                        Error = ex.Message
+                    });
+
+                    // Cancel remaining operations if --batch-continue is not set
+                    if (!options.BatchContinue)
+                    {
+                        hasFailure = true;
+                        cts.Cancel();
+                    }
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when we cancel due to failure with --batch-continue=false
+            if (hasFailure && !options.BatchContinue)
+            {
+                _consoleService.Warning("Stopping batch (use --batch-continue to continue on failure)");
             }
-        });
+        }
 
         return results.OrderBy(r => r.Path).ToList();
     }
 
-    private Options CloneOptionsForSolution(Options options, string solutionDir)
+    private Options CloneOptionsForSolution(Options options, string solutionDir, string? solutionName = null)
     {
+        // Use solution-specific backup directory to prevent collisions in parallel mode
+        // Format: .cpmigrate_backup_{solutionName} for uniqueness
+        var backupDirName = string.IsNullOrEmpty(solutionName)
+            ? ".cpmigrate_backup"
+            : $".cpmigrate_backup_{solutionName}";
+
         return new Options
         {
             SolutionFileDir = solutionDir,
@@ -266,7 +332,7 @@ public class BatchService
             ProjectFileDir = string.Empty,
             KeepAttributes = options.KeepAttributes,
             NoBackup = options.NoBackup,
-            BackupDir = Path.Combine(solutionDir, ".cpmigrate_backup"),
+            BackupDir = Path.Combine(solutionDir, backupDirName),
             AddBackupToGitignore = options.AddBackupToGitignore,
             GitignoreDir = solutionDir,
             DryRun = options.DryRun,

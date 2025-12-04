@@ -1,3 +1,4 @@
+using System.Security;
 using System.Text;
 
 namespace CPMigrate.Services;
@@ -46,7 +47,10 @@ public class PropsGenerator
                 ? _versionResolver.ResolveVersion(kvp.Value, strategy)
                 : kvp.Value.First();
 
-            stringBuilder.AppendLine($"""    <PackageVersion Include="{kvp.Key}" Version="{version}" />""");
+            // XML-encode package name and version to prevent XML injection
+            var safePackageName = SecurityElement.Escape(kvp.Key) ?? kvp.Key;
+            var safeVersion = SecurityElement.Escape(version) ?? version;
+            stringBuilder.AppendLine($"""    <PackageVersion Include="{safePackageName}" Version="{safeVersion}" />""");
         }
 
         stringBuilder.AppendLine("""
