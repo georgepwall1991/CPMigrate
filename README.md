@@ -10,23 +10,22 @@ A stunning CLI tool to migrate .NET solutions to [Central Package Management (CP
 
 ## Features
 
-- **Interactive Wizard Mode** - Guided setup with arrow-key navigation, no flags to remember
-- **Automatic Migration** - Scans your solution/projects and generates `Directory.Packages.props`
-- **Merge Existing Props** - Update existing `Directory.Packages.props` instead of failing (`--merge`)
-- **Version Conflict Resolution** - Handles packages with different versions across projects
-- **Package Analysis** - Scan for package issues without migrating
-- **Dry-Run Mode** - Preview changes before applying them
-- **Rollback Support** - Undo migrations and restore original project files
-- **Cyberpunk Terminal UI** - Stunning neon-styled interface with progress bars
-- **Cross-Platform** - Works on Windows, macOS, and Linux
+- **Mission Control Dashboard** - Intelligent repository pre-scan with risk assessment and situational awareness.
+- **Zero-Typing Interaction** - Entirely selection-driven UI with a visual path browser for navigating your file system.
+- **Smart Conflict Resolution** - Impact-aware version selection showing exactly how many projects use each version.
+- **Live Verification Loop** - Automatic `dotnet restore` verification with autonomous recovery and rollback options.
+- **Batch Migration** - Effortlessly migrate multiple solutions across a monorepo in one go.
+- **Package Analysis & Auto-Fix** - Scan for issues like version divergence or redundant references and fix them instantly.
+- **Cyberpunk Terminal UI** - Stunning neon-styled interface with progress tracking and mission status blueprints.
+- **Safe by Default** - Automatic backups, Git health checks, and a comprehensive rollback system.
 
-### New in v2.0
+### New in v2.3: "Mission Control"
 
-- **JSON Output** - Machine-readable output for CI/CD integration (`--output json`)
-- **Config File Support** - Save settings in `.cpmigrate.json` for repeated use
-- **Batch Mode** - Migrate multiple solutions in a directory tree (`--batch`)
-- **Backup Pruning** - Clean up old backups with retention policies (`--prune-backups`)
-- **Quiet Mode** - Suppress progress output for scripts (`--quiet`)
+- **Intelligence-Driven Workflow**: The tool analyzes your environment on boot to suggest the best "Quick Actions".
+- **Visual Path Browser**: Navigate and select solutions or projects using arrow keys—no more typing long paths.
+- **Migration Risk Score**: Immediate feedback on the complexity of your migration (Low/Medium/High).
+- **Impact Analysis**: View "Blast Radius" when resolving conflicts (e.g., `"1.2.3 (Used by 15 projects)"`).
+- **Mission Progress Tracker**: Persistent visual blueprint of the migration stages.
 
 ## Installation
 
@@ -46,20 +45,20 @@ dotnet build
 
 ## Usage
 
-### Interactive Mode (Recommended for New Users)
+### Interactive Mode (Recommended)
 
-Simply run `cpmigrate` with no arguments to start the interactive wizard:
+Simply run `cpmigrate` with no arguments to enter **Mission Control**:
 
 ```bash
 cpmigrate
 ```
 
-The wizard guides you through:
-1. Choosing an operation (Migrate, Analyze, Rollback, or Exit)
-2. Selecting your solution file
-3. Configuring options with arrow keys
-4. Reviewing settings before execution
-5. After completion, option to return to main menu or exit
+The tool will immediately:
+1. **Scan** your current directory for solutions and existing CPM setups.
+2. **Dashboard** your repository state (Git health, backups, solutions).
+3. **Assess Risk** based on version divergence across projects.
+4. **Offer Quick Actions** like "Fast-Track Migration" or "Optimize Existing Setup".
+5. **Guide** you through a selection-based path browser if manual setup is needed.
 
 ### Command-Line Usage
 
@@ -70,11 +69,11 @@ cpmigrate -s .
 # Preview changes without modifying files
 cpmigrate --dry-run
 
-# Migrate a specific solution
-cpmigrate -s /path/to/solution
+# Migrate all solutions in a directory recursively
+cpmigrate --batch /path/to/repo
 
-# Migrate a specific project
-cpmigrate -p /path/to/project.csproj
+# Analyze packages for issues
+cpmigrate --analyze --fix
 ```
 
 ### Options
@@ -83,21 +82,19 @@ cpmigrate -p /path/to/project.csproj
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--interactive` | `-i` | Run in interactive wizard mode | `false` |
+| `--interactive` | `-i` | Run in interactive Mission Control mode | `false` |
 | `--solution` | `-s` | Path to solution file or directory | `.` |
 | `--project` | `-p` | Path to project file or directory | - |
-| `--output-dir` | `-o` | Output directory for Directory.Packages.props | `.` |
 | `--dry-run` | `-d` | Preview changes without modifying files | `false` |
 | `--merge` | - | Merge into existing Directory.Packages.props if present | `false` |
 | `--rollback` | `-r` | Restore project files from backup | `false` |
 | `--analyze` | `-a` | Analyze packages for issues | `false` |
-| `--keep-attrs` | `-k` | Keep Version attributes in .csproj files | `false` |
+| `--fix` | - | Automatically apply fixes for detected issues | `false` |
 | `--no-backup` | `-n` | Disable automatic backup | `false` |
-| `--backup-dir` | - | Backup directory location | `.` |
-| `--add-gitignore` | - | Add backup directory to .gitignore | `false` |
-| `--conflict-strategy` | - | Version conflicts: `Highest`, `Lowest`, `Fail` | `Highest` |
+| `--conflict-strategy` | - | Resolution: `Highest`, `Lowest`, `Fail` | `Highest` |
+| `--interactive-conflicts` | - | Manually choose version for every conflict | `false` |
 
-#### v2.0 Options - Output & CI/CD
+#### Output & CI/CD
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -105,194 +102,75 @@ cpmigrate -p /path/to/project.csproj
 | `--output-file` | Write JSON output to file instead of stdout | - |
 | `--quiet` | Suppress progress bars and spinners | `false` |
 
-#### v2.0 Options - Batch Processing
+#### Batch Processing & Backups
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--batch` | Scan directory for .sln files and process each | - |
 | `--batch-parallel` | Process solutions in parallel | `false` |
-| `--batch-continue` | Continue even if one solution fails | `false` |
-
-#### v2.0 Options - Backup Management
-
-| Option | Description | Default |
-|--------|-------------|---------|
 | `--prune-backups` | Delete old backups, keeping most recent | `false` |
-| `--prune-all` | Delete ALL backups (requires confirmation) | `false` |
 | `--retention` | Number of backups to keep when pruning | `5` |
 
-### Examples
+## Interactive Mission Control
 
-```bash
-# Preview migration with dry-run
-cpmigrate --dry-run
+When you start CPMigrate, you're presented with a high-density dashboard:
 
-# Merge into existing Directory.Packages.props
-cpmigrate --merge
+```text
+ ┌───────────────── REPOSITORY CONTEXT ─────────────────┐
+ │ Directory  /Users/dev/MyProject                      │
+ │ Solutions  3 solution(s) detected                    │
+ │ Using CPM  NO                                        │
+ │ Git Status Clean                                     │
+ │ Backups    2 backup set(s) available                 │
+ └──────────────────────────────────────────────────────┘
+ ┌───────────────────── ASSESSMENT ─────────────────────┐
+ │ Migration Risk: MEDIUM                               │
+ │ Impact Area:    12 projects                          │
+ │ Assessment:     Minor version divergence detected.    │
+ └──────────────────────────────────────────────────────┘
 
-# Migrate and use lowest version for conflicts
-cpmigrate --conflict-strategy Lowest
-
-# Migrate without creating backups
-cpmigrate --no-backup
-
-# Analyze packages for issues without migrating
-cpmigrate --analyze
-
-# Rollback a migration
-cpmigrate --rollback
-
-# === v2.0 Examples ===
-
-# Output JSON for CI/CD pipelines
-cpmigrate --analyze --output json
-
-# Save JSON output to file
-cpmigrate --output json --output-file results.json
-
-# Migrate all solutions in a monorepo
-cpmigrate --batch /path/to/monorepo
-
-# Batch migrate with continue-on-failure
-cpmigrate --batch /path/to/repo --batch-continue
-
-# Clean up old backups, keep last 3
-cpmigrate --prune-backups --retention 3
-
-# Delete all backups
-cpmigrate --prune-all
-
-# Quiet mode for scripts (no progress bars)
-cpmigrate -s . --quiet
-```
-
-## Configuration File
-
-Create a `.cpmigrate.json` file in your solution directory to save common settings:
-
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate.schema.json",
-  "conflictStrategy": "Highest",
-  "backup": true,
-  "backupDir": ".cpmigrate_backup",
-  "addGitignore": true,
-  "keepVersionAttributes": false,
-  "mergeExisting": false,
-  "outputFormat": "Terminal",
-  "retention": {
-    "enabled": true,
-    "maxBackups": 5
-  }
-}
-```
-
-CLI options override config file values.
-
-## JSON Output Schema
-
-When using `--output json`, CPMigrate outputs structured JSON:
-
-```json
-{
-  "version": "2.0.0",
-  "operation": "migrate",
-  "success": true,
-  "exitCode": 0,
-  "summary": {
-    "projectsProcessed": 5,
-    "packagesFound": 42,
-    "conflictsResolved": 3
-  },
-  "conflicts": [...],
-  "propsFile": {
-    "path": "/path/to/Directory.Packages.props"
-  },
-  "dryRun": false,
-  "timestamp": "2024-01-15T10:30:22Z"
-}
+ What's the mission?
+ 🚀 Fast-Track Migration (Auto-resolve 5 conflicts)
+ 🛠  Migrate & Review Conflicts Individually
+ 📦 Batch migrate multiple solutions
+ Exit
 ```
 
 ## What is Central Package Management?
 
-Central Package Management (CPM) is a NuGet feature that allows you to manage all package versions in a single `Directory.Packages.props` file at the root of your repository.
+Central Package Management (CPM) allows you to manage all package versions in a single `Directory.Packages.props` file. This eliminates "version drift" where different projects use different versions of the same library.
 
 ### Before (Traditional)
 
 ```xml
-<!-- Project1.csproj -->
-<PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-
-<!-- Project2.csproj -->
-<PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+<!-- Project1.csproj --> <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+<!-- Project2.csproj --> <PackageReference Include="Newtonsoft.Json" Version="12.0.3" /> <!-- Conflict! -->
 ```
 
 ### After (CPM)
 
 ```xml
 <!-- Directory.Packages.props -->
-<Project>
-  <PropertyGroup>
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageVersion Include="Newtonsoft.Json" Version="13.0.1" />
-  </ItemGroup>
-</Project>
+<ItemGroup>
+  <PackageVersion Include="Newtonsoft.Json" Version="13.0.1" />
+</ItemGroup>
 
-<!-- Project1.csproj -->
-<PackageReference Include="Newtonsoft.Json" />
-
-<!-- Project2.csproj -->
-<PackageReference Include="Newtonsoft.Json" />
+<!-- Project1.csproj & Project2.csproj -->
+<PackageReference Include="Newtonsoft.Json" /> <!-- version is inherited -->
 ```
 
-## Screenshots
+## Terminal UI Features
 
-### Interactive Wizard Mode
+The stunning cyberpunk-inspired terminal UI includes:
 
-![CPMigrate Interactive](./docs/images/cpmigrate-interactive.gif)
-
-*Interactive wizard with arrow-key navigation - no flags to remember!*
-
-### Migration Mode (CLI)
-
-![CPMigrate Demo](./docs/images/cpmigrate-demo.gif)
-
-*Dry-run mode previewing changes with the cyberpunk-styled terminal UI.*
-
-### Package Analysis
-
-![CPMigrate Analyze](./docs/images/cpmigrate-analyze.gif)
-
-*Analyze mode scanning for package issues without modifying files.*
-
-### Terminal UI Features
-
-The tool features a stunning cyberpunk-inspired terminal UI with:
-
-- **Modern "Slant" ASCII Logo** with Deep Pink neon styling
-- **Refined Color Palette** featuring Deep Pink, Electric Cyan, and Spring Green
-- **Clean Layouts** with framed panels, grids, and rule separators
-- **Animated Progress Bars** and spinners for long-running operations
-- **Rich Status Icons**: `✔` success, `!` warning, `✖` error, `🚀` migrate
-- **Visual Simulation Cues** clearly distinguishing dry-runs from actual execution
+- **Mission Status Tracker**: Real-time blueprint showing progress through `DISCOVERY -> ANALYSIS -> BACKUP -> MIGRATION -> VERIFICATION`.
+- **Risk Gauge**: Visual color-coded assessment of migration complexity.
+- **Impact-Aware Choice**: Selection menus that show project usage counts for package versions.
+- **Animated Dashboards**: Framed panels and grids for professional information density.
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-### Regenerating Documentation Media
-
-To regenerate the GIFs and screenshots for the README:
-
-```bash
-# Prerequisites
-brew install asciinema agg expect
-
-# Generate all documentation media
-./scripts/generate-docs-media.sh
-```
 
 ## License
 
