@@ -722,6 +722,22 @@ public class MigrationService
                     var projectFileContent = _projectAnalyzer.ProcessProject(
                         projectFilePath, packages, options.KeepAttributes);
 
+                    if (options.IncludeTransitive)
+                    {
+                        task.Description = $"[cyan]Scanning transitive[/] [white]{Markup.Escape(projectName)}[/]";
+                        var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectFilePath);
+                        if (transitiveSuccess)
+                        {
+                            foreach (var tr in transitiveRefs)
+                            {
+                                if (packages.TryGetValue(tr.PackageName, out var versions))
+                                    versions.Add(tr.Version);
+                                else
+                                    packages.Add(tr.PackageName, new HashSet<string> { tr.Version });
+                            }
+                        }
+                    }
+
                     if (!options.DryRun)
                     {
                         await File.WriteAllTextAsync(projectFilePath, projectFileContent);
@@ -1105,6 +1121,21 @@ public class MigrationService
 
                     var (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
                     allReferences.AddRange(references);
+                    
+                    if (options.IncludeTransitive)
+                    {
+                        task.Description = $"[cyan]Scanning transitive[/] [white]{Markup.Escape(projectName)}[/]";
+                        var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectPath);
+                        if (transitiveSuccess)
+                        {
+                            allReferences.AddRange(transitiveRefs);
+                        }
+                        else
+                        {
+                            _consoleService.Warning($"Failed to scan transitive dependencies for {projectName}. Ensure the project is restored.");
+                        }
+                    }
+
                     if (!success) scanFailures++;
 
                     task.Increment(1);

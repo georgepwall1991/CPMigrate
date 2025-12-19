@@ -88,6 +88,10 @@ public class Options
         HelpText = "Analyze packages for issues (version inconsistencies, duplicates, redundant references) without modifying files.")]
     public bool Analyze { get; set; }
 
+    [Option("transitive", Default = false,
+        HelpText = "Include transitive dependencies in analysis and migration suggestions (requires 'dotnet restore').")]
+    public bool IncludeTransitive { get; set; }
+
     [Option('i', "interactive", Default = false,
         HelpText = "Run in interactive wizard mode with guided prompts.")]
     public bool Interactive { get; set; }

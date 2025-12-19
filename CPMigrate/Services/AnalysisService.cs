@@ -16,7 +16,8 @@ public class AnalysisService
         {
             new VersionInconsistencyAnalyzer(),
             new DuplicatePackageAnalyzer(),
-            new RedundantReferenceAnalyzer()
+            new RedundantReferenceAnalyzer(),
+            new TransitiveDependencyAnalyzer()
         };
     }
 

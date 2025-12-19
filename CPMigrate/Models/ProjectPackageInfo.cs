@@ -11,7 +11,8 @@ public record PackageReference(
     string PackageName,
     string Version,
     string ProjectPath,
-    string ProjectName
+    string ProjectName,
+    bool IsTransitive = false
 );
 
 /// <summary>

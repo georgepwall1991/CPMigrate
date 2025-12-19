@@ -295,6 +295,12 @@ public class InteractiveService : IInteractiveService
 
     private void AskAnalyzeOptions(Options options)
     {
+        var transitiveChoice = _console.AskSelection(
+            "Include transitive dependencies in analysis?",
+            new[] { "No - direct references only (faster)", "Yes - full dependency tree (requires dotnet restore)" });
+        
+        options.IncludeTransitive = transitiveChoice.StartsWith("Yes");
+
         var fixChoice = _console.AskSelection(
             "Would you like to automatically fix issues?",
             new[] { "No - just report", "Yes - apply fixes", "Dry run - show proposed fixes" });
@@ -412,6 +418,12 @@ public class InteractiveService : IInteractiveService
 
         options.KeepAttributes = keepAttrs.StartsWith("Yes");
 
+        // Transitive pinning
+        var transitive = _console.AskSelection(
+            "Pin transitive dependencies centrally?",
+            new[] { "No (recommended for clean CPM)", "Yes - pin all transitive packages (prevents version drift)" });
+        options.IncludeTransitive = transitive.StartsWith("Yes");
+
         // Merge existing props file if detected
         var propsFilePath = Path.Combine(Path.GetFullPath(options.SolutionFileDir ?? "."), "Directory.Packages.props");
         if (File.Exists(propsFilePath))
@@ -460,13 +472,15 @@ public class InteractiveService : IInteractiveService
             grid.AddRow("[white]Backup[/]", $"[cyan1]{(options.NoBackup ? "No" : $"Yes ({options.BackupDir})")}[/]");
             grid.AddRow("[white]Dry Run[/]", $"[cyan1]{(options.DryRun ? "Yes" : "No")}[/]");
             grid.AddRow("[white]Keep Version Attrs[/]", $"[cyan1]{(options.KeepAttributes ? "Yes" : "No")}[/]");
+            grid.AddRow("[white]Pin Transitive[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
             if (options.MergeExisting)
             {
                 grid.AddRow("[white]Merge Existing Props[/]", "[cyan1]Yes[/]");
             }
         }
-        else if (mode == ModeAnalyze)
+        else if (mode == ModeAnalyze || mode.Contains("Analyze"))
         {
+            grid.AddRow("[white]Transitive Deps[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
             grid.AddRow("[white]Auto-Fix[/]", $"[cyan1]{(options.Fix ? "Yes" : options.FixDryRun ? "Dry Run" : "No")}[/]");
         }
         else if (mode == ModeRollback)
