@@ -184,7 +184,7 @@ public class AnalysisServiceTests
 
         var report = service.Analyze(packageInfo);
 
-        report.Results.Should().HaveCount(4);
+        report.Results.Should().HaveCount(5);
         report.ProjectsScanned.Should().Be(1);
         report.TotalPackageReferences.Should().Be(1);
     }

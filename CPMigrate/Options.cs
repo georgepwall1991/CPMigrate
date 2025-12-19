@@ -92,6 +92,10 @@ public class Options
         HelpText = "Include transitive dependencies in analysis and migration suggestions (requires 'dotnet restore').")]
     public bool IncludeTransitive { get; set; }
 
+    [Option("audit", Default = false,
+        HelpText = "Perform security audit for known vulnerabilities (requires 'dotnet restore').")]
+    public bool AuditSecurity { get; set; }
+
     [Option('i', "interactive", Default = false,
         HelpText = "Run in interactive wizard mode with guided prompts.")]
     public bool Interactive { get; set; }

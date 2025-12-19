@@ -87,4 +87,76 @@ public partial class ProjectAnalyzer
             return (references, false);
         }
     }
+
+    /// <summary>
+    /// Scans a project for known vulnerabilities using 'dotnet list package --vulnerable --include-transitive'.
+    /// </summary>
+    public async Task<(List<VulnerabilityInfo> Vulnerabilities, bool Success)> ScanVulnerabilitiesAsync(string projectFilePath)
+    {
+        var vulnerabilities = new List<VulnerabilityInfo>();
+        var projectName = Path.GetFileName(projectFilePath);
+        var projectDir = Path.GetDirectoryName(projectFilePath) ?? ".";
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "list package --vulnerable --include-transitive",
+                WorkingDirectory = projectDir,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null) return (vulnerabilities, false);
+
+            var output = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            // Parse vulnerabilities
+            // Output example:
+            // Project 'ProjectName' has the following vulnerable packages
+            //    [net8.0]: 
+            //    Package                  Severity   Vulnerability      Resolved   Fixed in
+            //    > System.Text.Json       High       GHSA-xxxx-xxxx     8.0.0      8.0.4   
+
+            var lines = output.Split(new[] { Environment.NewLine, "\n" }, StringSplitOptions.RemoveEmptyEntries);
+            bool parsingPackages = false;
+
+            foreach (var line in lines)
+            {
+                if (line.Contains("Package") && line.Contains("Severity"))
+                {
+                    parsingPackages = true;
+                    continue;
+                }
+
+                if (parsingPackages && line.Trim().StartsWith(">"))
+                {
+                    // Use a more robust regex or split
+                    var match = Regex.Match(line, @">\s*([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)");
+                    if (match.Success)
+                    {
+                        vulnerabilities.Add(new VulnerabilityInfo(
+                            match.Groups[1].Value,
+                            match.Groups[2].Value,
+                            match.Groups[3].Value,
+                            match.Groups[4].Value,
+                            match.Groups[5].Value,
+                            projectName
+                        ));
+                    }
+                }
+            }
+
+            return (vulnerabilities, true);
+        }
+        catch (Exception ex)
+        {
+            _consoleService.Warning($"Could not scan vulnerabilities for {projectName}: {ex.Message}");
+            return (vulnerabilities, false);
+        }
+    }
 }

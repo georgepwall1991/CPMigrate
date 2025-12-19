@@ -394,12 +394,16 @@ public class SpectreConsoleService : IConsoleService
         AnsiConsole.WriteLine();
     }
 
-    public void WriteAnalysisHeader(int projectCount, int packageCount)
+    public void WriteAnalysisHeader(int projectCount, int packageCount, int vulnerabilityCount)
     {
         var grid = new Grid();
         grid.AddColumn();
         grid.AddRow($"[white]Scanning [cyan1]{projectCount}[/] project(s)[/]");
         grid.AddRow($"[white]Found [cyan1]{packageCount}[/] package reference(s)[/]");
+        if (vulnerabilityCount > 0)
+        {
+            grid.AddRow($"[white]Security Audit:[/] [red]{vulnerabilityCount} vulnerabilities found[/]");
+        }
 
         var panel = new Panel(grid)
         {

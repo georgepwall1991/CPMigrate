@@ -28,7 +28,7 @@ public interface IConsoleService
     string AskText(string prompt, string defaultValue = "");
     int AskInt(string prompt, int defaultValue);
     void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath);
-    void WriteAnalysisHeader(int projectCount, int packageCount);
+    void WriteAnalysisHeader(int projectCount, int packageCount, int vulnerabilityCount);
     void WriteAnalyzerResult(AnalyzerResult result);
     void WriteAnalysisSummary(AnalysisReport report);
 }

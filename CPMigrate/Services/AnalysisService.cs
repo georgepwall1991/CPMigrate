@@ -23,7 +23,8 @@ public class AnalysisService
                 new VersionInconsistencyAnalyzer(),
                 new DuplicatePackageAnalyzer(),
                 new RedundantReferenceAnalyzer(),
-                new TransitiveDependencyAnalyzer()
+                new TransitiveDependencyAnalyzer(),
+                new VulnerabilityAnalyzer()
             };
 
             if (graphService != null)

@@ -1100,6 +1100,7 @@ public class MigrationService
 
         // Scan all packages
         var allReferences = new List<PackageReference>();
+        var allVulnerabilities = new List<VulnerabilityInfo>();
         var scanFailures = 0;
 
         await AnsiConsole.Progress()
@@ -1123,17 +1124,20 @@ public class MigrationService
                     var (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
                     allReferences.AddRange(references);
                     
-                    if (options.IncludeTransitive)
+                    if (options.IncludeTransitive || options.AuditSecurity)
                     {
-                        task.Description = $"[cyan]Scanning transitive[/] [white]{Markup.Escape(projectName)}[/]";
-                        var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectPath);
-                        if (transitiveSuccess)
+                        task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
+                        
+                        if (options.IncludeTransitive)
                         {
-                            allReferences.AddRange(transitiveRefs);
+                            var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectPath);
+                            if (transitiveSuccess) allReferences.AddRange(transitiveRefs);
                         }
-                        else
+
+                        if (options.AuditSecurity)
                         {
-                            _consoleService.Warning($"Failed to scan transitive dependencies for {projectName}. Ensure the project is restored.");
+                            var (vulnerabilities, auditSuccess) = await _projectAnalyzer.ScanVulnerabilitiesAsync(projectPath);
+                            if (auditSuccess) allVulnerabilities.AddRange(vulnerabilities);
                         }
                     }
 
@@ -1159,10 +1163,10 @@ public class MigrationService
             }
         }
 
-        var packageInfo = new ProjectPackageInfo(allReferences);
+        var packageInfo = new ProjectPackageInfo(allReferences, allVulnerabilities);
 
         // Write header
-        _consoleService.WriteAnalysisHeader(packageInfo.ProjectCount, packageInfo.TotalReferences);
+        _consoleService.WriteAnalysisHeader(packageInfo.ProjectCount, packageInfo.TotalReferences, packageInfo.VulnerabilityCount);
 
         // Run analysis
         var report = _analysisService.Analyze(packageInfo);

@@ -67,6 +67,7 @@ public class InteractiveService : IInteractiveService
             {
                 // Map legacy modes
                 if (action.Contains("Analyze")) options.Analyze = true;
+                else if (action.Contains("Security Audit")) { options.Analyze = true; options.AuditSecurity = true; options.IncludeTransitive = true; }
                 else if (action.Contains("Rollback")) options.Rollback = true;
                 else if (action.Contains("Batch")) { AskBatchOptions(options); return options; }
                 else if (action.Contains("Manage Backups")) { AskBackupManagementOptions(options); return options; }
@@ -111,6 +112,7 @@ public class InteractiveService : IInteractiveService
         public bool IsCpm;
         public int ProjectCount;
         public int ConflictCount;
+        public int VulnerabilityCount;
     }
 
     private EnvContext AnalyzeEnvironment()
@@ -151,7 +153,15 @@ public class InteractiveService : IInteractiveService
         if (projects.Count > 0)
         {
             var packages = new Dictionary<string, HashSet<string>>();
-            foreach (var p in projects) analyzer.ScanProjectPackages(p, packages);
+            var vulnerabilities = new List<VulnerabilityInfo>();
+            
+            foreach (var p in projects) 
+            {
+                analyzer.ScanProjectPackages(p, packages);
+                // We don't scan vulnerabilities here because it's slow for dashboard
+                // but if we want Mission Control to show it, we might need a faster way or background task
+            }
+            
             var resolver = new VersionResolver(_console);
             ctx.ConflictCount = resolver.DetectConflicts(packages).Count;
         }
@@ -176,6 +186,7 @@ public class InteractiveService : IInteractiveService
         else if (ctx.IsCpm)
         {
             choices.Add("🔍 Analyze current CPM setup for issues");
+            choices.Add("🛡  Security Audit (Scan for vulnerabilities)");
         }
 
         choices.Add("📦 Batch migrate multiple solutions");

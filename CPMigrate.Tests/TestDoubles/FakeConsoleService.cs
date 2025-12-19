@@ -50,7 +50,7 @@ public class FakeConsoleService : IConsoleService
         return defaultValue;
     }
     public void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath) { }
-    public void WriteAnalysisHeader(int projectCount, int packageCount) { }
+    public void WriteAnalysisHeader(int projectCount, int packageCount, int vulnerabilityCount) { }
     public void WriteAnalyzerResult(AnalyzerResult result) { }
     public void WriteAnalysisSummary(AnalysisReport report) { }
 }

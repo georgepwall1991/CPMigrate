@@ -20,7 +20,8 @@ public record PackageReference(
 /// </summary>
 /// <param name="References">All package references found across all projects.</param>
 public record ProjectPackageInfo(
-    IReadOnlyList<PackageReference> References
+    IReadOnlyList<PackageReference> References,
+    IReadOnlyList<VulnerabilityInfo>? Vulnerabilities = null
 )
 {
     /// <summary>
@@ -32,4 +33,9 @@ public record ProjectPackageInfo(
     /// Gets the distinct project count.
     /// </summary>
     public int ProjectCount => References.Select(r => r.ProjectPath).Distinct().Count();
+
+    /// <summary>
+    /// Gets the total number of vulnerabilities found.
+    /// </summary>
+    public int VulnerabilityCount => Vulnerabilities?.Count ?? 0;
 }
