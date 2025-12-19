@@ -50,9 +50,33 @@ return await Parser.Default.ParseArguments<Options>(args)
                 return await RunBatchMode(opt, consoleService, versionResolver, backupManager);
             }
 
+            // Handle unify props mode
+            if (opt.UnifyProps)
+            {
+                return await RunUnifyPropsMode(opt, consoleService);
+            }
+
             return await RunMigration(opt, consoleService, versionResolver, backupManager);
         },
         _ => Task.FromResult(ExitCodes.ValidationError));
+
+static async Task<int> RunUnifyPropsMode(Options opt, IConsoleService consoleService)
+{
+    try
+    {
+        consoleService.WriteHeader();
+        
+        var projectAnalyzer = new ProjectAnalyzer(consoleService);
+        var buildPropsService = new BuildPropsService(consoleService, projectAnalyzer);
+        
+        return await buildPropsService.UnifyPropertiesAsync(opt);
+    }
+    catch (Exception ex)
+    {
+        consoleService.Error($"\nUnexpected error: {ex.Message}");
+        return ExitCodes.UnexpectedError;
+    }
+}
 
 static HashSet<string> GetExplicitCliArgs(string[] args)
 {

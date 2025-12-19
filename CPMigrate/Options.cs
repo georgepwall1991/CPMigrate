@@ -161,6 +161,18 @@ public class Options
     public bool InteractiveConflicts { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // v2.5 Options - Directory.Build.props Unification
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Option("unify-props", Default = false,
+        HelpText = "Migrate common properties from projects to Directory.Build.props.")]
+    public bool UnifyProps { get; set; }
+
+    [Option("force", Default = false,
+        HelpText = "Force operations without confirmation prompts.")]
+    public bool Force { get; set; }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Analysis & Auto-Fix
     // ═══════════════════════════════════════════════════════════════════════
 
