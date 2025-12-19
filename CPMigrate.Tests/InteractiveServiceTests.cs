@@ -9,6 +9,16 @@ public class InteractiveServiceTests : IDisposable
 {
     private readonly string _testDirectory;
 
+    // Match the emoji-prefixed constants from InteractiveService
+    private const string ModeMigrate = "🚀 Migrate to Central Package Management";
+    private const string ModeAnalyze = "🔍 Analyze packages for issues";
+    private const string ModeRollback = "↩️  Rollback a previous migration";
+    private const string ModeExit = "❌ Exit";
+    private const string ConflictHighest = "⬆️  Highest version (recommended)";
+    private const string ConflictLowest = "⬇️  Lowest version";
+    private const string ConflictFail = "⛔️ Fail on conflict";
+    private const string EnterPathManually = "✏️  Enter path manually...";
+
     public InteractiveServiceTests()
     {
         _testDirectory = Path.Combine(Path.GetTempPath(), $"CPMigrateInteractiveTests_{Guid.NewGuid():N}");
@@ -32,9 +42,9 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Migrate to Central Package Management",
+            ModeMigrate,
             // No selection for solution path when no .sln files exist - goes to text prompt
-            "Highest version (recommended)",
+            ConflictHighest,
             "Yes (recommended)",  // backup
             "Yes",                // gitignore
             "Yes - preview changes without modifying files",
@@ -71,7 +81,7 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Analyze packages for issues"
+            ModeAnalyze
         });
         fakeConsole.TextResponses = new Queue<string>(new[] { _testDirectory });
         fakeConsole.ConfirmationResponse = true;
@@ -96,7 +106,7 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Rollback a previous migration"
+            ModeRollback
         });
         fakeConsole.TextResponses = new Queue<string>(new[]
         {
@@ -125,7 +135,7 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Analyze packages for issues"
+            ModeAnalyze
         });
         fakeConsole.TextResponses = new Queue<string>(new[] { _testDirectory });
         fakeConsole.ConfirmationResponse = false; // User says No
@@ -147,8 +157,8 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Migrate to Central Package Management",
-            "Highest version (recommended)",
+            ModeMigrate,
+            ConflictHighest,
             "No",  // No backup
             "No - make changes immediately",
             "No - remove them (recommended for clean CPM)"
@@ -174,8 +184,8 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Migrate to Central Package Management",
-            "Lowest version",
+            ModeMigrate,
+            ConflictLowest,
             "No",  // No backup
             "No - make changes immediately",
             "No - remove them (recommended for clean CPM)"
@@ -201,8 +211,8 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Migrate to Central Package Management",
-            "Fail on conflict",
+            ModeMigrate,
+            ConflictFail,
             "No",  // No backup
             "No - make changes immediately",
             "No - remove them (recommended for clean CPM)"
@@ -228,8 +238,8 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Migrate to Central Package Management",
-            "Highest version (recommended)",
+            ModeMigrate,
+            ConflictHighest,
             "No",  // No backup
             "No - make changes immediately",
             "Yes - keep alongside CPM"
@@ -257,7 +267,7 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Analyze packages for issues",
+            ModeAnalyze,
             "TestSolution.sln"  // Select the found solution
         });
         fakeConsole.ConfirmationResponse = true;
@@ -292,8 +302,8 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Migrate to Central Package Management",
-            "Highest version (recommended)",
+            ModeMigrate,
+            ConflictHighest,
             "No",  // No backup
             "Yes - preview changes without modifying files",
             "No - remove them (recommended for clean CPM)"
@@ -319,7 +329,7 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Analyze packages for issues"
+            ModeAnalyze
         });
         fakeConsole.TextResponses = new Queue<string>(new[] { _testDirectory });
         fakeConsole.ConfirmationResponse = true;
@@ -341,7 +351,7 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Rollback a previous migration"
+            ModeRollback
         });
         fakeConsole.TextResponses = new Queue<string>(new[]
         {
@@ -367,8 +377,8 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Migrate to Central Package Management",
-            "Highest version (recommended)",
+            ModeMigrate,
+            ConflictHighest,
             "Yes (recommended)",  // backup
             "Yes",                // add to gitignore
             "No - make changes immediately",  // not dry run
@@ -402,8 +412,8 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Migrate to Central Package Management",
-            "Highest version (recommended)",
+            ModeMigrate,
+            ConflictHighest,
             "Yes (recommended)",  // backup
             "No",                 // don't add to gitignore
             "Yes - preview changes without modifying files",
@@ -434,7 +444,7 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Analyze packages for issues"
+            ModeAnalyze
         });
         fakeConsole.TextResponses = new Queue<string>(new[] { "   " }); // whitespace only
         fakeConsole.ConfirmationResponse = true;
@@ -455,7 +465,7 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Exit"
+            ModeExit
         });
 
         var service = new InteractiveService(fakeConsole);
@@ -477,8 +487,8 @@ public class InteractiveServiceTests : IDisposable
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
-            "Analyze packages for issues",
-            "Enter path manually..."  // Choose manual entry
+            ModeAnalyze,
+            EnterPathManually  // Choose manual entry
         });
         fakeConsole.TextResponses = new Queue<string>(new[] { "/custom/path" });
         fakeConsole.ConfirmationResponse = true;
