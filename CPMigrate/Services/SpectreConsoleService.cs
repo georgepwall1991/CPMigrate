@@ -61,6 +61,7 @@ public class SpectreConsoleService : IConsoleService
 
     public void WriteHeader()
     {
+        AnsiConsole.Clear();
         AnsiConsole.WriteLine();
         
         // New "Slant" style logo for CPMigrate
@@ -73,6 +74,17 @@ public class SpectreConsoleService : IConsoleService
             Style = Style.Parse("grey39")
         };
         AnsiConsole.Write(rule);
+
+        // System Info Bar
+        var os = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
+        var runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription;
+        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "Unknown";
+
+        var grid = new Grid();
+        grid.AddColumn(new GridColumn().RightAligned());
+        grid.AddRow($"[grey39]v{version}[/] [deepskyblue1]•[/] [grey39]{runtime}[/] [deepskyblue1]•[/] [grey39]{os}[/]");
+        
+        AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();
     }
 
