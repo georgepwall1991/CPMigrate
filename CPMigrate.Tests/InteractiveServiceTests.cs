@@ -112,6 +112,9 @@ public class InteractiveServiceTests : IDisposable
     {
         // Arrange
         var fakeConsole = new FakeConsoleService();
+        var manualPath = "/custom/path";
+        var expectedPath = Path.GetFullPath(manualPath);
+
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
             "⚙️  Custom Migration (Manual Setup)",
@@ -124,7 +127,7 @@ public class InteractiveServiceTests : IDisposable
             "No - remove them (recommended for clean CPM)",
             "Yes" // Confirmation
         });
-        fakeConsole.TextResponses = new Queue<string>(new[] { "/custom/path" });
+        fakeConsole.TextResponses = new Queue<string>(new[] { manualPath });
         fakeConsole.ConfirmationResponse = true;
 
         var originalDir = Directory.GetCurrentDirectory();
@@ -134,7 +137,7 @@ public class InteractiveServiceTests : IDisposable
             var options = service.RunWizard();
 
             options.Should().NotBeNull();
-            options!.SolutionFileDir.Should().Be("/custom/path");
+            options!.SolutionFileDir.Should().Be(expectedPath);
         } finally { Directory.SetCurrentDirectory(originalDir); }
     }
 }
