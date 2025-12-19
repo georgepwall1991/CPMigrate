@@ -1,6 +1,7 @@
 using CPMigrate.Models;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
+using Buildalyzer;
 
 namespace CPMigrate.Services;
 

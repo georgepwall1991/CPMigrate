@@ -33,7 +33,8 @@ public class MigrationService
         _projectAnalyzer = projectAnalyzer ?? new ProjectAnalyzer(_consoleService);
         _propsGenerator = propsGenerator ?? new PropsGenerator(_versionResolver);
         _backupManager = backupManager ?? new BackupManager();
-        _analysisService = analysisService ?? new AnalysisService();
+        var graphService = new DependencyGraphService(_consoleService);
+        _analysisService = analysisService ?? new AnalysisService(null, graphService);
         _fixService = new FixService(_consoleService);
         _quietMode = quietMode;
     }

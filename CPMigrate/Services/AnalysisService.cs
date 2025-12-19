@@ -10,15 +10,29 @@ public class AnalysisService
 {
     private readonly IReadOnlyList<IAnalyzer> _analyzers;
 
-    public AnalysisService(IEnumerable<IAnalyzer>? analyzers = null)
+    public AnalysisService(IEnumerable<IAnalyzer>? analyzers = null, DependencyGraphService? graphService = null)
     {
-        _analyzers = analyzers?.ToList() ?? new List<IAnalyzer>
+        if (analyzers != null)
         {
-            new VersionInconsistencyAnalyzer(),
-            new DuplicatePackageAnalyzer(),
-            new RedundantReferenceAnalyzer(),
-            new TransitiveDependencyAnalyzer()
-        };
+            _analyzers = analyzers.ToList();
+        }
+        else
+        {
+            var analyzersList = new List<IAnalyzer>
+            {
+                new VersionInconsistencyAnalyzer(),
+                new DuplicatePackageAnalyzer(),
+                new RedundantReferenceAnalyzer(),
+                new TransitiveDependencyAnalyzer()
+            };
+
+            if (graphService != null)
+            {
+                analyzersList.Add(new LiftingAnalyzer(graphService));
+            }
+
+            _analyzers = analyzersList;
+        }
     }
 
     /// <summary>
