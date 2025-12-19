@@ -75,10 +75,11 @@ public class BackupManagerTests : IDisposable
 
         var options = new Options { NoBackup = true };
 
-        _backupManager.CreateBackupForProject(options, projectFile, backupDir);
+        var entry = _backupManager.CreateBackupForProject(options, projectFile, backupDir);
 
         var backupFiles = Directory.GetFiles(backupDir);
         backupFiles.Should().BeEmpty();
+        entry.Should().BeNull();
     }
 
     [Fact]
@@ -91,10 +92,13 @@ public class BackupManagerTests : IDisposable
 
         var options = new Options { NoBackup = false };
 
-        _backupManager.CreateBackupForProject(options, projectFile, backupDir);
+        var entry = _backupManager.CreateBackupForProject(options, projectFile, backupDir);
 
         var backupFiles = Directory.GetFiles(backupDir, "*.backup_*");
         backupFiles.Should().HaveCount(1);
+        entry.Should().NotBeNull();
+        entry!.OriginalPath.Should().Be(Path.GetFullPath(projectFile));
+        entry.BackupFileName.Should().Be(Path.GetFileName(backupFiles[0]));
 
         var backupContent = File.ReadAllText(backupFiles[0]);
         backupContent.Should().Be(projectContent);
@@ -114,7 +118,7 @@ public class BackupManagerTests : IDisposable
         var backupFiles = Directory.GetFiles(backupDir);
         backupFiles.Should().HaveCount(1);
         Path.GetFileName(backupFiles[0]).Should().StartWith("MyProject.csproj.backup_");
-        Path.GetFileName(backupFiles[0]).Should().MatchRegex(@"MyProject\.csproj\.backup_\d{14}");
+        Path.GetFileName(backupFiles[0]).Should().MatchRegex(@"MyProject\.csproj\.backup_\d{17}");
     }
 
     [Fact]

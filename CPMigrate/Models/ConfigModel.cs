@@ -45,6 +45,12 @@ public class ConfigModel
     public bool? KeepVersionAttributes { get; set; }
 
     /// <summary>
+    /// Whether to merge into an existing Directory.Packages.props file.
+    /// </summary>
+    [JsonPropertyName("mergeExisting")]
+    public bool? MergeExisting { get; set; }
+
+    /// <summary>
     /// Output format: terminal or json.
     /// </summary>
     [JsonPropertyName("outputFormat")]

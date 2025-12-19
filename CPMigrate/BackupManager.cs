@@ -49,30 +49,38 @@ public class BackupManager
     }
 
     /// <summary>
-    /// Creates a timestamped backup of a project file.
+    /// Creates a timestamped backup of a file and returns the backup entry.
     /// </summary>
     /// <param name="options">Migration options containing backup settings.</param>
-    /// <param name="projectFilePath">Full path to the project file to backup.</param>
+    /// <param name="filePath">Full path to the file to backup.</param>
     /// <param name="backupPath">Path to the backup directory.</param>
+    /// <param name="timestampOverride">Optional timestamp to group backups into a single set.</param>
+    /// <returns>The backup entry, or null if backups are disabled.</returns>
     /// <exception cref="IOException">Thrown when the backup file cannot be created.</exception>
-    public void CreateBackupForProject(Options options, string projectFilePath, string backupPath)
+    public BackupEntry? CreateBackupForProject(Options options, string filePath, string backupPath, string? timestampOverride = null)
     {
-        if (options.NoBackup) return;
+        if (options.NoBackup) return null;
 
-        var fileName = Path.GetFileName(projectFilePath);
+        var fileName = Path.GetFileName(filePath);
         // Use milliseconds for timestamp precision to avoid collisions in fast/parallel operations
-        var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+        var timestamp = timestampOverride ?? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
         var backupFileName = $"{fileName}.backup_{timestamp}";
         var backupFilePath = Path.Combine(backupPath, backupFileName);
 
         try
         {
-            File.Copy(projectFilePath, backupFilePath, overwrite: true);
+            File.Copy(filePath, backupFilePath, overwrite: true);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
-            throw new IOException($"Failed to create backup for '{projectFilePath}': {ex.Message}", ex);
+            throw new IOException($"Failed to create backup for '{filePath}': {ex.Message}", ex);
         }
+
+        return new BackupEntry
+        {
+            OriginalPath = Path.GetFullPath(filePath),
+            BackupFileName = backupFileName
+        };
     }
 
     /// <summary>

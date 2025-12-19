@@ -138,6 +138,11 @@ public class ConfigService
             options.KeepAttributes = config.KeepVersionAttributes.Value;
         }
 
+        if (config.MergeExisting.HasValue && !cliArgsProvided.Contains("merge"))
+        {
+            options.MergeExisting = config.MergeExisting.Value;
+        }
+
         if (config.OutputFormat.HasValue && !cliArgsProvided.Contains("output"))
         {
             options.Output = config.OutputFormat.Value;
@@ -166,6 +171,7 @@ public class ConfigService
             BackupDir = ".cpmigrate_backup",
             AddGitignore = true,
             KeepVersionAttributes = false,
+            MergeExisting = false,
             OutputFormat = OutputFormat.Terminal,
             Retention = new RetentionConfig
             {

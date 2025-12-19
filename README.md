@@ -12,6 +12,7 @@ A stunning CLI tool to migrate .NET solutions to [Central Package Management (CP
 
 - **Interactive Wizard Mode** - Guided setup with arrow-key navigation, no flags to remember
 - **Automatic Migration** - Scans your solution/projects and generates `Directory.Packages.props`
+- **Merge Existing Props** - Update existing `Directory.Packages.props` instead of failing (`--merge`)
 - **Version Conflict Resolution** - Handles packages with different versions across projects
 - **Package Analysis** - Scan for package issues without migrating
 - **Dry-Run Mode** - Preview changes before applying them
@@ -87,6 +88,7 @@ cpmigrate -p /path/to/project.csproj
 | `--project` | `-p` | Path to project file or directory | - |
 | `--output-dir` | `-o` | Output directory for Directory.Packages.props | `.` |
 | `--dry-run` | `-d` | Preview changes without modifying files | `false` |
+| `--merge` | - | Merge into existing Directory.Packages.props if present | `false` |
 | `--rollback` | `-r` | Restore project files from backup | `false` |
 | `--analyze` | `-a` | Analyze packages for issues | `false` |
 | `--keep-attrs` | `-k` | Keep Version attributes in .csproj files | `false` |
@@ -124,6 +126,9 @@ cpmigrate -p /path/to/project.csproj
 ```bash
 # Preview migration with dry-run
 cpmigrate --dry-run
+
+# Merge into existing Directory.Packages.props
+cpmigrate --merge
 
 # Migrate and use lowest version for conflicts
 cpmigrate --conflict-strategy Lowest
@@ -173,6 +178,7 @@ Create a `.cpmigrate.json` file in your solution directory to save common settin
   "backupDir": ".cpmigrate_backup",
   "addGitignore": true,
   "keepVersionAttributes": false,
+  "mergeExisting": false,
   "outputFormat": "Terminal",
   "retention": {
     "enabled": true,

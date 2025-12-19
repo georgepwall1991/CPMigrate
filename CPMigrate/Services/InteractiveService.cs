@@ -187,6 +187,17 @@ public class InteractiveService : IInteractiveService
             new[] { "No - remove them (recommended for clean CPM)", "Yes - keep alongside CPM" });
 
         options.KeepAttributes = keepAttrs.StartsWith("Yes");
+
+        // Merge existing props file if detected
+        var propsFilePath = Path.Combine(Path.GetFullPath(options.OutputDir), "Directory.Packages.props");
+        if (File.Exists(propsFilePath))
+        {
+            var mergeChoice = _console.AskSelection(
+                "Directory.Packages.props already exists. How should CPMigrate proceed?",
+                new[] { "Fail (recommended)", "Merge into existing file" });
+
+            options.MergeExisting = mergeChoice.StartsWith("Merge");
+        }
     }
 
     private void AskRollbackOptions(Options options)
@@ -218,6 +229,10 @@ public class InteractiveService : IInteractiveService
             grid.AddRow("[white]Backup[/]", $"[cyan1]{(options.NoBackup ? "No" : $"Yes ({options.BackupDir})")}[/]");
             grid.AddRow("[white]Dry Run[/]", $"[cyan1]{(options.DryRun ? "Yes" : "No")}[/]");
             grid.AddRow("[white]Keep Version Attrs[/]", $"[cyan1]{(options.KeepAttributes ? "Yes" : "No")}[/]");
+            if (options.MergeExisting)
+            {
+                grid.AddRow("[white]Merge Existing Props[/]", "[cyan1]Yes[/]");
+            }
         }
         else if (mode == ModeRollback)
         {

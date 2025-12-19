@@ -72,6 +72,10 @@ public class Options
         HelpText = "Preview changes without modifying any files.")]
     public bool DryRun { get; set; }
 
+    [Option("merge", Default = false,
+        HelpText = "Merge into existing Directory.Packages.props instead of failing if it already exists.")]
+    public bool MergeExisting { get; set; }
+
     [Option("conflict-strategy", Default = ConflictStrategy.Highest,
         HelpText = "How to handle version conflicts: Highest (default), Lowest, or Fail.")]
     public ConflictStrategy ConflictStrategy { get; set; }
@@ -177,6 +181,8 @@ public class Options
                 new Options { Analyze = true }),
             new("Run in interactive wizard mode",
                 new Options { Interactive = true }),
+            new("Merge with existing Directory.Packages.props",
+                new Options { MergeExisting = true }),
             // v2.0 examples
             new("Output JSON for CI/CD integration",
                 new Options { Output = OutputFormat.Json }),

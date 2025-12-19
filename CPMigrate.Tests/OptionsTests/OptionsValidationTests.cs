@@ -55,6 +55,7 @@ public class OptionsValidationTests
         options.DryRun.Should().BeFalse();
         options.NoBackup.Should().BeFalse();
         options.KeepAttributes.Should().BeFalse();
+        options.MergeExisting.Should().BeFalse();
         options.ConflictStrategy.Should().Be(ConflictStrategy.Highest);
     }
 

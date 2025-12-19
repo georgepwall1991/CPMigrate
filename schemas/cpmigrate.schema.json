@@ -35,6 +35,11 @@
       "default": false,
       "description": "Whether to keep Version attributes in project files after migration"
     },
+    "mergeExisting": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether to merge into an existing Directory.Packages.props file"
+    },
     "outputFormat": {
       "type": "string",
       "enum": ["Terminal", "Json"],

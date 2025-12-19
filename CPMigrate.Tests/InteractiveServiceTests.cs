@@ -258,6 +258,66 @@ public class InteractiveServiceTests : IDisposable
     }
 
     [Fact]
+    public void RunWizard_MigrationWithExistingPropsAndMergeSelected_SetsMergeExistingTrue()
+    {
+        // Arrange
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, "<Project></Project>");
+
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            ModeMigrate,
+            ConflictHighest,
+            "No",  // No backup
+            "No - make changes immediately",
+            "No - remove them (recommended for clean CPM)",
+            "Merge into existing file"
+        });
+        fakeConsole.TextResponses = new Queue<string>(new[] { _testDirectory });
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole);
+
+        // Act
+        var options = service.RunWizard();
+
+        // Assert
+        options.Should().NotBeNull();
+        options!.MergeExisting.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RunWizard_MigrationWithExistingPropsAndFailSelected_LeavesMergeExistingFalse()
+    {
+        // Arrange
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, "<Project></Project>");
+
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            ModeMigrate,
+            ConflictHighest,
+            "No",  // No backup
+            "No - make changes immediately",
+            "No - remove them (recommended for clean CPM)",
+            "Fail (recommended)"
+        });
+        fakeConsole.TextResponses = new Queue<string>(new[] { _testDirectory });
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole);
+
+        // Act
+        var options = service.RunWizard();
+
+        // Assert
+        options.Should().NotBeNull();
+        options!.MergeExisting.Should().BeFalse();
+    }
+
+    [Fact]
     public void RunWizard_SolutionAutoDetect_FindsSolutionFile()
     {
         // Arrange - create a .sln file in test directory

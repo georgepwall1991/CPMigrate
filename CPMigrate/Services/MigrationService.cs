@@ -79,6 +79,7 @@ public class MigrationService
     private async Task<MigrationResult> ExecuteMigrationAsync(Options options)
     {
         var (outputPath, propsPath) = GetOutputPaths(options);
+        var propsFileExists = IsAlreadyMigrated(propsPath);
 
         if (!options.DryRun)
         {
@@ -89,7 +90,7 @@ public class MigrationService
             }
         }
 
-        if (IsAlreadyMigrated(propsPath))
+        if (propsFileExists && !options.MergeExisting)
         {
             return CreateAlreadyMigratedResult(propsPath);
         }
@@ -106,9 +107,47 @@ public class MigrationService
         ShowDiscoveredProjects(basePath, projectPaths);
 
         var packages = new Dictionary<string, HashSet<string>>();
-        var backupPath = SetupBackupDirectory(options);
+        var propsFileExisted = propsFileExists;
+        var hadConditionalPackageVersions = false;
 
-        var backupEntries = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath);
+        if (propsFileExists && options.MergeExisting)
+        {
+            if (!TryLoadExistingPropsPackages(propsPath, packages, out var existingCount, out hadConditionalPackageVersions))
+            {
+                return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
+            }
+
+            if (!_quietMode)
+            {
+                _consoleService.Info($"Loaded {existingCount} package(s) from existing Directory.Packages.props.");
+            }
+
+            if (hadConditionalPackageVersions && !_quietMode)
+            {
+                _consoleService.Warning("Conditional PackageVersion entries detected; merge will normalize versions.");
+            }
+        }
+
+        var backupPath = SetupBackupDirectory(options);
+        var backupTimestamp = !options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath)
+            ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
+            : null;
+        BackupEntry? propsBackupEntry = null;
+
+        if (propsFileExists && options.MergeExisting && !options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
+        {
+            propsBackupEntry = _backupManager.CreateBackupForProject(options, propsPath, backupPath, backupTimestamp);
+            if (propsBackupEntry != null && !_quietMode)
+            {
+                _consoleService.Dim("Backed up existing Directory.Packages.props.");
+            }
+        }
+
+        var backupEntries = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath, backupTimestamp);
+        if (propsBackupEntry != null)
+        {
+            backupEntries.Add(propsBackupEntry);
+        }
 
         var conflicts = _versionResolver.DetectConflicts(packages);
         var conflictError = HandleVersionConflicts(options, packages, conflicts);
@@ -119,7 +158,7 @@ public class MigrationService
 
         var propsFilePath = await GeneratePropsFileAsync(options, packages);
 
-        await WriteBackupManifestAsync(options, backupEntries, backupPath, propsFilePath);
+        await WriteBackupManifestAsync(options, backupEntries, backupPath, propsFilePath, propsFileExisted, backupTimestamp);
         await ManageGitIgnoreAsync(options, backupPath);
 
         ShowMigrationSummary(options, projectPaths.Count, packages.Count, conflicts.Count, propsFilePath, backupPath);
@@ -208,6 +247,7 @@ public class MigrationService
         _consoleService.Warning("This solution has already been migrated to Central Package Management.");
         _consoleService.WriteMarkup($"[dim]Found existing:[/] [cyan]{Markup.Escape(propsPath)}[/]\n");
         _consoleService.WriteLine();
+        _consoleService.Info("To merge into the existing props file, use: cpmigrate --merge");
         _consoleService.Info("To re-migrate, first rollback with: cpmigrate --rollback");
         _consoleService.Info("To analyze packages, use: cpmigrate --analyze");
         return new MigrationResult { ExitCode = ExitCodes.Success, PropsFilePath = propsPath };
@@ -222,6 +262,42 @@ public class MigrationService
         {
             _consoleService.Banner("DRY-RUN MODE - No files will be modified");
             _consoleService.WriteLine();
+        }
+    }
+
+    private bool TryLoadExistingPropsPackages(
+        string propsFilePath,
+        Dictionary<string, HashSet<string>> packages,
+        out int existingPackageCount,
+        out bool hasConditionalPackageVersions)
+    {
+        existingPackageCount = 0;
+        hasConditionalPackageVersions = false;
+
+        try
+        {
+            var existingPackages = _propsGenerator.ReadExistingPackageVersions(
+                propsFilePath, out hasConditionalPackageVersions);
+            existingPackageCount = existingPackages.Count;
+
+            foreach (var kvp in existingPackages)
+            {
+                if (packages.TryGetValue(kvp.Key, out var versions))
+                {
+                    versions.UnionWith(kvp.Value);
+                }
+                else
+                {
+                    packages.Add(kvp.Key, new HashSet<string>(kvp.Value));
+                }
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _consoleService.Error($"Failed to read existing Directory.Packages.props: {ex.Message}");
+            return false;
         }
     }
 
@@ -353,17 +429,21 @@ public class MigrationService
         Options options,
         List<BackupEntry> backupEntries,
         string? backupPath,
-        string propsFilePath)
+        string propsFilePath,
+        bool propsFileExisted,
+        string? backupTimestamp)
     {
         if (options.DryRun || options.NoBackup || backupEntries.Count == 0 || string.IsNullOrEmpty(backupPath))
         {
             return;
         }
 
+        var manifestTimestamp = backupTimestamp ?? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
         var manifest = new BackupManifest
         {
-            Timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssZ"),
+            Timestamp = manifestTimestamp,
             PropsFilePath = propsFilePath,
+            PropsFileExisted = propsFileExisted,
             Backups = backupEntries
         };
         await _backupManager.WriteManifestAsync(backupPath, manifest);
@@ -423,10 +503,9 @@ public class MigrationService
     }
 
     private async Task<List<BackupEntry>> ProcessProjectsWithProgressAsync(Options options, List<string> projectPaths,
-        Dictionary<string, HashSet<string>> packages, string? backupPath)
+        Dictionary<string, HashSet<string>> packages, string? backupPath, string? backupTimestamp)
     {
         var backupEntries = new List<BackupEntry>();
-        var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssZ");
 
         // Process without progress bar in quiet mode
         if (_quietMode)
@@ -438,14 +517,12 @@ public class MigrationService
                 // Backup
                 if (!options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
                 {
-                    var backupFileName = $"{projectName}.backup_{timestamp}";
-                    _backupManager.CreateBackupForProject(options, projectFilePath, backupPath);
-
-                    backupEntries.Add(new BackupEntry
+                    var backupEntry = _backupManager.CreateBackupForProject(
+                        options, projectFilePath, backupPath, backupTimestamp);
+                    if (backupEntry != null)
                     {
-                        OriginalPath = Path.GetFullPath(projectFilePath),
-                        BackupFileName = backupFileName
-                    });
+                        backupEntries.Add(backupEntry);
+                    }
                 }
 
                 // Process project file
@@ -481,14 +558,12 @@ public class MigrationService
                     // Backup
                     if (!options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
                     {
-                        var backupFileName = $"{projectName}.backup_{timestamp}";
-                        _backupManager.CreateBackupForProject(options, projectFilePath, backupPath);
-
-                        backupEntries.Add(new BackupEntry
+                        var backupEntry = _backupManager.CreateBackupForProject(
+                            options, projectFilePath, backupPath, backupTimestamp);
+                        if (backupEntry != null)
                         {
-                            OriginalPath = Path.GetFullPath(projectFilePath),
-                            BackupFileName = backupFileName
-                        });
+                            backupEntries.Add(backupEntry);
+                        }
                     }
 
                     // Process project file
@@ -514,10 +589,43 @@ public class MigrationService
     private async Task<string> GeneratePropsFileAsync(Options options,
         Dictionary<string, HashSet<string>> packages)
     {
-        var updatedPackagePropsContent = _propsGenerator.Generate(packages, options.ConflictStrategy);
         var outputDir = string.IsNullOrEmpty(options.OutputDir) ? "." : options.OutputDir;
         var outputPath = Path.GetFullPath(outputDir);
         var propsFilePath = Path.Combine(outputPath, "Directory.Packages.props");
+        var shouldMerge = options.MergeExisting && File.Exists(propsFilePath);
+
+        if (shouldMerge)
+        {
+            var (mergedContent, addedCount, updatedCount, _) = _propsGenerator.MergeExisting(
+                propsFilePath, packages, options.ConflictStrategy);
+
+            if (options.DryRun)
+            {
+                if (!_quietMode)
+                {
+                    _consoleService.WriteLine();
+                    _consoleService.DryRun($"Would update: {propsFilePath}");
+                    _consoleService.WriteLine();
+                    _consoleService.WritePropsPreview(mergedContent);
+                }
+            }
+            else
+            {
+                await File.WriteAllTextAsync(propsFilePath, mergedContent);
+                if (!_quietMode)
+                {
+                    _consoleService.WriteMarkup($"\n[green]:page_facing_up: Updated:[/] [cyan]{Markup.Escape(propsFilePath)}[/]\n");
+                    if (addedCount > 0 || updatedCount > 0)
+                    {
+                        _consoleService.Dim($"Added {addedCount} package(s), updated {updatedCount}.");
+                    }
+                }
+            }
+
+            return propsFilePath;
+        }
+
+        var updatedPackagePropsContent = _propsGenerator.Generate(packages, options.ConflictStrategy);
 
         if (options.DryRun)
         {
@@ -633,21 +741,27 @@ public class MigrationService
             });
 
         _consoleService.WriteLine();
+        var propsFileExisted = manifest.PropsFileExisted;
+        var propsFilePath = manifest.PropsFilePath;
 
         // Only delete Directory.Packages.props if ALL files restored successfully
         if (failedCount == 0)
         {
-            if (!string.IsNullOrEmpty(manifest.PropsFilePath) && File.Exists(manifest.PropsFilePath))
+            if (!string.IsNullOrEmpty(propsFilePath) && !propsFileExisted && File.Exists(propsFilePath))
             {
                 try
                 {
-                    File.Delete(manifest.PropsFilePath);
-                    _consoleService.Success($"Deleted: {manifest.PropsFilePath}");
+                    File.Delete(propsFilePath);
+                    _consoleService.Success($"Deleted: {propsFilePath}");
                 }
                 catch (Exception ex)
                 {
                     _consoleService.Warning($"Could not delete props file: {ex.Message}");
                 }
+            }
+            else if (propsFileExisted)
+            {
+                _consoleService.Dim("Preserved existing Directory.Packages.props.");
             }
 
             // Clean up backups only on full success
@@ -667,7 +781,9 @@ public class MigrationService
         }
         else
         {
-            _consoleService.Warning("Props file NOT deleted due to restore failures.");
+            _consoleService.Warning(propsFileExisted
+                ? "Existing props file retained due to restore failures."
+                : "Props file NOT deleted due to restore failures.");
             _consoleService.Dim("Backup files retained for manual recovery.");
         }
 
@@ -731,10 +847,10 @@ public class MigrationService
 
         foreach (var backup in backups)
         {
-            // Parse timestamp (format: yyyyMMddHHmmss)
+            // Parse timestamp (supports legacy and millisecond formats)
             var displayTime = "Unknown";
-            if (backup.Timestamp.Length == 14 &&
-                DateTime.TryParseExact(backup.Timestamp, "yyyyMMddHHmmss",
+            var timestampFormats = new[] { "yyyyMMddHHmmssfff", "yyyyMMddHHmmss", "yyyyMMddHHmmssZ" };
+            if (DateTime.TryParseExact(backup.Timestamp, timestampFormats,
                     System.Globalization.CultureInfo.InvariantCulture,
                     System.Globalization.DateTimeStyles.None, out var dateTime))
             {

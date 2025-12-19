@@ -106,11 +106,19 @@ public class SpectreConsoleService : IConsoleService
         foreach (var packageName in conflicts)
         {
             var versions = packageVersions[packageName]
-                .OrderByDescending(v => NuGet.Versioning.NuGetVersion.Parse(v))
+                .Select(v => (Original: v, Parsed: NuGet.Versioning.NuGetVersion.TryParse(v, out var parsed) ? parsed : null))
                 .ToList();
-            var resolvedVersion = _versionResolver.ResolveVersion(versions, strategy);
 
-            var versionList = string.Join(", ", versions.Select(v =>
+            var orderedVersions = versions
+                .Where(v => v.Parsed != null)
+                .OrderByDescending(v => v.Parsed)
+                .Select(v => v.Original)
+                .Concat(versions.Where(v => v.Parsed == null).Select(v => v.Original))
+                .ToList();
+
+            var resolvedVersion = _versionResolver.ResolveVersion(packageVersions[packageName], strategy);
+
+            var versionList = string.Join(", ", orderedVersions.Select(v =>
                 v == resolvedVersion ? $"[springgreen1]{v}[/]" : $"[grey39]{v}[/]"));
 
             table.AddRow(

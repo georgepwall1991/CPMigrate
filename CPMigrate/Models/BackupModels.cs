@@ -6,7 +6,7 @@ namespace CPMigrate.Models;
 public class BackupSetInfo
 {
     /// <summary>
-    /// Timestamp of the backup (format: yyyyMMddHHmmssZ).
+    /// Timestamp of the backup (format: yyyyMMddHHmmssfff or yyyyMMddHHmmssZ).
     /// </summary>
     public string Timestamp { get; init; } = string.Empty;
 
@@ -32,8 +32,8 @@ public class BackupSetInfo
     {
         get
         {
-            // Try new format with milliseconds first, then legacy format
-            string[] formats = { "yyyyMMddHHmmssfff", "yyyyMMddHHmmssZ" };
+            // Try millisecond format first, then legacy formats
+            string[] formats = { "yyyyMMddHHmmssfff", "yyyyMMddHHmmss", "yyyyMMddHHmmssZ" };
             foreach (var format in formats)
             {
                 if (DateTime.TryParseExact(Timestamp, format,
