@@ -1,4 +1,5 @@
 using CPMigrate.Services;
+using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
 using Microsoft.Build.Exceptions;
 using Xunit;

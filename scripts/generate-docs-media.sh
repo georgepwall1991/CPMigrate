@@ -130,7 +130,7 @@ generate_demo() {
         --cols 80 \
         --rows 24 \
         --overwrite \
-        --command "dotnet run --project $PROJECT_ROOT/CPMigrate --framework net10.0 --no-build -- --dry-run --solution $PROJECT_ROOT"
+        --command "dotnet run --configuration Release --project $PROJECT_ROOT/CPMigrate --framework net10.0 --no-build -- --dry-run --solution $PROJECT_ROOT"
 
     echo -e "${CYAN}[>] Converting demo to GIF...${NC}"
 
@@ -162,7 +162,7 @@ generate_analyze() {
         --cols 80 \
         --rows 24 \
         --overwrite \
-        --command "dotnet run --project $PROJECT_ROOT/CPMigrate --framework net10.0 --no-build -- --analyze --solution $PROJECT_ROOT"
+        --command "dotnet run --configuration Release --project $PROJECT_ROOT/CPMigrate --framework net10.0 --no-build -- --analyze --solution $PROJECT_ROOT"
 
     echo -e "${CYAN}[>] Converting analyze to GIF...${NC}"
 
@@ -204,7 +204,7 @@ set timeout 60
 set project_root [lindex $argv 0]
 
 # Spawn cpmigrate in interactive mode
-spawn dotnet run --project $project_root/CPMigrate --framework net10.0 --no-build
+spawn dotnet run --configuration Release --project $project_root/CPMigrate --framework net10.0 --no-build
 
 # Wait for header to render
 sleep 3

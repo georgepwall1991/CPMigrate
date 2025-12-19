@@ -1,4 +1,5 @@
 using CPMigrate.Analyzers;
+using CPMigrate.Fixers;
 using CPMigrate.Models;
 using Spectre.Console;
 
@@ -15,6 +16,7 @@ public class MigrationService
     private readonly BackupManager _backupManager;
     private readonly IConsoleService _consoleService;
     private readonly AnalysisService _analysisService;
+    private readonly FixService _fixService;
     private readonly bool _quietMode;
 
     public MigrationService(
@@ -32,6 +34,7 @@ public class MigrationService
         _propsGenerator = propsGenerator ?? new PropsGenerator(_versionResolver);
         _backupManager = backupManager ?? new BackupManager();
         _analysisService = analysisService ?? new AnalysisService();
+        _fixService = new FixService(_consoleService);
         _quietMode = quietMode;
     }
 
@@ -42,205 +45,84 @@ public class MigrationService
     /// <returns>Migration result with exit code and statistics.</returns>
     public async Task<MigrationResult> ExecuteAsync(Options options)
     {
-        // Show header (skip in quiet mode)
         if (!_quietMode)
         {
             _consoleService.WriteHeader();
         }
 
-        // Validate options first
-        try
+        if (!TryValidateOptions(options, out var validationError))
         {
-            options.Validate();
-        }
-        catch (ArgumentException ex)
-        {
-            _consoleService.Error(ex.Message);
-            return new MigrationResult { ExitCode = ExitCodes.ValidationError };
+            return validationError;
         }
 
-        // Handle rollback mode
         if (options.Rollback)
         {
             return await ExecuteRollbackAsync(options);
         }
 
-        // Handle analyze mode
+        if (options.ListBackups)
+        {
+            return await ExecuteListBackupsAsync(options);
+        }
+
         if (options.Analyze)
         {
             return await ExecuteAnalysisAsync(options);
         }
 
-        // Check if already migrated to CPM
-        var outputDir = string.IsNullOrEmpty(options.OutputDir) ? "." : options.OutputDir;
-        var outputPath = Path.GetFullPath(outputDir);
-        var propsPath = Path.Combine(outputPath, "Directory.Packages.props");
+        return await ExecuteMigrationAsync(options);
+    }
 
-        // Validate output directory exists and is writable before making any changes
+    /// <summary>
+    /// Executes the core migration workflow.
+    /// </summary>
+    private async Task<MigrationResult> ExecuteMigrationAsync(Options options)
+    {
+        var (outputPath, propsPath) = GetOutputPaths(options);
+
         if (!options.DryRun)
         {
-            if (!Directory.Exists(outputPath))
+            var directoryError = await ValidateOutputDirectoryAsync(outputPath);
+            if (directoryError != null)
             {
-                _consoleService.Error($"Output directory does not exist: {outputPath}");
-                return new MigrationResult { ExitCode = ExitCodes.ValidationError };
-            }
-
-            // Test write access by attempting to create and delete a temp file
-            var testFile = Path.Combine(outputPath, $".cpmigrate_test_{Guid.NewGuid():N}");
-            try
-            {
-                await File.WriteAllTextAsync(testFile, "test");
-            }
-            catch (Exception ex)
-            {
-                _consoleService.Error($"Cannot write to output directory: {outputPath}");
-                _consoleService.Dim($"Error: {ex.Message}");
-                return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
-            }
-            finally
-            {
-                // Always attempt cleanup even if an exception occurred after write
-                try { if (File.Exists(testFile)) File.Delete(testFile); } catch { /* Ignore cleanup errors */ }
+                return directoryError;
             }
         }
 
-        if (File.Exists(propsPath))
+        if (IsAlreadyMigrated(propsPath))
         {
-            _consoleService.Warning("This solution has already been migrated to Central Package Management.");
-            _consoleService.WriteMarkup($"[dim]Found existing:[/] [cyan]{Markup.Escape(propsPath)}[/]\n");
-            _consoleService.WriteLine();
-            _consoleService.Info("To re-migrate, first rollback with: cpmigrate --rollback");
-            _consoleService.Info("To analyze packages, use: cpmigrate --analyze");
-            return new MigrationResult { ExitCode = ExitCodes.Success, PropsFilePath = propsPath };
+            return CreateAlreadyMigratedResult(propsPath);
         }
 
-        // Dry-run banner
-        if (options.DryRun && !_quietMode)
-        {
-            _consoleService.Banner("DRY-RUN MODE - No files will be modified");
-            _consoleService.WriteLine();
-        }
+        ShowDryRunBannerIfNeeded(options);
 
-        // Discover projects with a spinner (or silently in quiet mode)
-        (string BasePath, List<string> ProjectPaths) discoveryResult;
-        if (_quietMode)
-        {
-            discoveryResult = DiscoverProjects(options);
-        }
-        else
-        {
-            discoveryResult = await AnsiConsole.Status()
-                .Spinner(Spinner.Known.Dots)
-                .SpinnerStyle(Style.Parse("cyan"))
-                .StartAsync("Discovering projects...", async ctx =>
-                {
-                    await Task.Delay(100); // Small delay for visual effect
-                    return DiscoverProjects(options);
-                });
-        }
-        var (basePath, projectPaths) = discoveryResult;
-
+        var (basePath, projectPaths) = await DiscoverProjectsWithSpinnerAsync(options);
         if (projectPaths.Count == 0)
         {
             _consoleService.Error("No projects found to process.");
             return new MigrationResult { ExitCode = ExitCodes.NoProjectsFound };
         }
 
-        // Show discovered projects (skip in quiet mode)
-        if (!_quietMode)
-        {
-            _consoleService.WriteMarkup($"\n[green]:magnifying_glass_tilted_right: Found {projectPaths.Count} project(s)[/]\n");
-
-            if (!string.IsNullOrEmpty(basePath))
-            {
-                _consoleService.WriteProjectTree(projectPaths, basePath);
-            }
-        }
+        ShowDiscoveredProjects(basePath, projectPaths);
 
         var packages = new Dictionary<string, HashSet<string>>();
+        var backupPath = SetupBackupDirectory(options);
 
-        // Create backup directory
-        string? backupPath = null;
-        if (!options.DryRun)
-        {
-            backupPath = _backupManager.CreateBackupDirectory(options);
-            if (!string.IsNullOrEmpty(backupPath) && !_quietMode)
-            {
-                _consoleService.WriteMarkup($"[dim]:file_folder: Backup directory: {Markup.Escape(backupPath)}[/]\n");
-            }
-        }
-        else if (!options.NoBackup && !_quietMode)
-        {
-            var potentialBackupPath = Path.Combine(
-                Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),
-                ".cpmigrate_backup");
-            _consoleService.DryRun($"Would create backup directory: {potentialBackupPath}");
-        }
-
-        if (!_quietMode)
-        {
-            _consoleService.WriteLine();
-        }
-
-        // Process each project with a nice progress bar
         var backupEntries = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath);
 
-        // Handle version conflicts
         var conflicts = _versionResolver.DetectConflicts(packages);
-        if (conflicts.Count > 0)
+        var conflictError = HandleVersionConflicts(options, packages, conflicts);
+        if (conflictError != null)
         {
-            if (!_quietMode)
-            {
-                _consoleService.WriteConflictsTable(packages, conflicts, options.ConflictStrategy);
-            }
-
-            if (options.ConflictStrategy == ConflictStrategy.Fail)
-            {
-                _consoleService.Error("Version conflicts detected and --conflict-strategy is set to Fail.");
-                if (!_quietMode)
-                {
-                    _consoleService.WriteMarkup("[dim]Resolve the conflicts manually or use --conflict-strategy Highest|Lowest.[/]\n");
-                }
-                return new MigrationResult { ExitCode = ExitCodes.VersionConflict };
-            }
+            return conflictError;
         }
 
-        // Generate Directory.Packages.props
         var propsFilePath = await GeneratePropsFileAsync(options, packages);
 
-        // Write backup manifest for rollback support
-        if (!options.DryRun && !options.NoBackup && backupEntries.Count > 0 && !string.IsNullOrEmpty(backupPath))
-        {
-            var manifest = new BackupManifest
-            {
-                Timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssZ"),
-                PropsFilePath = propsFilePath,
-                Backups = backupEntries
-            };
-            await _backupManager.WriteManifestAsync(backupPath, manifest);
-        }
+        await WriteBackupManifestAsync(options, backupEntries, backupPath, propsFilePath);
+        await ManageGitIgnoreAsync(options, backupPath);
 
-        // Add to .gitignore if requested
-        if (!options.DryRun)
-        {
-            await _backupManager.ManageGitIgnore(options, backupPath);
-        }
-        else if (options.AddBackupToGitignore && !options.NoBackup && !_quietMode)
-        {
-            _consoleService.DryRun("Would add backup directory to .gitignore");
-        }
-
-        // Print summary (skip in quiet mode)
-        if (!_quietMode)
-        {
-            _consoleService.WriteSummaryTable(
-                projectPaths.Count,
-                packages.Count,
-                conflicts.Count,
-                propsFilePath,
-                backupPath,
-                options.DryRun);
-        }
+        ShowMigrationSummary(options, projectPaths.Count, packages.Count, conflicts.Count, propsFilePath, backupPath);
 
         return new MigrationResult
         {
@@ -252,6 +134,276 @@ public class MigrationService
             WasDryRun = options.DryRun,
             ExitCode = ExitCodes.Success
         };
+    }
+
+    /// <summary>
+    /// Validates options and returns false with an error result if validation fails.
+    /// </summary>
+    private bool TryValidateOptions(Options options, out MigrationResult errorResult)
+    {
+        try
+        {
+            options.Validate();
+            errorResult = null!;
+            return true;
+        }
+        catch (ArgumentException ex)
+        {
+            _consoleService.Error(ex.Message);
+            errorResult = new MigrationResult { ExitCode = ExitCodes.ValidationError };
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Gets the output directory and props file paths.
+    /// </summary>
+    private static (string OutputPath, string PropsPath) GetOutputPaths(Options options)
+    {
+        var outputDir = string.IsNullOrEmpty(options.OutputDir) ? "." : options.OutputDir;
+        var outputPath = Path.GetFullPath(outputDir);
+        var propsPath = Path.Combine(outputPath, "Directory.Packages.props");
+        return (outputPath, propsPath);
+    }
+
+    /// <summary>
+    /// Validates that the output directory exists and is writable.
+    /// </summary>
+    private async Task<MigrationResult?> ValidateOutputDirectoryAsync(string outputPath)
+    {
+        if (!Directory.Exists(outputPath))
+        {
+            _consoleService.Error($"Output directory does not exist: {outputPath}");
+            return new MigrationResult { ExitCode = ExitCodes.ValidationError };
+        }
+
+        var testFile = Path.Combine(outputPath, $".cpmigrate_test_{Guid.NewGuid():N}");
+        try
+        {
+            await File.WriteAllTextAsync(testFile, "test");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _consoleService.Error($"Cannot write to output directory: {outputPath}");
+            _consoleService.Dim($"Error: {ex.Message}");
+            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
+        }
+        finally
+        {
+            try { if (File.Exists(testFile)) File.Delete(testFile); } catch { /* Ignore cleanup errors */ }
+        }
+    }
+
+    /// <summary>
+    /// Checks if the solution has already been migrated to CPM.
+    /// </summary>
+    private static bool IsAlreadyMigrated(string propsPath) => File.Exists(propsPath);
+
+    /// <summary>
+    /// Creates a result indicating the solution is already migrated.
+    /// </summary>
+    private MigrationResult CreateAlreadyMigratedResult(string propsPath)
+    {
+        _consoleService.Warning("This solution has already been migrated to Central Package Management.");
+        _consoleService.WriteMarkup($"[dim]Found existing:[/] [cyan]{Markup.Escape(propsPath)}[/]\n");
+        _consoleService.WriteLine();
+        _consoleService.Info("To re-migrate, first rollback with: cpmigrate --rollback");
+        _consoleService.Info("To analyze packages, use: cpmigrate --analyze");
+        return new MigrationResult { ExitCode = ExitCodes.Success, PropsFilePath = propsPath };
+    }
+
+    /// <summary>
+    /// Shows the dry-run banner if in dry-run mode.
+    /// </summary>
+    private void ShowDryRunBannerIfNeeded(Options options)
+    {
+        if (options.DryRun && !_quietMode)
+        {
+            _consoleService.Banner("DRY-RUN MODE - No files will be modified");
+            _consoleService.WriteLine();
+        }
+    }
+
+    /// <summary>
+    /// Discovers projects with a spinner or silently in quiet mode.
+    /// </summary>
+    private async Task<(string BasePath, List<string> ProjectPaths)> DiscoverProjectsWithSpinnerAsync(Options options)
+    {
+        if (_quietMode)
+        {
+            return DiscoverProjects(options);
+        }
+
+        return await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(Style.Parse("cyan"))
+            .StartAsync("Discovering projects...", async ctx =>
+            {
+                await Task.Delay(100);
+                return DiscoverProjects(options);
+            });
+    }
+
+    /// <summary>
+    /// Shows the discovered projects tree.
+    /// </summary>
+    private void ShowDiscoveredProjects(string basePath, List<string> projectPaths)
+    {
+        if (_quietMode) return;
+
+        _consoleService.WriteMarkup($"\n[green]:magnifying_glass_tilted_right: Found {projectPaths.Count} project(s)[/]\n");
+
+        if (!string.IsNullOrEmpty(basePath))
+        {
+            _consoleService.WriteProjectTree(projectPaths, basePath);
+        }
+    }
+
+    /// <summary>
+    /// Sets up the backup directory if needed.
+    /// </summary>
+    private string? SetupBackupDirectory(Options options)
+    {
+        if (options.DryRun)
+        {
+            if (!options.NoBackup && !_quietMode)
+            {
+                var potentialBackupPath = Path.Combine(
+                    Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),
+                    ".cpmigrate_backup");
+                _consoleService.DryRun($"Would create backup directory: {potentialBackupPath}");
+            }
+
+            if (!_quietMode) _consoleService.WriteLine();
+            return null;
+        }
+
+        var backupPath = _backupManager.CreateBackupDirectory(options);
+        if (!string.IsNullOrEmpty(backupPath) && !_quietMode)
+        {
+            _consoleService.WriteMarkup($"[dim]:file_folder: Backup directory: {Markup.Escape(backupPath)}[/]\n");
+        }
+
+        if (!_quietMode) _consoleService.WriteLine();
+        return backupPath;
+    }
+
+    /// <summary>
+    /// Handles version conflicts and returns an error result if strategy is Fail.
+    /// </summary>
+    private MigrationResult? HandleVersionConflicts(
+        Options options,
+        Dictionary<string, HashSet<string>> packages,
+        List<string> conflicts)
+    {
+        if (conflicts.Count == 0) return null;
+
+        if (!_quietMode)
+        {
+            _consoleService.WriteConflictsTable(packages, conflicts, options.ConflictStrategy);
+        }
+
+        if (options.ConflictStrategy == ConflictStrategy.Fail)
+        {
+            _consoleService.Error("Version conflicts detected and --conflict-strategy is set to Fail.");
+            if (!_quietMode)
+            {
+                _consoleService.WriteMarkup("[dim]Resolve the conflicts manually or use --conflict-strategy Highest|Lowest.[/]\n");
+            }
+            return new MigrationResult { ExitCode = ExitCodes.VersionConflict };
+        }
+
+        // Interactive conflict resolution
+        if (options.InteractiveConflicts)
+        {
+            _consoleService.WriteLine();
+            _consoleService.Banner("INTERACTIVE CONFLICT RESOLUTION");
+            _consoleService.WriteLine();
+            _consoleService.Info("Select the version to use for each package with conflicts:");
+            _consoleService.WriteLine();
+
+            foreach (var packageName in conflicts)
+            {
+                if (!packages.TryGetValue(packageName, out var versions)) continue;
+
+                var versionList = versions.OrderByDescending(v => v).ToList();
+                var recommended = _versionResolver.ResolveVersion(versions, options.ConflictStrategy);
+                var choices = versionList.Select(v =>
+                    v == recommended ? $"{v} (recommended)" : v).ToList();
+
+                var selected = _consoleService.AskSelection($"Version for {packageName}?", choices);
+                var selectedVersion = selected.Replace(" (recommended)", "");
+
+                // Update packages to only contain selected version
+                packages[packageName] = new HashSet<string> { selectedVersion };
+            }
+
+            _consoleService.WriteLine();
+            _consoleService.Success("All conflicts resolved interactively.");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Writes the backup manifest if backups were created.
+    /// </summary>
+    private async Task WriteBackupManifestAsync(
+        Options options,
+        List<BackupEntry> backupEntries,
+        string? backupPath,
+        string propsFilePath)
+    {
+        if (options.DryRun || options.NoBackup || backupEntries.Count == 0 || string.IsNullOrEmpty(backupPath))
+        {
+            return;
+        }
+
+        var manifest = new BackupManifest
+        {
+            Timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssZ"),
+            PropsFilePath = propsFilePath,
+            Backups = backupEntries
+        };
+        await _backupManager.WriteManifestAsync(backupPath, manifest);
+    }
+
+    /// <summary>
+    /// Manages .gitignore for the backup directory.
+    /// </summary>
+    private async Task ManageGitIgnoreAsync(Options options, string? backupPath)
+    {
+        if (!options.DryRun)
+        {
+            await _backupManager.ManageGitIgnore(options, backupPath);
+        }
+        else if (options.AddBackupToGitignore && !options.NoBackup && !_quietMode)
+        {
+            _consoleService.DryRun("Would add backup directory to .gitignore");
+        }
+    }
+
+    /// <summary>
+    /// Shows the migration summary table.
+    /// </summary>
+    private void ShowMigrationSummary(
+        Options options,
+        int projectCount,
+        int packageCount,
+        int conflictCount,
+        string propsFilePath,
+        string? backupPath)
+    {
+        if (_quietMode) return;
+
+        _consoleService.WriteSummaryTable(
+            projectCount,
+            packageCount,
+            conflictCount,
+            propsFilePath,
+            backupPath,
+            options.DryRun);
     }
 
     private (string BasePath, List<string> ProjectPaths) DiscoverProjects(Options options)
@@ -539,6 +691,103 @@ public class MigrationService
     }
 
     /// <summary>
+    /// Lists all available backups with timestamps and file counts.
+    /// </summary>
+    /// <param name="options">Options containing backup directory path.</param>
+    /// <returns>Migration result with exit code.</returns>
+    private async Task<MigrationResult> ExecuteListBackupsAsync(Options options)
+    {
+        _consoleService.Banner("BACKUP HISTORY");
+        _consoleService.WriteLine();
+
+        var backupPath = Path.GetFullPath(options.BackupDir);
+
+        if (!Directory.Exists(backupPath))
+        {
+            _consoleService.Warning($"Backup directory not found: {backupPath}");
+            return new MigrationResult { ExitCode = ExitCodes.Success };
+        }
+
+        var backups = _backupManager.GetBackupHistory(backupPath);
+
+        if (backups.Count == 0)
+        {
+            _consoleService.Info("No backups found.");
+            return new MigrationResult { ExitCode = ExitCodes.Success };
+        }
+
+        // Display backup table
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn(new TableColumn("[cyan]#[/]").Centered())
+            .AddColumn(new TableColumn("[cyan]Timestamp[/]"))
+            .AddColumn(new TableColumn("[cyan]Date/Time[/]"))
+            .AddColumn(new TableColumn("[cyan]Files[/]").RightAligned())
+            .AddColumn(new TableColumn("[cyan]Size[/]").RightAligned());
+
+        var index = 1;
+        long totalSize = 0;
+        int totalFiles = 0;
+
+        foreach (var backup in backups)
+        {
+            // Parse timestamp (format: yyyyMMddHHmmss)
+            var displayTime = "Unknown";
+            if (backup.Timestamp.Length == 14 &&
+                DateTime.TryParseExact(backup.Timestamp, "yyyyMMddHHmmss",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var dateTime))
+            {
+                displayTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss");
+            }
+
+            // Calculate size
+            long backupSize = 0;
+            foreach (var file in backup.Files)
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(file);
+                    backupSize += fileInfo.Length;
+                }
+                catch { /* Ignore errors */ }
+            }
+            totalSize += backupSize;
+            totalFiles += backup.Files.Count;
+
+            var sizeStr = FormatFileSize(backupSize);
+            var isNewest = index == 1;
+            var rowStyle = isNewest ? "[green]" : "[white]";
+
+            table.AddRow(
+                $"{rowStyle}{index}[/]",
+                $"{rowStyle}{backup.Timestamp}[/]",
+                $"{rowStyle}{displayTime}[/]",
+                $"{rowStyle}{backup.Files.Count}[/]",
+                $"{rowStyle}{sizeStr}[/]"
+            );
+            index++;
+        }
+
+        AnsiConsole.Write(table);
+        _consoleService.WriteLine();
+
+        _consoleService.Info($"Total: {backups.Count} backup set(s), {totalFiles} file(s), {FormatFileSize(totalSize)}");
+        _consoleService.Dim($"Backup directory: {backupPath}");
+
+        await Task.CompletedTask;
+        return new MigrationResult { ExitCode = ExitCodes.Success };
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):F1} GB";
+    }
+
+    /// <summary>
     /// Executes package analysis without modifying files.
     /// </summary>
     /// <param name="options">Options containing project/solution path.</param>
@@ -626,6 +875,30 @@ public class MigrationService
 
         // Write summary
         _consoleService.WriteAnalysisSummary(report);
+
+        // Apply fixes if requested
+        if ((options.Fix || options.FixDryRun) && report.HasIssues)
+        {
+            _consoleService.WriteLine();
+            _consoleService.Banner(options.FixDryRun ? "FIX DRY RUN - Showing proposed changes" : "APPLYING FIXES");
+            _consoleService.WriteLine();
+
+            var fixReport = _fixService.ApplyFixes(report, packageInfo, options, options.FixDryRun);
+
+            // Adjust exit code based on fix results
+            if (fixReport.HasChanges && !options.FixDryRun)
+            {
+                // Fixes were applied successfully
+                return new MigrationResult
+                {
+                    ProjectsProcessed = packageInfo.ProjectCount,
+                    PackagesCentralized = packageInfo.TotalReferences,
+                    ExitCode = fixReport.FailedFixes.Count > 0
+                        ? ExitCodes.AnalysisIssuesFound  // Some fixes failed
+                        : ExitCodes.Success              // All fixes succeeded
+                };
+            }
+        }
 
         return new MigrationResult
         {

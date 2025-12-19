@@ -136,6 +136,10 @@ public class Options
         HelpText = "Number of backups to keep when pruning (default: 5, 0 = keep all).")]
     public int Retention { get; set; }
 
+    [Option("list-backups", Default = false,
+        HelpText = "List all available backups with timestamps and file counts.")]
+    public bool ListBackups { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Conflict Resolution
     // ═══════════════════════════════════════════════════════════════════════
@@ -191,10 +195,37 @@ public class Options
     /// <exception cref="ArgumentException">Thrown when options are invalid.</exception>
     public void Validate()
     {
-        // ═══════════════════════════════════════════════════════════════════════
-        // v2.0 Validation - Output options
-        // ═══════════════════════════════════════════════════════════════════════
+        ValidateOutputOptions();
+        ValidateBatchOptions();
 
+        // Prune mode exits early after validation
+        if (ValidatePruneOptions())
+        {
+            return;
+        }
+
+        ValidateFixOptions();
+
+        // Analyze mode exits early after validation
+        if (ValidateAnalyzeOptions())
+        {
+            return;
+        }
+
+        // Rollback mode exits early after validation
+        if (ValidateRollbackOptions())
+        {
+            return;
+        }
+
+        ValidateMigrationOptions();
+    }
+
+    /// <summary>
+    /// Validates output format options.
+    /// </summary>
+    private void ValidateOutputOptions()
+    {
         if (!string.IsNullOrEmpty(OutputFile) && Output != OutputFormat.Json)
         {
             throw new ArgumentException("--output-file can only be used with --output Json.");
@@ -204,11 +235,13 @@ public class Options
         {
             throw new ArgumentException("--output Json cannot be used with --interactive mode.");
         }
+    }
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // v2.0 Validation - Batch options
-        // ═══════════════════════════════════════════════════════════════════════
-
+    /// <summary>
+    /// Validates batch processing options.
+    /// </summary>
+    private void ValidateBatchOptions()
+    {
         if (!string.IsNullOrEmpty(BatchDir))
         {
             if (!string.IsNullOrEmpty(SolutionFileDir) && SolutionFileDir != ".")
@@ -236,31 +269,37 @@ public class Options
         {
             throw new ArgumentException("--batch-continue requires --batch.");
         }
+    }
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // v2.0 Validation - Backup pruning options
-        // ═══════════════════════════════════════════════════════════════════════
-
-        if (PruneBackups || PruneAll)
+    /// <summary>
+    /// Validates backup pruning options.
+    /// Returns true if prune mode is active (skip remaining validation).
+    /// </summary>
+    private bool ValidatePruneOptions()
+    {
+        if (!PruneBackups && !PruneAll)
         {
-            // Prune mode - skip other validation
-            if (PruneBackups && PruneAll)
-            {
-                throw new ArgumentException("--prune-backups and --prune-all cannot be used together.");
-            }
-
-            if (Retention < 0)
-            {
-                throw new ArgumentException("--retention must be 0 or greater.");
-            }
-
-            return;
+            return false;
         }
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // v2.0 Validation - Fix options
-        // ═══════════════════════════════════════════════════════════════════════
+        if (PruneBackups && PruneAll)
+        {
+            throw new ArgumentException("--prune-backups and --prune-all cannot be used together.");
+        }
 
+        if (Retention < 0)
+        {
+            throw new ArgumentException("--retention must be 0 or greater.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validates fix/auto-repair options.
+    /// </summary>
+    private void ValidateFixOptions()
+    {
         if (Fix && !Analyze)
         {
             throw new ArgumentException("--fix requires --analyze.");
@@ -275,45 +314,61 @@ public class Options
         {
             throw new ArgumentException("--fix and --fix-dry-run cannot be used together.");
         }
+    }
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // Original validation logic
-        // ═══════════════════════════════════════════════════════════════════════
-
-        if (Analyze)
+    /// <summary>
+    /// Validates analyze mode options.
+    /// Returns true if analyze mode is active (skip remaining validation).
+    /// </summary>
+    private bool ValidateAnalyzeOptions()
+    {
+        if (!Analyze)
         {
-            // Analyze mode has different validation rules
-            if (DryRun)
-            {
-                throw new ArgumentException("--analyze cannot be used with --dry-run.");
-            }
+            return false;
+        }
 
-            if (Rollback)
-            {
-                throw new ArgumentException("--analyze cannot be used with --rollback.");
-            }
-
-            // Other migration options are ignored in analyze mode
-            return;
+        if (DryRun)
+        {
+            throw new ArgumentException("--analyze cannot be used with --dry-run.");
         }
 
         if (Rollback)
         {
-            // Rollback mode has different validation rules
-            if (DryRun)
-            {
-                throw new ArgumentException("--rollback cannot be used with --dry-run.");
-            }
-
-            if (string.IsNullOrWhiteSpace(BackupDir))
-            {
-                throw new ArgumentException("backup-dir must be specified for rollback.");
-            }
-
-            // Other migration options are ignored in rollback mode
-            return;
+            throw new ArgumentException("--analyze cannot be used with --rollback.");
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// Validates rollback mode options.
+    /// Returns true if rollback mode is active (skip remaining validation).
+    /// </summary>
+    private bool ValidateRollbackOptions()
+    {
+        if (!Rollback)
+        {
+            return false;
+        }
+
+        if (DryRun)
+        {
+            throw new ArgumentException("--rollback cannot be used with --dry-run.");
+        }
+
+        if (string.IsNullOrWhiteSpace(BackupDir))
+        {
+            throw new ArgumentException("backup-dir must be specified for rollback.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validates migration mode options (backup and gitignore settings).
+    /// </summary>
+    private void ValidateMigrationOptions()
+    {
         if (NoBackup && AddBackupToGitignore)
         {
             throw new ArgumentException("--add-gitignore cannot be used with --no-backup. " +
@@ -331,7 +386,9 @@ public class Options
         }
 
         if (!string.IsNullOrEmpty(SolutionFileDir) && !string.IsNullOrWhiteSpace(ProjectFileDir))
+        {
             Console.WriteLine("Both solution and project directories are included, will use solution file as source." +
                               "\r\nWill ignore the project file specified.");
+        }
     }
 }

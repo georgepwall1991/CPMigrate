@@ -3,6 +3,8 @@ using CPMigrate.Models;
 
 namespace CPMigrate;
 
+// BackupSetInfo and PruneResult are in Models/BackupModels.cs
+
 /// <summary>
 /// Manages backup operations for project files during CPM migration.
 /// </summary>
@@ -342,57 +344,82 @@ public class BackupManager
         }
 
         var backups = GetBackupHistory(backupPath);
+        DeleteBackupSets(backups, result);
+        DeleteManifestFile(backupPath, result);
+        TryDeleteEmptyDirectory(backupPath);
 
+        return result;
+    }
+
+    /// <summary>
+    /// Deletes all files in the specified backup sets.
+    /// </summary>
+    private static void DeleteBackupSets(List<BackupSetInfo> backups, PruneResult result)
+    {
         foreach (var backup in backups)
         {
-            foreach (var file in backup.Files)
-            {
-                try
-                {
-                    var fileInfo = new FileInfo(file);
-                    result.BytesFreed += fileInfo.Length;
-                    File.Delete(file);
-                    result.FilesRemoved++;
-                }
-                catch (Exception)
-                {
-                    result.Errors.Add($"Failed to delete: {file}");
-                }
-            }
+            DeleteBackupFiles(backup.Files, result);
             result.BackupsRemoved++;
         }
+    }
 
-        // Also delete manifest if it exists
+    /// <summary>
+    /// Deletes a list of backup files, tracking results.
+    /// </summary>
+    private static void DeleteBackupFiles(List<string> files, PruneResult result)
+    {
+        foreach (var file in files)
+        {
+            TryDeleteFile(file, result);
+        }
+    }
+
+    /// <summary>
+    /// Attempts to delete a single file, tracking result.
+    /// </summary>
+    private static void TryDeleteFile(string filePath, PruneResult result)
+    {
+        try
+        {
+            var fileInfo = new FileInfo(filePath);
+            result.BytesFreed += fileInfo.Length;
+            File.Delete(filePath);
+            result.FilesRemoved++;
+        }
+        catch (Exception)
+        {
+            result.Errors.Add($"Failed to delete: {filePath}");
+        }
+    }
+
+    /// <summary>
+    /// Deletes the manifest file if it exists.
+    /// </summary>
+    private static void DeleteManifestFile(string backupPath, PruneResult result)
+    {
         var manifestPath = Path.Combine(backupPath, ManifestFileName);
         if (File.Exists(manifestPath))
         {
-            try
-            {
-                var fileInfo = new FileInfo(manifestPath);
-                result.BytesFreed += fileInfo.Length;
-                File.Delete(manifestPath);
-                result.FilesRemoved++;
-            }
-            catch (Exception)
-            {
-                result.Errors.Add($"Failed to delete manifest: {manifestPath}");
-            }
+            TryDeleteFile(manifestPath, result);
         }
+    }
 
-        // Delete backup directory if empty
+    /// <summary>
+    /// Attempts to delete an empty directory.
+    /// </summary>
+    private static void TryDeleteEmptyDirectory(string path)
+    {
         try
         {
-            if (Directory.Exists(backupPath) && !Directory.EnumerateFileSystemEntries(backupPath).Any())
+            if (Directory.Exists(path) && !Directory.EnumerateFileSystemEntries(path).Any())
             {
-                Directory.Delete(backupPath);
+                Directory.Delete(path);
             }
         }
         catch (Exception)
         {
             // Ignore - directory not empty or access denied
         }
-
-        return result;
     }
 
     /// <summary>
@@ -409,110 +436,5 @@ public class BackupManager
         }
 
         return PruneBackups(backupPath, maxBackups);
-    }
-}
-
-/// <summary>
-/// Information about a backup set (all files from a single backup operation).
-/// </summary>
-public class BackupSetInfo
-{
-    /// <summary>
-    /// Timestamp of the backup (format: yyyyMMddHHmmssZ).
-    /// </summary>
-    public string Timestamp { get; init; } = string.Empty;
-
-    /// <summary>
-    /// List of backup file paths in this set.
-    /// </summary>
-    public List<string> Files { get; init; } = new();
-
-    /// <summary>
-    /// Number of files in this backup set.
-    /// </summary>
-    public int FileCount => Files.Count;
-
-    /// <summary>
-    /// Total size of all files in this backup set.
-    /// </summary>
-    public long TotalSize => Files.Sum(f => new FileInfo(f).Length);
-
-    /// <summary>
-    /// Parsed DateTime from the timestamp.
-    /// </summary>
-    public DateTime? ParsedTimestamp
-    {
-        get
-        {
-            // Try new format with milliseconds first, then legacy format
-            string[] formats = { "yyyyMMddHHmmssfff", "yyyyMMddHHmmssZ" };
-            foreach (var format in formats)
-            {
-                if (DateTime.TryParseExact(Timestamp, format,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AssumeUniversal, out var dt))
-                {
-                    return dt;
-                }
-            }
-            return null;
-        }
-    }
-}
-
-/// <summary>
-/// Result of a prune operation.
-/// </summary>
-public class PruneResult
-{
-    /// <summary>
-    /// Number of backup sets kept.
-    /// </summary>
-    public int KeptCount { get; set; }
-
-    /// <summary>
-    /// Number of backup sets removed.
-    /// </summary>
-    public int BackupsRemoved { get; set; }
-
-    /// <summary>
-    /// Number of files removed.
-    /// </summary>
-    public int FilesRemoved { get; set; }
-
-    /// <summary>
-    /// Total bytes freed by the prune operation.
-    /// </summary>
-    public long BytesFreed { get; set; }
-
-    /// <summary>
-    /// Errors encountered during pruning.
-    /// </summary>
-    public List<string> Errors { get; } = new();
-
-    /// <summary>
-    /// Whether the prune operation was successful (no errors).
-    /// </summary>
-    public bool Success => Errors.Count == 0;
-
-    /// <summary>
-    /// Human-readable string of bytes freed.
-    /// </summary>
-    public string BytesFreedFormatted
-    {
-        get
-        {
-            const long KB = 1024;
-            const long MB = KB * 1024;
-            const long GB = MB * 1024;
-
-            return BytesFreed switch
-            {
-                >= GB => $"{BytesFreed / (double)GB:F2} GB",
-                >= MB => $"{BytesFreed / (double)MB:F2} MB",
-                >= KB => $"{BytesFreed / (double)KB:F2} KB",
-                _ => $"{BytesFreed} bytes"
-            };
-        }
     }
 }

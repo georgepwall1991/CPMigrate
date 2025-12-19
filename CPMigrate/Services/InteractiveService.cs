@@ -1,3 +1,6 @@
+using CPMigrate.Models;
+using Spectre.Console;
+
 namespace CPMigrate.Services;
 
 /// <summary>
@@ -8,16 +11,16 @@ public class InteractiveService : IInteractiveService
 {
     private readonly IConsoleService _console;
 
-    private const string ModeMigrate = "Migrate to Central Package Management";
-    private const string ModeAnalyze = "Analyze packages for issues";
-    private const string ModeRollback = "Rollback a previous migration";
-    private const string ModeExit = "Exit";
+    private const string ModeMigrate = "🚀 Migrate to Central Package Management";
+    private const string ModeAnalyze = "🔍 Analyze packages for issues";
+    private const string ModeRollback = "↩️  Rollback a previous migration";
+    private const string ModeExit = "❌ Exit";
 
-    private const string ConflictHighest = "Highest version (recommended)";
-    private const string ConflictLowest = "Lowest version";
-    private const string ConflictFail = "Fail on conflict";
+    private const string ConflictHighest = "⬆️  Highest version (recommended)";
+    private const string ConflictLowest = "⬇️  Lowest version";
+    private const string ConflictFail = "⛔️ Fail on conflict";
 
-    private const string EnterPathManually = "Enter path manually...";
+    private const string EnterPathManually = "✏️  Enter path manually...";
 
     public InteractiveService(IConsoleService console)
     {
@@ -194,7 +197,6 @@ public class InteractiveService : IInteractiveService
     private void ShowSummary(Options options, string mode)
     {
         _console.WriteLine();
-        _console.Separator();
 
         var modeLabel = mode switch
         {
@@ -203,29 +205,41 @@ public class InteractiveService : IInteractiveService
             ModeRollback => "ROLLBACK",
             _ => "UNKNOWN"
         };
-
-        _console.WriteMarkup($"[cyan1][[>]] Ready to {modeLabel}[/]");
-        _console.WriteLine();
-        _console.WriteMarkup($"[white]  Solution/Project:[/] [dim]{options.SolutionFileDir}[/]");
+        
+        var grid = new Grid();
+        grid.AddColumn();
+        grid.AddColumn();
+        
+        grid.AddRow("[white]Solution/Project[/]", $"[cyan1]{EscapeMarkup(options.SolutionFileDir)}[/]");
 
         if (mode == ModeMigrate)
         {
-            _console.WriteMarkup($"[white]  Conflict Strategy:[/] [dim]{options.ConflictStrategy}[/]");
-            _console.WriteMarkup($"[white]  Backup:[/] [dim]{(options.NoBackup ? "No" : $"Yes ({options.BackupDir})")}[/]");
-            _console.WriteMarkup($"[white]  Dry Run:[/] [dim]{(options.DryRun ? "Yes" : "No")}[/]");
-            _console.WriteMarkup($"[white]  Keep Version Attrs:[/] [dim]{(options.KeepAttributes ? "Yes" : "No")}[/]");
+            grid.AddRow("[white]Conflict Strategy[/]", $"[cyan1]{options.ConflictStrategy}[/]");
+            grid.AddRow("[white]Backup[/]", $"[cyan1]{(options.NoBackup ? "No" : $"Yes ({options.BackupDir})")}[/]");
+            grid.AddRow("[white]Dry Run[/]", $"[cyan1]{(options.DryRun ? "Yes" : "No")}[/]");
+            grid.AddRow("[white]Keep Version Attrs[/]", $"[cyan1]{(options.KeepAttributes ? "Yes" : "No")}[/]");
         }
         else if (mode == ModeRollback)
         {
-            _console.WriteMarkup($"[white]  Backup Location:[/] [dim]{options.BackupDir}[/]");
+            grid.AddRow("[white]Backup Location[/]", $"[cyan1]{options.BackupDir}[/]");
         }
 
+        var panel = new Panel(grid)
+        {
+            Header = new PanelHeader($"[deeppink1]READY TO {modeLabel}[/]", Justify.Center),
+            Border = BoxBorder.Rounded,
+            BorderStyle = new Style(Color.DeepPink1),
+            Padding = new Padding(1, 1)
+        };
+        
+        AnsiConsole.Write(panel);
         _console.WriteLine();
-        _console.Separator();
     }
 
     private bool AskConfirmation()
     {
         return _console.AskConfirmation("Proceed?");
     }
+    
+    private static string EscapeMarkup(string text) => Markup.Escape(text);
 }
