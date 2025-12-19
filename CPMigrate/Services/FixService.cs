@@ -11,14 +11,16 @@ public class FixService
     private readonly List<IFixer> _fixers;
     private readonly IConsoleService _console;
 
-    public FixService(IConsoleService console)
+    public FixService(IConsoleService console, VersionResolver? versionResolver = null)
     {
         _console = console;
+        var resolver = versionResolver ?? new VersionResolver(_console);
         _fixers = new List<IFixer>
         {
             new VersionInconsistencyFixer(),
             new DuplicatePackageFixer(),
-            new RedundantReferenceFixer()
+            new RedundantReferenceFixer(),
+            new TransitiveConflictFixer(resolver)
         };
     }
 

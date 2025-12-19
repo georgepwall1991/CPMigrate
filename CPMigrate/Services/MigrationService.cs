@@ -35,7 +35,7 @@ public class MigrationService
         _backupManager = backupManager ?? new BackupManager();
         var graphService = new DependencyGraphService(_consoleService);
         _analysisService = analysisService ?? new AnalysisService(null, graphService, _projectAnalyzer);
-        _fixService = new FixService(_consoleService);
+        _fixService = new FixService(_consoleService, _versionResolver);
         _quietMode = quietMode;
     }
 
