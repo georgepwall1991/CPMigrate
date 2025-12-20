@@ -35,6 +35,12 @@ public class FakeConsoleService : IConsoleService
             return SelectionResponses.Dequeue();
         return choices.First();
     }
+    public string AskGroupedSelection(string title, Dictionary<string, IEnumerable<string>> groups)
+    {
+        if (SelectionResponses.Count > 0)
+            return SelectionResponses.Dequeue();
+        return groups.Values.First().First();
+    }
     public bool AskConfirmation(string message) => ConfirmationResponse;
     public string AskText(string prompt, string defaultValue = "")
     {

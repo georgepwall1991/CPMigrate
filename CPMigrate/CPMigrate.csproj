@@ -16,7 +16,7 @@
     <PackageProjectUrl>https://github.com/georgepwall1991/CPMigrate</PackageProjectUrl>
     <TargetFramework>net10.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
-    <Version>2.7.4</Version>
+    <Version>2.7.5</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/georgepwall1991/CPMigrate</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
