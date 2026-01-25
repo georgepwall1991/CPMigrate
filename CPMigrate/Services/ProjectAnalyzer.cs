@@ -1,6 +1,8 @@
 using CPMigrate.Models;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
+using Microsoft.VisualStudio.SolutionPersistence;
+using Microsoft.VisualStudio.SolutionPersistence.Serializer;
 using Buildalyzer;
 
 namespace CPMigrate.Services;
@@ -29,7 +31,8 @@ public partial class ProjectAnalyzer
 
         if (Directory.Exists(fullPath))
         {
-            var slnFiles = Directory.GetFiles(fullPath, "*.sln");
+            // Discover both .sln and .slnx solution files
+            var slnFiles = GetSolutionFiles(fullPath);
             if (slnFiles.Length == 0)
             {
                 _consoleService.Info("No solution file found in the specified directory.");
@@ -67,23 +70,33 @@ public partial class ProjectAnalyzer
 
         try
         {
-            var solution = SolutionFile.Parse(fullPath);
-            
-            foreach (var project in solution.ProjectsInOrder)
+            // Use Microsoft.VisualStudio.SolutionPersistence for unified .sln/.slnx parsing
+            var serializer = SolutionSerializers.GetSerializerByMoniker(fullPath);
+            if (serializer == null)
             {
-                if (project.ProjectType == SolutionProjectType.SolutionFolder) continue;
+                _consoleService.Error($"Unsupported solution file format: {Path.GetExtension(fullPath)}");
+                return (string.Empty, projectPaths);
+            }
 
-                var extension = Path.GetExtension(project.AbsolutePath).ToLowerInvariant();
-                if (extension == ".csproj" || extension == ".fsproj" || extension == ".vbproj")
+            var solution = serializer
+                .OpenAsync(fullPath, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+
+            foreach (var project in solution.SolutionProjects)
+            {
+                var extension = Path.GetExtension(project.FilePath).ToLowerInvariant();
+                if (extension is ".csproj" or ".fsproj" or ".vbproj")
                 {
-                    if (File.Exists(project.AbsolutePath))
+                    var absolutePath = Path.GetFullPath(Path.Combine(basePath, project.FilePath));
+                    if (File.Exists(absolutePath))
                     {
-                        projectPaths.Add(project.AbsolutePath);
-                        _consoleService.Info($"Found project: {project.ProjectName}");
+                        projectPaths.Add(absolutePath);
+                        _consoleService.Info($"Found project: {Path.GetFileNameWithoutExtension(project.FilePath)}");
                     }
                     else
                     {
-                        _consoleService.Warning($"Project found in solution but file missing: {project.AbsolutePath}");
+                        _consoleService.Warning($"Project found in solution but file missing: {absolutePath}");
                     }
                 }
             }
@@ -295,5 +308,18 @@ public partial class ProjectAnalyzer
             choices);
 
         return slnFiles.First(f => Path.GetFileName(f) == selection);
+    }
+
+    /// <summary>
+    /// Gets all solution files (.sln and .slnx) from a directory.
+    /// </summary>
+    /// <param name="directory">Directory to search.</param>
+    /// <param name="searchOption">Search option (default: TopDirectoryOnly).</param>
+    /// <returns>Array of solution file paths.</returns>
+    public static string[] GetSolutionFiles(string directory, SearchOption searchOption = SearchOption.TopDirectoryOnly)
+    {
+        return Directory.GetFiles(directory, "*.sln", searchOption)
+            .Concat(Directory.GetFiles(directory, "*.slnx", searchOption))
+            .ToArray();
     }
 }

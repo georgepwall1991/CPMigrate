@@ -40,7 +40,7 @@ public class BatchService
     }
 
     /// <summary>
-    /// Discovers all .sln files in a directory tree.
+    /// Discovers all solution files (.sln and .slnx) in a directory tree.
     /// </summary>
     /// <param name="rootPath">Root directory to search.</param>
     /// <param name="excludedDirectories">Directories to exclude from search.</param>
@@ -90,8 +90,8 @@ public class BatchService
                 return;
             }
 
-            // Add solution files in current directory
-            var slnFiles = Directory.GetFiles(directory, "*.sln", SearchOption.TopDirectoryOnly);
+            // Add solution files in current directory (both .sln and .slnx)
+            var slnFiles = ProjectAnalyzer.GetSolutionFiles(directory);
             solutions.AddRange(slnFiles);
 
             // Recurse into subdirectories

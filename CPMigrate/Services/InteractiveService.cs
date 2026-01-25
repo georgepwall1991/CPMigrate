@@ -122,7 +122,7 @@ public class InteractiveService : IInteractiveService
     private EnvContext AnalyzeEnvironment()
     {
         var ctx = new EnvContext { Directory = Directory.GetCurrentDirectory() };
-        ctx.Solutions = Directory.GetFiles(ctx.Directory, "*.sln", SearchOption.TopDirectoryOnly).ToList();
+        ctx.Solutions = ProjectAnalyzer.GetSolutionFiles(ctx.Directory).ToList();
         ctx.IsCpm = File.Exists(Path.Combine(ctx.Directory, "Directory.Packages.props"));
         
         var backupManager = new BackupManager();
@@ -252,7 +252,7 @@ public class InteractiveService : IInteractiveService
     {
         while (true)
         {
-            var solutions = Directory.GetFiles(rootPath, "*.sln", SearchOption.TopDirectoryOnly)
+            var solutions = ProjectAnalyzer.GetSolutionFiles(rootPath)
                 .Select(Path.GetFileName).Cast<string>().ToList();
             
             var projects = Directory.GetFiles(rootPath, "*.*proj", SearchOption.TopDirectoryOnly)
