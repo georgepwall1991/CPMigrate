@@ -44,6 +44,13 @@ CPMigrate v2.5+ isn't just a migration tool; it's a repository health auditor.
     *   **Problem:** Repeating `<TargetFramework>`, `<Authors>`, or `<ImplicitUsings>` in every single project file violates DRY.
     *   **Solution:** `cpmigrate --unify-props` automatically detects properties shared by **all** projects, moves them to a solution-level `Directory.Build.props`, and cleans up individual project files.
 
+### 📄 SLNX Solution File Support (New in v2.8)
+
+-   **Modern Solution Format**
+    *   **Feature:** Full support for the new `.slnx` XML-based solution file format introduced in Visual Studio 17.10 and .NET SDK 9.0.200+.
+    *   **Benefit:** Seamlessly works with both traditional `.sln` and modern `.slnx` files - no configuration needed.
+    *   **Reference:** [Introducing SLNX support in .NET CLI](https://devblogs.microsoft.com/dotnet/introducing-slnx-support-dotnet-cli/)
+
 ### 🎮 Mission Control Dashboard
 
 -   **Zero-Typing Interface:** Navigate your file system and options using only arrow keys.
@@ -129,7 +136,7 @@ cpmigrate --batch /path/to/repo --batch-parallel
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--interactive` | `-i` | Launch the Mission Control TUI (Default if no args). |
-| `--solution` | `-s` | Path to `.sln` file or directory. |
+| `--solution` | `-s` | Path to `.sln` or `.slnx` file or directory. |
 | `--unify-props` | - | Migrate common project properties to `Directory.Build.props`. |
 | `--dry-run` | `-d` | Simulate operations without writing files. |
 | `--analyze` | `-a` | Run health checks (duplicates, security, transitive). |
