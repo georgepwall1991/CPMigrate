@@ -132,7 +132,7 @@ public class ProjectAnalyzerParsingTests : IDisposable
         // Arrange
         var projectFsPath = Path.Combine(_testDirectory, "ProjectFS.fsproj");
         var projectVbPath = Path.Combine(_testDirectory, "ProjectVB.vbproj");
-        
+
         File.WriteAllText(projectFsPath, "<Project></Project>");
         File.WriteAllText(projectVbPath, "<Project></Project>");
 
@@ -143,5 +143,50 @@ public class ProjectAnalyzerParsingTests : IDisposable
         // Act & Assert for VB
         var (_, pathsVb) = _analyzer.DiscoverProjectFromPath(projectVbPath);
         pathsVb.Should().ContainSingle().Which.Should().EndWith("ProjectVB.vbproj");
+    }
+
+    [Fact]
+    public void DiscoverProjectsFromSolution_ShouldParse_SlnxFormat()
+    {
+        // Arrange - Create a .slnx file (XML-based solution format)
+        var solutionPath = Path.Combine(_testDirectory, "TestSolution.slnx");
+        var projectPath = Path.Combine(_testDirectory, "MyProject", "MyProject.csproj");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(projectPath)!);
+        File.WriteAllText(projectPath, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+
+        // Create minimal valid SLNX file (XML format)
+        var slnxContent = """
+            <Solution>
+              <Project Path="MyProject/MyProject.csproj" />
+            </Solution>
+            """;
+        File.WriteAllText(solutionPath, slnxContent);
+
+        // Act
+        var (basePath, projectPaths) = _analyzer.DiscoverProjectsFromSolution(solutionPath);
+
+        // Assert
+        basePath.Should().Be(_testDirectory);
+        projectPaths.Should().ContainSingle().Which.Should().EndWith("MyProject.csproj");
+    }
+
+    [Fact]
+    public void GetSolutionFiles_ShouldFind_BothSlnAndSlnx()
+    {
+        // Arrange
+        var slnPath = Path.Combine(_testDirectory, "Solution1.sln");
+        var slnxPath = Path.Combine(_testDirectory, "Solution2.slnx");
+
+        File.WriteAllText(slnPath, "Microsoft Visual Studio Solution File, Format Version 12.00\nGlobal\nEndGlobal");
+        File.WriteAllText(slnxPath, "<Solution></Solution>");
+
+        // Act
+        var solutions = ProjectAnalyzer.GetSolutionFiles(_testDirectory);
+
+        // Assert
+        solutions.Should().HaveCount(2);
+        solutions.Should().Contain(s => s.EndsWith(".sln"));
+        solutions.Should().Contain(s => s.EndsWith(".slnx"));
     }
 }

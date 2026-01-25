@@ -71,7 +71,14 @@ public partial class ProjectAnalyzer
         try
         {
             // Use Microsoft.VisualStudio.SolutionPersistence for unified .sln/.slnx parsing
-            var solution = SolutionSerializers.GetSerializerByMoniker(fullPath)!
+            var serializer = SolutionSerializers.GetSerializerByMoniker(fullPath);
+            if (serializer == null)
+            {
+                _consoleService.Error($"Unsupported solution file format: {Path.GetExtension(fullPath)}");
+                return (string.Empty, projectPaths);
+            }
+
+            var solution = serializer
                 .OpenAsync(fullPath, CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
