@@ -30,6 +30,7 @@
   <ItemGroup>
     <PackageReference Include="Buildalyzer" />
     <PackageReference Include="CommandLineParser" />
+    <PackageReference Include="Microsoft.VisualStudio.SolutionPersistence" />
     <PackageReference Include="NuGet.Versioning" />
     <PackageReference Include="Spectre.Console" />
   </ItemGroup>

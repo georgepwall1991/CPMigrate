@@ -1,7 +1,7 @@
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
-using Microsoft.Build.Exceptions;
+using Microsoft.VisualStudio.SolutionPersistence.Model;
 using Xunit;
 
 namespace CPMigrate.Tests;
@@ -102,8 +102,8 @@ public class ProjectAnalyzerParsingTests : IDisposable
         // Act
         var action = () => _analyzer.DiscoverProjectsFromSolution(solutionPath);
 
-        // Assert
-        action.Should().Throw<InvalidProjectFileException>();
+        // Assert - SolutionException is thrown by Microsoft.VisualStudio.SolutionPersistence for invalid files
+        action.Should().Throw<SolutionException>();
     }
 
     [Fact]
