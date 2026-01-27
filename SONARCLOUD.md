@@ -61,16 +61,25 @@ Test code has different quality standards:
 To run SonarCloud analysis locally:
 
 ```bash
-# 1. Install scanner
+# 1. Install scanner (if not already installed)
 dotnet tool install --global dotnet-sonarscanner
 
-# 2. Set token (get from https://sonarcloud.io/account/security)
-export SONAR_TOKEN="your_token_here"
+# 2. Set your token
+export SONAR_TOKEN="b0ca3ff0f146c0597bd85c66e7a04897275cf68d"
 
-# 3. Begin analysis (uses sonar-project.properties)
+# 3. Begin analysis
+# The scanner doesn't auto-read sonar-project.properties, so we pass key explicitly
 dotnet sonarscanner begin \
+  /k:"georgepwall1991_CPMigrate" \
+  /o:"georgepwall1991" \
   /d:sonar.token="$SONAR_TOKEN" \
-  /d:sonar.host.url="https://sonarcloud.io"
+  /d:sonar.host.url="https://sonarcloud.io" \
+  /d:sonar.sources="CPMigrate" \
+  /d:sonar.tests="CPMigrate.Tests" \
+  /d:sonar.exclusions="**/obj/**,**/bin/**,**/*.Designer.cs,**/nupkg/**" \
+  /d:sonar.coverage.exclusions="**/*.Tests/**,**/Program.cs,**/TestDoubles/**" \
+  /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
+  /d:sonar.cs.vstest.reportsPaths="**/*.trx"
 
 # 4. Build
 dotnet build --configuration Release
@@ -86,6 +95,8 @@ dotnet test \
 # 6. End analysis
 dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 ```
+
+**Note:** While `sonar-project.properties` contains all settings, `dotnet sonarscanner` requires the project key to be passed explicitly. The properties file is primarily used by SonarScanner CLI (Java-based), not the .NET scanner.
 
 ## Viewing Results
 

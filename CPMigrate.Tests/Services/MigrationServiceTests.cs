@@ -8,6 +8,7 @@ namespace CPMigrate.Tests.Services;
 /// Tests for MigrationService.ExecuteMigrationAsync covering critical paths,
 /// conflict resolution, error handling, and edge cases.
 /// </summary>
+[Collection("Sequential")]
 public class MigrationServiceTests : IDisposable
 {
     private readonly string _testDirectory;
@@ -37,10 +38,13 @@ public class MigrationServiceTests : IDisposable
             ("Newtonsoft.Json", "13.0.1")
         });
 
+        // Create solution file
+        CreateTestSolution("Test.sln", projectPath);
+
         var service = new MigrationService(_console);
         var options = new Options
         {
-            ProjectFileDir = projectPath,
+            SolutionFileDir = _testDirectory,
             OutputDir = _testDirectory,
             BackupDir = _testDirectory
         };
@@ -65,14 +69,16 @@ public class MigrationServiceTests : IDisposable
     public async Task ExecuteMigrationAsync_WithConflicts_ResolvesWithHighestStrategy()
     {
         // Arrange
-        CreateTestProjectFile("Project1.csproj", new[]
+        var project1 = CreateTestProjectFile("Project1.csproj", new[]
         {
             ("Newtonsoft.Json", "12.0.1")
         });
-        CreateTestProjectFile("Project2.csproj", new[]
+        var project2 = CreateTestProjectFile("Project2.csproj", new[]
         {
             ("Newtonsoft.Json", "13.0.1")
         });
+
+        CreateTestSolution("Test.sln", project1, project2);
 
         var service = new MigrationService(_console);
         var options = new Options
@@ -100,14 +106,16 @@ public class MigrationServiceTests : IDisposable
     public async Task ExecuteMigrationAsync_WithConflicts_ResolvesWithLowestStrategy()
     {
         // Arrange
-        CreateTestProjectFile("Project1.csproj", new[]
+        var project1 = CreateTestProjectFile("Project1.csproj", new[]
         {
             ("Newtonsoft.Json", "12.0.1")
         });
-        CreateTestProjectFile("Project2.csproj", new[]
+        var project2 = CreateTestProjectFile("Project2.csproj", new[]
         {
             ("Newtonsoft.Json", "13.0.1")
         });
+
+        CreateTestSolution("Test.sln", project1, project2);
 
         var service = new MigrationService(_console);
         var options = new Options
@@ -135,14 +143,16 @@ public class MigrationServiceTests : IDisposable
     public async Task ExecuteMigrationAsync_ConflictStrategyFail_ReturnsError()
     {
         // Arrange
-        CreateTestProjectFile("Project1.csproj", new[]
+        var project1 = CreateTestProjectFile("Project1.csproj", new[]
         {
             ("Newtonsoft.Json", "12.0.1")
         });
-        CreateTestProjectFile("Project2.csproj", new[]
+        var project2 = CreateTestProjectFile("Project2.csproj", new[]
         {
             ("Newtonsoft.Json", "13.0.1")
         });
+
+        CreateTestSolution("Test.sln", project1, project2);
 
         var service = new MigrationService(_console);
         var options = new Options
@@ -217,6 +227,8 @@ public class MigrationServiceTests : IDisposable
             ("Newtonsoft.Json", "13.0.1")
         });
 
+        CreateTestSolution("Test.sln", projectPath);
+
         // Pre-create Directory.Packages.props with existing package
         var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
         var existingPropsContent = @"<Project>
@@ -229,7 +241,7 @@ public class MigrationServiceTests : IDisposable
         var service = new MigrationService(_console);
         var options = new Options
         {
-            ProjectFileDir = projectPath,
+            SolutionFileDir = _testDirectory,
             OutputDir = _testDirectory,
             BackupDir = _testDirectory,
             MergeExisting = true
@@ -257,10 +269,12 @@ public class MigrationServiceTests : IDisposable
         });
         var originalProjectContent = File.ReadAllText(projectPath);
 
+        CreateTestSolution("Test.sln", projectPath);
+
         var service = new MigrationService(_console);
         var options = new Options
         {
-            ProjectFileDir = projectPath,
+            SolutionFileDir = _testDirectory,
             OutputDir = _testDirectory,
             BackupDir = _testDirectory,
             DryRun = true
@@ -292,10 +306,12 @@ public class MigrationServiceTests : IDisposable
             ("FluentAssertions", "6.11.0")
         });
 
+        CreateTestSolution("Test.sln", projectPath);
+
         var service = new MigrationService(_console);
         var options = new Options
         {
-            ProjectFileDir = projectPath,
+            SolutionFileDir = _testDirectory,
             OutputDir = _testDirectory,
             BackupDir = _testDirectory
         };
@@ -333,5 +349,38 @@ public class MigrationServiceTests : IDisposable
         var projectPath = Path.Combine(_testDirectory, projectName);
         File.WriteAllText(projectPath, projectContent);
         return projectPath;
+    }
+
+    private string CreateTestSolution(string solutionName, params string[] projectPaths)
+    {
+        var solutionPath = Path.Combine(_testDirectory, solutionName);
+        var solutionContent = @"
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+";
+
+        foreach (var projectPath in projectPaths)
+        {
+            var projectGuid = Guid.NewGuid().ToString("B").ToUpper();
+            var projectName = Path.GetFileNameWithoutExtension(projectPath);
+            var relativePath = Path.GetRelativePath(Path.GetDirectoryName(solutionPath)!, projectPath);
+
+            solutionContent += $@"Project(""{{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}}"") = ""{projectName}"", ""{relativePath}"", ""{projectGuid}""
+EndProject
+";
+        }
+
+        solutionContent += @"Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|Any CPU = Debug|Any CPU
+        Release|Any CPU = Release|Any CPU
+    EndGlobalSection
+EndGlobal
+";
+
+        File.WriteAllText(solutionPath, solutionContent);
+        return solutionPath;
     }
 }

@@ -5,6 +5,7 @@ using FluentAssertions;
 
 namespace CPMigrate.Tests.Services;
 
+[Collection("Sequential")]
 public class MigrationServiceRollbackTests : IDisposable
 {
     private readonly string _testDirectory;
@@ -36,6 +37,7 @@ public class MigrationServiceRollbackTests : IDisposable
         var options = new Options
         {
             Rollback = true,
+            SolutionFileDir = _testDirectory,
             BackupDir = _testDirectory
         };
 
@@ -55,6 +57,7 @@ public class MigrationServiceRollbackTests : IDisposable
         var options = new Options
         {
             Rollback = true,
+            SolutionFileDir = _testDirectory,
             BackupDir = _testDirectory
         };
 
@@ -80,6 +83,7 @@ public class MigrationServiceRollbackTests : IDisposable
         var options = new Options
         {
             Rollback = true,
+            SolutionFileDir = _testDirectory,
             BackupDir = _testDirectory
         };
 
