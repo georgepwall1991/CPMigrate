@@ -9,10 +9,11 @@ public class FakeConsoleService : IConsoleService
     public Queue<string> TextResponses { get; set; } = new();
     public Queue<string> SelectionResponses { get; set; } = new();
 
+    public List<string> ErrorMessages { get; } = new();
     public void Info(string message) { }
     public void Success(string message) { }
     public void Warning(string message) { }
-    public void Error(string message) { }
+    public void Error(string message) { ErrorMessages.Add(message); }
     public void Highlight(string message) { }
     public void Dim(string message) { }
     public void DryRun(string message) { }

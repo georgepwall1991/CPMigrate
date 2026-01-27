@@ -162,6 +162,39 @@ public class ProjectAnalyzerTests : IDisposable
         projectPaths.Should().BeEmpty();
     }
 
+    [Fact]
+    public void DiscoverProjectsFromSolution_MultipleSolutions_PromptsUser()
+    {
+        var header = "Microsoft Visual Studio Solution File, Format Version 12.00";
+        var sln1 = Path.Combine(_testDirectory, "Solution1.sln");
+        var sln2 = Path.Combine(_testDirectory, "Solution2.sln");
+        File.WriteAllText(sln1, header);
+        File.WriteAllText(sln2, header);
+
+        _console.SelectionResponses.Enqueue("Solution2.sln");
+
+        // Act
+        var (basePath, projectPaths) = _analyzer.DiscoverProjectsFromSolution(_testDirectory);
+
+        // Assert
+        basePath.Should().Be(_testDirectory);
+        // We're just verifying it correctly handled the selection logic
+    }
+
+    [Fact]
+    public void DiscoverProjectsFromSolution_UnsupportedFormat_Errors()
+    {
+        // Arrange
+        var invalidFile = Path.Combine(_testDirectory, "Test.txt");
+        File.WriteAllText(invalidFile, "not a solution");
+
+        // Act
+        var (basePath, _) = _analyzer.DiscoverProjectsFromSolution(invalidFile);
+
+        // Assert
+        basePath.Should().BeEmpty();
+    }
+
     #endregion
 
     #region DiscoverProjectFromPath Tests

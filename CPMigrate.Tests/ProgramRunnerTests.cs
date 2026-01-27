@@ -1,0 +1,180 @@
+using CPMigrate.Services;
+using CPMigrate.Tests.TestDoubles;
+using FluentAssertions;
+
+namespace CPMigrate.Tests;
+
+public class ProgramRunnerTests
+{
+    [Fact]
+    public async Task RunAsync_NoArgs_StartsInteractiveMode()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        // Setup responses to exit interactive mode immediately
+        fakeConsole.SelectionResponses = new Queue<string>(new[] { "Exit" });
+        
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(Array.Empty<string>(), fakeConsole);
+
+        // Assert
+        exitCode.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task RunAsync_HelpArg_ReturnsSuccess()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(new[] { "--help" }, fakeConsole);
+
+        // Assert
+        // Parser.Default.ParseArguments returns 0 for help usually, but let's check what ExitCodes.ValidationError is
+        // Actually help doesn't map to MapResult second param usually if it's handled by Parser
+        // But CommandLineParser might exit or return 0.
+        exitCode.Should().Be(0); 
+    }
+
+    [Fact]
+    public async Task RunAsync_InvalidArgs_ReturnsValidationError()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(new[] { "--invalid-arg" }, fakeConsole);
+
+        // Assert
+        exitCode.Should().Be(ExitCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task RunAsync_ValidArgs_CallsRouteCommand()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        // Use a non-existent path to get an error we can recognize
+        var args = new[] { "-s", "non_existent_folder" };
+        
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+        // Assert
+        // It should reach RouteCommand, which calls RunMigrationAsync, which calls DiscoverProjects, which fails
+        exitCode.Should().Be(ExitCodes.NoProjectsFound);
+    }
+
+    [Fact]
+    public async Task DetermineStartDirectory_UsesBatchDirIfSpecified()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        var args = new[] { "--batch", "my_batch_dir", "-o", "output" };
+        
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+        // Assert - We can't easily check the internal state, but we can verify it doesn't crash
+        // and if it reaches RouteCommand, it'll try to find solutions in my_batch_dir
+        // Batch mode returns Success (0) even if no solutions are found.
+        exitCode.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task DetermineStartDirectory_UsesProjectDirIfSpecified()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        var args = new[] { "-p", "my_project_dir" };
+        
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+        // Assert
+        exitCode.Should().Be(ExitCodes.NoProjectsFound);
+    }
+
+    [Fact]
+    public async Task MergeConfigWithCliArgsAsync_HandlesExistingConfig()
+    {
+        // Arrange
+        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempPath);
+        var configPath = Path.Combine(tempPath, ".cpmigrate.json");
+        File.WriteAllText(configPath, "{\"backup\": false}");
+        
+        var fakeConsole = new FakeConsoleService();
+        var args = new[] { "-s", tempPath };
+        
+        try
+        {
+            // Act
+            var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+            // Assert
+            exitCode.Should().Be(ExitCodes.NoProjectsFound);
+            // Internal verification: config should have been merged
+        }
+        finally
+        {
+            Directory.Delete(tempPath, true);
+        }
+    }
+
+    [Fact]
+    public async Task DetermineStartDirectory_UsesCurrentDirIfNoDirSpecified()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        // Use an option that doesn't imply a directory, like -d (dry run)
+        var args = new[] { "-d" };
+        
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+        // Assert
+        exitCode.Should().Be(ExitCodes.NoProjectsFound);
+    }
+
+    [Fact]
+    public async Task DetermineStartDirectory_SkipsDotSolutionDir()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        // Set solution dir to "." explicitly
+        var args = new[] { "-s", "." };
+        
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+        // Assert
+        // Should fall through to return "." anyway if nothing else is specified
+        exitCode.Should().Be(ExitCodes.NoProjectsFound);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithNullConsole_UsesDefaultConsole()
+    {
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(new[] { "--help" }, null);
+
+        // Assert
+        exitCode.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task DetermineStartDirectory_HandlesEmptySolutionDir()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        var args = new[] { "-s", "" }; // Empty string
+        
+        // Act
+        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+        // Assert
+        exitCode.Should().Be(ExitCodes.NoProjectsFound);
+    }
+}

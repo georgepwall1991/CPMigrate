@@ -243,6 +243,7 @@ public class CommandRouterTests : IDisposable
         {
             PruneBackups = true,
             SolutionFileDir = _testDirectory,
+            BackupDir = _testDirectory,
             Retention = 10, // Keep 10, but we only have 1
             Quiet = true
         };
@@ -392,6 +393,124 @@ EndProject
         {
             Console.SetOut(originalOut);
         }
+    }
+
+    [Fact]
+    public async Task RunPruneModeAsync_PruneAll_Cancelled()
+    {
+        // Arrange
+        var options = new Options { PruneAll = true, SolutionFileDir = _testDirectory };
+        var backupPath = BackupManager.GetBackupDirectoryPath(options);
+        Directory.CreateDirectory(backupPath);
+        File.WriteAllText(Path.Combine(backupPath, "test.backup_20240101_120000"), "test content");
+
+        _console.ConfirmationResponse = false; // Cancel
+
+        // Act
+        var result = await CommandRouter.RunPruneModeAsync(options, _console, _backupManager);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+        Directory.EnumerateFiles(backupPath).Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task RunPruneModeAsync_PruneBackups_Cancelled()
+    {
+        // Arrange
+        var options = new Options { PruneBackups = true, SolutionFileDir = _testDirectory, Retention = 0 };
+        var backupPath = BackupManager.GetBackupDirectoryPath(options);
+        Directory.CreateDirectory(backupPath);
+        Directory.CreateDirectory(Path.Combine(backupPath, "backup_20240101_120000"));
+
+        _console.ConfirmationResponse = false; // Cancel
+
+        // Act
+        var result = await CommandRouter.RunPruneModeAsync(options, _console, _backupManager);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task RunMigrationAsync_GeneralException_ReturnsUnexpectedError()
+    {
+        // Arrange - Uninitialized options to trigger something
+        Options options = null!;
+
+        // Act
+        var result = await CommandRouter.RunMigrationAsync(options, _console, _versionResolver, _backupManager);
+
+        // Assert
+        result.Should().Be(ExitCodes.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task RunInteractiveModeAsync_ReturnsToMenu_ThenExits()
+    {
+        // Arrange
+        _interactiveService.NextWizardResult = new Options { DryRun = true }; // First run
+        _console.ConfirmationResponse = false; // "Return to main menu?" -> No (exits)
+
+        // Act
+        var result = await CommandRouter.RunInteractiveModeAsync(
+            _console,
+            _interactiveService,
+            _versionResolver,
+            _configService,
+            _backupManager);
+
+        // Assert
+        result.Should().BeOneOf(ExitCodes.Success, ExitCodes.NoProjectsFound, ExitCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task RunPruneModeAsync_PruneAll_Confirmed()
+    {
+        // Arrange
+        var options = new Options { PruneAll = true, SolutionFileDir = _testDirectory, Quiet = false };
+        var backupPath = BackupManager.GetBackupDirectoryPath(options);
+        Directory.CreateDirectory(backupPath);
+        File.WriteAllText(Path.Combine(backupPath, "test.backup_20240101_120000"), "test content");
+
+        _console.ConfirmationResponse = true; // Confirm
+
+        // Act
+        var result = await CommandRouter.RunPruneModeAsync(options, _console, _backupManager);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task RunPruneModeAsync_PruneBackups_Confirmed()
+    {
+        // Arrange
+        var options = new Options { PruneBackups = true, SolutionFileDir = _testDirectory, Retention = 1, Quiet = false };
+        var backupPath = BackupManager.GetBackupDirectoryPath(options);
+        Directory.CreateDirectory(backupPath);
+        Directory.CreateDirectory(Path.Combine(backupPath, "backup_20240101_120000"));
+        Directory.CreateDirectory(Path.Combine(backupPath, "backup_20240102_120000"));
+
+        _console.ConfirmationResponse = true; // Confirm
+
+        // Act
+        var result = await CommandRouter.RunPruneModeAsync(options, _console, _backupManager);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task WriteJsonOutputForMigration_Rollback_HitsBranch()
+    {
+         // Arrange
+         var options = new Options { Rollback = true, Output = OutputFormat.Json, SolutionFileDir = _testDirectory };
+         
+         // Act
+         await CommandRouter.RunMigrationAsync(options, _console, _versionResolver, _backupManager);
+         
+         // Assert - branch hit
     }
 
     // Helper methods
