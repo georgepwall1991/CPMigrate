@@ -28,72 +28,54 @@ It doesn't just move XML around; it is a full-featured **repository health audit
 
 ---
 
-## ✨ Features
+## ✨ Key Features & Capabilities
 
-### 🛡️ Intelligence & Security Suite (New in v2.5)
+### 🛡️ **Intelligent Dependency Management**
+*   **Transitive Conflict Resolution:** Automatically detects and resolves deep dependency conflicts that `dotnet restore` often misses.
+*   **Dependency Lifting (Cleanup):** Identifies redundant explicit package references that are already transitively provided, keeping your `.csproj` files clean and minimal.
+*   **Smart Versioning Strategies:** Choose between *Highest*, *Lowest*, or *Fail* strategies to handle version mismatches across your repository.
 
-CPMigrate v2.5+ isn't just a migration tool; it's a repository health auditor.
+### 🔒 **Security-First Architecture**
+*   **Automated Vulnerability Audits:** Runs integrated security scans (`dotnet list package --vulnerable`) to prevent locking in insecure packages.
+*   **Secure Execution:** Strict path resolution prevents PATH injection attacks.
+*   **Supply Chain Hardening:** CI/CD workflows are pinned to secure hashes to prevent upstream compromises.
 
--   **🔍 Transitive Pinning & Conflict Resolution**
-    *   **Problem:** Deep dependency chains often conflict, causing runtime errors.
-    *   **Solution:** Automatically detects conflicts deep in the graph and "pins" the correct version at the root level.
--   **🧹 Dependency Lifting (Redundant Reference Removal)**
-    *   **Problem:** Projects often explicitly reference packages that are already brought in by other libraries (e.g., `Microsoft.Extensions.Logging`).
-    *   **Solution:** Identifies and removes these redundant lines, keeping your `.csproj` files lean.
--   **🚨 Integrated Security Audit**
-    *   **Feature:** Runs a real-time vulnerability scan (`dotnet list package --vulnerable`) and integrates findings directly into the migration report.
-    *   **Action:** Highlights high-severity CVEs before you lock them into your CPM file.
--   **🎯 Framework Alignment Heatmap**
-    *   **Feature:** Visualizes target framework divergence (e.g., mixing `net8.0` and `net472`) which can complicate package resolution.
+### 🚀 **Modern Development Workflow**
+*   **SLNX Support:** Fully compatible with the new Visual Studio 17.10+ `.slnx` solution format.
+*   **Directory.Build.props Unification:** Automatically promotes repeated properties (Authors, TargetFramework, etc.) to a root-level configuration file, enforcing consistency across 100+ projects instantly.
+*   **Self-Updating:** Includes a built-in update checker to ensure you're always using the latest version of the tool.
+    *   `cpmigrate --update`
 
-### 🏗️ Clean Architecture (New in v2.6)
-
--   **Directory.Build.props Unification**
-    *   **Problem:** Repeating `<TargetFramework>`, `<Authors>`, or `<ImplicitUsings>` in every single project file violates DRY.
-    *   **Solution:** `cpmigrate --unify-props` automatically detects properties shared by **all** projects, moves them to a solution-level `Directory.Build.props`, and cleans up individual project files.
-
-### 📄 SLNX Solution File Support (New in v2.8)
-
--   **Modern Solution Format**
-    *   **Feature:** Full support for the new `.slnx` XML-based solution file format introduced in Visual Studio 17.10 and .NET SDK 9.0.200+.
-    *   **Benefit:** Seamlessly works with both traditional `.sln` and modern `.slnx` files - no configuration needed.
-    *   **Reference:** [Introducing SLNX support in .NET CLI](https://devblogs.microsoft.com/dotnet/introducing-slnx-support-dotnet-cli/)
-
-### 🔒 Enhanced Security & Hardening (New in v2.9)
-
--   **Secure Execution Pipeline**
-    *   **Feature:** Mitigated PATH injection vulnerabilities by strictly resolving the absolute path of the `dotnet` host process.
-    *   **Benefit:** Ensures that `cpmigrate` cannot be tricked into executing malicious binaries named `dotnet` placed in writable directories.
--   **Hardened CI/CD Supply Chain**
-    *   **Feature:** Pinned GitHub Actions dependencies to specific SHA hashes and implemented secure secret injection via environment variables.
-    *   **Benefit:** Protects the build pipeline against upstream compromised actions and prevents secret leakage in logs.
-
-### 🎮 Mission Control Dashboard
-
--   **Zero-Typing Interface:** Navigate your file system and options using only arrow keys.
--   **Risk Assessment:** Pre-scans your repo to calculate a "Migration Risk" score based on version divergence.
--   **Live Verification:** Automatically runs `dotnet restore` after every major change to ensure build integrity.
--   **Cyberpunk UI:** A stunning, high-density terminal interface with progress blueprints and real-time status updates.
+### 🎮 **Mission Control Dashboard**
+An immersive, keyboard-driven Terminal User Interface (TUI) that provides:
+*   **Real-time Risk Assessment:** Scans your repo and calculates a "Migration Risk" score.
+*   **Dry-Run Previews:** Visualize massively destructive changes before they happen.
+*   **Live Verification:** Automatically verifies build integrity after every migration step.
 
 ---
 
-## 📦 Installation
+## 📦 Installation & Updating
 
 ### As a .NET Global Tool (Recommended)
 
-Requires .NET SDK 8.0 or later (supports .NET 10).
+Requires **.NET SDK 8.0** or later (supports .NET 10).
 
+**Install:**
 ```bash
 dotnet tool install --global CPMigrate
 ```
 
-**Upgrading to the latest version:**
-
+**Update:**
+You can let the tool update itself:
+```bash
+cpmigrate --update
+```
+Or manually via .NET CLI:
 ```bash
 dotnet tool update --global CPMigrate
 ```
 
-> **Note:** If you just released a version, NuGet indexing might take ~15 minutes. Try clearing your cache if updates aren't finding the new version:
+> **Note:** NuGet indexing may take up to 15 minutes after a new release. Clear your HTTP cache if updates aren't found immediately:
 > `dotnet nuget locals http-cache --clear`
 
 ### From Source
@@ -106,47 +88,48 @@ dotnet build
 
 ---
 
-## 🕹️ Usage
+## 🕹️ Usage Scenarios
 
-### Interactive Mode (The "Mission Control")
-
-Simply run the command without arguments to enter the wizard:
+### 1. The "Mission Control" (Interactive Mode)
+Ideal for first-time users or complex repositories.
 
 ```bash
 cpmigrate
 ```
+*   Drives the entire process via a step-by-step wizard.
+*   Offers rollbacks, backups, and detailed explanations.
 
-The tool will:
-1.  **Scan** for solutions and git status.
-2.  **Dashboard** your current repository state.
-3.  **Guide** you through migration, cleanup, or analysis.
+### 2. CI/CD & Automation (Headless Mode)
+Perfect for GitHub Actions, Azure DevOps, or Git hooks.
 
-### Command-Line (CI/CD & Power Users)
-
-**Migrate the current folder's solution:**
+**Migrate a specific solution:**
 ```bash
-cpmigrate -s .
+cpmigrate -s ./MySolution.sln
 ```
 
-**Unify common properties to Directory.Build.props:**
+**Analyze repository health (No changes):**
 ```bash
-cpmigrate --unify-props
+cpmigrate --analyze
 ```
 
-**Dry-run (Preview changes):**
-```bash
-cpmigrate --dry-run
-```
-
-**Analyze and auto-fix issues (No migration, just cleanup):**
+**Auto-fix common issues (No migration):**
 ```bash
 cpmigrate --analyze --fix
 ```
 
-**Batch migrate an entire monorepo:**
+### 3. Repository Modernization
+Refactor your entire codebase structure in one command.
+
+**Unify generic properties to `Directory.Build.props`:**
+```bash
+cpmigrate --unify-props
+```
+
+**Batch migrate a monorepo with 50+ solutions:**
 ```bash
 cpmigrate --batch /path/to/repo --batch-parallel
 ```
+
 
 ### Options Reference
 
