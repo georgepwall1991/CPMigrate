@@ -270,6 +270,11 @@ public class Options
     {
         if (!string.IsNullOrEmpty(BatchDir))
         {
+            if (!Directory.Exists(BatchDir))
+            {
+                throw new ArgumentException($"Batch directory does not exist: {BatchDir}");
+            }
+
             if (!string.IsNullOrEmpty(SolutionFileDir) && SolutionFileDir != ".")
             {
                 throw new ArgumentException("--batch cannot be used with --solution.");

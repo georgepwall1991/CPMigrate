@@ -87,6 +87,7 @@ public class SlnxIntegrationTests : IDisposable
         var args = new[] { "-s", slnxPath, "--dry-run", "--no-backup" }; // dry run to avoid modifications
 
         // Act
+        _consoleService.ConfirmationResponse = false;
         var exitCode = await ProgramRunner.RunAsync(args, _consoleService);
 
         // Assert

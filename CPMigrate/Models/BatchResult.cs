@@ -23,7 +23,7 @@ public class BatchResult
     /// Overall success status (true only if all solutions succeeded).
     /// </summary>
     [JsonPropertyName("success")]
-    public bool Success => Solutions.All(s => s.Success);
+    public bool Success => Errors.Count == 0 && Solutions.Count > 0 && Solutions.All(s => s.Success);
 
     /// <summary>
     /// Results for each solution processed.

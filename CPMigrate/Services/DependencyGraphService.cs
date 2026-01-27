@@ -5,7 +5,7 @@ namespace CPMigrate.Services;
 /// <summary>
 /// Service to analyze the full dependency graph using project.assets.json.
 /// </summary>
-public class DependencyGraphService
+public class DependencyGraphService : IDependencyGraphService
 {
     private readonly IConsoleService _console;
 

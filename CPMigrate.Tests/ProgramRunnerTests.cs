@@ -70,16 +70,25 @@ public class ProgramRunnerTests
     public async Task DetermineStartDirectory_UsesBatchDirIfSpecified()
     {
         // Arrange
-        var fakeConsole = new FakeConsoleService();
-        var args = new[] { "--batch", "my_batch_dir", "-o", "output" };
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        File.WriteAllText(Path.Combine(tempDir, "Test.sln"), "");
         
-        // Act
-        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+        try
+        {
+            var fakeConsole = new FakeConsoleService();
+            var args = new[] { "--batch", tempDir, "-o", "output" };
+            
+            // Act
+            var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
 
-        // Assert - We can't easily check the internal state, but we can verify it doesn't crash
-        // and if it reaches RouteCommand, it'll try to find solutions in my_batch_dir
-        // Batch mode returns Success (0) even if no solutions are found.
-        exitCode.Should().Be(ExitCodes.Success);
+            // Assert
+            exitCode.Should().BeOneOf(ExitCodes.Success, ExitCodes.AnalysisIssuesFound);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
     }
 
     [Fact]

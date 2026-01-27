@@ -170,7 +170,7 @@ public class CommandRouterTests : IDisposable
             _backupManager);
 
         // Assert - Just verify it attempted to run (any result is fine, we're testing config loading path)
-        result.Should().BeOneOf(ExitCodes.Success, ExitCodes.UnexpectedError, ExitCodes.ValidationError);
+        result.Should().BeOneOf(ExitCodes.Success, ExitCodes.UnexpectedError, ExitCodes.ValidationError, ExitCodes.NoProjectsFound);
     }
 
     [Fact]

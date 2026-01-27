@@ -8,9 +8,9 @@ namespace CPMigrate.Analyzers;
 /// </summary>
 public class LiftingAnalyzer : IAnalyzer
 {
-    private readonly DependencyGraphService _graphService;
+    private readonly IDependencyGraphService _graphService;
 
-    public LiftingAnalyzer(DependencyGraphService graphService)
+    public LiftingAnalyzer(IDependencyGraphService graphService)
     {
         _graphService = graphService;
     }
