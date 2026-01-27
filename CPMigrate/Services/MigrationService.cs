@@ -1,3 +1,4 @@
+using System.Globalization;
 using CPMigrate.Models;
 using Spectre.Console;
 
@@ -979,49 +980,7 @@ public class MigrationService
             .AddColumn(new TableColumn("[cyan]Files[/]").RightAligned())
             .AddColumn(new TableColumn("[cyan]Size[/]").RightAligned());
 
-        var index = 1;
-        long totalSize = 0;
-        int totalFiles = 0;
-
-        foreach (var backup in backups)
-        {
-            // Parse timestamp (supports legacy and millisecond formats)
-            var displayTime = "Unknown";
-            var timestampFormats = new[] { "yyyyMMddHHmmssfff", "yyyyMMddHHmmss", "yyyyMMddHHmmssZ" };
-            if (DateTime.TryParseExact(backup.Timestamp, timestampFormats,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.None, out var dateTime))
-            {
-                displayTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss");
-            }
-
-            // Calculate size
-            long backupSize = 0;
-            foreach (var file in backup.Files)
-            {
-                try
-                {
-                    var fileInfo = new FileInfo(file);
-                    backupSize += fileInfo.Length;
-                }
-                catch { /* Ignore errors */ }
-            }
-            totalSize += backupSize;
-            totalFiles += backup.Files.Count;
-
-            var sizeStr = FormatFileSize(backupSize);
-            var isNewest = index == 1;
-            var rowStyle = isNewest ? "[green]" : "[white]";
-
-            table.AddRow(
-                $"{rowStyle}{index}[/]",
-                $"{rowStyle}{backup.Timestamp}[/]",
-                $"{rowStyle}{displayTime}[/]",
-                $"{rowStyle}{backup.Files.Count}[/]",
-                $"{rowStyle}{sizeStr}[/]"
-            );
-            index++;
-        }
+        var (totalSize, totalFiles) = PopulateBackupTable(table, backups);
 
         AnsiConsole.Write(table);
         _consoleService.WriteLine();
@@ -1031,6 +990,69 @@ public class MigrationService
 
         await Task.CompletedTask;
         return new MigrationResult { ExitCode = ExitCodes.Success };
+    }
+
+    private static (long TotalSize, int TotalFiles) PopulateBackupTable(Table table, List<BackupSetInfo> backups)
+    {
+        var index = 1;
+        long totalSize = 0;
+        int totalFiles = 0;
+
+        foreach (var backup in backups)
+        {
+            var displayTime = ParseBackupTimestamp(backup.Timestamp);
+            var backupSize = CalculateBackupSize(backup.Files);
+            totalSize += backupSize;
+            totalFiles += backup.Files.Count;
+
+            AddBackupTableRow(table, index, backup, displayTime, backupSize);
+            index++;
+        }
+
+        return (totalSize, totalFiles);
+    }
+
+    private static string ParseBackupTimestamp(string timestamp)
+    {
+        if (DateTime.TryParseExact(timestamp, "yyyyMMdd_HHmmss",
+            CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
+        {
+            return dt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+
+        if (DateTime.TryParse(timestamp, CultureInfo.InvariantCulture, DateTimeStyles.None, out dt))
+        {
+            return dt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+
+        return timestamp;
+    }
+
+    private static long CalculateBackupSize(List<string> files)
+    {
+        return files.Sum(f =>
+        {
+            try
+            {
+                return File.Exists(f) ? new FileInfo(f).Length : 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        });
+    }
+
+    private static void AddBackupTableRow(Table table, int index, BackupSetInfo backup,
+        string displayTime, long backupSize)
+    {
+        table.AddRow(
+            $"[cyan]{index}[/]",
+            $"[dim]{backup.Timestamp}[/]",
+            $"[white]{displayTime}[/]",
+            $"[yellow]{backup.Files.Count}[/]",
+            $"[green]{FormatFileSize(backupSize)}[/]"
+        );
     }
 
     private static string FormatFileSize(long bytes)
