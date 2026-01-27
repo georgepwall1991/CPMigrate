@@ -18,18 +18,15 @@ indent_size = 4
 dotnet_diagnostic.CA1031.severity = suggestion
 
 # CA1502: Avoid excessive complexity
-# Note: Temporarily set to none during refactoring - will re-enable after Phase 3
-dotnet_diagnostic.CA1502.severity = none
+dotnet_diagnostic.CA1502.severity = warning
 dotnet_code_quality.CA1502.cyclomatic_complexity = 10
 
 # CA1505: Avoid unmaintainable code
-# Note: Temporarily set to none during refactoring - will re-enable after Phase 3
-dotnet_diagnostic.CA1505.severity = none
+dotnet_diagnostic.CA1505.severity = warning
 dotnet_code_quality.CA1505.maintainability_index = 20
 
 # CA1506: Avoid excessive class coupling
-# Note: Temporarily set to none during refactoring - will re-enable after Phase 3
-dotnet_diagnostic.CA1506.severity = none
+dotnet_diagnostic.CA1506.severity = warning
 dotnet_code_quality.CA1506.class_coupling = 50
 
 # CA1822: Mark members as static

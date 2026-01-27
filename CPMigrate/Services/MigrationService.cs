@@ -139,16 +139,7 @@ public class MigrationService
             backupTimestamp = !options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath)
                 ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
                 : null;
-            BackupEntry? propsBackupEntry = null;
-
-            if (propsFileExists && options.MergeExisting && !options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
-            {
-                propsBackupEntry = _backupManager.CreateBackupForProject(options, propsPath, backupPath, backupTimestamp);
-                if (propsBackupEntry != null && !_quietMode)
-                {
-                    _consoleService.Dim("Backed up existing Directory.Packages.props.");
-                }
-            }
+            var propsBackupEntry = CreatePropsBackup(options, propsFileExists, propsPath, backupPath, backupTimestamp);
 
             var backupEntries = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath, backupTimestamp);
             backupsCreated = backupEntries.Count > 0 || propsBackupEntry != null;
@@ -159,31 +150,15 @@ public class MigrationService
             }
 
             var conflicts = VersionResolver.DetectConflicts(packages);
-            var conflictError = HandleVersionConflicts(options, packages, conflicts);
+            var conflictError = await HandleConflictsWithRollbackAsync(options, packages, conflicts, backupsCreated, backupPath);
             if (conflictError != null)
             {
-                // If we fail here due to conflicts, and we created backups, we might want to rollback
-                // but usually failing on conflicts happens BEFORE writing files.
-                // However, ProcessProjectsWithProgressAsync ALREADY wrote the modified project files.
-                // So we MUST rollback if we fail here.
-                if (backupsCreated && !options.DryRun)
-                {
-                    _consoleService.Warning("Migration failed during conflict resolution. Project files have already been modified.");
-                    if (_consoleService.AskConfirmation("Rollback changes now?"))
-                    {
-                        await ExecuteRollbackAsync(new Options { BackupDir = backupPath!, Rollback = true });
-                    }
-                }
                 return conflictError;
             }
 
             var propsFilePath = await GeneratePropsFileAsync(options, packages);
 
-            await WriteBackupManifestAsync(options, backupEntries, backupPath, propsFilePath, propsFileExisted, backupTimestamp);
-            await ManageGitIgnoreAsync(options, backupPath);
-
-            ShowMigrationSummary(options, projectPaths.Count, packages.Count, conflicts.Count, propsFilePath, backupPath);
-            ShowPostMigrationGuidance(options, propsFilePath);
+            await FinalizeMigrationAsync(options, backupEntries, backupPath, propsFilePath, propsFileExisted, backupTimestamp, projectPaths.Count, packages.Count, conflicts.Count);
 
             return new MigrationResult
             {
@@ -198,17 +173,7 @@ public class MigrationService
         }
         catch (Exception ex)
         {
-            _consoleService.Error($"\nAn error occurred during migration: {ex.Message}");
-
-            if (backupsCreated && !options.DryRun && !string.IsNullOrEmpty(backupPath))
-            {
-                _consoleService.Warning("Project files may have been partially modified.");
-                if (_consoleService.AskConfirmation("Would you like to attempt an automatic rollback to the last backup?"))
-                {
-                    await ExecuteRollbackAsync(new Options { BackupDir = backupPath, Rollback = true });
-                }
-            }
-
+            await HandleMigrationErrorAsync(ex, backupsCreated, options.DryRun, backupPath);
             throw; // Re-throw to be handled by Program.cs or caller
         }
     }
@@ -1277,5 +1242,97 @@ public class MigrationService
             PackagesCentralized = packageInfo.TotalReferences,
             ExitCode = report.HasIssues ? ExitCodes.AnalysisIssuesFound : ExitCodes.Success
         };
+    }
+
+    /// <summary>
+    /// Creates a backup of the existing Directory.Packages.props file if needed.
+    /// </summary>
+    private BackupEntry? CreatePropsBackup(
+        Options options,
+        bool propsFileExists,
+        string propsPath,
+        string? backupPath,
+        string? backupTimestamp)
+    {
+        if (!propsFileExists || !options.MergeExisting || options.DryRun || options.NoBackup || string.IsNullOrEmpty(backupPath))
+        {
+            return null;
+        }
+
+        var propsBackupEntry = _backupManager.CreateBackupForProject(options, propsPath, backupPath, backupTimestamp);
+        if (propsBackupEntry != null && !_quietMode)
+        {
+            _consoleService.Dim("Backed up existing Directory.Packages.props.");
+        }
+
+        return propsBackupEntry;
+    }
+
+    /// <summary>
+    /// Handles version conflicts and offers rollback if migration has already modified files.
+    /// </summary>
+    private async Task<MigrationResult?> HandleConflictsWithRollbackAsync(
+        Options options,
+        Dictionary<string, HashSet<string>> packages,
+        List<string> conflicts,
+        bool backupsCreated,
+        string? backupPath)
+    {
+        var conflictError = HandleVersionConflicts(options, packages, conflicts);
+        if (conflictError == null)
+        {
+            return null;
+        }
+
+        // If we fail here due to conflicts, and we created backups, we might want to rollback
+        // ProcessProjectsWithProgressAsync ALREADY wrote the modified project files
+        if (backupsCreated && !options.DryRun)
+        {
+            _consoleService.Warning("Migration failed during conflict resolution. Project files have already been modified.");
+            if (_consoleService.AskConfirmation("Rollback changes now?"))
+            {
+                await ExecuteRollbackAsync(new Options { BackupDir = backupPath!, Rollback = true });
+            }
+        }
+
+        return conflictError;
+    }
+
+    /// <summary>
+    /// Finalizes migration by writing manifest, managing .gitignore, and showing results.
+    /// </summary>
+    private async Task FinalizeMigrationAsync(
+        Options options,
+        List<BackupEntry> backupEntries,
+        string? backupPath,
+        string propsFilePath,
+        bool propsFileExisted,
+        string? backupTimestamp,
+        int projectCount,
+        int packageCount,
+        int conflictCount)
+    {
+        await WriteBackupManifestAsync(options, backupEntries, backupPath, propsFilePath, propsFileExisted, backupTimestamp);
+        await ManageGitIgnoreAsync(options, backupPath);
+
+        ShowMigrationSummary(options, projectCount, packageCount, conflictCount, propsFilePath, backupPath);
+        ShowPostMigrationGuidance(options, propsFilePath);
+    }
+
+    /// <summary>
+    /// Handles migration errors and offers automatic rollback if backups exist.
+    /// </summary>
+    private async Task HandleMigrationErrorAsync(Exception ex, bool backupsCreated, bool dryRun, string? backupPath)
+    {
+        _consoleService.Error($"\nAn error occurred during migration: {ex.Message}");
+
+        if (backupsCreated && !dryRun && !string.IsNullOrEmpty(backupPath))
+        {
+            _consoleService.Warning("Project files may have been partially modified.");
+            if (_consoleService.AskConfirmation("Would you like to attempt an automatic rollback to the last backup?"))
+            {
+                await ExecuteRollbackAsync(new Options { BackupDir = backupPath, Rollback = true });
+            }
+        }
     }
 }
