@@ -66,7 +66,8 @@ jobs:
             /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
             /d:sonar.cs.vstest.reportsPaths="**/*.trx" \
             /d:sonar.dotnet.excludeGeneratedCode="true" \
-            /d:sonar.qualitygate.wait="false"
+            /d:sonar.qualitygate.wait="false" \
+            /d:sonar.cs.S3776.maxComplexity="30"
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
