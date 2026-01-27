@@ -674,24 +674,11 @@ public class MigrationService
         {
             foreach (var projectFilePath in projectPaths)
             {
-                // Backup
-                if (!options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
+                var backupEntry = await ProcessSingleProjectAsync(
+                    options, projectFilePath, packages, backupPath, backupTimestamp, null);
+                if (backupEntry != null)
                 {
-                    var backupEntry = _backupManager.CreateBackupForProject(
-                        options, projectFilePath, backupPath, backupTimestamp);
-                    if (backupEntry != null)
-                    {
-                        backupEntries.Add(backupEntry);
-                    }
-                }
-
-                // Process project file
-                var projectFileContent = ProjectAnalyzer.ProcessProject(
-                    projectFilePath, packages, options.KeepAttributes);
-
-                if (!options.DryRun)
-                {
-                    await File.WriteAllTextAsync(projectFilePath, projectFileContent);
+                    backupEntries.Add(backupEntry);
                 }
             }
             return backupEntries;
@@ -715,44 +702,11 @@ public class MigrationService
                     var projectName = Path.GetFileName(projectFilePath);
                     task.Description = $"[cyan]Processing[/] [white]{Markup.Escape(projectName)}[/]";
 
-                    // Backup
-                    if (!options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
+                    var backupEntry = await ProcessSingleProjectAsync(
+                        options, projectFilePath, packages, backupPath, backupTimestamp, task);
+                    if (backupEntry != null)
                     {
-                        var backupEntry = _backupManager.CreateBackupForProject(
-                            options, projectFilePath, backupPath, backupTimestamp);
-                        if (backupEntry != null)
-                        {
-                            backupEntries.Add(backupEntry);
-                        }
-                    }
-
-                    // Process project file
-                    var projectFileContent = ProjectAnalyzer.ProcessProject(
-                        projectFilePath, packages, options.KeepAttributes);
-
-                    if (options.IncludeTransitive)
-                    {
-                        task.Description = $"[cyan]Scanning transitive[/] [white]{Markup.Escape(projectName)}[/]";
-                        var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectFilePath);
-                        if (transitiveSuccess)
-                        {
-                            foreach (var tr in transitiveRefs)
-                            {
-                                if (packages.TryGetValue(tr.PackageName, out var versions))
-                                {
-                                    versions.Add(tr.Version);
-                                }
-                                else
-                                {
-                                    packages.Add(tr.PackageName, new HashSet<string> { tr.Version });
-                                }
-                            }
-                        }
-                    }
-
-                    if (!options.DryRun)
-                    {
-                        await File.WriteAllTextAsync(projectFilePath, projectFileContent);
+                        backupEntries.Add(backupEntry);
                     }
 
                     task.Increment(1);
@@ -1332,6 +1286,75 @@ public class MigrationService
             if (_consoleService.AskConfirmation("Would you like to attempt an automatic rollback to the last backup?"))
             {
                 await ExecuteRollbackAsync(new Options { BackupDir = backupPath, Rollback = true });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Processes a single project: creates backup, modifies project file, and handles transitive dependencies.
+    /// </summary>
+    private async Task<BackupEntry?> ProcessSingleProjectAsync(
+        Options options,
+        string projectFilePath,
+        Dictionary<string, HashSet<string>> packages,
+        string? backupPath,
+        string? backupTimestamp,
+        Spectre.Console.ProgressTask? progressTask)
+    {
+        BackupEntry? backupEntry = null;
+
+        // Create backup
+        if (!options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
+        {
+            backupEntry = _backupManager.CreateBackupForProject(
+                options, projectFilePath, backupPath, backupTimestamp);
+        }
+
+        // Process project file
+        var projectFileContent = ProjectAnalyzer.ProcessProject(
+            projectFilePath, packages, options.KeepAttributes);
+
+        // Handle transitive dependencies if requested
+        if (options.IncludeTransitive)
+        {
+            if (progressTask != null)
+            {
+                var projectName = Path.GetFileName(projectFilePath);
+                progressTask.Description = $"[cyan]Scanning transitive[/] [white]{Markup.Escape(projectName)}[/]";
+            }
+
+            await AddTransitivePackagesAsync(projectFilePath, packages);
+        }
+
+        // Write modified project file
+        if (!options.DryRun)
+        {
+            await File.WriteAllTextAsync(projectFilePath, projectFileContent);
+        }
+
+        return backupEntry;
+    }
+
+    /// <summary>
+    /// Scans and adds transitive package dependencies to the packages dictionary.
+    /// </summary>
+    private async Task AddTransitivePackagesAsync(string projectFilePath, Dictionary<string, HashSet<string>> packages)
+    {
+        var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectFilePath);
+        if (!transitiveSuccess)
+        {
+            return;
+        }
+
+        foreach (var tr in transitiveRefs)
+        {
+            if (packages.TryGetValue(tr.PackageName, out var versions))
+            {
+                versions.Add(tr.Version);
+            }
+            else
+            {
+                packages.Add(tr.PackageName, new HashSet<string> { tr.Version });
             }
         }
     }
