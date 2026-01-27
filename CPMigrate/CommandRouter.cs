@@ -27,6 +27,12 @@ internal static class CommandRouter
             ConfigService.MergeConfig(options, config);
         }
 
+        // Handle Update command
+        if (options.Update)
+        {
+            return await RunUpdateModeAsync(consoleService);
+        }
+
         // Route to appropriate command handler
         if (options.Interactive)
         {
@@ -48,7 +54,42 @@ internal static class CommandRouter
             return await RunUnifyPropsModeAsync(options, consoleService);
         }
 
+        // Check for updates in background for standard commands (if not quiet)
+        if (!options.Quiet && !options.Output.Equals(OutputFormat.Json))
+        {
+            _ = Task.Run(async () =>
+            {
+                var updateService = new UpdateService(consoleService);
+                var latestVersion = await updateService.CheckForUpdatesAsync();
+                if (latestVersion != null)
+                {
+                    consoleService.WriteLine();
+                    consoleService.Warning($"A new version of CPMigrate is available: v{latestVersion}");
+                    consoleService.Dim("Run 'cpmigrate --update' to upgrade.");
+                    consoleService.WriteLine();
+                }
+            });
+        }
+
         return await RunMigrationAsync(options, consoleService, versionResolver, backupManager);
+    }
+
+    /// <summary>
+    /// Executes the self-update mode.
+    /// </summary>
+    private static async Task<int> RunUpdateModeAsync(IConsoleService consoleService)
+    {
+        try
+        {
+            var updateService = new UpdateService(consoleService);
+            var success = await updateService.PerformUpdateAsync();
+            return success ? ExitCodes.Success : ExitCodes.UnexpectedError;
+        }
+        catch (Exception ex)
+        {
+            consoleService.Error($"Update failed: {ex.Message}");
+            return ExitCodes.UnexpectedError;
+        }
     }
 
     /// <summary>

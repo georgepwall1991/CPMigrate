@@ -184,6 +184,10 @@ public class Options
         HelpText = "Show what --fix would change without modifying files.")]
     public bool FixDryRun { get; set; }
 
+    [Option("update", Default = false,
+        HelpText = "Check for and install the latest version of CPMigrate.")]
+    public bool Update { get; set; }
+
     [Usage(ApplicationAlias = "cpmigrate")]
     public static IEnumerable<Example> Examples =>
         new List<Example>()
