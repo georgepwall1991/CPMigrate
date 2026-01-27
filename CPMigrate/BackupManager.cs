@@ -150,7 +150,7 @@ public class BackupManager
     /// </summary>
     /// <param name="backupPath">Path to the backup directory.</param>
     /// <returns>The manifest if found and valid, null otherwise.</returns>
-    public async Task<BackupManifest?> ReadManifestAsync(string backupPath)
+    public static async Task<BackupManifest?> ReadManifestAsync(string backupPath)
     {
         var manifestPath = Path.Combine(backupPath, ManifestFileName);
 
@@ -167,7 +167,7 @@ public class BackupManager
         catch (JsonException ex)
         {
             // Log the error details for debugging - manifest is likely corrupted
-            Console.Error.WriteLine($"Warning: Failed to parse backup manifest: {ex.Message}");
+            await Console.Error.WriteLineAsync($"Warning: Failed to parse backup manifest: {ex.Message}");
             return null;
         }
     }
@@ -189,7 +189,7 @@ public class BackupManager
     /// </summary>
     /// <param name="backupPath">Path to the backup directory.</param>
     /// <param name="entry">The backup entry containing paths.</param>
-    public void RestoreFile(string backupPath, BackupEntry entry)
+    public static void RestoreFile(string backupPath, BackupEntry entry)
     {
         var backupFilePath = Path.Combine(backupPath, entry.BackupFileName);
 
@@ -207,7 +207,7 @@ public class BackupManager
     /// <param name="backupPath">Path to the backup directory.</param>
     /// <param name="manifest">The manifest containing files to delete.</param>
     /// <returns>List of any errors encountered during cleanup (cleanup continues on errors).</returns>
-    public List<string> CleanupBackups(string backupPath, BackupManifest manifest)
+    public static List<string> CleanupBackups(string backupPath, BackupManifest manifest)
     {
         var errors = new List<string>();
 

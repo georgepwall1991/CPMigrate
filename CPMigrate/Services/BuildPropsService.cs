@@ -35,13 +35,13 @@ public class BuildPropsService
 
         // --- PROPERTIES ---
         var propertyCandidates = analysis.PropertyOccurrences
-            .GroupBy(kv => kv.Value.First().Name)
+            .GroupBy(kv => kv.Value[0].Name)
             .Select(g =>
             {
                 var mostCommon = g.MaxBy(kv => kv.Value.Count);
                 return new
                 {
-                    Property = mostCommon!.Value.First(),
+                    Property = mostCommon!.Value[0],
                     Count = mostCommon.Value.Count
                 };
             })
@@ -52,13 +52,13 @@ public class BuildPropsService
         // --- ITEMS (Using, PackageReference) ---
         // Key format: Type|Include|MetadataString
         var itemCandidates = analysis.ItemOccurrences
-            .GroupBy(kv => $"{kv.Value.First().ItemType}|{kv.Value.First().Include}") // Group by Type+Include
+            .GroupBy(kv => $"{kv.Value[0].ItemType}|{kv.Value[0].Include}") // Group by Type+Include
             .Select(g =>
             {
                 var mostCommon = g.MaxBy(kv => kv.Value.Count); // Find specific metadata set with highest count
                 return new
                 {
-                    Item = mostCommon!.Value.First(),
+                    Item = mostCommon!.Value[0],
                     Count = mostCommon.Value.Count
                 };
             })
@@ -232,10 +232,7 @@ public class BuildPropsService
 
             foreach (var item in items)
             {
-                if (TryRemoveItemIfMatches(item, targetItems, group, projectPath))
-                {
-                    modified = true;
-                }
+                modified = TryRemoveItemIfMatches(item, targetItems, group, projectPath) || modified;
             }
         }
 

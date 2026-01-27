@@ -41,7 +41,7 @@ public class DuplicatePackageFixer : IFixer
         }
 
         // Use the most common casing as the standard
-        var standardCasing = casingGroups.First().Key;
+        var standardCasing = casingGroups[0].Key;
 
         var changes = new List<FileChange>();
 

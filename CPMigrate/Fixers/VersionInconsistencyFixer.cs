@@ -75,10 +75,10 @@ public class VersionInconsistencyFixer : IFixer
     {
         return strategy switch
         {
-            ConflictStrategy.Highest => versions.OrderByDescending(v => ParseVersion(v)).First(),
-            ConflictStrategy.Lowest => versions.OrderBy(v => ParseVersion(v)).First(),
+            ConflictStrategy.Highest => versions.OrderByDescending(v => ParseVersion(v))[0],
+            ConflictStrategy.Lowest => versions.OrderBy(v => ParseVersion(v))[0],
             ConflictStrategy.Fail => null,
-            _ => versions.First()
+            _ => versions[0]
         };
     }
 
