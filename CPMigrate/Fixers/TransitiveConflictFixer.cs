@@ -52,8 +52,10 @@ public class TransitiveConflictFixer : IFixer
             originalContent.Contains($"Update=\"{issue.PackageName}\"", StringComparison.OrdinalIgnoreCase))
         {
             // Update existing version
-            var pattern = $@"(PackageVersion\s+(?:Include|Update)=""{Regex.Escape(issue.PackageName)}""\s+Version="")([^""]+)("")";
-            updatedContent = Regex.Replace(originalContent, pattern, $"$1{bestVersion}$3", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(2));
+            var pattern = $@"(<PackageVersion\s+(?:Include|Update)=""{Regex.Escape(issue.PackageName)}""\s+Version="")([^""]+)("")";
+            updatedContent = Regex.Replace(originalContent, pattern,
+                match => match.Groups[1].Value + bestVersion + match.Groups[3].Value,
+                RegexOptions.IgnoreCase, TimeSpan.FromSeconds(2));
         }
         else
         {
