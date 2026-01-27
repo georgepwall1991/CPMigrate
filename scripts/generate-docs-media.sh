@@ -94,7 +94,7 @@ check_prerequisites() {
 
 # Build the project
 build_project() {
-    if [ "$SKIP_BUILD" = true ]; then
+    if [[ "$SKIP_BUILD" = true ]]; then
         echo -e "${YELLOW}[>] Skipping build (--skip-build)${NC}"
         return
     fi
@@ -115,7 +115,7 @@ setup_temp() {
 
 # Generate demo (dry-run) recording
 generate_demo() {
-    if [ "$ANALYZE_ONLY" = true ] || [ "$INTERACTIVE_ONLY" = true ]; then
+    if [[ "$ANALYZE_ONLY" = true ]] || [[ "$INTERACTIVE_ONLY" = true ]]; then
         echo -e "${YELLOW}[>] Skipping demo (--analyze-only or --interactive-only)${NC}"
         return
     fi
@@ -147,7 +147,7 @@ generate_demo() {
 
 # Generate analyze recording
 generate_analyze() {
-    if [ "$DEMO_ONLY" = true ] || [ "$INTERACTIVE_ONLY" = true ]; then
+    if [[ "$DEMO_ONLY" = true ]] || [[ "$INTERACTIVE_ONLY" = true ]]; then
         echo -e "${YELLOW}[>] Skipping analyze (--demo-only or --interactive-only)${NC}"
         return
     fi
@@ -179,7 +179,7 @@ generate_analyze() {
 
 # Generate interactive wizard recording
 generate_interactive() {
-    if [ "$DEMO_ONLY" = true ] || [ "$ANALYZE_ONLY" = true ]; then
+    if [[ "$DEMO_ONLY" = true ]] || [[ "$ANALYZE_ONLY" = true ]]; then
         echo -e "${YELLOW}[>] Skipping interactive (--demo-only or --analyze-only)${NC}"
         return
     fi
@@ -266,30 +266,30 @@ show_summary() {
     echo ""
     echo -e "${CYAN}Generated files:${NC}"
 
-    if [ -f "$DOCS_IMAGES_DIR/cpmigrate-demo.gif" ]; then
+    if [[ -f "$DOCS_IMAGES_DIR/cpmigrate-demo.gif" ]]; then
         local DEMO_SIZE=$(du -h "$DOCS_IMAGES_DIR/cpmigrate-demo.gif" | cut -f1)
         echo -e "  - cpmigrate-demo.gif ($DEMO_SIZE)"
     fi
 
-    if [ -f "$DOCS_IMAGES_DIR/cpmigrate-analyze.gif" ]; then
+    if [[ -f "$DOCS_IMAGES_DIR/cpmigrate-analyze.gif" ]]; then
         local ANALYZE_SIZE=$(du -h "$DOCS_IMAGES_DIR/cpmigrate-analyze.gif" | cut -f1)
         echo -e "  - cpmigrate-analyze.gif ($ANALYZE_SIZE)"
     fi
 
-    if [ -f "$DOCS_IMAGES_DIR/cpmigrate-interactive.gif" ]; then
+    if [[ -f "$DOCS_IMAGES_DIR/cpmigrate-interactive.gif" ]]; then
         local INTERACTIVE_SIZE=$(du -h "$DOCS_IMAGES_DIR/cpmigrate-interactive.gif" | cut -f1)
         echo -e "  - cpmigrate-interactive.gif ($INTERACTIVE_SIZE)"
     fi
 
-    if [ -f "$DOCS_IMAGES_DIR/cpmigrate-demo.cast" ]; then
+    if [[ -f "$DOCS_IMAGES_DIR/cpmigrate-demo.cast" ]]; then
         echo -e "  - cpmigrate-demo.cast (asciinema recording)"
     fi
 
-    if [ -f "$DOCS_IMAGES_DIR/cpmigrate-analyze.cast" ]; then
+    if [[ -f "$DOCS_IMAGES_DIR/cpmigrate-analyze.cast" ]]; then
         echo -e "  - cpmigrate-analyze.cast (asciinema recording)"
     fi
 
-    if [ -f "$DOCS_IMAGES_DIR/cpmigrate-interactive.cast" ]; then
+    if [[ -f "$DOCS_IMAGES_DIR/cpmigrate-interactive.cast" ]]; then
         echo -e "  - cpmigrate-interactive.cast (asciinema recording)"
     fi
 
