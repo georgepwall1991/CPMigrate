@@ -55,6 +55,15 @@ CPMigrate v2.5+ isn't just a migration tool; it's a repository health auditor.
     *   **Benefit:** Seamlessly works with both traditional `.sln` and modern `.slnx` files - no configuration needed.
     *   **Reference:** [Introducing SLNX support in .NET CLI](https://devblogs.microsoft.com/dotnet/introducing-slnx-support-dotnet-cli/)
 
+### 🔒 Enhanced Security & Hardening (New in v2.9)
+
+-   **Secure Execution Pipeline**
+    *   **Feature:** Mitigated PATH injection vulnerabilities by strictly resolving the absolute path of the `dotnet` host process.
+    *   **Benefit:** Ensures that `cpmigrate` cannot be tricked into executing malicious binaries named `dotnet` placed in writable directories.
+-   **Hardened CI/CD Supply Chain**
+    *   **Feature:** Pinned GitHub Actions dependencies to specific SHA hashes and implemented secure secret injection via environment variables.
+    *   **Benefit:** Protects the build pipeline against upstream compromised actions and prevents secret leakage in logs.
+
 ### 🎮 Mission Control Dashboard
 
 -   **Zero-Typing Interface:** Navigate your file system and options using only arrow keys.
