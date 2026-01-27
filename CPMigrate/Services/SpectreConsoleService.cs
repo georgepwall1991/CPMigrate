@@ -391,7 +391,7 @@ public class SpectreConsoleService : IConsoleService
         var selection = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
                 .Title($"[deeppink1]{EscapeMarkup(message)}[/]")
-                .AddChoices(new[] { "Yes", "No" })
+                .AddChoices("Yes", "No")
                 .HighlightStyle(new Style(CyberColors.Secondary)));
 
         return selection == "Yes";

@@ -152,7 +152,7 @@ public class BatchService
         }
         _consoleService.WriteLine();
 
-        var solutionResults = new List<SolutionResult>();
+        List<SolutionResult> solutionResults;
 
         if (options.BatchParallel)
         {

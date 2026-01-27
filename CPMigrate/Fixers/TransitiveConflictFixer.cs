@@ -45,7 +45,7 @@ public class TransitiveConflictFixer : IFixer
         var bestVersion = _versionResolver.ResolveVersion(versions, options.ConflictStrategy);
 
         var originalContent = File.ReadAllText(propsPath);
-        var updatedContent = originalContent;
+        string updatedContent;
 
         // Check if package already exists in props
         if (originalContent.Contains($"Include=\"{issue.PackageName}\"", StringComparison.OrdinalIgnoreCase) ||
