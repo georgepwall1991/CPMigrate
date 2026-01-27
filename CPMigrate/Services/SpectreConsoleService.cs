@@ -6,6 +6,7 @@ namespace CPMigrate.Services;
 public class SpectreConsoleService : IConsoleService
 {
     private readonly VersionResolver _versionResolver;
+    private readonly IAnsiConsole _console;
 
     // Cyberpunk color palette
     private static class CyberColors
@@ -19,53 +20,54 @@ public class SpectreConsoleService : IConsoleService
         public static readonly Color Accent = Color.Yellow1;        // Highlight
     }
 
-    public SpectreConsoleService(VersionResolver versionResolver)
+    public SpectreConsoleService(VersionResolver versionResolver, IAnsiConsole? console = null)
     {
         _versionResolver = versionResolver;
+        _console = console ?? AnsiConsole.Console;
     }
 
     public void Info(string message)
     {
-        AnsiConsole.MarkupLine($"[grey39]›[/] [dim]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[grey39]›[/] [dim]{EscapeMarkup(message)}[/]");
     }
 
     public void Success(string message)
     {
-        AnsiConsole.MarkupLine($"[springgreen1]✔[/] [white]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[springgreen1]✔[/] [white]{EscapeMarkup(message)}[/]");
     }
 
     public void Warning(string message)
     {
-        AnsiConsole.MarkupLine($"[orange1]![/] [yellow]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[orange1]![/] [yellow]{EscapeMarkup(message)}[/]");
     }
 
     public void Error(string message)
     {
-        AnsiConsole.MarkupLine($"[red1]✖[/] [red]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[red1]✖[/] [red]{EscapeMarkup(message)}[/]");
     }
 
     public void Highlight(string message)
     {
-        AnsiConsole.MarkupLine($"[deeppink1]» {EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[deeppink1]» {EscapeMarkup(message)}[/]");
     }
 
     public void Dim(string message)
     {
-        AnsiConsole.MarkupLine($"[grey39]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[grey39]{EscapeMarkup(message)}[/]");
     }
 
     public void DryRun(string message)
     {
-        AnsiConsole.MarkupLine($"  [cyan1]○[/] [blue]SIMULATION[/] [grey]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"  [cyan1]○[/] [blue]SIMULATION[/] [grey]{EscapeMarkup(message)}[/]");
     }
 
     public void WriteHeader()
     {
-        AnsiConsole.Clear();
-        AnsiConsole.WriteLine();
+        _console.Clear();
+        _console.WriteLine();
 
         // New "Slant" style logo for CPMigrate
-        AnsiConsole.Write(new FigletText("CPMigrate")
+        _console.Write(new FigletText("CPMigrate")
             .LeftJustified()
             .Color(CyberColors.Primary));
 
@@ -73,7 +75,7 @@ public class SpectreConsoleService : IConsoleService
         {
             Style = Style.Parse("grey39")
         };
-        AnsiConsole.Write(rule);
+        _console.Write(rule);
 
         // System Info Bar
         var os = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
@@ -84,8 +86,8 @@ public class SpectreConsoleService : IConsoleService
         grid.AddColumn(new GridColumn().RightAligned());
         grid.AddRow($"[grey39]v{version}[/] [deepskyblue1]•[/] [grey39]{runtime}[/] [deepskyblue1]•[/] [grey39]{os}[/]");
 
-        AnsiConsole.Write(grid);
-        AnsiConsole.WriteLine();
+        _console.Write(grid);
+        _console.WriteLine();
     }
 
     public void Banner(string message)
@@ -96,12 +98,12 @@ public class SpectreConsoleService : IConsoleService
             BorderStyle = new Style(CyberColors.Primary),
             Padding = new Padding(2, 0)
         };
-        AnsiConsole.Write(panel);
+        _console.Write(panel);
     }
 
     public void Separator()
     {
-        AnsiConsole.Write(new Rule { Style = Style.Parse("grey39") });
+        _console.Write(new Rule { Style = Style.Parse("grey39") });
     }
 
     public void WriteConflictsTable(Dictionary<string, HashSet<string>> packageVersions,
@@ -130,15 +132,15 @@ public class SpectreConsoleService : IConsoleService
             );
         }
 
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(table);
-        AnsiConsole.WriteLine();
+        _console.WriteLine();
+        _console.Write(table);
+        _console.WriteLine();
     }
 
     public void WriteSummaryTable(int projectCount, int packageCount, int conflictCount,
         string propsFilePath, string? backupPath, bool wasDryRun)
     {
-        AnsiConsole.WriteLine();
+        _console.WriteLine();
 
         var grid = new Grid();
         grid.AddColumn();
@@ -147,7 +149,7 @@ public class SpectreConsoleService : IConsoleService
         if (wasDryRun)
         {
             // Dry-run layout
-            AnsiConsole.Write(new Rule("[cyan1]SIMULATION RESULTS[/]") { Style = Style.Parse("cyan1") });
+            _console.Write(new Rule("[cyan1]SIMULATION RESULTS[/]") { Style = Style.Parse("cyan1") });
 
             grid.AddRow("[white]Projects Scanned[/]", $"[cyan1]{projectCount}[/]");
             grid.AddRow("[white]Packages Found[/]", $"[cyan1]{packageCount}[/]");
@@ -166,14 +168,14 @@ public class SpectreConsoleService : IConsoleService
                 Padding = new Padding(1, 1),
                 Header = new PanelHeader("[cyan1]DRY RUN COMPLETE[/]", Justify.Center)
             };
-            AnsiConsole.Write(panel);
+            _console.Write(panel);
 
-            AnsiConsole.MarkupLine("\n[cyan1]ℹ[/] Run without [white]--dry-run[/] to apply changes");
+            _console.MarkupLine("\n[cyan1]ℹ[/] Run without [white]--dry-run[/] to apply changes");
         }
         else
         {
             // Success layout
-            AnsiConsole.Write(new Rule("[springgreen1]MIGRATION RESULTS[/]") { Style = Style.Parse("springgreen1") });
+            _console.Write(new Rule("[springgreen1]MIGRATION RESULTS[/]") { Style = Style.Parse("springgreen1") });
 
             grid.AddRow("[white]Projects Processed[/]", $"[springgreen1]{projectCount}[/]");
             grid.AddRow("[white]Packages Centralized[/]", $"[springgreen1]{packageCount}[/]");
@@ -197,7 +199,7 @@ public class SpectreConsoleService : IConsoleService
                 Padding = new Padding(1, 1),
                 Header = new PanelHeader("[springgreen1]SUCCESS[/]", Justify.Center)
             };
-            AnsiConsole.Write(panel);
+            _console.Write(panel);
         }
     }
 
@@ -213,9 +215,9 @@ public class SpectreConsoleService : IConsoleService
             root.AddNode($"[springgreen1]{EscapeMarkup(projectName)}[/]");
         }
 
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(root);
-        AnsiConsole.WriteLine();
+        _console.WriteLine();
+        _console.Write(root);
+        _console.WriteLine();
     }
 
     public void WritePropsPreview(string content)
@@ -228,17 +230,17 @@ public class SpectreConsoleService : IConsoleService
             Padding = new Padding(1)
         };
 
-        AnsiConsole.Write(panel);
+        _console.Write(panel);
     }
 
     public void WriteMarkup(string message)
     {
-        AnsiConsole.MarkupLine(message);
+        _console.MarkupLine(message);
     }
 
     public void WriteLine(string message = "")
     {
-        AnsiConsole.WriteLine(message);
+        _console.WriteLine(message);
     }
 
     public void WriteMissionStatus(int step)
@@ -268,8 +270,8 @@ public class SpectreConsoleService : IConsoleService
         }
         grid.AddRow(row.ToArray());
 
-        AnsiConsole.Write(new Panel(grid) { Border = BoxBorder.None });
-        AnsiConsole.WriteLine();
+        _console.Write(new Panel(grid) { Border = BoxBorder.None });
+        _console.WriteLine();
     }
 
     public void WriteRiskScore(int conflictCount, int projectCount)
@@ -291,7 +293,7 @@ public class SpectreConsoleService : IConsoleService
         table.AddRow("[grey39]Impact Area:[/]", $"[white]{projectCount} projects[/]");
         table.AddRow("[grey39]Assessment:[/]", $"[grey]{desc}[/]");
 
-        AnsiConsole.Write(new Panel(table)
+        _console.Write(new Panel(table)
         {
             Header = new PanelHeader("[grey] ASSESSMENT [/]"),
             Padding = new Padding(1, 0),
@@ -308,7 +310,7 @@ public class SpectreConsoleService : IConsoleService
                 .HighlightStyle(new Style(CyberColors.Secondary))
                 .AddChoices(choices);
 
-        return AnsiConsole.Prompt(prompt);
+        return _console.Prompt(prompt);
     }
 
     public string AskGroupedSelection(string title, Dictionary<string, IEnumerable<string>> groups)
@@ -327,7 +329,7 @@ public class SpectreConsoleService : IConsoleService
             prompt.AddChoiceGroup($"[grey]{group.Key}[/]", group.Value);
         }
 
-        return AnsiConsole.Prompt(prompt);
+        return _console.Prompt(prompt);
     }
 
     public void WriteStatusDashboard(string directory, List<string> solutions, List<BackupSetInfo> backups, bool isGitRepo, bool hasUnstaged, Dictionary<string, int> targetFrameworks)
@@ -357,13 +359,13 @@ public class SpectreConsoleService : IConsoleService
             Padding = new Padding(1, 0)
         };
 
-        AnsiConsole.Write(panel);
-        AnsiConsole.WriteLine();
+        _console.Write(panel);
+        _console.WriteLine();
     }
 
     public bool AskConfirmation(string message)
     {
-        var selection = AnsiConsole.Prompt(
+        var selection = _console.Prompt(
             new SelectionPrompt<string>()
                 .Title($"[deeppink1]{EscapeMarkup(message)}[/]")
                 .AddChoices("Yes", "No")
@@ -382,7 +384,7 @@ public class SpectreConsoleService : IConsoleService
             textPrompt.DefaultValue(defaultValue);
         }
 
-        return AnsiConsole.Prompt(textPrompt);
+        return _console.Prompt(textPrompt);
     }
 
     public int AskInt(string prompt, int defaultValue)
@@ -391,7 +393,7 @@ public class SpectreConsoleService : IConsoleService
             .PromptStyle(new Style(CyberColors.Secondary))
             .DefaultValue(defaultValue);
 
-        return AnsiConsole.Prompt(intPrompt);
+        return _console.Prompt(intPrompt);
     }
 
     public void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath)
@@ -413,9 +415,9 @@ public class SpectreConsoleService : IConsoleService
             table.AddRow("[red1]DELETE[/]", $"[white]{EscapeMarkup(propsFilePath)}[/]");
         }
 
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(table);
-        AnsiConsole.WriteLine();
+        _console.WriteLine();
+        _console.Write(table);
+        _console.WriteLine();
     }
 
     public void WriteAnalysisHeader(int projectCount, int packageCount, int vulnerabilityCount)
@@ -436,8 +438,8 @@ public class SpectreConsoleService : IConsoleService
             Padding = new Padding(1, 1),
             Header = new PanelHeader("[deeppink1]ANALYSIS MODE[/]", Justify.Center)
         };
-        AnsiConsole.Write(panel);
-        AnsiConsole.WriteLine();
+        _console.Write(panel);
+        _console.WriteLine();
     }
 
     public void WriteAnalyzerResult(AnalyzerResult result)
@@ -459,26 +461,26 @@ public class SpectreConsoleService : IConsoleService
                 );
             }
 
-            AnsiConsole.Write(table);
-            AnsiConsole.WriteLine();
+            _console.Write(table);
+            _console.WriteLine();
         }
         else
         {
-            AnsiConsole.MarkupLine($"[springgreen1]✔[/] [white]{EscapeMarkup(result.AnalyzerName)}[/] [grey39]- No issues[/]");
+            _console.MarkupLine($"[springgreen1]✔[/] [white]{EscapeMarkup(result.AnalyzerName)}[/] [grey39]- No issues[/]");
         }
     }
 
     public void WriteAnalysisSummary(AnalysisReport report)
     {
-        AnsiConsole.WriteLine();
+        _console.WriteLine();
 
         if (report.HasIssues)
         {
-            AnsiConsole.Write(new Rule($"[yellow]ANALYSIS COMPLETE: {report.TotalIssues} ISSUES[/]") { Style = Style.Parse("yellow") });
+            _console.Write(new Rule($"[yellow]ANALYSIS COMPLETE: {report.TotalIssues} ISSUES[/]") { Style = Style.Parse("yellow") });
         }
         else
         {
-            AnsiConsole.Write(new Rule("[springgreen1]ANALYSIS COMPLETE: NO ISSUES[/]") { Style = Style.Parse("springgreen1") });
+            _console.Write(new Rule("[springgreen1]ANALYSIS COMPLETE: NO ISSUES[/]") { Style = Style.Parse("springgreen1") });
         }
     }
 
