@@ -235,7 +235,6 @@ public class BatchService
     private async Task<List<SolutionResult>> RunParallelAsync(Options options, List<string> solutions)
     {
         var results = new ConcurrentBag<SolutionResult>();
-        var batchDir = options.BatchDir!;
 
         // Use a CancellationTokenSource to support early termination when --batch-continue is false
         using var cts = new CancellationTokenSource();
@@ -284,7 +283,7 @@ public class BatchService
                     if (migrationResult.ExitCode != ExitCodes.Success && !options.BatchContinue)
                     {
                         hasFailure = true;
-                        cts.Cancel();
+                        await cts.CancelAsync();
                     }
                 }
                 catch (Exception ex)
@@ -302,7 +301,7 @@ public class BatchService
                     if (!options.BatchContinue)
                     {
                         hasFailure = true;
-                        cts.Cancel();
+                        await cts.CancelAsync();
                     }
                 }
             });

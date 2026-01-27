@@ -71,7 +71,7 @@ public class FixService
 
                 if (result.Success && result.Changes.Count > 0)
                 {
-                    WriteFixResult(issue, result, dryRun);
+                    WriteFixResult(result, dryRun);
                 }
                 else if (!result.Success)
                 {
@@ -90,7 +90,7 @@ public class FixService
         return fixReport;
     }
 
-    private void WriteFixResult(AnalysisIssue issue, FixResult result, bool dryRun)
+    private void WriteFixResult(FixResult result, bool dryRun)
     {
         var prefix = dryRun ? "[DRY RUN] Would fix" : "Fixed";
         _console.Success($"{prefix}: {result.Description}");

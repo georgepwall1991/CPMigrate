@@ -95,15 +95,13 @@ public class DependencyGraphService
             return;
         }
 
-        if (targetNode.TryGetProperty(key, out var packageNode))
+        if (targetNode.TryGetProperty(key, out var packageNode) &&
+            packageNode.TryGetProperty("dependencies", out var depsNode))
         {
-            if (packageNode.TryGetProperty("dependencies", out var depsNode))
+            foreach (var dep in depsNode.EnumerateObject())
             {
-                foreach (var dep in depsNode.EnumerateObject())
-                {
-                    closure.Add(dep.Name);
-                    CollectTransitiveRecursive(targetNode, dep.Name, dep.Value.GetString() ?? "", closure, visited);
-                }
+                closure.Add(dep.Name);
+                CollectTransitiveRecursive(targetNode, dep.Name, dep.Value.GetString() ?? "", closure, visited);
             }
         }
     }

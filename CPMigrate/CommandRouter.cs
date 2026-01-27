@@ -408,22 +408,22 @@ internal static class CommandRouter
         catch (IOException ex)
         {
             consoleService.Error($"\nFile operation error: {ex.Message}");
-            Console.Error.WriteLine("\nSuggestion: Check file permissions and ensure no files are locked by another process.");
+            await Console.Error.WriteLineAsync("\nSuggestion: Check file permissions and ensure no files are locked by another process.");
             return ExitCodes.FileOperationError;
         }
         catch (UnauthorizedAccessException ex)
         {
             consoleService.Error($"\nPermission denied: {ex.Message}");
-            Console.Error.WriteLine("\nSuggestion: Run with elevated permissions or check file/folder access rights.");
+            await Console.Error.WriteLineAsync("\nSuggestion: Run with elevated permissions or check file/folder access rights.");
             return ExitCodes.FileOperationError;
         }
         catch (Exception ex)
         {
             consoleService.Error($"\nUnexpected error: {ex.Message}");
 #if DEBUG
-            Console.Error.WriteLine(ex.StackTrace);
+            await Console.Error.WriteLineAsync(ex.StackTrace);
 #endif
-            Console.Error.WriteLine("\nSuggestion: Please report this issue at https://github.com/georgepwall1991/CPMigrate/issues");
+            await Console.Error.WriteLineAsync("\nSuggestion: Please report this issue at https://github.com/georgepwall1991/CPMigrate/issues");
             return ExitCodes.UnexpectedError;
         }
     }

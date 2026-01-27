@@ -148,12 +148,9 @@ public class ConfigService
             options.Output = config.OutputFormat.Value;
         }
 
-        if (config.Retention != null)
+        if (config.Retention != null && config.Retention.Enabled && !cliArgsProvided.Contains("retention"))
         {
-            if (config.Retention.Enabled && !cliArgsProvided.Contains("retention"))
-            {
-                options.Retention = config.Retention.MaxBackups;
-            }
+            options.Retention = config.Retention.MaxBackups;
         }
     }
 
