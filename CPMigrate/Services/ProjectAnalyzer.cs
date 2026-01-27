@@ -8,7 +8,7 @@ namespace CPMigrate.Services;
 /// <summary>
 /// Analyzes .NET projects and solutions to extract package references.
 /// </summary>
-public partial class ProjectAnalyzer
+public partial class ProjectAnalyzer : IProjectAnalyzer
 {
     private readonly IConsoleService _consoleService;
 

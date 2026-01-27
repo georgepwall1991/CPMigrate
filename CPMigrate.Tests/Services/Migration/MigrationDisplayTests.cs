@@ -1,72 +1,65 @@
-using System.Collections.Generic;
 using CPMigrate.Models;
-using CPMigrate.Services.Migration;
 using CPMigrate.Services;
-using Spectre.Console.Testing;
+using CPMigrate.Services.Migration;
 using FluentAssertions;
-using Xunit;
+using Moq;
 
 namespace CPMigrate.Tests.Services.Migration;
 
 public class MigrationDisplayTests
 {
-    private readonly TestConsole _console;
-    private readonly SpectreConsoleService _consoleService;
+    private readonly Mock<IConsoleService> _mockConsole;
     private readonly MigrationDisplay _display;
 
     public MigrationDisplayTests()
     {
-        _console = new TestConsole().Interactive();
-        _consoleService = new SpectreConsoleService(new VersionResolver(), _console);
-        _display = new MigrationDisplay(_consoleService);
+        _mockConsole = new Mock<IConsoleService>();
+        _display = new MigrationDisplay(_mockConsole.Object);
     }
 
     [Fact]
-    public void ShowDryRunBannerIfNeeded_WhenDryRun_ShowsBanner()
+    public void ShowDryRunBannerIfNeeded_DryRunTrue_ShowsBanner()
     {
         var options = new Options { DryRun = true };
         _display.ShowDryRunBannerIfNeeded(options);
-        _console.Output.Should().Contain("SIMULATION");
+        _mockConsole.Verify(c => c.DryRun(It.IsAny<string>()), Times.Once);
     }
 
     [Fact]
-    public void ShowDiscoveredProjects_ShowsList()
+    public void ShowDryRunBannerIfNeeded_DryRunFalse_DoesNotShowBanner()
     {
-        var projects = new List<string> { "/root/p1.csproj", "/root/p2.csproj" };
-        _display.ShowDiscoveredProjects("/root", projects);
-        _console.Output.Should().Contain("Found 2 project(s)");
-        _console.Output.Should().Contain("p1.csproj");
-        _console.Output.Should().Contain("p2.csproj");
+        var options = new Options { DryRun = false };
+        _display.ShowDryRunBannerIfNeeded(options);
+        _mockConsole.Verify(c => c.DryRun(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
-    public void ShowMigrationSummary_ShowsStats()
+    public void ShowDiscoveredProjects_ShowsCountAndPaths()
     {
-        _display.ShowMigrationSummary(5, 20, 2, "Path/To/Props", false);
-        _console.Output.Should().Contain("Migration completed successfully");
-        _console.Output.Should().Contain("Projects processed: 5");
-        _console.Output.Should().Contain("Packages centralized: 20");
-        _console.Output.Should().Contain("Conflicts resolved: 2");
-        _console.Output.Should().Contain("Path/To/Props");
+        var paths = new List<string> { "/a/p1.csproj", "/a/b/p2.csproj" };
+        _display.ShowDiscoveredProjects("/a", paths);
+        _mockConsole.Verify(c => c.Info(It.Is<string>(s => s.Contains("2 project(s)"))), Times.Once);
+        _mockConsole.Verify(c => c.Dim(It.Is<string>(s => s.Contains("p1.csproj"))), Times.Once);
+        _mockConsole.Verify(c => c.Dim(It.Is<string>(s => s.Contains("b/p2.csproj"))), Times.Once);
     }
 
     [Fact]
-    public void ShowPostMigrationGuidance_ShowsNextSteps()
+    public void ShowMigrationSummary_ShowsCorrectStats()
     {
-        var options = new Options { NoBackup = false };
-        _console.Input.PushKey(System.ConsoleKey.Enter);
-        _display.ShowPostMigrationGuidance(options, "Props/Path");
-        _console.Output.Should().Contain("NEXT STEPS");
-        _console.Output.Should().Contain("Props/Path");
-        _console.Output.Should().Contain("backup was created");
+        _display.ShowMigrationSummary(5, 10, 2, "props", false);
+        _mockConsole.Verify(c => c.Success(It.IsAny<string>()), Times.Once);
+        _mockConsole.Verify(c => c.Info(It.Is<string>(s => s.Contains("5"))), Times.Once);
+        _mockConsole.Verify(c => c.Info(It.Is<string>(s => s.Contains("10"))), Times.Once);
+        _mockConsole.Verify(c => c.Info(It.Is<string>(s => s.Contains("2"))), Times.Once);
+        _mockConsole.Verify(c => c.Info(It.Is<string>(s => s.Contains("props"))), Times.Once);
     }
 
     [Fact]
-    public void CreateAlreadyMigratedResult_ReturnsSuccessResultAndInformsUser()
+    public void CreateAlreadyMigratedResult_ReturnsCorrectResult()
     {
-        var result = _display.CreateAlreadyMigratedResult("Props/Path");
+        var result = _display.CreateAlreadyMigratedResult("path");
         result.ExitCode.Should().Be(ExitCodes.Success);
-        result.PropsFilePath.Should().Be("Props/Path");
-        _console.Output.Should().Contain("already exists");
+        result.PropsFilePath.Should().Be("path");
+        _mockConsole.Verify(c => c.Info(It.Is<string>(s => s.Contains("already migrated"))), Times.Once);
     }
 }

@@ -10,24 +10,25 @@ namespace CPMigrate.Services;
 /// </summary>
 public class MigrationService
 {
-    private readonly ProjectAnalyzer _projectAnalyzer;
+    private readonly IProjectAnalyzer _projectAnalyzer;
     private readonly VersionResolver _versionResolver;
     private readonly PropsGenerator _propsGenerator;
     private readonly BackupManager _backupManager;
     private readonly IConsoleService _consoleService;
-    private readonly AnalysisService _analysisService;
-    private readonly FixService _fixService;
+    private readonly IAnalysisService _analysisService;
+    private readonly IFixService _fixService;
     private readonly MigrationValidator _validator;
     private readonly MigrationDisplay _display;
     private readonly bool _quietMode;
 
     public MigrationService(
         IConsoleService consoleService,
-        ProjectAnalyzer? projectAnalyzer = null,
+        IProjectAnalyzer? projectAnalyzer = null,
         VersionResolver? versionResolver = null,
         PropsGenerator? propsGenerator = null,
         BackupManager? backupManager = null,
-        AnalysisService? analysisService = null,
+        IAnalysisService? analysisService = null,
+        IFixService? fixService = null,
         bool quietMode = false)
     {
         _consoleService = consoleService;
@@ -37,7 +38,7 @@ public class MigrationService
         _backupManager = backupManager ?? new BackupManager();
         var graphService = new DependencyGraphService(_consoleService);
         _analysisService = analysisService ?? new AnalysisService(null, graphService, _projectAnalyzer);
-        _fixService = new FixService(_consoleService, _versionResolver);
+        _fixService = fixService ?? new FixService(_consoleService, _versionResolver);
         _validator = new MigrationValidator(_consoleService);
         _display = new MigrationDisplay(_consoleService);
         _quietMode = quietMode;
@@ -108,7 +109,10 @@ public class MigrationService
                 return _display.CreateAlreadyMigratedResult(propsPath);
             }
 
-            _display.ShowDryRunBannerIfNeeded(options);
+            if (!_quietMode)
+            {
+                _display.ShowDryRunBannerIfNeeded(options);
+            }
 
             var (basePath, projectPaths) = await DiscoverProjectsWithSpinnerAsync(options);
             if (projectPaths.Count == 0)
@@ -117,7 +121,10 @@ public class MigrationService
                 return new MigrationResult { ExitCode = ExitCodes.NoProjectsFound };
             }
 
-            _display.ShowDiscoveredProjects(basePath, projectPaths);
+            if (!_quietMode)
+            {
+                _display.ShowDiscoveredProjects(basePath, projectPaths);
+            }
 
             var packages = new Dictionary<string, HashSet<string>>();
             var existingPackages = new Dictionary<string, HashSet<string>>();
@@ -153,13 +160,19 @@ public class MigrationService
                 ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
                 : null;
             var propsBackupEntry = CreatePropsBackup(options, propsFileExists, propsPath, backupPath, backupTimestamp);
-
-            var backupEntries = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath, backupTimestamp);
-            backupsCreated = backupEntries.Count > 0 || propsBackupEntry != null;
+            var backupEntries = new List<BackupEntry>();
 
             if (propsBackupEntry != null)
             {
+                backupsCreated = true;
                 backupEntries.Add(propsBackupEntry);
+            }
+
+            var projectBackups = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath, backupTimestamp);
+            if (projectBackups.Count > 0)
+            {
+                backupsCreated = true;
+                backupEntries.AddRange(projectBackups);
             }
 
             var conflicts = VersionResolver.DetectConflicts(packages, existingPackages);

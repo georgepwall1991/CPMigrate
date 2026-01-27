@@ -6,7 +6,7 @@ namespace CPMigrate.Services;
 /// <summary>
 /// Service that orchestrates automatic fixes for detected analysis issues.
 /// </summary>
-public class FixService
+public class FixService : IFixService
 {
     private readonly List<IFixer> _fixers;
     private readonly IConsoleService _console;

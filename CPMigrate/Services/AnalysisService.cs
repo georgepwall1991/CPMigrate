@@ -6,11 +6,11 @@ namespace CPMigrate.Services;
 /// <summary>
 /// Orchestrates package analysis by running all registered analyzers.
 /// </summary>
-public class AnalysisService
+public class AnalysisService : IAnalysisService
 {
     private readonly IReadOnlyList<IAnalyzer> _analyzers;
 
-    public AnalysisService(IEnumerable<IAnalyzer>? analyzers = null, DependencyGraphService? graphService = null, ProjectAnalyzer? projectAnalyzer = null)
+    public AnalysisService(IEnumerable<IAnalyzer>? analyzers = null, DependencyGraphService? graphService = null, IProjectAnalyzer? projectAnalyzer = null)
     {
         if (analyzers != null)
         {

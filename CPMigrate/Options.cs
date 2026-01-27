@@ -58,7 +58,7 @@ public class Options
 
     [Option("backup-dir", Default = ".",
         HelpText = "The backup directory for project files about to be changed.")]
-    public string BackupDir { get; set; } = string.Empty;
+    public string BackupDir { get; set; } = ".";
 
     [Option("add-gitignore", Default = false,
         HelpText = "Adds the backup directory to .gitignore file. Creates one if not present.")]

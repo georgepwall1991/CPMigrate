@@ -162,7 +162,8 @@ internal static class CommandRouter
                     null,
                     backupManager,
                     null,
-                    options.Quiet);
+                    null,
+                    quietMode: options.Quiet);
 
                 var migrationResult = await migrationService.ExecuteAsync(options);
                 return migrationResult.ExitCode;
@@ -338,7 +339,8 @@ internal static class CommandRouter
                 null,
                 backupManager,
                 null,
-                options.Quiet);
+                null,
+                quietMode: options.Quiet);
 
             return await migrationService.ExecuteAsync(solutionOptions);
         });
@@ -396,7 +398,8 @@ internal static class CommandRouter
                 null,
                 backupManager,
                 null,
-                options.Quiet);
+                null,
+                quietMode: options.Quiet);
 
             var result = await migrationService.ExecuteAsync(options);
 

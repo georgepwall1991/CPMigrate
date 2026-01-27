@@ -86,14 +86,30 @@ public class ProgramRunnerTests
     public async Task DetermineStartDirectory_UsesProjectDirIfSpecified()
     {
         // Arrange
-        var fakeConsole = new FakeConsoleService();
-        var args = new[] { "-p", "my_project_dir" };
-        
-        // Act
-        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempPath);
 
-        // Assert
-        exitCode.Should().Be(ExitCodes.NoProjectsFound);
+        try
+        {
+            var fakeConsole = new FakeConsoleService();
+            // Point to a directory that exists but has no projects
+            var args = new[] { "-p", tempPath };
+            
+            // Act
+            var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+            // Assert
+            if (exitCode != ExitCodes.NoProjectsFound)
+            {
+                var errors = string.Join("\n", fakeConsole.ErrorMessages);
+                throw new Exception($"Expected NoProjectsFound (4), but got {exitCode}. Errors: {errors}");
+            }
+            exitCode.Should().Be(ExitCodes.NoProjectsFound);
+        }
+        finally
+        {
+            Directory.Delete(tempPath, true);
+        }
     }
 
     [Fact]
@@ -127,31 +143,47 @@ public class ProgramRunnerTests
     public async Task DetermineStartDirectory_UsesCurrentDirIfNoDirSpecified()
     {
         // Arrange
-        var fakeConsole = new FakeConsoleService();
-        // Use an option that doesn't imply a directory, like -d (dry run)
-        var args = new[] { "-d" };
-        
-        // Act
-        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempPath);
+        var oldDir = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(tempPath);
 
-        // Assert
-        exitCode.Should().Be(ExitCodes.NoProjectsFound);
+        try 
+        {
+            var fakeConsole = new FakeConsoleService();
+            // Use an option that doesn't imply a directory, like -d (dry run)
+            var args = new[] { "-d" };
+            
+            // Act
+            var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+            // Assert
+            exitCode.Should().Be(ExitCodes.NoProjectsFound);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(oldDir);
+            Directory.Delete(tempPath, true);
+        }
     }
 
     [Fact]
     public async Task DetermineStartDirectory_SkipsDotSolutionDir()
     {
         // Arrange
+        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempPath);
+        
         var fakeConsole = new FakeConsoleService();
-        // Set solution dir to "." explicitly
-        var args = new[] { "-s", "." };
+        // Set solution dir to "." explicitly, but pass an actual directory to RunAsync
+        var args = new[] { "-s", tempPath }; 
         
         // Act
         var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
 
         // Assert
-        // Should fall through to return "." anyway if nothing else is specified
         exitCode.Should().Be(ExitCodes.NoProjectsFound);
+        Directory.Delete(tempPath, true);
     }
 
     [Fact]
@@ -168,13 +200,26 @@ public class ProgramRunnerTests
     public async Task DetermineStartDirectory_HandlesEmptySolutionDir()
     {
         // Arrange
-        var fakeConsole = new FakeConsoleService();
-        var args = new[] { "-s", "" }; // Empty string
-        
-        // Act
-        var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempPath);
+        var oldDir = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(tempPath);
 
-        // Assert
-        exitCode.Should().Be(ExitCodes.NoProjectsFound);
+        try
+        {
+            var fakeConsole = new FakeConsoleService();
+            var args = new[] { "-s", "" }; // Empty string should fallback to "."
+            
+            // Act
+            var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
+
+            // Assert
+            exitCode.Should().Be(ExitCodes.NoProjectsFound);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(oldDir);
+            Directory.Delete(tempPath, true);
+        }
     }
 }
