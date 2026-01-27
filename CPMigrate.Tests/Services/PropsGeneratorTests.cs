@@ -116,7 +116,7 @@ public class PropsGeneratorTests : IDisposable
             </Project>
             """);
 
-        var result = _generator.ReadExistingPackageVersions(propsPath, out var hasConditional);
+        var result = PropsGenerator.ReadExistingPackageVersions(propsPath, out var hasConditional);
 
         result.Should().ContainKey("Newtonsoft.Json");
         result["Newtonsoft.Json"].Should().Contain("13.0.1");
@@ -136,7 +136,7 @@ public class PropsGeneratorTests : IDisposable
             </Project>
             """);
 
-        var result = _generator.ReadExistingPackageVersions(propsPath, out var hasConditional);
+        var result = PropsGenerator.ReadExistingPackageVersions(propsPath, out var hasConditional);
 
         result.Should().ContainKey("Conditional.Package");
         hasConditional.Should().BeTrue();
@@ -153,7 +153,7 @@ public class PropsGeneratorTests : IDisposable
             </Project>
             """);
 
-        var result = _generator.ReadExistingPackageVersions(propsPath, out _);
+        var result = PropsGenerator.ReadExistingPackageVersions(propsPath, out _);
 
         result.Should().NotContainKey("NoVersion");
         result.Should().BeEmpty();
@@ -256,7 +256,7 @@ public class PropsGeneratorTests : IDisposable
     {
         var propsPath = WritePropsFile("not valid xml");
 
-        var action = () => _generator.ReadExistingPackageVersions(propsPath, out _);
+        var action = () => PropsGenerator.ReadExistingPackageVersions(propsPath, out _);
 
         action.Should().Throw<Exception>();
     }

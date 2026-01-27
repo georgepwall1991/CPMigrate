@@ -257,7 +257,7 @@ public class BackupManagerTests : IDisposable
 
         await BackupManager.WriteManifestAsync(backupDir, manifest);
 
-        var result = await _backupManager.ReadManifestAsync(backupDir);
+        var result = await BackupManager.ReadManifestAsync(backupDir);
 
         result.Should().NotBeNull();
         result!.Timestamp.Should().Be("20231127120000");
@@ -272,7 +272,7 @@ public class BackupManagerTests : IDisposable
         var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupDir);
 
-        var result = await _backupManager.ReadManifestAsync(backupDir);
+        var result = await BackupManager.ReadManifestAsync(backupDir);
 
         result.Should().BeNull();
     }
@@ -286,7 +286,7 @@ public class BackupManagerTests : IDisposable
         var manifestPath = Path.Combine(backupDir, "backup_manifest.json");
         await File.WriteAllTextAsync(manifestPath, "not valid json {{{");
 
-        var result = await _backupManager.ReadManifestAsync(backupDir);
+        var result = await BackupManager.ReadManifestAsync(backupDir);
 
         result.Should().BeNull();
     }
@@ -313,7 +313,7 @@ public class BackupManagerTests : IDisposable
             BackupFileName = backupFileName
         };
 
-        _backupManager.RestoreFile(backupDir, entry);
+        BackupManager.RestoreFile(backupDir, entry);
 
         var restoredContent = File.ReadAllText(originalPath);
         restoredContent.Should().Be(originalContent);
@@ -331,7 +331,7 @@ public class BackupManagerTests : IDisposable
             BackupFileName = "NonExistent.csproj.backup_20231127120000"
         };
 
-        var action = () => _backupManager.RestoreFile(backupDir, entry);
+        var action = () => BackupManager.RestoreFile(backupDir, entry);
         action.Should().Throw<FileNotFoundException>();
     }
 
@@ -358,7 +358,7 @@ public class BackupManagerTests : IDisposable
             }
         };
 
-        var errors = _backupManager.CleanupBackups(backupDir, manifest);
+        var errors = BackupManager.CleanupBackups(backupDir, manifest);
 
         errors.Should().BeEmpty();
         File.Exists(backupFilePath).Should().BeFalse();

@@ -13,7 +13,7 @@ public class ConfigServiceTests
         var config = new ConfigModel { MergeExisting = true };
         var service = new ConfigService();
 
-        service.MergeConfig(options, config, new HashSet<string>());
+        ConfigService.MergeConfig(options, config, new HashSet<string>());
 
         options.MergeExisting.Should().BeTrue();
     }
@@ -25,7 +25,7 @@ public class ConfigServiceTests
         var config = new ConfigModel { MergeExisting = true };
         var service = new ConfigService();
 
-        service.MergeConfig(options, config, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "merge" });
+        ConfigService.MergeConfig(options, config, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "merge" });
 
         options.MergeExisting.Should().BeFalse();
     }

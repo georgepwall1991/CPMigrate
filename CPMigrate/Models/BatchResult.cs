@@ -67,9 +67,21 @@ public class BatchResult
     /// Exit code for the batch operation.
     /// </summary>
     [JsonIgnore]
-    public int ExitCode => Success ? ExitCodes.Success :
-        Solutions.Any(s => s.ExitCode == ExitCodes.VersionConflict) ? ExitCodes.VersionConflict :
-        ExitCodes.FileOperationError;
+    public int ExitCode
+    {
+        get
+        {
+            if (Success)
+            {
+                return ExitCodes.Success;
+            }
+            if (Solutions.Any(s => s.ExitCode == ExitCodes.VersionConflict))
+            {
+                return ExitCodes.VersionConflict;
+            }
+            return ExitCodes.FileOperationError;
+        }
+    }
 }
 
 /// <summary>

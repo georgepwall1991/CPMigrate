@@ -474,7 +474,20 @@ public class InteractiveService : IInteractiveService
         else if (mode == ModeAnalyze || mode.Contains("Analyze"))
         {
             grid.AddRow("[white]Transitive Deps[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
-            grid.AddRow("[white]Auto-Fix[/]", $"[cyan1]{(options.Fix ? "Yes" : options.FixDryRun ? "Dry Run" : "No")}[/]");
+            string autoFixStatus;
+            if (options.Fix)
+            {
+                autoFixStatus = "Yes";
+            }
+            else if (options.FixDryRun)
+            {
+                autoFixStatus = "Dry Run";
+            }
+            else
+            {
+                autoFixStatus = "No";
+            }
+            grid.AddRow("[white]Auto-Fix[/]", $"[cyan1]{autoFixStatus}[/]");
         }
         else if (mode == ModeRollback)
         {

@@ -212,21 +212,11 @@ public class BackupManager
         var errors = new List<string>();
 
         // Delete backup files
-        foreach (var entry in manifest.Backups)
-        {
-            var backupFilePath = Path.Combine(backupPath, entry.BackupFileName);
-            try
-            {
-                if (File.Exists(backupFilePath))
-                {
-                    File.Delete(backupFilePath);
-                }
-            }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-            {
-                errors.Add($"Failed to delete backup file '{entry.BackupFileName}': {ex.Message}");
-            }
-        }
+        var deleteErrors = manifest.Backups
+            .Select(entry => TryDeleteBackupFile(backupPath, entry))
+            .Where(error => error != null)
+            .Cast<string>();
+        errors.AddRange(deleteErrors);
 
         // Delete manifest
         var manifestPath = Path.Combine(backupPath, ManifestFileName);
@@ -256,6 +246,23 @@ public class BackupManager
         }
 
         return errors;
+    }
+
+    private static string? TryDeleteBackupFile(string backupPath, BackupEntry entry)
+    {
+        var backupFilePath = Path.Combine(backupPath, entry.BackupFileName);
+        try
+        {
+            if (File.Exists(backupFilePath))
+            {
+                File.Delete(backupFilePath);
+            }
+            return null;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return $"Failed to delete backup file '{entry.BackupFileName}': {ex.Message}";
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════

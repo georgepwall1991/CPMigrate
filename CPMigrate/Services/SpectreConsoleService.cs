@@ -358,9 +358,19 @@ public class SpectreConsoleService : IConsoleService
             : "[grey39]NO[/]";
         grid.AddRow("[grey39]Using CPM[/]", cpmStatus);
 
-        var gitStatus = !isGitRepo ? "[grey39]Not a Git Repo[/]"
-            : hasUnstaged ? "[orange1]Dirty[/] [grey](Unstaged changes detected)[/]"
-            : "[springgreen1]Clean[/]";
+        string gitStatus;
+        if (!isGitRepo)
+        {
+            gitStatus = "[grey39]Not a Git Repo[/]";
+        }
+        else if (hasUnstaged)
+        {
+            gitStatus = "[orange1]Dirty[/] [grey](Unstaged changes detected)[/]";
+        }
+        else
+        {
+            gitStatus = "[springgreen1]Clean[/]";
+        }
         grid.AddRow("[grey39]Git Status[/]", gitStatus);
 
         var backupStatus = backups.Count > 0

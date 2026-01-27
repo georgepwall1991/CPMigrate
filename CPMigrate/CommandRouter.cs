@@ -24,7 +24,7 @@ internal static class CommandRouter
         var config = configService.LoadConfig(startDir);
         if (config != null)
         {
-            configService.MergeConfig(options, config);
+            ConfigService.MergeConfig(options, config);
         }
 
         // Route to appropriate command handler
@@ -121,7 +121,7 @@ internal static class CommandRouter
             var config = configService.LoadConfig(startDir);
             if (config != null)
             {
-                configService.MergeConfig(options, config);
+                ConfigService.MergeConfig(options, config);
             }
 
             var result = await ExecuteInteractiveCommand(options, consoleService, versionResolver, backupManager);
@@ -442,9 +442,23 @@ internal static class CommandRouter
         }
 
         var formatter = new JsonFormatter();
+        string operation;
+        if (options.Analyze)
+        {
+            operation = "analyze";
+        }
+        else if (options.Rollback)
+        {
+            operation = "rollback";
+        }
+        else
+        {
+            operation = "migrate";
+        }
+
         var operationResult = new OperationResult
         {
-            Operation = options.Analyze ? "analyze" : options.Rollback ? "rollback" : "migrate",
+            Operation = operation,
             Success = result.ExitCode == ExitCodes.Success,
             ExitCode = result.ExitCode,
             Summary = new OperationSummary

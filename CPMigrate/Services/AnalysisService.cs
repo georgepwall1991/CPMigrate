@@ -34,7 +34,7 @@ public class AnalysisService
 
             if (projectAnalyzer != null)
             {
-                analyzersList.Add(new FrameworkAlignmentAnalyzer(projectAnalyzer));
+                analyzersList.Add(new FrameworkAlignmentAnalyzer());
             }
 
             _analyzers = analyzersList;

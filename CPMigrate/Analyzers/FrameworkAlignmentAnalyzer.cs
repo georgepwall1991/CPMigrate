@@ -9,13 +9,6 @@ namespace CPMigrate.Analyzers;
 /// </summary>
 public class FrameworkAlignmentAnalyzer : IAnalyzer
 {
-    private readonly ProjectAnalyzer _projectAnalyzer;
-
-    public FrameworkAlignmentAnalyzer(ProjectAnalyzer projectAnalyzer)
-    {
-        _projectAnalyzer = projectAnalyzer;
-    }
-
     public string Name => "Framework Alignment";
 
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
@@ -29,7 +22,7 @@ public class FrameworkAlignmentAnalyzer : IAnalyzer
 
         foreach (var path in projectPaths)
         {
-            var tfm = _projectAnalyzer.GetTargetFramework(path);
+            var tfm = ProjectAnalyzer.GetTargetFramework(path);
             if (!frameworks.ContainsKey(tfm))
             {
                 frameworks[tfm] = new List<string>();

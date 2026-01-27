@@ -420,7 +420,7 @@ public class MigrationService
 
         try
         {
-            var existingPackages = _propsGenerator.ReadExistingPackageVersions(
+            var existingPackages = PropsGenerator.ReadExistingPackageVersions(
                 propsFilePath, out hasConditionalPackageVersions);
             existingPackageCount = existingPackages.Count;
 
@@ -721,7 +721,7 @@ public class MigrationService
                 }
 
                 // Process project file
-                var projectFileContent = _projectAnalyzer.ProcessProject(
+                var projectFileContent = ProjectAnalyzer.ProcessProject(
                     projectFilePath, packages, options.KeepAttributes);
 
                 if (!options.DryRun)
@@ -762,7 +762,7 @@ public class MigrationService
                     }
 
                     // Process project file
-                    var projectFileContent = _projectAnalyzer.ProcessProject(
+                    var projectFileContent = ProjectAnalyzer.ProcessProject(
                         projectFilePath, packages, options.KeepAttributes);
 
                     if (options.IncludeTransitive)

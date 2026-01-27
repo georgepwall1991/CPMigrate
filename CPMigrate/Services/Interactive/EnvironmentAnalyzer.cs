@@ -96,7 +96,7 @@ internal class EnvironmentAnalyzer
         {
             analyzer.ScanProjectPackages(project, packages);
 
-            var targetFrameworks = analyzer.GetTargetFramework(project);
+            var targetFrameworks = ProjectAnalyzer.GetTargetFramework(project);
             AccumulateTargetFrameworks(ctx, targetFrameworks);
         }
 

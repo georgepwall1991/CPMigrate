@@ -51,6 +51,7 @@ public class DuplicatePackageFixer : IFixer
         var changes = nonStandardRefs
             .Select(group => StandardizePackageCasing(group.Key, issue.PackageName, standardCasing, dryRun))
             .Where(result => result != null)
+            .Cast<FileChange>()
             .ToList();
 
         if (changes.Count == 0)

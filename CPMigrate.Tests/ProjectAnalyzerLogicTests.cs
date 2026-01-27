@@ -47,7 +47,7 @@ public class ProjectAnalyzerLogicTests : IDisposable
         var versions = new Dictionary<string, HashSet<string>>();
 
         // Act
-        var resultXml = _analyzer.ProcessProject(filePath, versions, keepVersionAttributes: false);
+        var resultXml = ProjectAnalyzer.ProcessProject(filePath, versions, keepVersionAttributes: false);
 
         // Assert
         versions.Should().ContainKey("Newtonsoft.Json");
@@ -73,7 +73,7 @@ public class ProjectAnalyzerLogicTests : IDisposable
         var versions = new Dictionary<string, HashSet<string>>();
 
         // Act
-        var resultXml = _analyzer.ProcessProject(filePath, versions, keepVersionAttributes: true);
+        var resultXml = ProjectAnalyzer.ProcessProject(filePath, versions, keepVersionAttributes: true);
 
         // Assert
         versions.Should().ContainKey("Newtonsoft.Json");
@@ -95,7 +95,7 @@ public class ProjectAnalyzerLogicTests : IDisposable
         var versions = new Dictionary<string, HashSet<string>>();
 
         // Act
-        var resultXml = _analyzer.ProcessProject(filePath, versions, keepVersionAttributes: false);
+        var resultXml = ProjectAnalyzer.ProcessProject(filePath, versions, keepVersionAttributes: false);
 
         // Assert
         versions.Should().ContainKey("Newtonsoft.Json");
@@ -157,7 +157,7 @@ public class ProjectAnalyzerLogicTests : IDisposable
         };
 
         // Act
-        _analyzer.ProcessProject(filePath, versions);
+        ProjectAnalyzer.ProcessProject(filePath, versions);
 
         // Assert
         versions["LibA"].Should().HaveCount(2);

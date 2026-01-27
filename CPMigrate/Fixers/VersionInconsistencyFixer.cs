@@ -52,7 +52,8 @@ public class VersionInconsistencyFixer : IFixer
 
         var projectResults = projectGroups
             .Select(group => UpdateProjectVersions(group.Key, issue.PackageName, targetVersion, dryRun))
-            .Where(result => result != null);
+            .Where(result => result != null)
+            .Cast<FileChange>();
 
         changes.AddRange(projectResults);
 

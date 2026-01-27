@@ -49,7 +49,7 @@ static async Task MergeConfigWithCliArgsAsync(Options options, string[] args, Co
     if (config != null)
     {
         var cliArgsProvided = CliArgumentParser.GetExplicitArguments(args);
-        configService.MergeConfig(options, config, cliArgsProvided);
+        ConfigService.MergeConfig(options, config, cliArgsProvided);
     }
 
     await Task.CompletedTask;

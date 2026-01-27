@@ -81,36 +81,34 @@ public partial class ProjectAnalyzer
                 .GetAwaiter()
                 .GetResult();
 
-            foreach (var project in solution.SolutionProjects)
-            {
-                if (string.IsNullOrEmpty(project.FilePath))
-                {
-                    continue;
-                }
+            var validProjects = solution.SolutionProjects
+                .Where(p => !string.IsNullOrEmpty(p.FilePath))
+                .Select(p => (Project: p, Extension: GetSafeExtension(p.FilePath)))
+                .Where(t => t.Extension is ".csproj" or ".fsproj" or ".vbproj");
 
-                string? extension = null;
+            foreach (var (project, _) in validProjects)
+            {
+                var absolutePath = Path.GetFullPath(Path.Combine(basePath, project.FilePath));
+                if (File.Exists(absolutePath))
+                {
+                    projectPaths.Add(absolutePath);
+                    _consoleService.Info($"Found project: {Path.GetFileNameWithoutExtension(project.FilePath)}");
+                }
+                else
+                {
+                    _consoleService.Warning($"Project found in solution but file missing: {absolutePath}");
+                }
+            }
+
+            static string? GetSafeExtension(string filePath)
+            {
                 try
                 {
-                    extension = Path.GetExtension(project.FilePath)?.ToLowerInvariant();
+                    return Path.GetExtension(filePath)?.ToLowerInvariant();
                 }
                 catch
                 {
-                    // Ignore invalid paths
-                    continue;
-                }
-
-                if (extension is ".csproj" or ".fsproj" or ".vbproj")
-                {
-                    var absolutePath = Path.GetFullPath(Path.Combine(basePath, project.FilePath));
-                    if (File.Exists(absolutePath))
-                    {
-                        projectPaths.Add(absolutePath);
-                        _consoleService.Info($"Found project: {Path.GetFileNameWithoutExtension(project.FilePath)}");
-                    }
-                    else
-                    {
-                        _consoleService.Warning($"Project found in solution but file missing: {absolutePath}");
-                    }
+                    return null;
                 }
             }
         }
