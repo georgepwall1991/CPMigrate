@@ -1,4 +1,6 @@
 <div align="center">
+  <img src="./docs/images/logo.png" alt="CPMigrate Logo" width="128" />
+  <br/>
   <img src="./docs/images/banner.png" alt="CPMigrate Banner" width="100%" />
 </div>
 
