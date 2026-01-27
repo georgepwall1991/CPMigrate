@@ -115,7 +115,9 @@ public class InteractiveService : IInteractiveService
         public bool IsCpm;
         public int ProjectCount;
         public int ConflictCount;
+#pragma warning disable CS0649 // Reserved for future vulnerability analysis feature
         public int VulnerabilityCount;
+#pragma warning restore CS0649
         public Dictionary<string, int> TargetFrameworks = new();
     }
 
