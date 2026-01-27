@@ -63,7 +63,7 @@ public partial class ProjectAnalyzer
                     continue;
                 }
 
-                if (parsingTransitive && line.Trim().StartsWith(">"))
+                if (parsingTransitive && line.Trim().StartsWith('>'))
                 {
                     var match = Regex.Match(line, @">\s*([^\s]+)\s+([^\s]+)");
                     if (match.Success)
@@ -139,7 +139,7 @@ public partial class ProjectAnalyzer
                     continue;
                 }
 
-                if (parsingPackages && line.Trim().StartsWith(">"))
+                if (parsingPackages && line.Trim().StartsWith('>'))
                 {
                     // Use a more robust regex or split
                     var match = Regex.Match(line, @">\s*([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)");

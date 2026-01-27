@@ -257,7 +257,6 @@ public class BatchService
                     return;
                 }
 
-                var relativePath = Path.GetRelativePath(batchDir, sln);
                 var solutionName = Path.GetFileNameWithoutExtension(sln);
                 var solutionDir = Path.GetDirectoryName(sln) ?? ".";
 

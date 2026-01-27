@@ -559,7 +559,7 @@ public class MigrationService
 
             // We need to count usage across all projects to show impact
             var usageCounts = new Dictionary<string, Dictionary<string, int>>();
-            var (basePath, projectPaths) = DiscoverProjects(options);
+            var (_, projectPaths) = DiscoverProjects(options);
             foreach (var path in projectPaths)
             {
                 var (refs, _) = _projectAnalyzer.ScanProjectPackages(path);
@@ -709,8 +709,6 @@ public class MigrationService
         {
             foreach (var projectFilePath in projectPaths)
             {
-                var projectName = Path.GetFileName(projectFilePath);
-
                 // Backup
                 if (!options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath))
                 {
@@ -1143,7 +1141,7 @@ public class MigrationService
         _consoleService.WriteLine();
 
         // Discover projects
-        var (basePath, projectPaths) = await AnsiConsole.Status()
+        var (_, projectPaths) = await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .SpinnerStyle(Style.Parse("cyan"))
             .StartAsync("Discovering projects...", async ctx =>
