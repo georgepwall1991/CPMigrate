@@ -76,7 +76,9 @@ internal class MigrationValidator
         try
         {
             using var process = new System.Diagnostics.Process();
+#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses git from PATH
             process.StartInfo.FileName = "git";
+#pragma warning restore S4036
             process.StartInfo.Arguments = "status --porcelain";
             process.StartInfo.WorkingDirectory = directory;
             process.StartInfo.UseShellExecute = false;

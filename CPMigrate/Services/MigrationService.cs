@@ -192,7 +192,9 @@ public class MigrationService
         {
             // Simple check using git status --porcelain
             using var process = new System.Diagnostics.Process();
+#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses git from PATH
             process.StartInfo.FileName = "git";
+#pragma warning restore S4036
             process.StartInfo.Arguments = "status --porcelain";
             process.StartInfo.WorkingDirectory = directory;
             process.StartInfo.UseShellExecute = false;
@@ -261,7 +263,9 @@ public class MigrationService
                 try
                 {
                     using var process = new System.Diagnostics.Process();
+#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses dotnet from PATH
                     process.StartInfo.FileName = "dotnet";
+#pragma warning restore S4036
                     process.StartInfo.Arguments = "restore";
                     process.StartInfo.WorkingDirectory = workingDirectory;
                     process.StartInfo.UseShellExecute = false;

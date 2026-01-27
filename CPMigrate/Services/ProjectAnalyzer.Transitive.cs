@@ -20,7 +20,9 @@ public partial class ProjectAnalyzer
         {
             var startInfo = new ProcessStartInfo
             {
+#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses dotnet from PATH
                 FileName = "dotnet",
+#pragma warning restore S4036
                 Arguments = "list package --include-transitive",
                 WorkingDirectory = projectDir,
                 RedirectStandardOutput = true,
@@ -104,7 +106,9 @@ public partial class ProjectAnalyzer
         {
             var startInfo = new ProcessStartInfo
             {
+#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses dotnet from PATH
                 FileName = "dotnet",
+#pragma warning restore S4036
                 Arguments = "list package --vulnerable --include-transitive",
                 WorkingDirectory = projectDir,
                 RedirectStandardOutput = true,
