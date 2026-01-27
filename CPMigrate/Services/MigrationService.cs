@@ -852,39 +852,19 @@ public class MigrationService
         _consoleService.WriteLine();
 
         var backupPath = BackupManager.GetBackupDirectoryPath(options);
-
-        // Check if backup directory exists
-        if (!Directory.Exists(backupPath))
+        var validationError = await ValidateRollbackPrerequisites(backupPath);
+        if (validationError != null)
         {
-            _consoleService.Error($"No backup directory found at: {backupPath}");
-            _consoleService.WriteMarkup("[dim]Run a migration first to create backups.[/]\n");
-            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
+            return validationError;
         }
 
-        // Read manifest
         var manifest = await BackupManager.ReadManifestAsync(backupPath);
-        if (manifest == null)
+        if (manifest == null || manifest.Backups.Count == 0)
         {
-            _consoleService.Error("No backup manifest found or manifest is corrupted.");
-            _consoleService.WriteMarkup("[dim]Cannot determine which files to restore.[/]\n");
-            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
+            return HandleEmptyOrMissingManifest(manifest);
         }
 
-        if (manifest.Backups.Count == 0)
-        {
-            _consoleService.Warning("No backup entries found in manifest - nothing to restore.");
-            _consoleService.Dim("The backup manifest exists but contains no files. This may indicate:");
-            _consoleService.Dim("  - A previous rollback already completed");
-            _consoleService.Dim("  - The migration was run with --no-backup");
-            return new MigrationResult { ExitCode = ExitCodes.Success };
-        }
-
-        // Show preview
-        var filesToRestore = manifest.Backups.Select(b => b.OriginalPath).ToList();
-        _consoleService.WriteRollbackPreview(filesToRestore, manifest.PropsFilePath);
-
-        // Ask for confirmation
-        if (!_consoleService.AskConfirmation("Proceed with rollback?"))
+        if (!ShowPreviewAndConfirm(manifest))
         {
             _consoleService.Info("Rollback cancelled.");
             return new MigrationResult { ExitCode = ExitCodes.Success };
@@ -892,7 +872,59 @@ public class MigrationService
 
         _consoleService.WriteLine();
 
-        // Restore files with progress
+        var (restoredCount, failedCount) = await RestoreFilesWithProgress(backupPath, manifest);
+        _consoleService.WriteLine();
+
+        HandlePostRestoreCleanup(backupPath, manifest, failedCount);
+        ShowRollbackSummary(restoredCount, failedCount);
+
+        return new MigrationResult
+        {
+            ProjectsProcessed = restoredCount,
+            ExitCode = failedCount == 0 ? ExitCodes.Success : ExitCodes.FileOperationError
+        };
+    }
+
+    private async Task<MigrationResult?> ValidateRollbackPrerequisites(string backupPath)
+    {
+        if (!Directory.Exists(backupPath))
+        {
+            _consoleService.Error($"No backup directory found at: {backupPath}");
+            _consoleService.WriteMarkup("[dim]Run a migration first to create backups.[/]\n");
+            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
+        }
+
+        await Task.CompletedTask;
+        return null;
+    }
+
+    private MigrationResult HandleEmptyOrMissingManifest(BackupManifest? manifest)
+    {
+        if (manifest == null)
+        {
+            _consoleService.Error("No backup manifest found or manifest is corrupted.");
+            _consoleService.WriteMarkup("[dim]Cannot determine which files to restore.[/]\n");
+            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
+        }
+
+        _consoleService.Warning("No backup entries found in manifest - nothing to restore.");
+        _consoleService.Dim("The backup manifest exists but contains no files. This may indicate:");
+        _consoleService.Dim("  - A previous rollback already completed");
+        _consoleService.Dim("  - The migration was run with --no-backup");
+        return new MigrationResult { ExitCode = ExitCodes.Success };
+    }
+
+    private bool ShowPreviewAndConfirm(BackupManifest manifest)
+    {
+        var filesToRestore = manifest.Backups.Select(b => b.OriginalPath).ToList();
+        _consoleService.WriteRollbackPreview(filesToRestore, manifest.PropsFilePath);
+        return _consoleService.AskConfirmation("Proceed with rollback?");
+    }
+
+    private async Task<(int RestoredCount, int FailedCount)> RestoreFilesWithProgress(
+        string backupPath,
+        BackupManifest manifest)
+    {
         var restoredCount = 0;
         var failedCount = 0;
 
@@ -914,14 +946,12 @@ public class MigrationService
                     var fileName = Path.GetFileName(entry.OriginalPath);
                     task.Description = $"[cyan]Restoring[/] [white]{Markup.Escape(fileName)}[/]";
 
-                    try
+                    if (TryRestoreFile(backupPath, entry, fileName))
                     {
-                        BackupManager.RestoreFile(backupPath, entry);
                         restoredCount++;
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        _consoleService.Error($"Failed to restore {fileName}: {ex.Message}");
                         failedCount++;
                     }
 
@@ -932,55 +962,111 @@ public class MigrationService
                 task.Description = "[green]Restore complete[/]";
             });
 
-        _consoleService.WriteLine();
-        var propsFileExisted = manifest.PropsFileExisted;
-        var propsFilePath = manifest.PropsFilePath;
+        return (restoredCount, failedCount);
+    }
 
-        // Only delete Directory.Packages.props if ALL files restored successfully
+    private bool TryRestoreFile(string backupPath, BackupEntry entry, string fileName)
+    {
+        try
+        {
+            BackupManager.RestoreFile(backupPath, entry);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _consoleService.Error($"Failed to restore {fileName}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void HandlePostRestoreCleanup(string backupPath, BackupManifest manifest, int failedCount)
+    {
         if (failedCount == 0)
         {
-            if (!string.IsNullOrEmpty(propsFilePath) && !propsFileExisted && File.Exists(propsFilePath))
-            {
-                try
-                {
-                    File.Delete(propsFilePath);
-                    _consoleService.Success($"Deleted: {propsFilePath}");
-                }
-                catch (Exception ex)
-                {
-                    _consoleService.Warning($"Could not delete props file: {ex.Message}");
-                }
-            }
-            else if (propsFileExisted)
-            {
-                _consoleService.Dim("Preserved existing Directory.Packages.props.");
-            }
-
-            // Clean up backups only on full success
-            var cleanupErrors = BackupManager.CleanupBackups(backupPath, manifest);
-            if (cleanupErrors.Count == 0)
-            {
-                _consoleService.Dim("Cleaned up backup files.");
-            }
-            else
-            {
-                _consoleService.Warning($"Cleanup completed with {cleanupErrors.Count} error(s):");
-                foreach (var error in cleanupErrors)
-                {
-                    _consoleService.Dim($"  - {error}");
-                }
-            }
+            HandleSuccessfulRestore(backupPath, manifest);
         }
         else
         {
-            _consoleService.Warning(propsFileExisted
-                ? "Existing props file retained due to restore failures."
-                : "Props file NOT deleted due to restore failures.");
-            _consoleService.Dim("Backup files retained for manual recovery.");
+            HandleFailedRestore(manifest);
+        }
+    }
+
+    private void HandleSuccessfulRestore(string backupPath, BackupManifest manifest)
+    {
+        DeletePropsFileIfNeeded(manifest.PropsFilePath, manifest.PropsFileExisted);
+        CleanupBackupFiles(backupPath, manifest);
+    }
+
+    private void DeletePropsFileIfNeeded(string propsFilePath, bool propsFileExisted)
+    {
+        if (string.IsNullOrEmpty(propsFilePath))
+        {
+            return;
         }
 
-        // Summary
+        if (!propsFileExisted && File.Exists(propsFilePath))
+        {
+            TryDeletePropsFile(propsFilePath);
+        }
+        else if (propsFileExisted)
+        {
+            _consoleService.Dim("Preserved existing Directory.Packages.props.");
+        }
+    }
+
+    private void TryDeletePropsFile(string propsFilePath)
+    {
+        try
+        {
+            File.Delete(propsFilePath);
+            _consoleService.Success($"Deleted: {propsFilePath}");
+        }
+        catch (Exception ex)
+        {
+            _consoleService.Warning($"Could not delete props file: {ex.Message}");
+        }
+    }
+
+    private void CleanupBackupFiles(string backupPath, BackupManifest manifest)
+    {
+        if (string.IsNullOrEmpty(backupPath))
+        {
+            return;
+        }
+
+        var cleanupErrors = BackupManager.CleanupBackups(backupPath, manifest);
+
+        if (cleanupErrors.Count == 0)
+        {
+            _consoleService.Dim("Cleaned up backup files.");
+        }
+        else
+        {
+            ShowCleanupErrors(cleanupErrors);
+        }
+    }
+
+    private void ShowCleanupErrors(List<string> cleanupErrors)
+    {
+        _consoleService.Warning($"Cleanup completed with {cleanupErrors.Count} error(s):");
+        foreach (var error in cleanupErrors)
+        {
+            _consoleService.Dim($"  - {error}");
+        }
+    }
+
+    private void HandleFailedRestore(BackupManifest manifest)
+    {
+        _consoleService.Warning(manifest.PropsFileExisted
+            ? "Existing props file retained due to restore failures."
+            : "Props file NOT deleted due to restore failures.");
+        _consoleService.Dim("Backup files retained for manual recovery.");
+    }
+
+    private void ShowRollbackSummary(int restoredCount, int failedCount)
+    {
         _consoleService.WriteLine();
+
         if (failedCount == 0)
         {
             _consoleService.Success($"Rollback complete! Restored {restoredCount} file(s).");
@@ -990,12 +1076,6 @@ public class MigrationService
             _consoleService.Warning($"Rollback completed with errors. Restored: {restoredCount}, Failed: {failedCount}");
             _consoleService.Dim("Manual intervention may be required. Check backup directory for original files.");
         }
-
-        return new MigrationResult
-        {
-            ProjectsProcessed = restoredCount,
-            ExitCode = failedCount == 0 ? ExitCodes.Success : ExitCodes.FileOperationError
-        };
     }
 
     /// <summary>
