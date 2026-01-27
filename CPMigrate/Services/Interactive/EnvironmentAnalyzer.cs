@@ -135,9 +135,10 @@ public class EnvironmentContext
     public int ProjectCount { get; set; }
     public int ConflictCount { get; set; }
 
-#pragma warning disable CS0649 // Reserved for future vulnerability analysis feature
-    public int VulnerabilityCount;
-#pragma warning restore CS0649
+    /// <summary>
+    /// Reserved for future vulnerability analysis feature.
+    /// </summary>
+    public int VulnerabilityCount { get; set; }
 
     public Dictionary<string, int> TargetFrameworks { get; set; } = new();
 }

@@ -9,6 +9,9 @@ namespace CPMigrate.Services;
 /// </summary>
 public class PropsGenerator
 {
+    private const string PackageVersionItemType = "PackageVersion";
+    private const string VersionMetadataName = "Version";
+
     private readonly VersionResolver _versionResolver;
 
     public PropsGenerator(VersionResolver? versionResolver = null)
@@ -75,7 +78,7 @@ public class PropsGenerator
         }
         var projectRoot = ProjectRootElement.Open(propsFilePath);
 
-        foreach (var item in projectRoot.Items.Where(i => i.ItemType == "PackageVersion"))
+        foreach (var item in projectRoot.Items.Where(i => i.ItemType == PackageVersionItemType))
         {
             if (!string.IsNullOrEmpty(item.Condition) || !string.IsNullOrEmpty(item.Parent?.Condition))
             {
@@ -88,7 +91,7 @@ public class PropsGenerator
                 continue;
             }
 
-            var version = GetMetadataValue(item, "Version");
+            var version = GetMetadataValue(item, VersionMetadataName);
             if (string.IsNullOrWhiteSpace(version))
             {
                 continue;
@@ -119,7 +122,7 @@ public class PropsGenerator
         var itemsByPackage = new Dictionary<string, List<ProjectItemElement>>();
         var hasConditionalPackageVersions = false;
 
-        foreach (var item in projectRoot.Items.Where(i => i.ItemType == "PackageVersion"))
+        foreach (var item in projectRoot.Items.Where(i => i.ItemType == PackageVersionItemType))
         {
             if (!string.IsNullOrEmpty(item.Condition) || !string.IsNullOrEmpty(item.Parent?.Condition))
             {
@@ -145,7 +148,7 @@ public class PropsGenerator
 
         var targetItemGroup = projectRoot.ItemGroups
             .FirstOrDefault(group => string.IsNullOrEmpty(group.Condition)
-                && group.Items.Any(item => item.ItemType == "PackageVersion"))
+                && group.Items.Any(item => item.ItemType == PackageVersionItemType))
             ?? projectRoot.AddItemGroup();
 
         var addedCount = 0;
@@ -167,10 +170,10 @@ public class PropsGenerator
                 var updated = false;
                 foreach (var item in existingItems)
                 {
-                    var currentVersion = GetMetadataValue(item, "Version");
+                    var currentVersion = GetMetadataValue(item, VersionMetadataName);
                     if (!string.Equals(currentVersion, resolvedVersion, StringComparison.OrdinalIgnoreCase))
                     {
-                        SetMetadataValue(item, "Version", resolvedVersion);
+                        SetMetadataValue(item, VersionMetadataName, resolvedVersion);
                         updated = true;
                     }
                 }
@@ -182,8 +185,8 @@ public class PropsGenerator
             }
             else
             {
-                var newItem = targetItemGroup.AddItem("PackageVersion", kvp.Key);
-                SetMetadataValue(newItem, "Version", resolvedVersion);
+                var newItem = targetItemGroup.AddItem(PackageVersionItemType, kvp.Key);
+                SetMetadataValue(newItem, VersionMetadataName, resolvedVersion);
                 addedCount++;
             }
         }

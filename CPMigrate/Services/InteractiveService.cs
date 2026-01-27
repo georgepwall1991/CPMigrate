@@ -195,26 +195,6 @@ public class InteractiveService : IInteractiveService
         return _console.AskGroupedSelection("What's the mission?", groups);
     }
 
-    private string AskMode()
-    {
-        return _console.AskSelection(
-            "What would you like to do?",
-            new[] { ModeMigrate, ModeAnalyze, ModeBatch, ModeRollback, ModeBackups, ModeExit });
-    }
-
-    private static void ApplyMode(Options options, string mode)
-    {
-        switch (mode)
-        {
-            case ModeAnalyze:
-                options.Analyze = true;
-                break;
-            case ModeRollback:
-                options.Rollback = true;
-                break;
-        }
-    }
-
     private string? AskSolutionPath()
     {
         var currentDir = Directory.GetCurrentDirectory();

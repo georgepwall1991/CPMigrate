@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using CPMigrate.Models;
 using Spectre.Console;
 
@@ -11,10 +12,7 @@ public class BatchService
     private readonly IConsoleService _consoleService;
     private readonly Func<Options, Task<MigrationResult>> _migrationExecutor;
 
-    /// <summary>
-    /// Default directories to exclude when scanning for solutions.
-    /// </summary>
-    public static readonly HashSet<string> DefaultExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> _defaultExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         "node_modules",
         "bin",
@@ -27,6 +25,11 @@ public class BatchService
         "artifacts",
         ".nuget"
     };
+
+    /// <summary>
+    /// Default directories to exclude when scanning for solutions.
+    /// </summary>
+    public static IReadOnlySet<string> DefaultExcludedDirectories => _defaultExcludedDirectories;
 
     /// <summary>
     /// Creates a new BatchService instance.
@@ -47,7 +50,7 @@ public class BatchService
     /// <returns>List of solution file paths.</returns>
     public List<string> DiscoverSolutions(string rootPath, HashSet<string>? excludedDirectories = null)
     {
-        var excluded = excludedDirectories ?? DefaultExcludedDirectories;
+        var excluded = excludedDirectories ?? new HashSet<string>(DefaultExcludedDirectories, StringComparer.OrdinalIgnoreCase);
         var solutions = new List<string>();
 
         if (!Directory.Exists(rootPath))
@@ -383,8 +386,3 @@ public class BatchService
         }
     }
 }
-
-/// <summary>
-/// Concurrent bag for parallel processing.
-/// </summary>
-file class ConcurrentBag<T> : System.Collections.Concurrent.ConcurrentBag<T>;
