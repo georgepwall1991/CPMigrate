@@ -400,80 +400,8 @@ public class InteractiveService : IInteractiveService
     {
         _console.WriteLine();
 
-        var modeLabel = mode switch
-        {
-            ModeMigrate => "MIGRATE",
-            ModeAnalyze => "ANALYZE",
-            ModeBatch => "BATCH MIGRATE",
-            ModeRollback => "ROLLBACK",
-            ModeBackups when options.PruneAll => "PRUNE ALL",
-            ModeBackups when options.PruneBackups => "PRUNE",
-            _ when mode.Contains("Unify") || options.UnifyProps => "UNIFY PROPS", // Handle new mode
-            _ => "UNKNOWN"
-        };
-
-        var grid = new Grid();
-        grid.AddColumn();
-        grid.AddColumn();
-
-        if (!string.IsNullOrEmpty(options.BatchDir))
-        {
-            grid.AddRow("[white]Batch Directory[/]", $"[cyan1]{EscapeMarkup(options.BatchDir)}[/]");
-        }
-        else if (!string.IsNullOrEmpty(options.SolutionFileDir))
-        {
-            grid.AddRow("[white]Solution/Project[/]", $"[cyan1]{EscapeMarkup(options.SolutionFileDir)}[/]");
-        }
-
-        if (mode == ModeMigrate || mode == ModeBatch)
-        {
-            grid.AddRow("[white]Conflict Strategy[/]", $"[cyan1]{(options.InteractiveConflicts ? "Interactive" : options.ConflictStrategy)}[/]");
-            grid.AddRow("[white]Backup[/]", $"[cyan1]{(options.NoBackup ? "No" : $"Yes ({options.BackupDir})")}[/]");
-            grid.AddRow("[white]Dry Run[/]", $"[cyan1]{(options.DryRun ? "Yes" : "No")}[/]");
-            grid.AddRow("[white]Keep Version Attrs[/]", $"[cyan1]{(options.KeepAttributes ? "Yes" : "No")}[/]");
-            grid.AddRow("[white]Pin Transitive[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
-            if (options.MergeExisting)
-            {
-                grid.AddRow("[white]Merge Existing Props[/]", "[cyan1]Yes[/]");
-            }
-        }
-        else if (mode == ModeAnalyze || mode.Contains("Analyze"))
-        {
-            grid.AddRow("[white]Transitive Deps[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
-            string autoFixStatus;
-            if (options.Fix)
-            {
-                autoFixStatus = "Yes";
-            }
-            else if (options.FixDryRun)
-            {
-                autoFixStatus = "Dry Run";
-            }
-            else
-            {
-                autoFixStatus = "No";
-            }
-            grid.AddRow("[white]Auto-Fix[/]", $"[cyan1]{autoFixStatus}[/]");
-        }
-        else if (mode == ModeRollback)
-        {
-            grid.AddRow("[white]Backup Location[/]", $"[cyan1]{options.BackupDir}[/]");
-        }
-        else if (mode == ModeBackups)
-        {
-            if (options.PruneBackups)
-            {
-                grid.AddRow("[white]Retention[/]", $"[cyan1]Keep last {options.Retention}[/]");
-            }
-            else if (options.PruneAll)
-            {
-                grid.AddRow("[white]Action[/]", "[red]DELETE ALL BACKUPS[/]");
-            }
-        }
-        else if (options.UnifyProps)
-        {
-            grid.AddRow("[white]Operation[/]", $"[cyan1]Unify Directory.Build.props (Properties & Usings)[/]");
-        }
+        var modeLabel = GetModeLabel(mode, options);
+        var grid = CreateSummaryGrid(options, mode);
 
         var panel = new Panel(grid)
         {
@@ -485,6 +413,127 @@ public class InteractiveService : IInteractiveService
 
         AnsiConsole.Write(panel);
         _console.WriteLine();
+    }
+
+    private static string GetModeLabel(string mode, Options options)
+    {
+        return mode switch
+        {
+            ModeMigrate => "MIGRATE",
+            ModeAnalyze => "ANALYZE",
+            ModeBatch => "BATCH MIGRATE",
+            ModeRollback => "ROLLBACK",
+            ModeBackups when options.PruneAll => "PRUNE ALL",
+            ModeBackups when options.PruneBackups => "PRUNE",
+            _ when mode.Contains("Unify") || options.UnifyProps => "UNIFY PROPS",
+            _ => "UNKNOWN"
+        };
+    }
+
+    private static Grid CreateSummaryGrid(Options options, string mode)
+    {
+        var grid = new Grid();
+        grid.AddColumn();
+        grid.AddColumn();
+
+        AddPathRow(grid, options);
+        AddModeSpecificRows(grid, options, mode);
+
+        return grid;
+    }
+
+    private static void AddPathRow(Grid grid, Options options)
+    {
+        if (!string.IsNullOrEmpty(options.BatchDir))
+        {
+            grid.AddRow("[white]Batch Directory[/]", $"[cyan1]{EscapeMarkup(options.BatchDir)}[/]");
+        }
+        else if (!string.IsNullOrEmpty(options.SolutionFileDir))
+        {
+            grid.AddRow("[white]Solution/Project[/]", $"[cyan1]{EscapeMarkup(options.SolutionFileDir)}[/]");
+        }
+    }
+
+    private static void AddModeSpecificRows(Grid grid, Options options, string mode)
+    {
+        if (mode == ModeMigrate || mode == ModeBatch)
+        {
+            AddMigrationRows(grid, options);
+        }
+        else if (mode == ModeAnalyze || mode.Contains("Analyze"))
+        {
+            AddAnalyzeRows(grid, options);
+        }
+        else if (mode == ModeRollback)
+        {
+            AddRollbackRows(grid, options);
+        }
+        else if (mode == ModeBackups)
+        {
+            AddBackupRows(grid, options);
+        }
+        else if (options.UnifyProps)
+        {
+            AddUnifyPropsRows(grid);
+        }
+    }
+
+    private static void AddMigrationRows(Grid grid, Options options)
+    {
+        grid.AddRow("[white]Conflict Strategy[/]", $"[cyan1]{(options.InteractiveConflicts ? "Interactive" : options.ConflictStrategy)}[/]");
+        grid.AddRow("[white]Backup[/]", $"[cyan1]{(options.NoBackup ? "No" : $"Yes ({options.BackupDir})")}[/]");
+        grid.AddRow("[white]Dry Run[/]", $"[cyan1]{(options.DryRun ? "Yes" : "No")}[/]");
+        grid.AddRow("[white]Keep Version Attrs[/]", $"[cyan1]{(options.KeepAttributes ? "Yes" : "No")}[/]");
+        grid.AddRow("[white]Pin Transitive[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
+
+        if (options.MergeExisting)
+        {
+            grid.AddRow("[white]Merge Existing Props[/]", "[cyan1]Yes[/]");
+        }
+    }
+
+    private static void AddAnalyzeRows(Grid grid, Options options)
+    {
+        grid.AddRow("[white]Transitive Deps[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
+        var autoFixStatus = GetAutoFixStatus(options);
+        grid.AddRow("[white]Auto-Fix[/]", $"[cyan1]{autoFixStatus}[/]");
+    }
+
+    private static string GetAutoFixStatus(Options options)
+    {
+        if (options.Fix)
+        {
+            return "Yes";
+        }
+
+        if (options.FixDryRun)
+        {
+            return "Dry Run";
+        }
+
+        return "No";
+    }
+
+    private static void AddRollbackRows(Grid grid, Options options)
+    {
+        grid.AddRow("[white]Backup Location[/]", $"[cyan1]{options.BackupDir}[/]");
+    }
+
+    private static void AddBackupRows(Grid grid, Options options)
+    {
+        if (options.PruneBackups)
+        {
+            grid.AddRow("[white]Retention[/]", $"[cyan1]Keep last {options.Retention}[/]");
+        }
+        else if (options.PruneAll)
+        {
+            grid.AddRow("[white]Action[/]", "[red]DELETE ALL BACKUPS[/]");
+        }
+    }
+
+    private static void AddUnifyPropsRows(Grid grid)
+    {
+        grid.AddRow("[white]Operation[/]", "[cyan1]Unify Directory.Build.props (Properties & Usings)[/]");
     }
 
     private bool AskConfirmation()
