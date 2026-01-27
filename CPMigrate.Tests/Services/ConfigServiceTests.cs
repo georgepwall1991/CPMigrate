@@ -409,7 +409,7 @@ public class ConfigServiceTests : IDisposable
     public void MergeConfig_BackupDirFromConfig_WhenCliNotProvided()
     {
         // Arrange
-        var options = new Options { BackupDir = null };
+        var options = new Options { BackupDir = string.Empty };
         var config = new ConfigModel { BackupDir = "config-backup" };
 
         // Act
@@ -511,7 +511,7 @@ public class ConfigServiceTests : IDisposable
         var config = new ConfigModel { MergeExisting = true };
 
         // Act - Pass null for cliArgsProvided
-        ConfigService.MergeConfig(options, config, null);
+        ConfigService.MergeConfig(options, config, new HashSet<string>());
 
         // Assert
         options.MergeExisting.Should().BeTrue();

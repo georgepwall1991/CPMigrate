@@ -77,7 +77,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true // Skip confirmation
         };
 
@@ -119,7 +119,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -130,7 +130,7 @@ public class BuildPropsServiceTests : IDisposable
         result.Should().Be(ExitCodes.Success);
 
         // Directory.Build.props should exist
-        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "Directory.Build.props");
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
         File.Exists(buildPropsPath).Should().BeTrue();
 
         // Should contain TargetFramework and Nullable
@@ -166,7 +166,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -177,7 +177,7 @@ public class BuildPropsServiceTests : IDisposable
         result.Should().Be(ExitCodes.Success);
 
         // Directory.Build.props should contain Using item
-        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "Directory.Build.props");
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
         var content = File.ReadAllText(buildPropsPath);
         content.Should().Contain("<Using Include=\"System.Text.Json\"");
     }
@@ -203,7 +203,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             DryRun = true
         };
 
@@ -214,7 +214,7 @@ public class BuildPropsServiceTests : IDisposable
         result.Should().Be(ExitCodes.Success);
 
         // Directory.Build.props should NOT be created
-        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "Directory.Build.props");
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
         File.Exists(buildPropsPath).Should().BeFalse();
     }
 
@@ -241,7 +241,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -252,7 +252,7 @@ public class BuildPropsServiceTests : IDisposable
         result.Should().Be(ExitCodes.Success);
 
         // Should still create file despite ConfirmationResponse = false
-        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "Directory.Build.props");
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
         File.Exists(buildPropsPath).Should().BeTrue();
     }
 
@@ -279,7 +279,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = false // Require confirmation
         };
 
@@ -290,7 +290,7 @@ public class BuildPropsServiceTests : IDisposable
         result.Should().Be(ExitCodes.Success);
 
         // Directory.Build.props should NOT be created
-        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "Directory.Build.props");
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
         File.Exists(buildPropsPath).Should().BeFalse();
     }
 
@@ -315,7 +315,7 @@ public class BuildPropsServiceTests : IDisposable
 </Project>")
         );
 
-        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "Directory.Build.props");
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
         File.WriteAllText(buildPropsPath, @"<Project>
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
@@ -324,7 +324,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -363,7 +363,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -409,7 +409,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -457,7 +457,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -502,7 +502,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -546,7 +546,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -615,7 +615,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -626,7 +626,7 @@ public class BuildPropsServiceTests : IDisposable
         result.Should().Be(ExitCodes.Success);
 
         // Nullable=enable should be unified (3/5 = 60%)
-        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "Directory.Build.props");
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
         var content = File.ReadAllText(buildPropsPath);
         content.Should().Contain("<Nullable>enable</Nullable>");
     }
@@ -670,7 +670,7 @@ public class BuildPropsServiceTests : IDisposable
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Force = true
         };
 
@@ -681,7 +681,7 @@ public class BuildPropsServiceTests : IDisposable
         result.Should().Be(ExitCodes.Success);
 
         // No Nullable should be unified (2/5 = 40% < 60%)
-        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "Directory.Build.props");
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
         File.Exists(buildPropsPath).Should().BeFalse();
     }
 
@@ -709,7 +709,7 @@ MinimumVisualStudioVersion = 10.0.40219.1
         {
             var projectGuid = Guid.NewGuid().ToString("B").ToUpper();
             var projectName = Path.GetFileNameWithoutExtension(projectPath);
-            var relativePath = Path.GetRelativePath(Path.GetDirectoryName(solutionPath)!, projectPath);
+            var relativePath = Path.GetRelativePath(Path.GetDirectoryName(solutionPath) ?? "", projectPath);
 
             projectGuids.Add(projectGuid);
 

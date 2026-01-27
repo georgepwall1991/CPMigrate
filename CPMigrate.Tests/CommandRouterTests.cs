@@ -362,7 +362,7 @@ EndProject
 
         var options = new Options
         {
-            SolutionFileDir = Path.GetDirectoryName(solutionPath),
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             Output = OutputFormat.Json,
             DryRun = true,
             Force = true
@@ -537,7 +537,7 @@ MinimumVisualStudioVersion = 10.0.40219.1
         {
             var projectGuid = Guid.NewGuid().ToString("B").ToUpper();
             var projectName = Path.GetFileNameWithoutExtension(projectPath);
-            var relativePath = Path.GetRelativePath(Path.GetDirectoryName(solutionPath)!, projectPath);
+            var relativePath = Path.GetRelativePath(Path.GetDirectoryName(solutionPath) ?? "", projectPath);
 
             projectGuids.Add(projectGuid);
 

@@ -10,13 +10,15 @@ public class FakeConsoleService : IConsoleService
     public Queue<string> SelectionResponses { get; set; } = new();
 
     public List<string> ErrorMessages { get; } = new();
-    public void Info(string message) { }
-    public void Success(string message) { }
-    public void Warning(string message) { }
-    public void Error(string message) { ErrorMessages.Add(message); }
-    public void Highlight(string message) { }
-    public void Dim(string message) { }
-    public void DryRun(string message) { }
+    public List<string> OutputMessages { get; } = new();
+
+    public void Info(string message) { OutputMessages.Add(message); }
+    public void Success(string message) { OutputMessages.Add(message); }
+    public void Warning(string message) { OutputMessages.Add(message); }
+    public void Error(string message) { ErrorMessages.Add(message); OutputMessages.Add(message); }
+    public void Highlight(string message) { OutputMessages.Add(message); }
+    public void Dim(string message) { OutputMessages.Add(message); }
+    public void DryRun(string message) { OutputMessages.Add(message); }
     public void WriteHeader() { }
     public void Banner(string message) { }
     public void Separator() { }
@@ -24,8 +26,8 @@ public class FakeConsoleService : IConsoleService
     public void WriteSummaryTable(int projectCount, int packageCount, int conflictCount, string propsFilePath, string? backupPath, bool wasDryRun) { }
     public void WriteProjectTree(List<string> projectPaths, string basePath) { }
     public void WritePropsPreview(string content) { }
-    public void WriteMarkup(string message) { }
-    public void WriteLine(string message = "") { }
+    public void WriteMarkup(string message) { OutputMessages.Add(message); }
+    public void WriteLine(string message = "") { OutputMessages.Add(message); }
     public void WriteStatusDashboard(string directory, List<string> solutions, List<BackupSetInfo> backups, bool isGitRepo, bool hasUnstaged, Dictionary<string, int> targetFrameworks) { }
     public List<int> MissionStatusSteps { get; } = new();
     public void WriteMissionStatus(int step) => MissionStatusSteps.Add(step);

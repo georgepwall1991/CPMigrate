@@ -1,4 +1,5 @@
 using CPMigrate.Models;
+using Spectre.Console;
 
 namespace CPMigrate.Services.Migration;
 
@@ -72,23 +73,61 @@ internal class MigrationDisplay
     public void ShowPostMigrationGuidance(Options options, string propsFilePath)
     {
         _consoleService.WriteLine();
-        _consoleService.Banner("NEXT STEPS");
-        _consoleService.Info("1. Review the generated Directory.Packages.props file");
-        _consoleService.Dim($"   Location: {propsFilePath}");
-
-        _consoleService.Info("2. Restore packages and build:");
-        _consoleService.Dim("   dotnet restore && dotnet build");
-
-        _consoleService.Info("3. Commit the changes:");
-        _consoleService.Dim("   git add .");
-        _consoleService.Dim("   git commit -m \"Migrate to Central Package Management\"");
+        _consoleService.Banner("NEXT STEPS & VERIFICATION");
         _consoleService.WriteLine();
+        _consoleService.Info($"1. Review the generated file: {propsFilePath}");
+        _consoleService.Info("2. If you encounter issues, you can rollback using: cpmigrate --rollback");
+        _consoleService.WriteLine();
+
+        if (_consoleService.AskConfirmation("Would you like to verify the migration now by running 'dotnet restore'?"))
+        {
+            _consoleService.WriteLine();
+            var success = RunDotnetRestore(Path.GetDirectoryName(propsFilePath) ?? ".");
+            if (success)
+            {
+                _consoleService.Success("Verification successful! All projects restored correctly.");
+            }
+            else
+            {
+                _consoleService.Error("Verification failed. Some projects have restore errors.");
+                _consoleService.Warning("You might need to resolve version conflicts manually or rollback.");
+            }
+        }
+
+        _consoleService.WriteLine();
+        _consoleService.Success("Migration completed successfully! 🎉");
 
         if (!options.NoBackup)
         {
             _consoleService.Dim("💡 Tip: A backup was created. Use --rollback to undo if needed.");
             _consoleService.WriteLine();
         }
+    }
+
+    private static bool RunDotnetRestore(string workingDirectory)
+    {
+        return AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(Style.Parse("cyan"))
+            .Start("Running dotnet restore...", ctx =>
+            {
+                try
+                {
+                    using var process = new System.Diagnostics.Process();
+                    process.StartInfo.FileName = "dotnet";
+                    process.StartInfo.Arguments = "restore";
+                    process.StartInfo.WorkingDirectory = workingDirectory;
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = true;
+                    process.Start();
+                    process.WaitForExit();
+                    return process.ExitCode == 0;
+                }
+                catch
+                {
+                    return false;
+                }
+            });
     }
 
     /// <summary>

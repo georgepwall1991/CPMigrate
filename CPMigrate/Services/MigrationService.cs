@@ -1,5 +1,6 @@
 using System.Globalization;
 using CPMigrate.Models;
+using CPMigrate.Services.Migration;
 using Spectre.Console;
 
 namespace CPMigrate.Services;
@@ -16,6 +17,8 @@ public class MigrationService
     private readonly IConsoleService _consoleService;
     private readonly AnalysisService _analysisService;
     private readonly FixService _fixService;
+    private readonly MigrationValidator _validator;
+    private readonly MigrationDisplay _display;
     private readonly bool _quietMode;
 
     public MigrationService(
@@ -35,6 +38,8 @@ public class MigrationService
         var graphService = new DependencyGraphService(_consoleService);
         _analysisService = analysisService ?? new AnalysisService(null, graphService, _projectAnalyzer);
         _fixService = new FixService(_consoleService, _versionResolver);
+        _validator = new MigrationValidator(_consoleService);
+        _display = new MigrationDisplay(_consoleService);
         _quietMode = quietMode;
     }
 
@@ -50,9 +55,9 @@ public class MigrationService
             _consoleService.WriteHeader();
         }
 
-        if (!TryValidateOptions(options, out var validationError))
+        if (!_validator.TryValidate(options, out var validationError))
         {
-            return validationError;
+            return validationError!;
         }
 
         if (options.Rollback)
@@ -78,8 +83,8 @@ public class MigrationService
     /// </summary>
     private async Task<MigrationResult> ExecuteMigrationAsync(Options options)
     {
-        var (outputPath, propsPath) = GetOutputPaths(options);
-        var propsFileExists = IsAlreadyMigrated(propsPath);
+        var (outputPath, propsPath) = MigrationValidator.GetOutputPaths(options);
+        var propsFileExists = MigrationValidator.IsAlreadyMigrated(propsPath);
         string? backupPath = null;
         string? backupTimestamp = null;
         bool backupsCreated = false;
@@ -88,22 +93,22 @@ public class MigrationService
         {
             if (!options.DryRun)
             {
-                var directoryError = await ValidateOutputDirectoryAsync(outputPath);
+                var directoryError = await _validator.ValidateOutputDirectoryAsync(outputPath);
                 if (directoryError != null)
                 {
                     return directoryError;
                 }
 
                 // Warn about unstaged changes if in a git repo
-                await CheckForUnstagedChangesAsync(outputPath);
+                await _validator.CheckForUnstagedChangesAsync(outputPath);
             }
 
             if (propsFileExists && !options.MergeExisting)
             {
-                return CreateAlreadyMigratedResult(propsPath);
+                return _display.CreateAlreadyMigratedResult(propsPath);
             }
 
-            ShowDryRunBannerIfNeeded(options);
+            _display.ShowDryRunBannerIfNeeded(options);
 
             var (basePath, projectPaths) = await DiscoverProjectsWithSpinnerAsync(options);
             if (projectPaths.Count == 0)
@@ -112,7 +117,7 @@ public class MigrationService
                 return new MigrationResult { ExitCode = ExitCodes.NoProjectsFound };
             }
 
-            ShowDiscoveredProjects(basePath, projectPaths);
+            _display.ShowDiscoveredProjects(basePath, projectPaths);
 
             var packages = new Dictionary<string, HashSet<string>>();
             var propsFileExisted = propsFileExists;
@@ -179,205 +184,6 @@ public class MigrationService
         }
     }
 
-    /// <summary>
-    /// Checks for unstaged changes in the target directory and warns the user.
-    /// </summary>
-    private async Task CheckForUnstagedChangesAsync(string directory)
-    {
-        if (_quietMode)
-        {
-            return;
-        }
-
-        try
-        {
-            // Simple check using git status --porcelain
-            using var process = new System.Diagnostics.Process();
-#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses git from PATH
-            process.StartInfo.FileName = "git";
-#pragma warning restore S4036
-            process.StartInfo.Arguments = "status --porcelain";
-            process.StartInfo.WorkingDirectory = directory;
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.CreateNoWindow = true;
-
-            process.Start();
-            var output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
-            {
-                _consoleService.Warning("Unstaged changes detected in the repository.");
-                _consoleService.Dim("It is highly recommended to commit or stash your changes before proceeding.");
-
-                if (!_consoleService.AskConfirmation("Proceed anyway?"))
-                {
-                    throw new OperationCanceledException("User cancelled migration due to unstaged changes.");
-                }
-            }
-        }
-        catch (OperationCanceledException) { throw; }
-        catch { /* Git not installed or not a repo, ignore */ }
-    }
-
-    private void ShowPostMigrationGuidance(Options options, string propsFilePath)
-    {
-        if (_quietMode || options.DryRun)
-        {
-            return;
-        }
-
-        _consoleService.WriteLine();
-        _consoleService.Banner("NEXT STEPS & VERIFICATION");
-        _consoleService.WriteLine();
-        _consoleService.Info("1. Review the generated file: [cyan]" + Markup.Escape(propsFilePath) + "[/]");
-        _consoleService.Info("2. If you encounter issues, you can rollback using: [white]cpmigrate --rollback[/]");
-        _consoleService.WriteLine();
-
-        if (_consoleService.AskConfirmation("Would you like to verify the migration now by running 'dotnet restore'?"))
-        {
-            _consoleService.WriteLine();
-            var success = RunDotnetRestore(Path.GetDirectoryName(propsFilePath) ?? ".");
-            if (success)
-            {
-                _consoleService.Success("Verification successful! All projects restored correctly.");
-            }
-            else
-            {
-                _consoleService.Error("Verification failed. Some projects have restore errors.");
-                _consoleService.Warning("You might need to resolve version conflicts manually or rollback.");
-            }
-        }
-
-        _consoleService.WriteLine();
-        _consoleService.Success("Migration completed successfully! 🎉");
-    }
-
-    private static bool RunDotnetRestore(string workingDirectory)
-    {
-        return AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(Style.Parse("cyan"))
-            .Start("Running dotnet restore...", ctx =>
-            {
-                try
-                {
-                    using var process = new System.Diagnostics.Process();
-#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses dotnet from PATH
-                    process.StartInfo.FileName = "dotnet";
-#pragma warning restore S4036
-                    process.StartInfo.Arguments = "restore";
-                    process.StartInfo.WorkingDirectory = workingDirectory;
-                    process.StartInfo.UseShellExecute = false;
-                    process.StartInfo.CreateNoWindow = true;
-                    process.Start();
-                    process.WaitForExit();
-                    return process.ExitCode == 0;
-                }
-                catch
-                {
-                    return false;
-                }
-            });
-    }
-
-    /// <summary>
-    /// Validates options and returns false with an error result if validation fails.
-    /// </summary>
-    private bool TryValidateOptions(Options options, out MigrationResult errorResult)
-    {
-        try
-        {
-            options.Validate();
-            errorResult = null!;
-            return true;
-        }
-        catch (ArgumentException ex)
-        {
-            _consoleService.Error(ex.Message);
-            errorResult = new MigrationResult { ExitCode = ExitCodes.ValidationError };
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Gets the output directory and props file paths.
-    /// </summary>
-    private static (string OutputPath, string PropsPath) GetOutputPaths(Options options)
-    {
-        var outputDir = string.IsNullOrEmpty(options.OutputDir) ? "." : options.OutputDir;
-        var outputPath = Path.GetFullPath(outputDir);
-        var propsPath = Path.Combine(outputPath, "Directory.Packages.props");
-        return (outputPath, propsPath);
-    }
-
-    /// <summary>
-    /// Validates that the output directory exists and is writable.
-    /// </summary>
-    private async Task<MigrationResult?> ValidateOutputDirectoryAsync(string outputPath)
-    {
-        if (!Directory.Exists(outputPath))
-        {
-            _consoleService.Error($"Output directory does not exist: {outputPath}");
-            return new MigrationResult { ExitCode = ExitCodes.ValidationError };
-        }
-
-        var testFile = Path.Combine(outputPath, $".cpmigrate_test_{Guid.NewGuid():N}");
-        try
-        {
-            await File.WriteAllTextAsync(testFile, "test");
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _consoleService.Error($"Cannot write to output directory: {outputPath}");
-            _consoleService.Dim($"Error: {ex.Message}");
-            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
-        }
-        finally
-        {
-            try
-            {
-                if (File.Exists(testFile))
-                {
-                    File.Delete(testFile);
-                }
-            }
-            catch { /* Ignore cleanup errors */ }
-        }
-    }
-
-    /// <summary>
-    /// Checks if the solution has already been migrated to CPM.
-    /// </summary>
-    private static bool IsAlreadyMigrated(string propsPath) => File.Exists(propsPath);
-
-    /// <summary>
-    /// Creates a result indicating the solution is already migrated.
-    /// </summary>
-    private MigrationResult CreateAlreadyMigratedResult(string propsPath)
-    {
-        _consoleService.Warning("This solution has already been migrated to Central Package Management.");
-        _consoleService.WriteMarkup($"[dim]Found existing:[/] [cyan]{Markup.Escape(propsPath)}[/]\n");
-        _consoleService.WriteLine();
-        _consoleService.Info("To merge into the existing props file, use: cpmigrate --merge");
-        _consoleService.Info("To re-migrate, first rollback with: cpmigrate --rollback");
-        _consoleService.Info("To analyze packages, use: cpmigrate --analyze");
-        return new MigrationResult { ExitCode = ExitCodes.Success, PropsFilePath = propsPath };
-    }
-
-    /// <summary>
-    /// Shows the dry-run banner if in dry-run mode.
-    /// </summary>
-    private void ShowDryRunBannerIfNeeded(Options options)
-    {
-        if (options.DryRun && !_quietMode)
-        {
-            _consoleService.Banner("DRY-RUN MODE - No files will be modified");
-            _consoleService.WriteLine();
-        }
-    }
 
     private bool TryLoadExistingPropsPackages(
         string propsFilePath,
@@ -435,23 +241,6 @@ public class MigrationService
             });
     }
 
-    /// <summary>
-    /// Shows the discovered projects tree.
-    /// </summary>
-    private void ShowDiscoveredProjects(string basePath, List<string> projectPaths)
-    {
-        if (_quietMode)
-        {
-            return;
-        }
-
-        _consoleService.WriteMarkup($"\n[green]:magnifying_glass_tilted_right: Found {projectPaths.Count} project(s)[/]\n");
-
-        if (!string.IsNullOrEmpty(basePath))
-        {
-            _consoleService.WriteProjectTree(projectPaths, basePath);
-        }
-    }
 
     /// <summary>
     /// Sets up the backup directory if needed.
@@ -681,30 +470,6 @@ public class MigrationService
         }
     }
 
-    /// <summary>
-    /// Shows the migration summary table.
-    /// </summary>
-    private void ShowMigrationSummary(
-        Options options,
-        int projectCount,
-        int packageCount,
-        int conflictCount,
-        string propsFilePath,
-        string? backupPath)
-    {
-        if (_quietMode)
-        {
-            return;
-        }
-
-        _consoleService.WriteSummaryTable(
-            projectCount,
-            packageCount,
-            conflictCount,
-            propsFilePath,
-            backupPath,
-            options.DryRun);
-    }
 
     private (string BasePath, List<string> ProjectPaths) DiscoverProjects(Options options)
     {
@@ -1428,8 +1193,11 @@ public class MigrationService
         await WriteBackupManifestAsync(options, backupEntries, backupPath, propsFilePath, propsFileExisted, backupTimestamp);
         await ManageGitIgnoreAsync(options, backupPath);
 
-        ShowMigrationSummary(options, projectCount, packageCount, conflictCount, propsFilePath, backupPath);
-        ShowPostMigrationGuidance(options, propsFilePath);
+        if (!_quietMode)
+        {
+            _display.ShowMigrationSummary(projectCount, packageCount, conflictCount, propsFilePath, options.DryRun);
+            _display.ShowPostMigrationGuidance(options, propsFilePath);
+        }
     }
 
     /// <summary>
