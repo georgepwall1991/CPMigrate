@@ -66,7 +66,7 @@ public class PropsGenerator
         return stringBuilder.ToString();
     }
 
-    public Dictionary<string, HashSet<string>> ReadExistingPackageVersions(
+    public static Dictionary<string, HashSet<string>> ReadExistingPackageVersions(
         string propsFilePath,
         out bool hasConditionalPackageVersions)
     {

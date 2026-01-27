@@ -43,22 +43,15 @@ public class DuplicatePackageFixer : IFixer
         // Use the most common casing as the standard
         var standardCasing = casingGroups[0].Key;
 
-        var changes = new List<FileChange>();
-
         // Find projects with non-standard casing
         var nonStandardRefs = references
             .Where(r => r.PackageName != standardCasing)
             .GroupBy(r => r.ProjectPath);
 
-        foreach (var group in nonStandardRefs)
-        {
-            var projectPath = group.Key;
-            var result = StandardizePackageCasing(projectPath, issue.PackageName, standardCasing, dryRun);
-            if (result != null)
-            {
-                changes.Add(result);
-            }
-        }
+        var changes = nonStandardRefs
+            .Select(group => StandardizePackageCasing(group.Key, issue.PackageName, standardCasing, dryRun))
+            .Where(result => result != null)
+            .ToList();
 
         if (changes.Count == 0)
         {

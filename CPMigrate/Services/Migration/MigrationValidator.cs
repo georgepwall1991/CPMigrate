@@ -104,12 +104,12 @@ internal class MigrationValidator
     /// <summary>
     /// Checks if the directory is already migrated to CPM.
     /// </summary>
-    public bool IsAlreadyMigrated(string propsPath) => File.Exists(propsPath);
+    public static bool IsAlreadyMigrated(string propsPath) => File.Exists(propsPath);
 
     /// <summary>
     /// Gets the output paths for the migration.
     /// </summary>
-    public (string OutputPath, string PropsPath) GetOutputPaths(Options options)
+    public static (string OutputPath, string PropsPath) GetOutputPaths(Options options)
     {
         var outputPath = !string.IsNullOrEmpty(options.OutputDir)
             ? options.OutputDir

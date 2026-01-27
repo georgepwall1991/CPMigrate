@@ -50,15 +50,11 @@ public class VersionInconsistencyFixer : IFixer
             .Where(r => r.Version != targetVersion)
             .GroupBy(r => r.ProjectPath);
 
-        foreach (var group in projectGroups)
-        {
-            var projectPath = group.Key;
-            var result = UpdateProjectVersions(projectPath, issue.PackageName, targetVersion, dryRun);
-            if (result != null)
-            {
-                changes.Add(result);
-            }
-        }
+        var projectResults = projectGroups
+            .Select(group => UpdateProjectVersions(group.Key, issue.PackageName, targetVersion, dryRun))
+            .Where(result => result != null);
+
+        changes.AddRange(projectResults);
 
         if (changes.Count == 0)
         {

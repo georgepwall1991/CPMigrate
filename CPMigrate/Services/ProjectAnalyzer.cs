@@ -171,7 +171,7 @@ public partial class ProjectAnalyzer
     /// <summary>
     /// Extracts the target framework from a project file.
     /// </summary>
-    public string GetTargetFramework(string projectFilePath)
+    public static string GetTargetFramework(string projectFilePath)
     {
         try
         {
@@ -196,7 +196,7 @@ public partial class ProjectAnalyzer
     /// <param name="packageVersions">Dictionary to accumulate package names to version sets.</param>
     /// <param name="keepVersionAttributes">If true, keeps Version attributes in the project file.</param>
     /// <returns>Modified project file content as a string.</returns>
-    public string ProcessProject(string projectFilePath,
+    public static string ProcessProject(string projectFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
         bool keepVersionAttributes = false)
     {

@@ -43,7 +43,7 @@ public class ConfigService
     /// </summary>
     /// <param name="startDirectory">Directory to start searching from.</param>
     /// <returns>Path to the config file, or null if not found.</returns>
-    public string? DiscoverConfig(string startDirectory)
+    public static string? DiscoverConfig(string startDirectory)
     {
         var directory = Path.GetFullPath(startDirectory);
 
@@ -107,7 +107,7 @@ public class ConfigService
     /// <param name="options">The CLI options to merge into.</param>
     /// <param name="config">The config file settings.</param>
     /// <param name="cliArgsProvided">Set of CLI argument names that were explicitly provided.</param>
-    public void MergeConfig(Options options, ConfigModel config, HashSet<string>? cliArgsProvided = null)
+    public static void MergeConfig(Options options, ConfigModel config, HashSet<string>? cliArgsProvided = null)
     {
         cliArgsProvided ??= new HashSet<string>();
 

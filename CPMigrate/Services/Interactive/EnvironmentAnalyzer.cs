@@ -41,7 +41,7 @@ internal class EnvironmentAnalyzer
     /// <summary>
     /// Checks git repository status.
     /// </summary>
-    private void AnalyzeGitStatus(EnvironmentContext ctx)
+    private static void AnalyzeGitStatus(EnvironmentContext ctx)
     {
         ctx.IsGitRepo = Directory.Exists(Path.Combine(ctx.Directory, ".git"));
 

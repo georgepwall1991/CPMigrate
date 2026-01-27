@@ -286,7 +286,7 @@ public class MigrationService
         _consoleService.Success("Migration completed successfully! 🎉");
     }
 
-    private bool RunDotnetRestore(string workingDirectory)
+    private static bool RunDotnetRestore(string workingDirectory)
     {
         return AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
