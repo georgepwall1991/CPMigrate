@@ -299,7 +299,7 @@ dotnet format --verify-no-changes --verbosity diagnostic
 
 # Manual smoke test
 dotnet pack --configuration Release
-dotnet tool install --global --add-source ./CPMigrate/nupkg CPMigrate --version 2.8.1
+dotnet tool install --global --add-source ./CPMigrate/nupkg CPMigrate --version 2.9.0
 cpmigrate --version
 cpmigrate --help
 ```

@@ -11,7 +11,7 @@ public class BatchResult
     /// CPMigrate version that produced this result.
     /// </summary>
     [JsonPropertyName("version")]
-    public string Version { get; init; } = "2.0.0";
+    public string Version { get; init; } = "2.9.0";
 
     /// <summary>
     /// The type of operation performed.
