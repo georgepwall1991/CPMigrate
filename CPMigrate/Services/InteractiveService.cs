@@ -149,18 +149,13 @@ public class InteractiveService : IInteractiveService
         // 3. System
         systemActions.Add("Exit");
 
-        var groups = new Dictionary<string, IEnumerable<string>>();
-        if (migrationActions.Count > 0)
+        // Build groups dictionary (all collections always have at least one item)
+        var groups = new Dictionary<string, IEnumerable<string>>
         {
-            groups.Add("MIGRATION ACTIONS", migrationActions);
-        }
-
-        if (maintenanceActions.Count > 0)
-        {
-            groups.Add("REPOSITORY MAINTENANCE", maintenanceActions);
-        }
-
-        groups.Add("SYSTEM", systemActions);
+            ["MIGRATION ACTIONS"] = migrationActions,
+            ["REPOSITORY MAINTENANCE"] = maintenanceActions,
+            ["SYSTEM"] = systemActions
+        };
 
         return _console.AskGroupedSelection("What's the mission?", groups);
     }
