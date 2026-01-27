@@ -1,3 +1,4 @@
+# CPMigrate: The Ultimate .NET Central Package Management (CPM) Migration Tool
 <div align="center">
   <img src="./docs/images/logo.png" alt="CPMigrate Logo" width="128" />
   <br/>
@@ -17,10 +18,13 @@
 
 ## 🚀 Why CPMigrate?
 
-Managing NuGet versions across dozens of projects is a nightmare of "version drift."
-**Central Package Management (CPM)** solves this by unifying versions in a single `Directory.Packages.props` file.
+Stop wrestling with **dependency hell** and **version drift**. CPMigrate is the advanced **CLI tool** that instantly modernizes your **.NET solutions** to use **NuGet Central Package Management (CPM)**.
 
-**CPMigrate** automates this transition. It doesn't just move XML around; it **analyzes**, **resolves conflicts**, **cleans up dependencies**, and **secures** your codebase in minutes.
+It doesn't just move XML around; it is a full-featured **repository health auditor** that:
+*   **Analyzes** your entire dependency graph.
+*   **Resolves** deep version conflicts automatically.
+*   **Cleans** redundant `<PackageReference>` entries to reduce technical debt.
+*   **Secures** your codebase by detecting high-severity vulnerabilities before they are locked in.
 
 ---
 

@@ -11,7 +11,7 @@
     <Authors>George Wall</Authors>
     <Company>George Wall</Company>
     <Product>CPMigrate</Product>
-    <Description>A CLI tool to migrate .NET solutions to Central Package Management (CPM)</Description>
+    <Description>The ultimate CLI tool for modernizing .NET solutions to NuGet Central Package Management (CPM). Automates migration, resolves dependency hell, eliminates redundancy, and secures your supply chain with vulnerability audits.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/georgepwall1991/CPMigrate</PackageProjectUrl>
     <TargetFramework>net10.0</TargetFramework>
@@ -21,7 +21,7 @@
     <RepositoryUrl>https://github.com/georgepwall1991/CPMigrate</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <ApplicationIcon>cpmigrate.ico</ApplicationIcon>
-    <PackageTags>nuget;cpm;central-package-management;dotnet;cli</PackageTags>
+    <PackageTags>nuget;cpm;central-package-management;dotnet-tool;cli;dependency-management;refactoring;security;slnx;modernization;devops;versioning;clean-architecture</PackageTags>
     <PackageIcon>nuget-icon.png</PackageIcon>
     <!-- Static Analysis -->
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
