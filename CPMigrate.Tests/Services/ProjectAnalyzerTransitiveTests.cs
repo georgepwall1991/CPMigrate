@@ -79,4 +79,56 @@ Project 'MyProject' has the following package references
         // Assert
         result.Should().BeEmpty();
     }
+
+    [Fact]
+    public void ParseTransitivePackages_MultipleFrameworks_ResetsParsingState()
+    {
+        // Arrange
+        var output = @"
+Project 'MyProject' has the following package references
+   [net8.0]: 
+   Top-level Package      Requested   Resolved
+   > Newtonsoft.Json      13.0.1      13.0.1  
+
+   Transitive Package                                        Resolved
+   > Microsoft.NETCore.Platforms                             1.1.0   
+
+   [net472]: 
+   Top-level Package      Requested   Resolved
+   > Newtonsoft.Json      13.0.1      13.0.1  
+
+   Transitive Package                                        Resolved
+   > Microsoft.NETCore.Platforms                             1.1.0   
+";
+        var projectFilePath = "/path/to/MyProject.csproj";
+        var projectName = "MyProject.csproj";
+
+        // Act
+        var result = ProjectAnalyzer.ParseTransitivePackages(output, projectFilePath, projectName);
+
+        // Assert
+        result.Should().HaveCount(2);
+        result.All(r => r.PackageName == "Microsoft.NETCore.Platforms").Should().BeTrue();
+    }
+
+    [Fact]
+    public void ParseVulnerabilities_MissingFixedInColumn_HandlesGracefully()
+    {
+        // Arrange
+        var output = @"
+Project 'MyProject' has the following vulnerable packages
+   [net8.0]: 
+   Package                  Severity   Vulnerability      Resolved   Fixed in
+   > System.Text.Json       High       GHSA-xxxx-xxxx     8.0.0                 
+";
+        var projectName = "MyProject.csproj";
+
+        // Act
+        var result = ProjectAnalyzer.ParseVulnerabilities(output, projectName);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].PackageName.Should().Be("System.Text.Json");
+        result[0].FixedVersion.Should().BeEmpty();
+    }
 }

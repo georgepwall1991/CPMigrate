@@ -147,6 +147,67 @@ public class InteractiveServiceTests : IDisposable
         }
         finally { Directory.SetCurrentDirectory(originalDir); }
     }
+    [Fact]
+    public void RunWizard_CustomMigrationWithBackup_ConfiguresBackupCorrectly()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "⚙️  Custom Migration (Manual Setup)",
+            "🎯 Use current directory: " + Path.GetFileName(_testDirectory),
+            "⬆️  Highest version (recommended)", // Conflict Strategy
+            "Yes (recommended)", // Create Backup
+            "Current directory (./.cpmigrate_backup)", // Backup Location
+            "Yes", // Add to gitignore
+            "No - make changes immediately", // Dry Run
+            "No - remove them (recommended for clean CPM)", // Keep Attrs
+            "No (recommended for clean CPM)", // Transitive
+            "Yes" // Confirmation
+        });
+        fakeConsole.ConfirmationResponse = true;
+
+        var originalDir = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(_testDirectory);
+            var service = new InteractiveService(fakeConsole);
+            var options = service.RunWizard();
+
+            options.Should().NotBeNull();
+            options!.NoBackup.Should().BeFalse();
+            options.BackupDir.Should().Be(".");
+            options.AddBackupToGitignore.Should().BeTrue();
+        }
+        finally { Directory.SetCurrentDirectory(originalDir); }
+    }
+
+    [Fact]
+    public void RunWizard_UnifyPropsMode_ReturnsCorrectOptions()
+    {
+        // Arrange
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "🏗  Unify Directory.Build.props (Clean Architecture)",
+            "🎯 Use current directory: " + Path.GetFileName(_testDirectory),
+            "Yes" // Confirmation
+        });
+        fakeConsole.ConfirmationResponse = true;
+
+        var originalDir = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(_testDirectory);
+            var service = new InteractiveService(fakeConsole);
+            var options = service.RunWizard();
+
+            options.Should().NotBeNull();
+            options!.UnifyProps.Should().BeTrue();
+            options.SolutionFileDir.Should().NotBeNull();
+        }
+        finally { Directory.SetCurrentDirectory(originalDir); }
+    }
 }
 
 public class InteractiveOptionsTests

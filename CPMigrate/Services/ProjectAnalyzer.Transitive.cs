@@ -102,6 +102,12 @@ public partial class ProjectAnalyzer
 
         foreach (var line in lines)
         {
+            if (line.Contains("Top-level Package") || line.Contains("Updates"))
+            {
+                parsingTransitive = false;
+                continue;
+            }
+
             if (line.Contains("Transitive Package"))
             {
                 parsingTransitive = true;
@@ -145,15 +151,22 @@ public partial class ProjectAnalyzer
 
             if (parsingPackages && line.Trim().StartsWith('>'))
             {
-                var match = Regex.Match(line, @">\s*([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)", RegexOptions.None, TimeSpan.FromSeconds(1));
+                // Regex: 
+                // Group 1: Package
+                // Group 2: Severity
+                // Group 3: Vulnerability
+                // Group 4: Resolved
+                // Group 5: Fixed in (Optional)
+                var match = Regex.Match(line, @">\s*([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)(?:\s+([^\s]+))?", RegexOptions.None, TimeSpan.FromSeconds(1));
                 if (match.Success)
                 {
+                    var fixedIn = match.Groups[5].Success ? match.Groups[5].Value : "";
                     vulnerabilities.Add(new VulnerabilityInfo(
                         match.Groups[1].Value,
                         match.Groups[2].Value,
                         match.Groups[3].Value,
                         match.Groups[4].Value,
-                        match.Groups[5].Value,
+                        fixedIn, // Can be empty
                         projectName
                     ));
                 }
