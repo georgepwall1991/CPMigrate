@@ -27,10 +27,13 @@ public class InteractiveService : IInteractiveService
 
     private const string EnterPathManually = "✏️  Enter path manually...";
 
-    public InteractiveService(IConsoleService console)
+    private readonly string? _workingDirectory;
+
+    public InteractiveService(IConsoleService console, string? workingDirectory = null)
     {
         _console = console;
-        _environmentAnalyzer = new EnvironmentAnalyzer(console);
+        _workingDirectory = workingDirectory;
+        _environmentAnalyzer = new EnvironmentAnalyzer(console, workingDirectory);
     }
 
     /// <inheritdoc />
@@ -162,7 +165,7 @@ public class InteractiveService : IInteractiveService
 
     private string? AskSolutionPath()
     {
-        var currentDir = Directory.GetCurrentDirectory();
+        var currentDir = _workingDirectory ?? Directory.GetCurrentDirectory();
         return BrowseForPath(currentDir, "Select a solution, project, or directory to migrate");
     }
 
@@ -216,7 +219,7 @@ public class InteractiveService : IInteractiveService
                     return null;
                 }
 
-                return Path.GetFullPath(path);
+                return Path.GetFullPath(path, _workingDirectory ?? Directory.GetCurrentDirectory());
             }
 
             if (selection.StartsWith("🎯 Use current"))
@@ -266,7 +269,7 @@ public class InteractiveService : IInteractiveService
     private void AskBatchOptions(Options options)
     {
         _console.Info("Scanning for a directory to batch process...");
-        options.BatchDir = BrowseForPath(Directory.GetCurrentDirectory(), "Select the root directory for batch processing");
+        options.BatchDir = BrowseForPath(_workingDirectory ?? Directory.GetCurrentDirectory(), "Select the root directory for batch processing");
 
         var parallel = _console.AskSelection(
             "Process solutions in parallel?",
@@ -344,7 +347,7 @@ public class InteractiveService : IInteractiveService
             }
             else
             {
-                options.BackupDir = BrowseForPath(Directory.GetCurrentDirectory(), "Select backup parent directory") ?? ".";
+                options.BackupDir = BrowseForPath(_workingDirectory ?? Directory.GetCurrentDirectory(), "Select backup parent directory") ?? ".";
             }
 
             var addGitignore = _console.AskSelection(
@@ -393,7 +396,7 @@ public class InteractiveService : IInteractiveService
     private void AskRollbackOptions(Options options)
     {
         _console.Info("Locating backup directory for rollback...");
-        options.BackupDir = BrowseForPath(Directory.GetCurrentDirectory(), "Select the directory containing .cpmigrate_backup") ?? ".";
+        options.BackupDir = BrowseForPath(_workingDirectory ?? Directory.GetCurrentDirectory(), "Select the directory containing .cpmigrate_backup") ?? ".";
     }
 
     private void ShowSummary(Options options, string mode)

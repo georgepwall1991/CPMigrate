@@ -9,8 +9,6 @@ namespace CPMigrate;
 /// </summary>
 public static class ProgramRunner
 {
-    private static IConsoleService? _consoleService;
-
     /// <summary>
     /// Runs the application with the specified arguments.
     /// </summary>
@@ -18,16 +16,16 @@ public static class ProgramRunner
     {
         // Setup composition root
         var versionResolver = new VersionResolver(null);
-        _consoleService = customConsole ?? new SpectreConsoleService(versionResolver);
-        var interactiveService = new InteractiveService(_consoleService);
-        var configService = new ConfigService(_consoleService);
+        var consoleService = customConsole ?? new SpectreConsoleService(versionResolver);
+        var interactiveService = new InteractiveService(consoleService);
+        var configService = new ConfigService(consoleService);
         var backupManager = new BackupManager();
 
         // Check for interactive mode (no args)
         if (args.Length == 0)
         {
             return await CommandRouter.RunInteractiveModeAsync(
-                _consoleService,
+                consoleService,
                 interactiveService,
                 versionResolver,
                 configService,
@@ -45,7 +43,7 @@ public static class ProgramRunner
                     // Route to appropriate command handler
                     return await CommandRouter.RouteCommand(
                         options,
-                        _consoleService,
+                        consoleService,
                         interactiveService,
                         versionResolver,
                         configService,

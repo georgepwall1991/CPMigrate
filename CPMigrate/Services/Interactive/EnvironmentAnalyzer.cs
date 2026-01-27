@@ -7,11 +7,13 @@ namespace CPMigrate.Services.Interactive;
 /// </summary>
 internal class EnvironmentAnalyzer
 {
+    private readonly string? _workingDirectory;
     private readonly IConsoleService _console;
 
-    public EnvironmentAnalyzer(IConsoleService console)
+    public EnvironmentAnalyzer(IConsoleService console, string? workingDirectory = null)
     {
         _console = console;
+        _workingDirectory = workingDirectory;
     }
 
     /// <summary>
@@ -19,7 +21,7 @@ internal class EnvironmentAnalyzer
     /// </summary>
     public EnvironmentContext Analyze()
     {
-        var ctx = new EnvironmentContext { Directory = Directory.GetCurrentDirectory() };
+        var ctx = new EnvironmentContext { Directory = _workingDirectory ?? Directory.GetCurrentDirectory() };
 
         // Discover solutions
         ctx.Solutions = ProjectAnalyzer.GetSolutionFiles(ctx.Directory).ToList();

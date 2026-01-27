@@ -45,19 +45,13 @@ public class InteractiveServiceTests : IDisposable
         });
         fakeConsole.ConfirmationResponse = true;
 
-        var originalDir = Directory.GetCurrentDirectory();
-        try
-        {
-            Directory.SetCurrentDirectory(_testDirectory);
-            var service = new InteractiveService(fakeConsole);
-            var options = service.RunWizard();
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
 
-            options.Should().NotBeNull();
-            options!.Analyze.Should().BeFalse();
-            // Since test dir is empty, it uses GetCurrentDirectory() which might be /tmp/... or similar
-            options.SolutionFileDir.Should().NotBeEmpty();
-        }
-        finally { Directory.SetCurrentDirectory(originalDir); }
+        options.Should().NotBeNull();
+        options!.Analyze.Should().BeFalse();
+        // Since test dir is empty, it uses the directory we passed
+        options.SolutionFileDir.Should().NotBeEmpty();
     }
 
     [Fact]
@@ -77,17 +71,11 @@ public class InteractiveServiceTests : IDisposable
         });
         fakeConsole.ConfirmationResponse = true;
 
-        var originalDir = Directory.GetCurrentDirectory();
-        try
-        {
-            Directory.SetCurrentDirectory(_testDirectory);
-            var service = new InteractiveService(fakeConsole);
-            var options = service.RunWizard();
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
 
-            options.Should().NotBeNull();
-            options!.Analyze.Should().BeTrue();
-        }
-        finally { Directory.SetCurrentDirectory(originalDir); }
+        options.Should().NotBeNull();
+        options!.Analyze.Should().BeTrue();
     }
 
     [Fact]
@@ -100,16 +88,10 @@ public class InteractiveServiceTests : IDisposable
             "Exit"
         });
 
-        var originalDir = Directory.GetCurrentDirectory();
-        try
-        {
-            Directory.SetCurrentDirectory(_testDirectory);
-            var service = new InteractiveService(fakeConsole);
-            var options = service.RunWizard();
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
 
-            options.Should().BeNull();
-        }
-        finally { Directory.SetCurrentDirectory(originalDir); }
+        options.Should().BeNull();
     }
 
     [Fact]
@@ -133,19 +115,13 @@ public class InteractiveServiceTests : IDisposable
         fakeConsole.TextResponses = new Queue<string>(new[] { manualPath });
         fakeConsole.ConfirmationResponse = true;
 
-        var originalDir = Directory.GetCurrentDirectory();
-        try
-        {
-            Directory.SetCurrentDirectory(_testDirectory);
-            var expectedPath = Path.GetFullPath(manualPath);
+        var expectedPath = Path.GetFullPath(Path.Combine(_testDirectory, manualPath));
 
-            var service = new InteractiveService(fakeConsole);
-            var options = service.RunWizard();
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
 
-            options.Should().NotBeNull();
-            options!.SolutionFileDir.Should().Be(expectedPath);
-        }
-        finally { Directory.SetCurrentDirectory(originalDir); }
+        options.Should().NotBeNull();
+        options!.SolutionFileDir.Should().Be(expectedPath);
     }
     [Fact]
     public void RunWizard_CustomMigrationWithBackup_ConfiguresBackupCorrectly()
@@ -167,19 +143,13 @@ public class InteractiveServiceTests : IDisposable
         });
         fakeConsole.ConfirmationResponse = true;
 
-        var originalDir = Directory.GetCurrentDirectory();
-        try
-        {
-            Directory.SetCurrentDirectory(_testDirectory);
-            var service = new InteractiveService(fakeConsole);
-            var options = service.RunWizard();
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
 
-            options.Should().NotBeNull();
-            options!.NoBackup.Should().BeFalse();
-            options.BackupDir.Should().Be(".");
-            options.AddBackupToGitignore.Should().BeTrue();
-        }
-        finally { Directory.SetCurrentDirectory(originalDir); }
+        options.Should().NotBeNull();
+        options!.NoBackup.Should().BeFalse();
+        options.BackupDir.Should().Be(".");
+        options.AddBackupToGitignore.Should().BeTrue();
     }
 
     [Fact]
@@ -195,18 +165,12 @@ public class InteractiveServiceTests : IDisposable
         });
         fakeConsole.ConfirmationResponse = true;
 
-        var originalDir = Directory.GetCurrentDirectory();
-        try
-        {
-            Directory.SetCurrentDirectory(_testDirectory);
-            var service = new InteractiveService(fakeConsole);
-            var options = service.RunWizard();
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
 
-            options.Should().NotBeNull();
-            options!.UnifyProps.Should().BeTrue();
-            options.SolutionFileDir.Should().NotBeNull();
-        }
-        finally { Directory.SetCurrentDirectory(originalDir); }
+        options.Should().NotBeNull();
+        options!.UnifyProps.Should().BeTrue();
+        options.SolutionFileDir.Should().NotBeNull();
     }
 }
 
