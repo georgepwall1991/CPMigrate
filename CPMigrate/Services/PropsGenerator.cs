@@ -118,7 +118,25 @@ public class PropsGenerator
         {
             throw new FileNotFoundException($"Props file not found: {propsFilePath}", propsFilePath);
         }
+
         var projectRoot = ProjectRootElement.Open(propsFilePath);
+        var (itemsByPackage, hasConditionalPackageVersions) = BuildExistingItemsMap(projectRoot);
+
+        EnsureManagePackageVersionsCentrally(projectRoot);
+
+        var targetItemGroup = GetOrCreateTargetItemGroup(projectRoot);
+        var (addedCount, updatedCount) = ProcessPackageVersions(
+            packageVersions,
+            strategy,
+            itemsByPackage,
+            targetItemGroup);
+
+        return (projectRoot.RawXml, addedCount, updatedCount, hasConditionalPackageVersions);
+    }
+
+    private static (Dictionary<string, List<ProjectItemElement>> ItemsByPackage, bool HasConditionalVersions)
+        BuildExistingItemsMap(ProjectRootElement projectRoot)
+    {
         var itemsByPackage = new Dictionary<string, List<ProjectItemElement>>();
         var hasConditionalPackageVersions = false;
 
@@ -129,28 +147,51 @@ public class PropsGenerator
                 hasConditionalPackageVersions = true;
             }
 
-            var packageName = !string.IsNullOrWhiteSpace(item.Include) ? item.Include : item.Update;
+            var packageName = GetPackageName(item);
             if (string.IsNullOrWhiteSpace(packageName))
             {
                 continue;
             }
 
-            if (!itemsByPackage.TryGetValue(packageName, out var items))
-            {
-                items = new List<ProjectItemElement>();
-                itemsByPackage.Add(packageName, items);
-            }
-
-            items.Add(item);
+            AddToItemsMap(itemsByPackage, packageName, item);
         }
 
-        EnsureManagePackageVersionsCentrally(projectRoot);
+        return (itemsByPackage, hasConditionalPackageVersions);
+    }
 
-        var targetItemGroup = projectRoot.ItemGroups
+    private static string GetPackageName(ProjectItemElement item)
+    {
+        return !string.IsNullOrWhiteSpace(item.Include) ? item.Include : item.Update;
+    }
+
+    private static void AddToItemsMap(
+        Dictionary<string, List<ProjectItemElement>> itemsByPackage,
+        string packageName,
+        ProjectItemElement item)
+    {
+        if (!itemsByPackage.TryGetValue(packageName, out var items))
+        {
+            items = new List<ProjectItemElement>();
+            itemsByPackage.Add(packageName, items);
+        }
+
+        items.Add(item);
+    }
+
+    private static ProjectItemGroupElement GetOrCreateTargetItemGroup(ProjectRootElement projectRoot)
+    {
+        return projectRoot.ItemGroups
             .FirstOrDefault(group => string.IsNullOrEmpty(group.Condition)
                 && group.Items.Any(item => item.ItemType == PackageVersionItemType))
             ?? projectRoot.AddItemGroup();
+    }
 
+    private (int AddedCount, int UpdatedCount) ProcessPackageVersions(
+        Dictionary<string, HashSet<string>> packageVersions,
+        ConflictStrategy strategy,
+        Dictionary<string, List<ProjectItemElement>> itemsByPackage,
+        ProjectItemGroupElement targetItemGroup)
+    {
         var addedCount = 0;
         var updatedCount = 0;
 
@@ -161,37 +202,56 @@ public class PropsGenerator
                 continue;
             }
 
-            var resolvedVersion = kvp.Value.Count > 1
-                ? _versionResolver.ResolveVersion(kvp.Value, strategy)
-                : kvp.Value.First();
+            var resolvedVersion = ResolvePackageVersion(kvp.Value, strategy);
 
             if (itemsByPackage.TryGetValue(kvp.Key, out var existingItems))
             {
-                var updated = false;
-                foreach (var item in existingItems)
-                {
-                    var currentVersion = GetMetadataValue(item, VersionMetadataName);
-                    if (!string.Equals(currentVersion, resolvedVersion, StringComparison.OrdinalIgnoreCase))
-                    {
-                        SetMetadataValue(item, VersionMetadataName, resolvedVersion);
-                        updated = true;
-                    }
-                }
-
-                if (updated)
+                if (UpdateExistingItems(existingItems, resolvedVersion))
                 {
                     updatedCount++;
                 }
             }
             else
             {
-                var newItem = targetItemGroup.AddItem(PackageVersionItemType, kvp.Key);
-                SetMetadataValue(newItem, VersionMetadataName, resolvedVersion);
+                AddNewPackageVersion(targetItemGroup, kvp.Key, resolvedVersion);
                 addedCount++;
             }
         }
 
-        return (projectRoot.RawXml, addedCount, updatedCount, hasConditionalPackageVersions);
+        return (addedCount, updatedCount);
+    }
+
+    private string ResolvePackageVersion(HashSet<string> versions, ConflictStrategy strategy)
+    {
+        return versions.Count > 1
+            ? _versionResolver.ResolveVersion(versions, strategy)
+            : versions.First();
+    }
+
+    private static bool UpdateExistingItems(List<ProjectItemElement> items, string resolvedVersion)
+    {
+        var updated = false;
+
+        foreach (var item in items)
+        {
+            var currentVersion = GetMetadataValue(item, VersionMetadataName);
+            if (!string.Equals(currentVersion, resolvedVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                SetMetadataValue(item, VersionMetadataName, resolvedVersion);
+                updated = true;
+            }
+        }
+
+        return updated;
+    }
+
+    private static void AddNewPackageVersion(
+        ProjectItemGroupElement targetItemGroup,
+        string packageName,
+        string version)
+    {
+        var newItem = targetItemGroup.AddItem(PackageVersionItemType, packageName);
+        SetMetadataValue(newItem, VersionMetadataName, version);
     }
 
     private static void EnsureManagePackageVersionsCentrally(ProjectRootElement projectRoot)
