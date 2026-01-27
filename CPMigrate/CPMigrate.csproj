@@ -16,12 +16,13 @@
     <PackageProjectUrl>https://github.com/georgepwall1991/CPMigrate</PackageProjectUrl>
     <TargetFramework>net10.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
-    <Version>2.8.0</Version>
+    <Version>2.8.1</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/georgepwall1991/CPMigrate</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <ApplicationIcon>cpmigrate.ico</ApplicationIcon>
     <PackageTags>nuget;cpm;central-package-management;dotnet;cli</PackageTags>
+    <PackageIcon>nuget-icon.png</PackageIcon>
     <!-- Static Analysis -->
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
@@ -38,5 +39,6 @@
     <None Include="../README.md" Pack="true" PackagePath="\">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="nuget-icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

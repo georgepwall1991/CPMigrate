@@ -85,7 +85,22 @@ public partial class ProjectAnalyzer
 
             foreach (var project in solution.SolutionProjects)
             {
-                var extension = Path.GetExtension(project.FilePath).ToLowerInvariant();
+                if (string.IsNullOrEmpty(project.FilePath))
+                {
+                    continue;
+                }
+
+                string? extension = null;
+                try
+                {
+                    extension = Path.GetExtension(project.FilePath)?.ToLowerInvariant();
+                }
+                catch
+                {
+                    // Ignore invalid paths
+                    continue;
+                }
+
                 if (extension is ".csproj" or ".fsproj" or ".vbproj")
                 {
                     var absolutePath = Path.GetFullPath(Path.Combine(basePath, project.FilePath));

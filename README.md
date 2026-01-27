@@ -1,13 +1,15 @@
-# CPMigrate
+<div align="center">
+  <img src="./docs/images/banner.png" alt="CPMigrate Banner" width="100%" />
+</div>
 
-> **The definitive CLI tool for modernizing .NET dependencies.**
+<div align="center">
 
-A stunning, intelligent CLI to migrate .NET solutions to [Central Package Management (CPM)](https://learn.microsoft.com/en-us/nuget/consume-packages/central-package-management) with zero friction.
-
-![.NET](https://img.shields.io/badge/.NET-10.0+-512BD4?style=flat-square&logo=dotnet)
+[![.NET](https://img.shields.io/badge/.NET-10.0+-512BD4?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![NuGet](https://img.shields.io/nuget/v/CPMigrate.svg?style=flat-square&logo=nuget)](https://www.nuget.org/packages/CPMigrate/)
 [![Downloads](https://img.shields.io/nuget/dt/CPMigrate.svg?style=flat-square&color=blue)](https://www.nuget.org/packages/CPMigrate/)
+
+</div>
 
 ![CPMigrate Interactive Wizard](./docs/images/cpmigrate-interactive.gif)
 
