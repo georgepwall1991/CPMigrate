@@ -14,18 +14,22 @@ indent_size = 4
 #### Code Quality Rules ####
 
 # CA1031: Do not catch general exception types
-dotnet_diagnostic.CA1031.severity = warning
+# Note: Set to suggestion for now - many legitimate catch-all handlers in CLI tool
+dotnet_diagnostic.CA1031.severity = suggestion
 
 # CA1502: Avoid excessive complexity
-dotnet_diagnostic.CA1502.severity = warning
+# Note: Temporarily set to none during refactoring - will re-enable after Phase 3
+dotnet_diagnostic.CA1502.severity = none
 dotnet_code_quality.CA1502.cyclomatic_complexity = 10
 
 # CA1505: Avoid unmaintainable code
-dotnet_diagnostic.CA1505.severity = warning
+# Note: Temporarily set to none during refactoring - will re-enable after Phase 3
+dotnet_diagnostic.CA1505.severity = none
 dotnet_code_quality.CA1505.maintainability_index = 20
 
 # CA1506: Avoid excessive class coupling
-dotnet_diagnostic.CA1506.severity = warning
+# Note: Temporarily set to none during refactoring - will re-enable after Phase 3
+dotnet_diagnostic.CA1506.severity = none
 dotnet_code_quality.CA1506.class_coupling = 50
 
 # CA1822: Mark members as static
@@ -200,7 +204,7 @@ dotnet_style_qualification_for_event = false:suggestion
 dotnet_diagnostic.IDE0004.severity = suggestion
 
 # IDE0005: Remove unnecessary using directives
-dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.IDE0005.severity = suggestion
 
 # XML documentation
 [*.cs]

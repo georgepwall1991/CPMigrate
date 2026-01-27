@@ -1,7 +1,6 @@
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
-using Xunit;
 
 namespace CPMigrate.Tests;
 
@@ -47,7 +46,8 @@ public class InteractiveServiceTests : IDisposable
         fakeConsole.ConfirmationResponse = true;
 
         var originalDir = Directory.GetCurrentDirectory();
-        try {
+        try
+        {
             Directory.SetCurrentDirectory(_testDirectory);
             var service = new InteractiveService(fakeConsole);
             var options = service.RunWizard();
@@ -56,7 +56,8 @@ public class InteractiveServiceTests : IDisposable
             options!.Analyze.Should().BeFalse();
             // Since test dir is empty, it uses GetCurrentDirectory() which might be /tmp/... or similar
             options.SolutionFileDir.Should().NotBeEmpty();
-        } finally { Directory.SetCurrentDirectory(originalDir); }
+        }
+        finally { Directory.SetCurrentDirectory(originalDir); }
     }
 
     [Fact]
@@ -77,14 +78,16 @@ public class InteractiveServiceTests : IDisposable
         fakeConsole.ConfirmationResponse = true;
 
         var originalDir = Directory.GetCurrentDirectory();
-        try {
+        try
+        {
             Directory.SetCurrentDirectory(_testDirectory);
             var service = new InteractiveService(fakeConsole);
             var options = service.RunWizard();
 
             options.Should().NotBeNull();
             options!.Analyze.Should().BeTrue();
-        } finally { Directory.SetCurrentDirectory(originalDir); }
+        }
+        finally { Directory.SetCurrentDirectory(originalDir); }
     }
 
     [Fact]
@@ -98,13 +101,15 @@ public class InteractiveServiceTests : IDisposable
         });
 
         var originalDir = Directory.GetCurrentDirectory();
-        try {
+        try
+        {
             Directory.SetCurrentDirectory(_testDirectory);
             var service = new InteractiveService(fakeConsole);
             var options = service.RunWizard();
 
             options.Should().BeNull();
-        } finally { Directory.SetCurrentDirectory(originalDir); }
+        }
+        finally { Directory.SetCurrentDirectory(originalDir); }
     }
 
     [Fact]
@@ -129,16 +134,18 @@ public class InteractiveServiceTests : IDisposable
         fakeConsole.ConfirmationResponse = true;
 
         var originalDir = Directory.GetCurrentDirectory();
-        try {
+        try
+        {
             Directory.SetCurrentDirectory(_testDirectory);
             var expectedPath = Path.GetFullPath(manualPath);
-            
+
             var service = new InteractiveService(fakeConsole);
             var options = service.RunWizard();
 
             options.Should().NotBeNull();
             options!.SolutionFileDir.Should().Be(expectedPath);
-        } finally { Directory.SetCurrentDirectory(originalDir); }
+        }
+        finally { Directory.SetCurrentDirectory(originalDir); }
     }
 }
 

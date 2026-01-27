@@ -63,7 +63,7 @@ public class SpectreConsoleService : IConsoleService
     {
         AnsiConsole.Clear();
         AnsiConsole.WriteLine();
-        
+
         // New "Slant" style logo for CPMigrate
         AnsiConsole.Write(new FigletText("CPMigrate")
             .LeftJustified()
@@ -83,7 +83,7 @@ public class SpectreConsoleService : IConsoleService
         var grid = new Grid();
         grid.AddColumn(new GridColumn().RightAligned());
         grid.AddRow($"[grey39]v{version}[/] [deepskyblue1]•[/] [grey39]{runtime}[/] [deepskyblue1]•[/] [grey39]{os}[/]");
-        
+
         AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();
     }
@@ -158,17 +158,17 @@ public class SpectreConsoleService : IConsoleService
         {
             // Dry-run layout
             AnsiConsole.Write(new Rule("[cyan1]SIMULATION RESULTS[/]") { Style = Style.Parse("cyan1") });
-            
+
             grid.AddRow("[white]Projects Scanned[/]", $"[cyan1]{projectCount}[/]");
             grid.AddRow("[white]Packages Found[/]", $"[cyan1]{packageCount}[/]");
-            
+
             if (conflictCount > 0)
             {
                 grid.AddRow("[white]Conflicts Detected[/]", $"[yellow]{conflictCount}[/]");
             }
 
             grid.AddRow("[white]Output File[/]", $"[grey39]{EscapeMarkup(propsFilePath)}[/]");
-            
+
             var panel = new Panel(grid)
             {
                 Border = BoxBorder.Rounded,
@@ -177,7 +177,7 @@ public class SpectreConsoleService : IConsoleService
                 Header = new PanelHeader("[cyan1]DRY RUN COMPLETE[/]", Justify.Center)
             };
             AnsiConsole.Write(panel);
-            
+
             AnsiConsole.MarkupLine("\n[cyan1]ℹ[/] Run without [white]--dry-run[/] to apply changes");
         }
         else
@@ -263,9 +263,18 @@ public class SpectreConsoleService : IConsoleService
         var row = new List<string>();
         for (int i = 0; i < steps.Length; i++)
         {
-            if (i < step) row.Add($"[springgreen1]✔ {steps[i]}[/]");
-            else if (i == step) row.Add($"[deeppink1]▶ {steps[i]}[/]");
-            else row.Add($"[grey39]○ {steps[i]}[/]");
+            if (i < step)
+            {
+                row.Add($"[springgreen1]✔ {steps[i]}[/]");
+            }
+            else if (i == step)
+            {
+                row.Add($"[deeppink1]▶ {steps[i]}[/]");
+            }
+            else
+            {
+                row.Add($"[grey39]○ {steps[i]}[/]");
+            }
         }
         grid.AddRow(row.ToArray());
 
@@ -277,20 +286,23 @@ public class SpectreConsoleService : IConsoleService
     {
         string level, colorMarkup, desc;
         Color color;
-        if (conflictCount == 0) { level = "LOW"; colorMarkup = "springgreen1"; color = CyberColors.Success; desc = "Clean migration path."; }
-        else if (conflictCount < 5) { level = "MEDIUM"; colorMarkup = "yellow1"; color = CyberColors.Accent; desc = "Minor version divergence detected."; }
-        else { level = "HIGH"; colorMarkup = "red1"; color = CyberColors.Error; desc = "Significant version conflicts. Review recommended."; }
+        if (conflictCount == 0)
+        { level = "LOW"; colorMarkup = "springgreen1"; color = CyberColors.Success; desc = "Clean migration path."; }
+        else if (conflictCount < 5)
+        { level = "MEDIUM"; colorMarkup = "yellow1"; color = CyberColors.Accent; desc = "Minor version divergence detected."; }
+        else
+        { level = "HIGH"; colorMarkup = "red1"; color = CyberColors.Error; desc = "Significant version conflicts. Review recommended."; }
 
         var table = new Table().Border(TableBorder.None).HideHeaders();
         table.AddColumn("Label");
         table.AddColumn("Value");
-        
+
         table.AddRow("[grey39]Migration Risk:[/]", $"[{colorMarkup} bold]{level}[/]");
         table.AddRow("[grey39]Impact Area:[/]", $"[white]{projectCount} projects[/]");
         table.AddRow("[grey39]Assessment:[/]", $"[grey]{desc}[/]");
-        
-        AnsiConsole.Write(new Panel(table) 
-        { 
+
+        AnsiConsole.Write(new Panel(table)
+        {
             Header = new PanelHeader("[grey] ASSESSMENT [/]"),
             Padding = new Padding(1, 0),
             BorderStyle = new Style(color)
@@ -335,9 +347,9 @@ public class SpectreConsoleService : IConsoleService
         grid.AddColumn(new GridColumn().Padding(2, 0, 0, 0));
 
         grid.AddRow("[grey39]Directory[/]", $"[white]{EscapeMarkup(directory)}[/]");
-        
-        var slnStatus = solutions.Count > 0 
-            ? $"[springgreen1]{solutions.Count} solution(s) detected[/]" 
+
+        var slnStatus = solutions.Count > 0
+            ? $"[springgreen1]{solutions.Count} solution(s) detected[/]"
             : "[orange1]No solutions found here[/]";
         grid.AddRow("[grey39]Solutions[/]", slnStatus);
 
@@ -346,13 +358,13 @@ public class SpectreConsoleService : IConsoleService
             : "[grey39]NO[/]";
         grid.AddRow("[grey39]Using CPM[/]", cpmStatus);
 
-        var gitStatus = !isGitRepo ? "[grey39]Not a Git Repo[/]" 
-            : hasUnstaged ? "[orange1]Dirty[/] [grey](Unstaged changes detected)[/]" 
+        var gitStatus = !isGitRepo ? "[grey39]Not a Git Repo[/]"
+            : hasUnstaged ? "[orange1]Dirty[/] [grey](Unstaged changes detected)[/]"
             : "[springgreen1]Clean[/]";
         grid.AddRow("[grey39]Git Status[/]", gitStatus);
 
-        var backupStatus = backups.Count > 0 
-            ? $"[cyan1]{backups.Count} backup set(s) available[/]" 
+        var backupStatus = backups.Count > 0
+            ? $"[cyan1]{backups.Count} backup set(s) available[/]"
             : "[grey39]None[/]";
         grid.AddRow("[grey39]Backups[/]", backupStatus);
 
@@ -381,7 +393,7 @@ public class SpectreConsoleService : IConsoleService
                 .Title($"[deeppink1]{EscapeMarkup(message)}[/]")
                 .AddChoices(new[] { "Yes", "No" })
                 .HighlightStyle(new Style(CyberColors.Secondary)));
-        
+
         return selection == "Yes";
     }
 

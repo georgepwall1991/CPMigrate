@@ -13,7 +13,7 @@ public class TransitiveDependencyAnalyzer : IAnalyzer
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
     {
         var issues = new List<AnalysisIssue>();
-        
+
         // Group by package name
         var transitiveReferences = packageInfo.References
             .Where(r => r.IsTransitive)

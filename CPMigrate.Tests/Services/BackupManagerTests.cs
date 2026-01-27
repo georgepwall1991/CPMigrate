@@ -1,7 +1,5 @@
 using CPMigrate.Models;
 using FluentAssertions;
-using Xunit;
-using Options = CPMigrate.Options;
 
 namespace CPMigrate.Tests.Services;
 

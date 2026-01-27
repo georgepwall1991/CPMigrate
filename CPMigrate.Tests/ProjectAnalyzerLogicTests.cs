@@ -1,7 +1,6 @@
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
-using Xunit;
 
 namespace CPMigrate.Tests;
 
@@ -101,7 +100,7 @@ public class ProjectAnalyzerLogicTests : IDisposable
         // Assert
         versions.Should().ContainKey("Newtonsoft.Json");
         versions["Newtonsoft.Json"].Should().Contain("13.0.1");
-        
+
         resultXml.Should().NotContain("<Version>13.0.1</Version>");
     }
 
@@ -152,7 +151,7 @@ public class ProjectAnalyzerLogicTests : IDisposable
                              "  </ItemGroup>\n" +
                              "</Project>";
         var filePath = CreateTestProject("TestAccum.csproj", projectContent);
-        var versions = new Dictionary<string, HashSet<string>> 
+        var versions = new Dictionary<string, HashSet<string>>
         {
             ["LibA"] = new HashSet<string> { "2.0.0" }
         };

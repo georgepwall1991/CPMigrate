@@ -30,7 +30,11 @@ public class FrameworkAlignmentAnalyzer : IAnalyzer
         foreach (var path in projectPaths)
         {
             var tfm = _projectAnalyzer.GetTargetFramework(path);
-            if (!frameworks.ContainsKey(tfm)) frameworks[tfm] = new List<string>();
+            if (!frameworks.ContainsKey(tfm))
+            {
+                frameworks[tfm] = new List<string>();
+            }
+
             frameworks[tfm].Add(Path.GetFileName(path));
         }
 

@@ -27,7 +27,10 @@ public class BackupManager
     /// <exception cref="IOException">Thrown when the backup directory cannot be created.</exception>
     public string CreateBackupDirectory(Options options)
     {
-        if (options.NoBackup) return string.Empty;
+        if (options.NoBackup)
+        {
+            return string.Empty;
+        }
 
         var backupPath = Path.Combine(
             Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),
@@ -59,7 +62,10 @@ public class BackupManager
     /// <exception cref="IOException">Thrown when the backup file cannot be created.</exception>
     public BackupEntry? CreateBackupForProject(Options options, string filePath, string backupPath, string? timestampOverride = null)
     {
-        if (options.NoBackup) return null;
+        if (options.NoBackup)
+        {
+            return null;
+        }
 
         var fileName = Path.GetFileName(filePath);
         // Use milliseconds for timestamp precision to avoid collisions in fast/parallel operations
@@ -91,7 +97,9 @@ public class BackupManager
     public async Task ManageGitIgnore(Options options, string? backupPath)
     {
         if (!options.AddBackupToGitignore || options.NoBackup || string.IsNullOrEmpty(backupPath))
+        {
             return;
+        }
 
         var gitignorePath = Path.Combine(
             Path.GetFullPath(string.IsNullOrEmpty(options.GitignoreDir) ? "." : options.GitignoreDir),
@@ -111,7 +119,9 @@ public class BackupManager
             });
 
             if (alreadyExists)
+            {
                 return; // Already in gitignore
+            }
 
             await File.AppendAllTextAsync(gitignorePath,
                 $"{Environment.NewLine}# CPMigrate backup directory{Environment.NewLine}{entryToAdd}{Environment.NewLine}");
@@ -145,7 +155,9 @@ public class BackupManager
         var manifestPath = Path.Combine(backupPath, ManifestFileName);
 
         if (!File.Exists(manifestPath))
+        {
             return null;
+        }
 
         try
         {
@@ -269,7 +281,10 @@ public class BackupManager
         {
             var fileName = Path.GetFileName(file);
             var timestampStart = fileName.LastIndexOf(".backup_", StringComparison.Ordinal);
-            if (timestampStart < 0) continue;
+            if (timestampStart < 0)
+            {
+                continue;
+            }
 
             var timestamp = fileName[(timestampStart + 8)..]; // Skip ".backup_"
 

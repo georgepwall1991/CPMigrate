@@ -32,27 +32,39 @@ public class FakeConsoleService : IConsoleService
     public string AskSelection(string title, IEnumerable<string> choices)
     {
         if (SelectionResponses.Count > 0)
+        {
             return SelectionResponses.Dequeue();
+        }
+
         return choices.First();
     }
     public string AskGroupedSelection(string title, Dictionary<string, IEnumerable<string>> groups)
     {
         if (SelectionResponses.Count > 0)
+        {
             return SelectionResponses.Dequeue();
+        }
+
         return groups.Values.First().First();
     }
     public bool AskConfirmation(string message) => ConfirmationResponse;
     public string AskText(string prompt, string defaultValue = "")
     {
         if (TextResponses.Count > 0)
+        {
             return TextResponses.Dequeue();
+        }
+
         return defaultValue;
     }
     public Queue<int> IntResponses { get; set; } = new();
     public int AskInt(string prompt, int defaultValue)
     {
         if (IntResponses.Count > 0)
+        {
             return IntResponses.Dequeue();
+        }
+
         return defaultValue;
     }
     public void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath) { }

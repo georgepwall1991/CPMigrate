@@ -27,7 +27,10 @@ public class DuplicatePackageAnalyzer : IAnalyzer
                 .ToList();
 
             // Defensive check - variations should never be empty given the Where clause
-            if (variations.Count == 0) continue;
+            if (variations.Count == 0)
+            {
+                continue;
+            }
 
             var description = $"Found {variations.Count} casing variations: {string.Join(", ", variations)}";
             var affectedProjects = group.Select(r => r.ProjectName).Distinct().ToList();

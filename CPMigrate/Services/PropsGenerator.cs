@@ -41,7 +41,9 @@ public class PropsGenerator
         {
             // Skip packages with no versions (shouldn't happen, but defensive)
             if (kvp.Value.Count == 0)
+            {
                 continue;
+            }
 
             // Resolve to single version if multiple exist
             var version = kvp.Value.Count > 1

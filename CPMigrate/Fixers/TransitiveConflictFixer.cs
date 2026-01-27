@@ -37,10 +37,13 @@ public class TransitiveConflictFixer : IFixer
             .Select(r => r.Version)
             .ToHashSet();
 
-        if (versions.Count == 0) return FixResult.Failed("Could not determine versions for package.");
+        if (versions.Count == 0)
+        {
+            return FixResult.Failed("Could not determine versions for package.");
+        }
 
         var bestVersion = _versionResolver.ResolveVersion(versions, options.ConflictStrategy);
-        
+
         var originalContent = File.ReadAllText(propsPath);
         var updatedContent = originalContent;
 

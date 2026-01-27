@@ -45,15 +45,25 @@ public class BuildPropsAnalyzer
                 foreach (var propertyGroup in projectRoot.PropertyGroups)
                 {
                     // Skip conditional property groups for now to be safe
-                    if (!string.IsNullOrEmpty(propertyGroup.Condition)) continue;
+                    if (!string.IsNullOrEmpty(propertyGroup.Condition))
+                    {
+                        continue;
+                    }
 
                     foreach (var property in propertyGroup.Properties)
                     {
-                        if (IgnoredProperties.Contains(property.Name)) continue;
-                        if (!string.IsNullOrEmpty(property.Condition)) continue; // Skip conditional properties
+                        if (IgnoredProperties.Contains(property.Name))
+                        {
+                            continue;
+                        }
+
+                        if (!string.IsNullOrEmpty(property.Condition))
+                        {
+                            continue; // Skip conditional properties
+                        }
 
                         var key = $"{property.Name}|{property.Value}";
-                        
+
                         if (!result.PropertyOccurrences.ContainsKey(key))
                         {
                             result.PropertyOccurrences[key] = new List<ProjectProperty>();
@@ -70,16 +80,26 @@ public class BuildPropsAnalyzer
                 // Analyze Items (Currently only "Using")
                 foreach (var itemGroup in projectRoot.ItemGroups)
                 {
-                    if (!string.IsNullOrEmpty(itemGroup.Condition)) continue;
+                    if (!string.IsNullOrEmpty(itemGroup.Condition))
+                    {
+                        continue;
+                    }
 
                     foreach (var item in itemGroup.Items)
                     {
-                        if (item.ItemType != "Using" && item.ItemType != "PackageReference") continue;
-                        if (!string.IsNullOrEmpty(item.Condition)) continue;
+                        if (item.ItemType != "Using" && item.ItemType != "PackageReference")
+                        {
+                            continue;
+                        }
+
+                        if (!string.IsNullOrEmpty(item.Condition))
+                        {
+                            continue;
+                        }
 
                         // Create metadata dictionary
                         var metadata = item.Metadata.ToDictionary(m => m.Name, m => m.Value);
-                        
+
                         // Create a unique key for the item
                         // Format: Type|Include|MetadataKey=MetadataValue;...
                         var metadataString = string.Join(";", metadata.OrderBy(k => k.Key).Select(kv => $"{kv.Key}={kv.Value}"));

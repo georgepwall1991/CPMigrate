@@ -65,10 +65,10 @@ static async Task<int> RunUnifyPropsMode(Options opt, IConsoleService consoleSer
     try
     {
         consoleService.WriteHeader();
-        
+
         var projectAnalyzer = new ProjectAnalyzer(consoleService);
         var buildPropsService = new BuildPropsService(consoleService, projectAnalyzer);
-        
+
         return await buildPropsService.UnifyPropertiesAsync(opt);
     }
     catch (Exception ex)

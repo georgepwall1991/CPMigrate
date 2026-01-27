@@ -39,7 +39,7 @@ public class InteractiveService : IInteractiveService
             _console.WriteHeader();
             var context = AnalyzeEnvironment();
             _console.WriteStatusDashboard(context.Directory, context.Solutions, context.Backups, context.IsGitRepo, context.HasUnstaged, context.TargetFrameworks);
-            
+
             if (context.ConflictCount > 0 || context.ProjectCount > 0)
             {
                 _console.WriteRiskScore(context.ConflictCount, context.ProjectCount);
@@ -49,7 +49,10 @@ public class InteractiveService : IInteractiveService
 
             // Step 1: Intelligent Quick Actions
             var action = AskQuickAction(context);
-            if (action == "Exit") return null;
+            if (action == "Exit")
+            {
+                return null;
+            }
 
             if (action.StartsWith("🚀 Fast-Track") || action.StartsWith("⚡️ Migrate"))
             {
@@ -58,34 +61,61 @@ public class InteractiveService : IInteractiveService
                 options.OutputDir = options.SolutionFileDir;
                 options.ConflictStrategy = ConflictStrategy.Highest;
                 options.BackupDir = ".";
-                
-                if (action.Contains("Review Conflicts")) options.InteractiveConflicts = true;
-                
+
+                if (action.Contains("Review Conflicts"))
+                {
+                    options.InteractiveConflicts = true;
+                }
+
                 _console.WriteLine();
                 _console.WriteMissionStatus(0);
             }
             else
             {
                 // Map legacy modes
-                if (action.Contains("Analyze")) options.Analyze = true;
-                else if (action.Contains("Security Audit")) { options.Analyze = true; options.AuditSecurity = true; options.IncludeTransitive = true; }
-                else if (action.Contains("Rollback")) options.Rollback = true;
-                else if (action.Contains("Batch")) { AskBatchOptions(options); return options; }
-                else if (action.Contains("Manage Backups")) { AskBackupManagementOptions(options); return options; }
-                else if (action.Contains("Unify Directory.Build.props")) { options.UnifyProps = true; }
+                if (action.Contains("Analyze"))
+                {
+                    options.Analyze = true;
+                }
+                else if (action.Contains("Security Audit"))
+                { options.Analyze = true; options.AuditSecurity = true; options.IncludeTransitive = true; }
+                else if (action.Contains("Rollback"))
+                {
+                    options.Rollback = true;
+                }
+                else if (action.Contains("Batch"))
+                { AskBatchOptions(options); return options; }
+                else if (action.Contains("Manage Backups"))
+                { AskBackupManagementOptions(options); return options; }
+                else if (action.Contains("Unify Directory.Build.props"))
+                { options.UnifyProps = true; }
 
                 // Standard discovery for non-fast-track
                 var path = AskSolutionPath();
-                if (path == null) return null;
+                if (path == null)
+                {
+                    return null;
+                }
+
                 options.SolutionFileDir = path;
                 options.OutputDir = path;
             }
 
             // Refine options if not fast-tracked
-            if (options.Analyze) AskAnalyzeOptions(options);
-            else if (options.Rollback) AskRollbackOptions(options);
-            else if (options.UnifyProps) { /* No extra options for unify currently */ }
-            else if (string.IsNullOrEmpty(options.BatchDir) && !options.InteractiveConflicts) AskMigrationOptions(options);
+            if (options.Analyze)
+            {
+                AskAnalyzeOptions(options);
+            }
+            else if (options.Rollback)
+            {
+                AskRollbackOptions(options);
+            }
+            else if (options.UnifyProps)
+            { /* No extra options for unify currently */ }
+            else if (string.IsNullOrEmpty(options.BatchDir) && !options.InteractiveConflicts)
+            {
+                AskMigrationOptions(options);
+            }
 
             ShowSummary(options, action);
 
@@ -126,7 +156,7 @@ public class InteractiveService : IInteractiveService
         var ctx = new EnvContext { Directory = Directory.GetCurrentDirectory() };
         ctx.Solutions = ProjectAnalyzer.GetSolutionFiles(ctx.Directory).ToList();
         ctx.IsCpm = File.Exists(Path.Combine(ctx.Directory, "Directory.Packages.props"));
-        
+
         var backupManager = new BackupManager();
         ctx.Backups = backupManager.GetBackupHistory(Path.Combine(ctx.Directory, ".cpmigrate_backup"));
         ctx.IsGitRepo = Directory.Exists(Path.Combine(ctx.Directory, ".git"));
@@ -149,29 +179,36 @@ public class InteractiveService : IInteractiveService
             }
             catch { }
         }
-        
+
         // Deep scan for risk assessment
         var analyzer = new ProjectAnalyzer(_console);
         var (basePath, projects) = analyzer.DiscoverProjectsFromSolution(ctx.Directory);
-        if (projects.Count == 0) (basePath, projects) = analyzer.DiscoverProjectFromPath(ctx.Directory);
-        
+        if (projects.Count == 0)
+        {
+            (basePath, projects) = analyzer.DiscoverProjectFromPath(ctx.Directory);
+        }
+
         ctx.ProjectCount = projects.Count;
         if (projects.Count > 0)
         {
             var packages = new Dictionary<string, HashSet<string>>();
-            
-            foreach (var p in projects) 
+
+            foreach (var p in projects)
             {
                 analyzer.ScanProjectPackages(p, packages);
-                
+
                 var tfm = analyzer.GetTargetFramework(p);
                 foreach (var tf in tfm.Split(';', StringSplitOptions.RemoveEmptyEntries))
                 {
-                    if (!ctx.TargetFrameworks.ContainsKey(tf)) ctx.TargetFrameworks[tf] = 0;
+                    if (!ctx.TargetFrameworks.ContainsKey(tf))
+                    {
+                        ctx.TargetFrameworks[tf] = 0;
+                    }
+
                     ctx.TargetFrameworks[tf]++;
                 }
             }
-            
+
             var resolver = new VersionResolver(_console);
             ctx.ConflictCount = resolver.DetectConflicts(packages).Count;
         }
@@ -188,28 +225,32 @@ public class InteractiveService : IInteractiveService
         // 1. Migration Actions
         if (!ctx.IsCpm && ctx.ProjectCount > 0)
         {
-            var label = ctx.ConflictCount > 0 
-                ? $"🚀 Fast-Track Migration (Auto-resolve {ctx.ConflictCount} conflicts)" 
+            var label = ctx.ConflictCount > 0
+                ? $"🚀 Fast-Track Migration (Auto-resolve {ctx.ConflictCount} conflicts)"
                 : "⚡️ Migrate to Central Package Management (Clean Path)";
             migrationActions.Add(label);
-            
+
             if (ctx.ConflictCount > 0)
+            {
                 migrationActions.Add("🛠  Migrate & Review Conflicts Individually");
+            }
         }
         else if (ctx.IsCpm)
         {
             migrationActions.Add("🔍 Analyze current CPM setup for issues");
             migrationActions.Add("🛡  Security Audit (Scan for vulnerabilities)");
         }
-        
+
         migrationActions.Add("⚙️  Custom Migration (Manual Setup)");
 
         // 2. Maintenance Actions
         maintenanceActions.Add(ModeUnifyProps);
         maintenanceActions.Add("📦 Batch migrate multiple solutions");
-        
+
         if (ctx.Backups.Count > 0)
+        {
             maintenanceActions.Add("↩️  Rollback to a previous state");
+        }
 
         maintenanceActions.Add("💾 Manage Backups");
 
@@ -217,8 +258,16 @@ public class InteractiveService : IInteractiveService
         systemActions.Add("Exit");
 
         var groups = new Dictionary<string, IEnumerable<string>>();
-        if (migrationActions.Count > 0) groups.Add("MIGRATION ACTIONS", migrationActions);
-        if (maintenanceActions.Count > 0) groups.Add("REPOSITORY MAINTENANCE", maintenanceActions);
+        if (migrationActions.Count > 0)
+        {
+            groups.Add("MIGRATION ACTIONS", migrationActions);
+        }
+
+        if (maintenanceActions.Count > 0)
+        {
+            groups.Add("REPOSITORY MAINTENANCE", maintenanceActions);
+        }
+
         groups.Add("SYSTEM", systemActions);
 
         return _console.AskGroupedSelection("What's the mission?", groups);
@@ -256,7 +305,7 @@ public class InteractiveService : IInteractiveService
         {
             var solutions = ProjectAnalyzer.GetSolutionFiles(rootPath)
                 .Select(Path.GetFileName).Cast<string>().ToList();
-            
+
             var projects = Directory.GetFiles(rootPath, "*.*proj", SearchOption.TopDirectoryOnly)
                 .Where(f => !f.EndsWith(".props") && !f.EndsWith(".targets"))
                 .Select(Path.GetFileName).Cast<string>().ToList();
@@ -268,7 +317,7 @@ public class InteractiveService : IInteractiveService
                 .ToList();
 
             var choices = new List<string>();
-            
+
             // Add current directory as a choice if it contains projects or solutions
             if (solutions.Count > 0 || projects.Count > 0)
             {
@@ -278,7 +327,7 @@ public class InteractiveService : IInteractiveService
             // Add solutions and projects
             choices.AddRange(solutions.Select(s => $"🟦 Solution: {s}"));
             choices.AddRange(projects.Select(p => $"📗 Project: {p}"));
-            
+
             // Add "Go Up" if not at root
             var parent = Directory.GetParent(rootPath);
             if (parent != null)
@@ -295,7 +344,11 @@ public class InteractiveService : IInteractiveService
             if (selection == EnterPathManually)
             {
                 var path = _console.AskText("Enter path manually (or leave empty to cancel)", ".");
-                if (string.IsNullOrWhiteSpace(path) || path == ".") return null;
+                if (string.IsNullOrWhiteSpace(path) || path == ".")
+                {
+                    return null;
+                }
+
                 return Path.GetFullPath(path);
             }
 
@@ -332,7 +385,7 @@ public class InteractiveService : IInteractiveService
         var transitiveChoice = _console.AskSelection(
             "Include transitive dependencies in analysis?",
             new[] { "No - direct references only (faster)", "Yes - full dependency tree (requires dotnet restore)" });
-        
+
         options.IncludeTransitive = transitiveChoice.StartsWith("Yes");
 
         var fixChoice = _console.AskSelection(
@@ -347,7 +400,7 @@ public class InteractiveService : IInteractiveService
     {
         _console.Info("Scanning for a directory to batch process...");
         options.BatchDir = BrowseForPath(Directory.GetCurrentDirectory(), "Select the root directory for batch processing");
-        
+
         var parallel = _console.AskSelection(
             "Process solutions in parallel?",
             new[] { "No - sequential (safer)", "Yes - parallel (faster)" });
@@ -491,15 +544,19 @@ public class InteractiveService : IInteractiveService
             _ when mode.Contains("Unify") || options.UnifyProps => "UNIFY PROPS", // Handle new mode
             _ => "UNKNOWN"
         };
-        
+
         var grid = new Grid();
         grid.AddColumn();
         grid.AddColumn();
-        
+
         if (!string.IsNullOrEmpty(options.BatchDir))
+        {
             grid.AddRow("[white]Batch Directory[/]", $"[cyan1]{EscapeMarkup(options.BatchDir)}[/]");
+        }
         else if (!string.IsNullOrEmpty(options.SolutionFileDir))
+        {
             grid.AddRow("[white]Solution/Project[/]", $"[cyan1]{EscapeMarkup(options.SolutionFileDir)}[/]");
+        }
 
         if (mode == ModeMigrate || mode == ModeBatch)
         {
@@ -525,9 +582,13 @@ public class InteractiveService : IInteractiveService
         else if (mode == ModeBackups)
         {
             if (options.PruneBackups)
+            {
                 grid.AddRow("[white]Retention[/]", $"[cyan1]Keep last {options.Retention}[/]");
+            }
             else if (options.PruneAll)
+            {
                 grid.AddRow("[white]Action[/]", "[red]DELETE ALL BACKUPS[/]");
+            }
         }
         else if (options.UnifyProps)
         {
@@ -541,7 +602,7 @@ public class InteractiveService : IInteractiveService
             BorderStyle = new Style(Color.DeepPink1),
             Padding = new Padding(1, 1)
         };
-        
+
         AnsiConsole.Write(panel);
         _console.WriteLine();
     }
@@ -550,6 +611,6 @@ public class InteractiveService : IInteractiveService
     {
         return _console.AskConfirmation("Proceed?");
     }
-    
+
     private static string EscapeMarkup(string text) => Markup.Escape(text);
 }

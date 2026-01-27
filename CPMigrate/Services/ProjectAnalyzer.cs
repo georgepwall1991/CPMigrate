@@ -1,9 +1,7 @@
 using CPMigrate.Models;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
-using Microsoft.VisualStudio.SolutionPersistence;
 using Microsoft.VisualStudio.SolutionPersistence.Serializer;
-using Buildalyzer;
 
 namespace CPMigrate.Services;
 
@@ -179,10 +177,10 @@ public partial class ProjectAnalyzer
         {
             using var projectCollection = new ProjectCollection();
             var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
-            
+
             var targetFramework = projectRoot.Properties
                 .FirstOrDefault(p => p.Name == "TargetFramework" || p.Name == "TargetFrameworks")?.Value ?? "Unknown";
-            
+
             return targetFramework;
         }
         catch
@@ -222,9 +220,13 @@ public partial class ProjectAnalyzer
                         var packageVersion = versionMetadata.Value;
 
                         if (packageVersions.TryGetValue(packageName, out var value))
+                        {
                             value.Add(packageVersion);
+                        }
                         else
+                        {
                             packageVersions.Add(packageName, new HashSet<string> { packageVersion });
+                        }
 
                         if (!keepVersionAttributes)
                         {
@@ -250,14 +252,21 @@ public partial class ProjectAnalyzer
     public bool ScanProjectPackages(string projectFilePath, Dictionary<string, HashSet<string>> packageVersions)
     {
         var (refs, success) = ScanProjectPackages(projectFilePath);
-        if (!success) return false;
+        if (!success)
+        {
+            return false;
+        }
 
         foreach (var r in refs)
         {
             if (packageVersions.TryGetValue(r.PackageName, out var versions))
+            {
                 versions.Add(r.Version);
+            }
             else
+            {
                 packageVersions.Add(r.PackageName, new HashSet<string> { r.Version });
+            }
         }
 
         return true;

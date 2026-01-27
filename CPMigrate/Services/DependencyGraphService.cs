@@ -1,5 +1,4 @@
 using System.Text.Json;
-using CPMigrate.Models;
 
 namespace CPMigrate.Services;
 
@@ -34,7 +33,7 @@ public class DependencyGraphService
         {
             var json = File.ReadAllText(assetsPath);
             using var doc = JsonDocument.Parse(json);
-            
+
             var projectNode = doc.RootElement.GetProperty("project");
             var frameworksNode = projectNode.GetProperty("frameworks");
 
@@ -91,7 +90,10 @@ public class DependencyGraphService
     private void CollectTransitiveRecursive(JsonElement targetNode, string package, string version, HashSet<string> closure, HashSet<string> visited)
     {
         var key = $"{package}/{version}";
-        if (!visited.Add(key)) return;
+        if (!visited.Add(key))
+        {
+            return;
+        }
 
         if (targetNode.TryGetProperty(key, out var packageNode))
         {

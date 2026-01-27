@@ -1,5 +1,3 @@
-using CPMigrate.Analyzers;
-using CPMigrate.Fixers;
 using CPMigrate.Models;
 using Spectre.Console;
 
@@ -94,7 +92,7 @@ public class MigrationService
                 {
                     return directoryError;
                 }
-                
+
                 // Warn about unstaged changes if in a git repo
                 await CheckForUnstagedChangesAsync(outputPath);
             }
@@ -201,7 +199,7 @@ public class MigrationService
         catch (Exception ex)
         {
             _consoleService.Error($"\nAn error occurred during migration: {ex.Message}");
-            
+
             if (backupsCreated && !options.DryRun && !string.IsNullOrEmpty(backupPath))
             {
                 _consoleService.Warning("Project files may have been partially modified.");
@@ -210,7 +208,7 @@ public class MigrationService
                     await ExecuteRollbackAsync(new Options { BackupDir = backupPath, Rollback = true });
                 }
             }
-            
+
             throw; // Re-throw to be handled by Program.cs or caller
         }
     }
@@ -220,7 +218,10 @@ public class MigrationService
     /// </summary>
     private async Task CheckForUnstagedChangesAsync(string directory)
     {
-        if (_quietMode) return;
+        if (_quietMode)
+        {
+            return;
+        }
 
         try
         {
@@ -241,7 +242,7 @@ public class MigrationService
             {
                 _consoleService.Warning("Unstaged changes detected in the repository.");
                 _consoleService.Dim("It is highly recommended to commit or stash your changes before proceeding.");
-                
+
                 if (!_consoleService.AskConfirmation("Proceed anyway?"))
                 {
                     throw new OperationCanceledException("User cancelled migration due to unstaged changes.");
@@ -254,7 +255,10 @@ public class MigrationService
 
     private void ShowPostMigrationGuidance(Options options, string propsFilePath)
     {
-        if (_quietMode || options.DryRun) return;
+        if (_quietMode || options.DryRun)
+        {
+            return;
+        }
 
         _consoleService.WriteLine();
         _consoleService.Banner("NEXT STEPS & VERIFICATION");
@@ -363,7 +367,14 @@ public class MigrationService
         }
         finally
         {
-            try { if (File.Exists(testFile)) File.Delete(testFile); } catch { /* Ignore cleanup errors */ }
+            try
+            {
+                if (File.Exists(testFile))
+                {
+                    File.Delete(testFile);
+                }
+            }
+            catch { /* Ignore cleanup errors */ }
         }
     }
 
@@ -459,7 +470,10 @@ public class MigrationService
     /// </summary>
     private void ShowDiscoveredProjects(string basePath, List<string> projectPaths)
     {
-        if (_quietMode) return;
+        if (_quietMode)
+        {
+            return;
+        }
 
         _consoleService.WriteMarkup($"\n[green]:magnifying_glass_tilted_right: Found {projectPaths.Count} project(s)[/]\n");
 
@@ -484,7 +498,11 @@ public class MigrationService
                 _consoleService.DryRun($"Would create backup directory: {potentialBackupPath}");
             }
 
-            if (!_quietMode) _consoleService.WriteLine();
+            if (!_quietMode)
+            {
+                _consoleService.WriteLine();
+            }
+
             return null;
         }
 
@@ -494,7 +512,11 @@ public class MigrationService
             _consoleService.WriteMarkup($"[dim]:file_folder: Backup directory: {Markup.Escape(backupPath)}[/]\n");
         }
 
-        if (!_quietMode) _consoleService.WriteLine();
+        if (!_quietMode)
+        {
+            _consoleService.WriteLine();
+        }
+
         return backupPath;
     }
 
@@ -506,7 +528,10 @@ public class MigrationService
         Dictionary<string, HashSet<string>> packages,
         List<string> conflicts)
     {
-        if (conflicts.Count == 0) return null;
+        if (conflicts.Count == 0)
+        {
+            return null;
+        }
 
         if (!_quietMode)
         {
@@ -540,24 +565,40 @@ public class MigrationService
                 var (refs, _) = _projectAnalyzer.ScanProjectPackages(path);
                 foreach (var r in refs)
                 {
-                    if (!usageCounts.ContainsKey(r.PackageName)) usageCounts[r.PackageName] = new Dictionary<string, int>();
-                    if (!usageCounts[r.PackageName].ContainsKey(r.Version)) usageCounts[r.PackageName][r.Version] = 0;
+                    if (!usageCounts.ContainsKey(r.PackageName))
+                    {
+                        usageCounts[r.PackageName] = new Dictionary<string, int>();
+                    }
+
+                    if (!usageCounts[r.PackageName].ContainsKey(r.Version))
+                    {
+                        usageCounts[r.PackageName][r.Version] = 0;
+                    }
+
                     usageCounts[r.PackageName][r.Version]++;
                 }
             }
 
             foreach (var packageName in conflicts)
             {
-                if (!packages.TryGetValue(packageName, out var versions)) continue;
+                if (!packages.TryGetValue(packageName, out var versions))
+                {
+                    continue;
+                }
 
                 var versionList = versions.OrderByDescending(v => v).ToList();
                 var recommended = _versionResolver.ResolveVersion(versions, options.ConflictStrategy);
-                
-                var choices = versionList.Select(v => {
-                    var count = usageCounts.ContainsKey(packageName) && usageCounts[packageName].ContainsKey(v) 
+
+                var choices = versionList.Select(v =>
+                {
+                    var count = usageCounts.ContainsKey(packageName) && usageCounts[packageName].ContainsKey(v)
                         ? usageCounts[packageName][v] : 1;
                     var label = $"{v} (Used by {count} project{(count == 1 ? "" : "s")})";
-                    if (v == recommended) label += " [springgreen1]**Recommended**[/]";
+                    if (v == recommended)
+                    {
+                        label += " [springgreen1]**Recommended**[/]";
+                    }
+
                     return label;
                 }).ToList();
 
@@ -628,7 +669,10 @@ public class MigrationService
         string propsFilePath,
         string? backupPath)
     {
-        if (_quietMode) return;
+        if (_quietMode)
+        {
+            return;
+        }
 
         _consoleService.WriteSummaryTable(
             projectCount,
@@ -732,9 +776,13 @@ public class MigrationService
                             foreach (var tr in transitiveRefs)
                             {
                                 if (packages.TryGetValue(tr.PackageName, out var versions))
+                                {
                                     versions.Add(tr.Version);
+                                }
                                 else
+                                {
                                     packages.Add(tr.PackageName, new HashSet<string> { tr.Version });
+                                }
                             }
                         }
                     }
@@ -1066,9 +1114,21 @@ public class MigrationService
 
     private static string FormatFileSize(long bytes)
     {
-        if (bytes < 1024) return $"{bytes} B";
-        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
-        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1} MB";
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+
+        if (bytes < 1024 * 1024)
+        {
+            return $"{bytes / 1024.0:F1} KB";
+        }
+
+        if (bytes < 1024 * 1024 * 1024)
+        {
+            return $"{bytes / (1024.0 * 1024):F1} MB";
+        }
+
         return $"{bytes / (1024.0 * 1024 * 1024):F1} GB";
     }
 
@@ -1123,25 +1183,34 @@ public class MigrationService
 
                     var (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
                     allReferences.AddRange(references);
-                    
+
                     if (options.IncludeTransitive || options.AuditSecurity)
                     {
                         task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
-                        
+
                         if (options.IncludeTransitive)
                         {
                             var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectPath);
-                            if (transitiveSuccess) allReferences.AddRange(transitiveRefs);
+                            if (transitiveSuccess)
+                            {
+                                allReferences.AddRange(transitiveRefs);
+                            }
                         }
 
                         if (options.AuditSecurity)
                         {
                             var (vulnerabilities, auditSuccess) = await _projectAnalyzer.ScanVulnerabilitiesAsync(projectPath);
-                            if (auditSuccess) allVulnerabilities.AddRange(vulnerabilities);
+                            if (auditSuccess)
+                            {
+                                allVulnerabilities.AddRange(vulnerabilities);
+                            }
                         }
                     }
 
-                    if (!success) scanFailures++;
+                    if (!success)
+                    {
+                        scanFailures++;
+                    }
 
                     task.Increment(1);
                     await Task.Delay(30);

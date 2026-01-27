@@ -2,7 +2,6 @@ using CPMigrate.Analyzers;
 using CPMigrate.Models;
 using CPMigrate.Services;
 using FluentAssertions;
-using Xunit;
 
 namespace CPMigrate.Tests.Analyzers;
 

@@ -2,7 +2,6 @@ using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
 using Microsoft.VisualStudio.SolutionPersistence.Model;
-using Xunit;
 
 namespace CPMigrate.Tests;
 
@@ -72,7 +71,7 @@ public class ProjectAnalyzerParsingTests : IDisposable
         // Arrange
         var solutionPath = Path.Combine(_testDirectory, "Backslash.sln");
         var projectPath = Path.Combine(_testDirectory, "SubDir", "MyProject.csproj");
-        
+
         Directory.CreateDirectory(Path.GetDirectoryName(projectPath)!);
         File.WriteAllText(projectPath, "<Project></Project>");
 

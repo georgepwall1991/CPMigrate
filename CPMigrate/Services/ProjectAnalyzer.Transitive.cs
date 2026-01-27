@@ -29,7 +29,10 @@ public partial class ProjectAnalyzer
             };
 
             using var process = Process.Start(startInfo);
-            if (process == null) return (references, false);
+            if (process == null)
+            {
+                return (references, false);
+            }
 
             var output = await process.StandardOutput.ReadToEndAsync();
             await process.WaitForExitAsync();
@@ -48,7 +51,7 @@ public partial class ProjectAnalyzer
             //
             //    Transitive Package                                        Resolved
             //    > Microsoft.NETCore.Platforms                             1.1.0   
-            
+
             var lines = output.Split(new[] { Environment.NewLine, "\n" }, StringSplitOptions.RemoveEmptyEntries);
             bool parsingTransitive = false;
 
@@ -110,7 +113,10 @@ public partial class ProjectAnalyzer
             };
 
             using var process = Process.Start(startInfo);
-            if (process == null) return (vulnerabilities, false);
+            if (process == null)
+            {
+                return (vulnerabilities, false);
+            }
 
             var output = await process.StandardOutput.ReadToEndAsync();
             await process.WaitForExitAsync();

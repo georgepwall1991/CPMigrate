@@ -1,7 +1,6 @@
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
-using Xunit;
 
 namespace CPMigrate.Tests.Services;
 
@@ -19,7 +18,9 @@ public class DependencyGraphServiceTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_testDir))
+        {
             Directory.Delete(_testDir, recursive: true);
+        }
     }
 
     [Fact]
