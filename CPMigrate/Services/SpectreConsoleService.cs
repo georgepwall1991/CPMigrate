@@ -117,17 +117,7 @@ public class SpectreConsoleService : IConsoleService
 
         foreach (var packageName in conflicts)
         {
-            var versions = packageVersions[packageName]
-                .Select(v => (Original: v, Parsed: NuGet.Versioning.NuGetVersion.TryParse(v, out var parsed) ? parsed : null))
-                .ToList();
-
-            var orderedVersions = versions
-                .Where(v => v.Parsed != null)
-                .OrderByDescending(v => v.Parsed)
-                .Select(v => v.Original)
-                .Concat(versions.Where(v => v.Parsed == null).Select(v => v.Original))
-                .ToList();
-
+            var orderedVersions = GetOrderedVersions(packageVersions[packageName]);
             var resolvedVersion = _versionResolver.ResolveVersion(packageVersions[packageName], strategy);
 
             var versionList = string.Join(", ", orderedVersions.Select(v =>
@@ -348,35 +338,10 @@ public class SpectreConsoleService : IConsoleService
 
         grid.AddRow("[grey39]Directory[/]", $"[white]{EscapeMarkup(directory)}[/]");
 
-        var slnStatus = solutions.Count > 0
-            ? $"[springgreen1]{solutions.Count} solution(s) detected[/]"
-            : "[orange1]No solutions found here[/]";
-        grid.AddRow("[grey39]Solutions[/]", slnStatus);
-
-        var cpmStatus = File.Exists(Path.Combine(directory, "Directory.Packages.props"))
-            ? "[deeppink1]YES[/] [grey](Directory.Packages.props detected)[/]"
-            : "[grey39]NO[/]";
-        grid.AddRow("[grey39]Using CPM[/]", cpmStatus);
-
-        string gitStatus;
-        if (!isGitRepo)
-        {
-            gitStatus = "[grey39]Not a Git Repo[/]";
-        }
-        else if (hasUnstaged)
-        {
-            gitStatus = "[orange1]Dirty[/] [grey](Unstaged changes detected)[/]";
-        }
-        else
-        {
-            gitStatus = "[springgreen1]Clean[/]";
-        }
-        grid.AddRow("[grey39]Git Status[/]", gitStatus);
-
-        var backupStatus = backups.Count > 0
-            ? $"[cyan1]{backups.Count} backup set(s) available[/]"
-            : "[grey39]None[/]";
-        grid.AddRow("[grey39]Backups[/]", backupStatus);
+        grid.AddRow("[grey39]Solutions[/]", GetSolutionStatus(solutions.Count));
+        grid.AddRow("[grey39]Using CPM[/]", GetCpmStatus(directory));
+        grid.AddRow("[grey39]Git Status[/]", GetGitStatus(isGitRepo, hasUnstaged));
+        grid.AddRow("[grey39]Backups[/]", GetBackupStatus(backups.Count));
 
         if (targetFrameworks.Count > 0)
         {
@@ -516,6 +481,51 @@ public class SpectreConsoleService : IConsoleService
             AnsiConsole.Write(new Rule("[springgreen1]ANALYSIS COMPLETE: NO ISSUES[/]") { Style = Style.Parse("springgreen1") });
         }
     }
+
+    /// <summary>
+    /// Orders package versions, prioritizing parseable semantic versions in descending order,
+    /// followed by unparseable versions.
+    /// </summary>
+    private static List<string> GetOrderedVersions(HashSet<string> versions)
+    {
+        var parsed = versions
+            .Select(v => (Original: v, Parsed: NuGet.Versioning.NuGetVersion.TryParse(v, out var p) ? p : null))
+            .ToList();
+
+        return parsed
+            .Where(v => v.Parsed != null)
+            .OrderByDescending(v => v.Parsed)
+            .Select(v => v.Original)
+            .Concat(parsed.Where(v => v.Parsed == null).Select(v => v.Original))
+            .ToList();
+    }
+
+    private static string GetSolutionStatus(int count) =>
+        count > 0
+            ? $"[springgreen1]{count} solution(s) detected[/]"
+            : "[orange1]No solutions found here[/]";
+
+    private static string GetCpmStatus(string directory) =>
+        File.Exists(Path.Combine(directory, "Directory.Packages.props"))
+            ? "[deeppink1]YES[/] [grey](Directory.Packages.props detected)[/]"
+            : "[grey39]NO[/]";
+
+    private static string GetGitStatus(bool isGitRepo, bool hasUnstaged)
+    {
+        if (!isGitRepo)
+        {
+            return "[grey39]Not a Git Repo[/]";
+        }
+
+        return hasUnstaged
+            ? "[orange1]Dirty[/] [grey](Unstaged changes detected)[/]"
+            : "[springgreen1]Clean[/]";
+    }
+
+    private static string GetBackupStatus(int count) =>
+        count > 0
+            ? $"[cyan1]{count} backup set(s) available[/]"
+            : "[grey39]None[/]";
 
     private static string EscapeMarkup(string text)
     {
