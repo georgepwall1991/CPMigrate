@@ -76,16 +76,8 @@ internal class MigrationDisplay
         _consoleService.Info("1. Review the generated Directory.Packages.props file");
         _consoleService.Dim($"   Location: {propsFilePath}");
 
-        if (!options.NoRestore)
-        {
-            _consoleService.Info("2. Build your solution to verify everything works:");
-            _consoleService.Dim("   dotnet build");
-        }
-        else
-        {
-            _consoleService.Info("2. Restore packages and build:");
-            _consoleService.Dim("   dotnet restore && dotnet build");
-        }
+        _consoleService.Info("2. Restore packages and build:");
+        _consoleService.Dim("   dotnet restore && dotnet build");
 
         _consoleService.Info("3. Commit the changes:");
         _consoleService.Dim("   git add .");
@@ -108,8 +100,9 @@ internal class MigrationDisplay
         _consoleService.Info("This directory appears to be already migrated to CPM.");
         _consoleService.Dim("Use --force to overwrite the existing file, or delete it manually.");
 
-        return new MigrationResult(ExitCodes.Success)
+        return new MigrationResult
         {
+            ExitCode = ExitCodes.Success,
             PropsFilePath = propsPath
         };
     }

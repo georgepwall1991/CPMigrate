@@ -1,4 +1,5 @@
 using CPMigrate.Models;
+using CPMigrate.Services.Interactive;
 using Spectre.Console;
 
 namespace CPMigrate.Services;
@@ -10,6 +11,7 @@ namespace CPMigrate.Services;
 public class InteractiveService : IInteractiveService
 {
     private readonly IConsoleService _console;
+    private readonly EnvironmentAnalyzer _environmentAnalyzer;
 
     private const string ModeMigrate = "🚀 Migrate to Central Package Management";
     private const string ModeAnalyze = "🔍 Analyze packages for issues";
@@ -29,6 +31,7 @@ public class InteractiveService : IInteractiveService
     public InteractiveService(IConsoleService console)
     {
         _console = console;
+        _environmentAnalyzer = new EnvironmentAnalyzer(console);
     }
 
     /// <inheritdoc />
@@ -37,7 +40,7 @@ public class InteractiveService : IInteractiveService
         try
         {
             _console.WriteHeader();
-            var context = AnalyzeEnvironment();
+            var context = _environmentAnalyzer.Analyze();
             _console.WriteStatusDashboard(context.Directory, context.Solutions, context.Backups, context.IsGitRepo, context.HasUnstaged, context.TargetFrameworks);
 
             if (context.ConflictCount > 0 || context.ProjectCount > 0)
@@ -135,88 +138,7 @@ public class InteractiveService : IInteractiveService
         }
     }
 
-    private class EnvContext
-    {
-        public string Directory = "";
-        public List<string> Solutions = new();
-        public List<BackupSetInfo> Backups = new();
-        public bool IsGitRepo;
-        public bool HasUnstaged;
-        public bool IsCpm;
-        public int ProjectCount;
-        public int ConflictCount;
-#pragma warning disable CS0649 // Reserved for future vulnerability analysis feature
-        public int VulnerabilityCount;
-#pragma warning restore CS0649
-        public Dictionary<string, int> TargetFrameworks = new();
-    }
-
-    private EnvContext AnalyzeEnvironment()
-    {
-        var ctx = new EnvContext { Directory = Directory.GetCurrentDirectory() };
-        ctx.Solutions = ProjectAnalyzer.GetSolutionFiles(ctx.Directory).ToList();
-        ctx.IsCpm = File.Exists(Path.Combine(ctx.Directory, "Directory.Packages.props"));
-
-        var backupManager = new BackupManager();
-        ctx.Backups = backupManager.GetBackupHistory(Path.Combine(ctx.Directory, ".cpmigrate_backup"));
-        ctx.IsGitRepo = Directory.Exists(Path.Combine(ctx.Directory, ".git"));
-
-        if (ctx.IsGitRepo)
-        {
-            try
-            {
-                using var process = new System.Diagnostics.Process();
-                process.StartInfo.FileName = "git";
-                process.StartInfo.Arguments = "status --porcelain";
-                process.StartInfo.WorkingDirectory = ctx.Directory;
-                process.StartInfo.UseShellExecute = false;
-                process.StartInfo.RedirectStandardOutput = true;
-                process.StartInfo.CreateNoWindow = true;
-                process.Start();
-                var output = process.StandardOutput.ReadToEnd();
-                process.WaitForExit();
-                ctx.HasUnstaged = !string.IsNullOrWhiteSpace(output);
-            }
-            catch { }
-        }
-
-        // Deep scan for risk assessment
-        var analyzer = new ProjectAnalyzer(_console);
-        var (basePath, projects) = analyzer.DiscoverProjectsFromSolution(ctx.Directory);
-        if (projects.Count == 0)
-        {
-            (basePath, projects) = analyzer.DiscoverProjectFromPath(ctx.Directory);
-        }
-
-        ctx.ProjectCount = projects.Count;
-        if (projects.Count > 0)
-        {
-            var packages = new Dictionary<string, HashSet<string>>();
-
-            foreach (var p in projects)
-            {
-                analyzer.ScanProjectPackages(p, packages);
-
-                var tfm = analyzer.GetTargetFramework(p);
-                foreach (var tf in tfm.Split(';', StringSplitOptions.RemoveEmptyEntries))
-                {
-                    if (!ctx.TargetFrameworks.ContainsKey(tf))
-                    {
-                        ctx.TargetFrameworks[tf] = 0;
-                    }
-
-                    ctx.TargetFrameworks[tf]++;
-                }
-            }
-
-            var resolver = new VersionResolver(_console);
-            ctx.ConflictCount = resolver.DetectConflicts(packages).Count;
-        }
-
-        return ctx;
-    }
-
-    private string AskQuickAction(EnvContext ctx)
+    private string AskQuickAction(EnvironmentContext ctx)
     {
         var migrationActions = new List<string>();
         var maintenanceActions = new List<string>();

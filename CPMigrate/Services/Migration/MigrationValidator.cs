@@ -28,7 +28,7 @@ internal class MigrationValidator
         catch (ArgumentException ex)
         {
             _consoleService.Error(ex.Message);
-            errorResult = new MigrationResult(ExitCodes.ValidationError);
+            errorResult = new MigrationResult { ExitCode = ExitCodes.ValidationError };
             return false;
         }
     }
@@ -41,7 +41,7 @@ internal class MigrationValidator
         if (string.IsNullOrEmpty(outputPath))
         {
             _consoleService.Error("Output directory cannot be empty.");
-            return new MigrationResult(ExitCodes.ValidationError);
+            return new MigrationResult { ExitCode = ExitCodes.ValidationError };
         }
 
         try
@@ -59,7 +59,7 @@ internal class MigrationValidator
         catch (Exception ex)
         {
             _consoleService.Error($"Failed to create output directory: {ex.Message}");
-            return new MigrationResult(ExitCodes.FileOperationError);
+            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
         }
     }
 
