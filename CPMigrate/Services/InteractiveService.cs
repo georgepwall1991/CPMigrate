@@ -56,43 +56,14 @@ public class InteractiveService : IInteractiveService
                 return null;
             }
 
-            if (action.StartsWith("🚀 Fast-Track") || action.StartsWith("⚡️ Migrate"))
+            var result = ConfigureActionOptions(action, context, options);
+            if (result.EarlyReturn)
             {
-                // Intelligent defaults based on scan
-                options.SolutionFileDir = context.Solutions.FirstOrDefault() ?? context.Directory;
-                options.OutputDir = options.SolutionFileDir;
-                options.ConflictStrategy = ConflictStrategy.Highest;
-                options.BackupDir = ".";
-
-                if (action.Contains("Review Conflicts"))
-                {
-                    options.InteractiveConflicts = true;
-                }
-
-                _console.WriteLine();
-                _console.WriteMissionStatus(0);
+                return options; // Batch or backup management configured their own options
             }
-            else
-            {
-                // Map legacy modes
-                if (action.Contains("Analyze"))
-                {
-                    options.Analyze = true;
-                }
-                else if (action.Contains("Security Audit"))
-                { options.Analyze = true; options.AuditSecurity = true; options.IncludeTransitive = true; }
-                else if (action.Contains("Rollback"))
-                {
-                    options.Rollback = true;
-                }
-                else if (action.Contains("Batch"))
-                { AskBatchOptions(options); return options; }
-                else if (action.Contains("Manage Backups"))
-                { AskBackupManagementOptions(options); return options; }
-                else if (action.Contains("Unify Directory.Build.props"))
-                { options.UnifyProps = true; }
 
-                // Standard discovery for non-fast-track
+            if (result.NeedsPath)
+            {
                 var path = AskSolutionPath();
                 if (path == null)
                 {
@@ -524,6 +495,65 @@ public class InteractiveService : IInteractiveService
     private bool AskConfirmation()
     {
         return _console.AskConfirmation("Proceed?");
+    }
+
+    /// <summary>
+    /// Configures options based on the selected action and determines if solution path discovery is needed.
+    /// </summary>
+    private (bool NeedsPath, bool EarlyReturn) ConfigureActionOptions(
+        string action,
+        EnvironmentContext context,
+        Options options)
+    {
+        // Fast-track migration with intelligent defaults
+        if (action.StartsWith("🚀 Fast-Track") || action.StartsWith("⚡️ Migrate"))
+        {
+            options.SolutionFileDir = context.Solutions.FirstOrDefault() ?? context.Directory;
+            options.OutputDir = options.SolutionFileDir;
+            options.ConflictStrategy = ConflictStrategy.Highest;
+            options.BackupDir = ".";
+
+            if (action.Contains("Review Conflicts"))
+            {
+                options.InteractiveConflicts = true;
+            }
+
+            _console.WriteLine();
+            _console.WriteMissionStatus(0);
+            return (false, false);
+        }
+
+        // Map actions to option flags
+        if (action.Contains("Analyze"))
+        {
+            options.Analyze = true;
+        }
+        else if (action.Contains("Security Audit"))
+        {
+            options.Analyze = true;
+            options.AuditSecurity = true;
+            options.IncludeTransitive = true;
+        }
+        else if (action.Contains("Rollback"))
+        {
+            options.Rollback = true;
+        }
+        else if (action.Contains("Batch"))
+        {
+            AskBatchOptions(options);
+            return (false, true); // Early return
+        }
+        else if (action.Contains("Manage Backups"))
+        {
+            AskBackupManagementOptions(options);
+            return (false, true); // Early return
+        }
+        else if (action.Contains("Unify Directory.Build.props"))
+        {
+            options.UnifyProps = true;
+        }
+
+        return (true, false); // Needs path discovery
     }
 
     private static string EscapeMarkup(string text) => Markup.Escape(text);
