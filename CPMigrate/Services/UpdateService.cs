@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using CPMigrate.Models;
@@ -11,13 +12,18 @@ public class UpdateService : IUpdateService
     private const string PackageId = "CPMigrate";
     private readonly HttpClient _httpClient;
     private readonly IConsoleService _consoleService;
+    private readonly IProcessRunner _processRunner;
 
-    public UpdateService(IConsoleService consoleService)
+    public UpdateService(IConsoleService consoleService, HttpClient? httpClient = null, IProcessRunner? processRunner = null)
     {
         _consoleService = consoleService;
-        _httpClient = new HttpClient();
-        _httpClient.Timeout = TimeSpan.FromSeconds(3); // Fast timeout to not block UI
-        _httpClient.DefaultRequestHeaders.Add("User-Agent", "CPMigrate-CLI");
+        _httpClient = httpClient ?? new HttpClient();
+        if (httpClient == null)
+        {
+            _httpClient.Timeout = TimeSpan.FromSeconds(3); // Fast timeout to not block UI
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "CPMigrate-CLI");
+        }
+        _processRunner = processRunner ?? new ProcessRunner();
     }
 
     public async Task<NuGetVersion?> CheckForUpdatesAsync()
@@ -124,20 +130,19 @@ public class UpdateService : IUpdateService
             {
                 try
                 {
-                    using var process = new System.Diagnostics.Process();
-                    process.StartInfo.FileName = "dotnet";
-                    process.StartInfo.Arguments = $"tool update -g {PackageId}";
-                    process.StartInfo.RedirectStandardOutput = true;
-                    process.StartInfo.RedirectStandardError = true;
-                    process.StartInfo.UseShellExecute = false;
-                    process.StartInfo.CreateNoWindow = true;
+                    var startInfo = new ProcessStartInfo
+                    {
+                        FileName = "dotnet",
+                        Arguments = $"tool update -g {PackageId}",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
 
-                    process.Start();
-                    var output = process.StandardOutput.ReadToEnd();
-                    var error = process.StandardError.ReadToEnd();
-                    process.WaitForExit();
+                    var (exitCode, output, error) = _processRunner.Run(startInfo);
 
-                    if (process.ExitCode == 0)
+                    if (exitCode == 0)
                     {
                         _consoleService.Success("Successfully updated CPMigrate! Please restart the tool.");
                         return true;
