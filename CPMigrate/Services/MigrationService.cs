@@ -510,80 +510,133 @@ public class MigrationService
 
         if (options.ConflictStrategy == ConflictStrategy.Fail)
         {
-            _consoleService.Error("Version conflicts detected and --conflict-strategy is set to Fail.");
-            if (!_quietMode)
-            {
-                _consoleService.WriteMarkup("[dim]Resolve the conflicts manually or use --conflict-strategy Highest|Lowest.[/]\n");
-            }
-            return new MigrationResult { ExitCode = ExitCodes.VersionConflict };
+            return HandleFailStrategy();
         }
 
-        // Interactive conflict resolution
         if (options.InteractiveConflicts)
         {
-            _consoleService.WriteLine();
-            _consoleService.Banner("INTERACTIVE CONFLICT RESOLUTION");
-            _consoleService.WriteLine();
-            _consoleService.Info("Select the version to use for each package with conflicts:");
-            _consoleService.WriteLine();
-
-            // We need to count usage across all projects to show impact
-            var usageCounts = new Dictionary<string, Dictionary<string, int>>();
-            var (_, projectPaths) = DiscoverProjects(options);
-            foreach (var path in projectPaths)
-            {
-                var (refs, _) = _projectAnalyzer.ScanProjectPackages(path);
-                foreach (var r in refs)
-                {
-                    if (!usageCounts.ContainsKey(r.PackageName))
-                    {
-                        usageCounts[r.PackageName] = new Dictionary<string, int>();
-                    }
-
-                    if (!usageCounts[r.PackageName].ContainsKey(r.Version))
-                    {
-                        usageCounts[r.PackageName][r.Version] = 0;
-                    }
-
-                    usageCounts[r.PackageName][r.Version]++;
-                }
-            }
-
-            foreach (var packageName in conflicts)
-            {
-                if (!packages.TryGetValue(packageName, out var versions))
-                {
-                    continue;
-                }
-
-                var versionList = versions.OrderByDescending(v => v).ToList();
-                var recommended = _versionResolver.ResolveVersion(versions, options.ConflictStrategy);
-
-                var choices = versionList.Select(v =>
-                {
-                    var count = usageCounts.ContainsKey(packageName) && usageCounts[packageName].ContainsKey(v)
-                        ? usageCounts[packageName][v] : 1;
-                    var label = $"{v} (Used by {count} project{(count == 1 ? "" : "s")})";
-                    if (v == recommended)
-                    {
-                        label += " [springgreen1]**Recommended**[/]";
-                    }
-
-                    return label;
-                }).ToList();
-
-                var selected = _consoleService.AskSelection($"Version for {packageName}?", choices);
-                var selectedVersion = selected.Split(' ')[0];
-
-                // Update packages to only contain selected version
-                packages[packageName] = new HashSet<string> { selectedVersion };
-            }
-
-            _consoleService.WriteLine();
-            _consoleService.Success("All conflicts resolved interactively.");
+            ResolveConflictsInteractively(options, packages, conflicts);
         }
 
         return null;
+    }
+
+    private MigrationResult HandleFailStrategy()
+    {
+        _consoleService.Error("Version conflicts detected and --conflict-strategy is set to Fail.");
+        if (!_quietMode)
+        {
+            _consoleService.WriteMarkup("[dim]Resolve the conflicts manually or use --conflict-strategy Highest|Lowest.[/]\n");
+        }
+        return new MigrationResult { ExitCode = ExitCodes.VersionConflict };
+    }
+
+    private void ResolveConflictsInteractively(
+        Options options,
+        Dictionary<string, HashSet<string>> packages,
+        List<string> conflicts)
+    {
+        _consoleService.WriteLine();
+        _consoleService.Banner("INTERACTIVE CONFLICT RESOLUTION");
+        _consoleService.WriteLine();
+        _consoleService.Info("Select the version to use for each package with conflicts:");
+        _consoleService.WriteLine();
+
+        var usageCounts = BuildPackageUsageCounts(options);
+
+        foreach (var packageName in conflicts)
+        {
+            ProcessConflictChoice(options, packages, packageName, usageCounts);
+        }
+
+        _consoleService.WriteLine();
+        _consoleService.Success("All conflicts resolved interactively.");
+    }
+
+    private Dictionary<string, Dictionary<string, int>> BuildPackageUsageCounts(Options options)
+    {
+        var usageCounts = new Dictionary<string, Dictionary<string, int>>();
+        var (_, projectPaths) = DiscoverProjects(options);
+
+        foreach (var path in projectPaths)
+        {
+            var (refs, _) = _projectAnalyzer.ScanProjectPackages(path);
+            foreach (var reference in refs)
+            {
+                AddToUsageCounts(usageCounts, reference.PackageName, reference.Version);
+            }
+        }
+
+        return usageCounts;
+    }
+
+    private static void AddToUsageCounts(
+        Dictionary<string, Dictionary<string, int>> usageCounts,
+        string packageName,
+        string version)
+    {
+        if (!usageCounts.ContainsKey(packageName))
+        {
+            usageCounts[packageName] = new Dictionary<string, int>();
+        }
+
+        if (!usageCounts[packageName].ContainsKey(version))
+        {
+            usageCounts[packageName][version] = 0;
+        }
+
+        usageCounts[packageName][version]++;
+    }
+
+    private void ProcessConflictChoice(
+        Options options,
+        Dictionary<string, HashSet<string>> packages,
+        string packageName,
+        Dictionary<string, Dictionary<string, int>> usageCounts)
+    {
+        if (!packages.TryGetValue(packageName, out var versions))
+        {
+            return;
+        }
+
+        var versionList = versions.OrderByDescending(v => v).ToList();
+        var recommended = _versionResolver.ResolveVersion(versions, options.ConflictStrategy);
+
+        var choices = BuildVersionChoices(packageName, versionList, recommended, usageCounts);
+        var selected = _consoleService.AskSelection($"Version for {packageName}?", choices);
+        var selectedVersion = selected.Split(' ')[0];
+
+        packages[packageName] = new HashSet<string> { selectedVersion };
+    }
+
+    private static List<string> BuildVersionChoices(
+        string packageName,
+        List<string> versions,
+        string recommended,
+        Dictionary<string, Dictionary<string, int>> usageCounts)
+    {
+        return versions.Select(v =>
+        {
+            var count = GetVersionUsageCount(usageCounts, packageName, v);
+            var label = $"{v} (Used by {count} project{(count == 1 ? "" : "s")})";
+
+            if (v == recommended)
+            {
+                label += " [springgreen1]**Recommended**[/]";
+            }
+
+            return label;
+        }).ToList();
+    }
+
+    private static int GetVersionUsageCount(
+        Dictionary<string, Dictionary<string, int>> usageCounts,
+        string packageName,
+        string version)
+    {
+        return usageCounts.ContainsKey(packageName) && usageCounts[packageName].ContainsKey(version)
+            ? usageCounts[packageName][version]
+            : 1;
     }
 
     /// <summary>
