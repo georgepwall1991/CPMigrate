@@ -114,7 +114,23 @@ internal class MigrationDisplay
                 try
                 {
                     using var process = new System.Diagnostics.Process();
-                    process.StartInfo.FileName = "dotnet";
+                    // Security: Try to use the absolute path of the dotnet host to avoid PATH injection
+                    var dotnetPath = "dotnet";
+                    try
+                    {
+                        var mainModule = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                        if (!string.IsNullOrEmpty(mainModule) &&
+                            (mainModule.EndsWith("dotnet", StringComparison.OrdinalIgnoreCase) ||
+                             mainModule.EndsWith("dotnet.exe", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            dotnetPath = mainModule;
+                        }
+                    }
+                    catch
+                    {
+                        // Fallback to simpler PATH resolution if module access fails
+                    }
+                    process.StartInfo.FileName = dotnetPath;
                     process.StartInfo.Arguments = "restore";
                     process.StartInfo.WorkingDirectory = workingDirectory;
                     process.StartInfo.UseShellExecute = false;
