@@ -887,7 +887,7 @@ public class MigrationService
         }
 
         // Read manifest
-        var manifest = await _backupManager.ReadManifestAsync(backupPath);
+        var manifest = await BackupManager.ReadManifestAsync(backupPath);
         if (manifest == null)
         {
             _consoleService.Error("No backup manifest found or manifest is corrupted.");
@@ -941,7 +941,7 @@ public class MigrationService
 
                     try
                     {
-                        _backupManager.RestoreFile(backupPath, entry);
+                        BackupManager.RestoreFile(backupPath, entry);
                         restoredCount++;
                     }
                     catch (Exception ex)
@@ -982,7 +982,7 @@ public class MigrationService
             }
 
             // Clean up backups only on full success
-            var cleanupErrors = _backupManager.CleanupBackups(backupPath, manifest);
+            var cleanupErrors = BackupManager.CleanupBackups(backupPath, manifest);
             if (cleanupErrors.Count == 0)
             {
                 _consoleService.Dim("Cleaned up backup files.");

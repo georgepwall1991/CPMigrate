@@ -51,7 +51,7 @@ public class PropsGenerator
             // Resolve to single version if multiple exist
             var version = kvp.Value.Count > 1
                 ? _versionResolver.ResolveVersion(kvp.Value, strategy)
-                : kvp.Value[0];
+                : kvp.Value.First();
 
             // XML-encode package name and version to prevent XML injection
             var safePackageName = SecurityElement.Escape(kvp.Key) ?? kvp.Key;
@@ -163,7 +163,7 @@ public class PropsGenerator
 
             var resolvedVersion = kvp.Value.Count > 1
                 ? _versionResolver.ResolveVersion(kvp.Value, strategy)
-                : kvp.Value[0];
+                : kvp.Value.First();
 
             if (itemsByPackage.TryGetValue(kvp.Key, out var existingItems))
             {
