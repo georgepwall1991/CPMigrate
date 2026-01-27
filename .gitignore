@@ -44,3 +44,6 @@ Thumbs.db
 # CPMigrate backup directory
 .cpmigrate_backup/
 .complexity-log.md
+
+# SonarCloud (config is in GitHub Actions workflow, not sonar-project.properties)
+sonar-project.properties
