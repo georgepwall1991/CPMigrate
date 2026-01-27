@@ -43,3 +43,4 @@ Thumbs.db
 
 # CPMigrate backup directory
 .cpmigrate_backup/
+.complexity-log.md
