@@ -114,11 +114,13 @@ internal class MigrationValidator
     public static (string OutputPath, string PropsPath) GetOutputPaths(Options options)
     {
         string outputPath;
-        if (!string.IsNullOrEmpty(options.OutputDir))
+
+        // Prioritize OutputDir only if it's not the default or if nothing else is specified
+        if (!string.IsNullOrEmpty(options.OutputDir) && options.OutputDir != ".")
         {
             outputPath = options.OutputDir;
         }
-        else if (!string.IsNullOrEmpty(options.SolutionFileDir))
+        else if (!string.IsNullOrEmpty(options.SolutionFileDir) && options.SolutionFileDir != ".")
         {
             outputPath = options.SolutionFileDir;
         }
@@ -128,7 +130,8 @@ internal class MigrationValidator
         }
         else
         {
-            outputPath = ".";
+            // Fallback to whatever is in OutputDir (likely ".")
+            outputPath = options.OutputDir ?? ".";
         }
 
         var propsPath = Path.Combine(outputPath, "Directory.Packages.props");

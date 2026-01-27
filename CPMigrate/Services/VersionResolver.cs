@@ -19,10 +19,26 @@ public class VersionResolver
     /// </summary>
     /// <param name="packageVersions">Dictionary mapping package names to their version sets.</param>
     /// <returns>List of package names that have version conflicts, sorted alphabetically.</returns>
-    public static List<string> DetectConflicts(Dictionary<string, HashSet<string>> packageVersions)
+    public static List<string> DetectConflicts(
+        Dictionary<string, HashSet<string>> packageVersions,
+        Dictionary<string, HashSet<string>>? existingPackageVersions = null)
     {
         return packageVersions
-            .Where(kvp => kvp.Value.Count > 1)
+            .Where(kvp =>
+            {
+                if (kvp.Value.Count <= 1)
+                {
+                    return false;
+                }
+
+                // If we have multiple versions, check if they are already accounted for by conditions in existing props
+                if (existingPackageVersions != null && existingPackageVersions.TryGetValue(kvp.Key, out var allowed) && kvp.Value.IsSubsetOf(allowed))
+                {
+                    return false;
+                }
+
+                return true;
+            })
             .Select(kvp => kvp.Key)
             .OrderBy(name => name)
             .ToList();

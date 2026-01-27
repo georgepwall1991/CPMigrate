@@ -206,6 +206,23 @@ public class PropsGenerator
 
             if (itemsByPackage.TryGetValue(kvp.Key, out var existingItems))
             {
+                // Graceful refinement for conditional versions:
+                // If there are multiple existing items (conditional) and they already cover 
+                // all versions found (including existing ones), don't flatten them.
+                if (existingItems.Count > 1)
+                {
+                    var existingVersions = existingItems
+                        .Select(item => GetMetadataValue(item, VersionMetadataName))
+                        .Where(v => !string.IsNullOrEmpty(v))
+                        .Select(v => v!)
+                        .ToHashSet();
+
+                    if (kvp.Value.IsSubsetOf(existingVersions))
+                    {
+                        continue;
+                    }
+                }
+
                 if (UpdateExistingItems(existingItems, resolvedVersion))
                 {
                     updatedCount++;
