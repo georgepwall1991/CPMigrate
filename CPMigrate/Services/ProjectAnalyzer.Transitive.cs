@@ -65,7 +65,7 @@ public partial class ProjectAnalyzer
 
                 if (parsingTransitive && line.Trim().StartsWith('>'))
                 {
-                    var match = Regex.Match(line, @">\s*([^\s]+)\s+([^\s]+)");
+                    var match = Regex.Match(line, @">\s*([^\s]+)\s+([^\s]+)", RegexOptions.None, TimeSpan.FromSeconds(1));
                     if (match.Success)
                     {
                         var packageName = match.Groups[1].Value;
@@ -142,7 +142,7 @@ public partial class ProjectAnalyzer
                 if (parsingPackages && line.Trim().StartsWith('>'))
                 {
                     // Use a more robust regex or split
-                    var match = Regex.Match(line, @">\s*([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)");
+                    var match = Regex.Match(line, @">\s*([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)", RegexOptions.None, TimeSpan.FromSeconds(1));
                     if (match.Success)
                     {
                         vulnerabilities.Add(new VulnerabilityInfo(
