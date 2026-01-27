@@ -134,7 +134,7 @@ public class MigrationServiceRollbackTests : IDisposable
             });
         }
 
-        await _backupManager.WriteManifestAsync(backupPath, manifest);
+        await BackupManager.WriteManifestAsync(backupPath, manifest);
 
         return (projectPath, propsFilePath, backupPath);
     }

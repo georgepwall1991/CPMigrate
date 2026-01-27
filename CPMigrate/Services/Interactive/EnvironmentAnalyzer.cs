@@ -100,8 +100,7 @@ internal class EnvironmentAnalyzer
             AccumulateTargetFrameworks(ctx, targetFrameworks);
         }
 
-        var resolver = new VersionResolver(_console);
-        ctx.ConflictCount = resolver.DetectConflicts(packages).Count;
+        ctx.ConflictCount = VersionResolver.DetectConflicts(packages).Count;
     }
 
     /// <summary>

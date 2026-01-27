@@ -158,7 +158,7 @@ public class MigrationService
                 backupEntries.Add(propsBackupEntry);
             }
 
-            var conflicts = _versionResolver.DetectConflicts(packages);
+            var conflicts = VersionResolver.DetectConflicts(packages);
             var conflictError = HandleVersionConflicts(options, packages, conflicts);
             if (conflictError != null)
             {
@@ -506,7 +506,7 @@ public class MigrationService
             return null;
         }
 
-        var backupPath = _backupManager.CreateBackupDirectory(options);
+        var backupPath = BackupManager.CreateBackupDirectory(options);
         if (!string.IsNullOrEmpty(backupPath) && !_quietMode)
         {
             _consoleService.WriteMarkup($"[dim]:file_folder: Backup directory: {Markup.Escape(backupPath)}[/]\n");
@@ -640,7 +640,7 @@ public class MigrationService
             PropsFileExisted = propsFileExisted,
             Backups = backupEntries
         };
-        await _backupManager.WriteManifestAsync(backupPath, manifest);
+        await BackupManager.WriteManifestAsync(backupPath, manifest);
     }
 
     /// <summary>
@@ -650,7 +650,7 @@ public class MigrationService
     {
         if (!options.DryRun)
         {
-            await _backupManager.ManageGitIgnore(options, backupPath);
+            await BackupManager.ManageGitIgnore(options, backupPath);
         }
         else if (options.AddBackupToGitignore && !options.NoBackup && !_quietMode)
         {
@@ -876,7 +876,7 @@ public class MigrationService
         _consoleService.Banner("ROLLBACK MODE - Restoring from backup");
         _consoleService.WriteLine();
 
-        var backupPath = _backupManager.GetBackupDirectoryPath(options);
+        var backupPath = BackupManager.GetBackupDirectoryPath(options);
 
         // Check if backup directory exists
         if (!Directory.Exists(backupPath))
@@ -1266,7 +1266,7 @@ public class MigrationService
                 {
                     ProjectsProcessed = packageInfo.ProjectCount,
                     PackagesCentralized = packageInfo.TotalReferences,
-                    ExitCode = fixReport.FailedFixes.Count > 0
+                    ExitCode = fixReport.GetFailedFixes().Count > 0
                         ? ExitCodes.AnalysisIssuesFound  // Some fixes failed
                         : ExitCodes.Success              // All fixes succeeded
                 };

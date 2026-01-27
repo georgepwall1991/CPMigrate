@@ -28,7 +28,7 @@ public class BackupManagerTests : IDisposable
     {
         var options = new Options { NoBackup = true };
 
-        var result = _backupManager.CreateBackupDirectory(options);
+        var result = BackupManager.CreateBackupDirectory(options);
 
         result.Should().BeEmpty();
     }
@@ -42,7 +42,7 @@ public class BackupManagerTests : IDisposable
             BackupDir = _testDirectory
         };
 
-        var result = _backupManager.CreateBackupDirectory(options);
+        var result = BackupManager.CreateBackupDirectory(options);
 
         result.Should().NotBeEmpty();
         result.Should().EndWith(".cpmigrate_backup");
@@ -58,7 +58,7 @@ public class BackupManagerTests : IDisposable
             BackupDir = ""
         };
 
-        var result = _backupManager.CreateBackupDirectory(options);
+        var result = BackupManager.CreateBackupDirectory(options);
 
         result.Should().NotBeEmpty();
         result.Should().EndWith(".cpmigrate_backup");
@@ -130,7 +130,7 @@ public class BackupManagerTests : IDisposable
         };
         var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");
 
-        await _backupManager.ManageGitIgnore(options, backupPath);
+        await BackupManager.ManageGitIgnore(options, backupPath);
 
         var gitignorePath = Path.Combine(_testDirectory, ".gitignore");
         File.Exists(gitignorePath).Should().BeFalse();
@@ -148,7 +148,7 @@ public class BackupManagerTests : IDisposable
         var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupPath);
 
-        await _backupManager.ManageGitIgnore(options, backupPath);
+        await BackupManager.ManageGitIgnore(options, backupPath);
 
         var gitignorePath = Path.Combine(_testDirectory, ".gitignore");
         File.Exists(gitignorePath).Should().BeTrue();
@@ -174,7 +174,7 @@ public class BackupManagerTests : IDisposable
         var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupPath);
 
-        await _backupManager.ManageGitIgnore(options, backupPath);
+        await BackupManager.ManageGitIgnore(options, backupPath);
 
         var content = await File.ReadAllTextAsync(gitignorePath);
         content.Should().Contain("node_modules/");
@@ -197,7 +197,7 @@ public class BackupManagerTests : IDisposable
         var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupPath);
 
-        await _backupManager.ManageGitIgnore(options, backupPath);
+        await BackupManager.ManageGitIgnore(options, backupPath);
 
         var content = await File.ReadAllTextAsync(gitignorePath);
         var occurrences = content.Split(".cpmigrate_backup").Length - 1;
@@ -228,7 +228,7 @@ public class BackupManagerTests : IDisposable
             }
         };
 
-        await _backupManager.WriteManifestAsync(backupDir, manifest);
+        await BackupManager.WriteManifestAsync(backupDir, manifest);
 
         var manifestPath = Path.Combine(backupDir, "backup_manifest.json");
         File.Exists(manifestPath).Should().BeTrue();
@@ -255,7 +255,7 @@ public class BackupManagerTests : IDisposable
             }
         };
 
-        await _backupManager.WriteManifestAsync(backupDir, manifest);
+        await BackupManager.WriteManifestAsync(backupDir, manifest);
 
         var result = await _backupManager.ReadManifestAsync(backupDir);
 

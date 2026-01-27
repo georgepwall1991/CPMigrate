@@ -56,7 +56,11 @@ public class FixReport
     public int TotalFixesApplied => Results.Count(r => r.Success && r.Changes.Count > 0);
     public int TotalFileChanges => Results.Sum(r => r.Changes.Count);
     public bool HasChanges => TotalFileChanges > 0;
-    public IReadOnlyList<FixResult> FailedFixes => Results.Where(r => !r.Success).ToList();
+
+    /// <summary>
+    /// Gets the failed fix results.
+    /// </summary>
+    public IReadOnlyList<FixResult> GetFailedFixes() => Results.Where(r => !r.Success).ToList();
 }
 
 /// <summary>

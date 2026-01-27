@@ -19,7 +19,6 @@ public class InteractiveService : IInteractiveService
     private const string ModeRollback = "↩️  Rollback a previous migration";
     private const string ModeBackups = "💾 Manage backups (List/Prune)";
     private const string ModeUnifyProps = "🏗  Unify Directory.Build.props (Clean Architecture)";
-    private const string ModeExit = "❌ Exit";
 
     private const string ConflictHighest = "⬆️  Highest version (recommended)";
     private const string ConflictLowest = "⬇️  Lowest version";

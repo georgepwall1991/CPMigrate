@@ -16,7 +16,7 @@ public class VersionResolverTests
             ["PackageB"] = new() { "2.0.0" }
         };
 
-        var conflicts = _resolver.DetectConflicts(packageVersions);
+        var conflicts = VersionResolver.DetectConflicts(packageVersions);
 
         conflicts.Should().BeEmpty();
     }
@@ -31,7 +31,7 @@ public class VersionResolverTests
             ["PackageC"] = new() { "4.0.0", "5.0.0", "6.0.0" }
         };
 
-        var conflicts = _resolver.DetectConflicts(packageVersions);
+        var conflicts = VersionResolver.DetectConflicts(packageVersions);
 
         conflicts.Should().HaveCount(2);
         conflicts.Should().Contain("PackageA");
@@ -49,7 +49,7 @@ public class VersionResolverTests
             ["Mango"] = new() { "1.0.0", "2.0.0" }
         };
 
-        var conflicts = _resolver.DetectConflicts(packageVersions);
+        var conflicts = VersionResolver.DetectConflicts(packageVersions);
 
         conflicts.Should().BeInAscendingOrder();
     }

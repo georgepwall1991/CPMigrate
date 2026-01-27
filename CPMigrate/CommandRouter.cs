@@ -187,7 +187,7 @@ internal static class CommandRouter
             return ExitCodes.ValidationError;
         }
 
-        var backupPath = backupManager.GetBackupDirectoryPath(options);
+        var backupPath = BackupManager.GetBackupDirectoryPath(options);
         if (!Directory.Exists(backupPath))
         {
             consoleService.Error($"No backup directory found at: {backupPath}");

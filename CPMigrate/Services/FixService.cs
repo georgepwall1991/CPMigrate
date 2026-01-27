@@ -125,9 +125,10 @@ public class FixService
             _console.Info("No changes were needed.");
         }
 
-        if (report.FailedFixes.Count > 0)
+        var failedFixes = report.GetFailedFixes();
+        if (failedFixes.Count > 0)
         {
-            _console.Warning($"{report.FailedFixes.Count} issue(s) could not be fixed automatically.");
+            _console.Warning($"{failedFixes.Count} issue(s) could not be fixed automatically.");
         }
     }
 }

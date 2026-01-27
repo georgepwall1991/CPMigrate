@@ -25,7 +25,7 @@ public class BackupManager
     /// <param name="options">Migration options containing backup settings.</param>
     /// <returns>The full path to the created backup directory, or empty string if backups are disabled.</returns>
     /// <exception cref="IOException">Thrown when the backup directory cannot be created.</exception>
-    public string CreateBackupDirectory(Options options)
+    public static string CreateBackupDirectory(Options options)
     {
         if (options.NoBackup)
         {
@@ -94,7 +94,7 @@ public class BackupManager
     /// </summary>
     /// <param name="options">Migration options containing gitignore settings.</param>
     /// <param name="backupPath">Path to the backup directory to add to gitignore.</param>
-    public async Task ManageGitIgnore(Options options, string? backupPath)
+    public static async Task ManageGitIgnore(Options options, string? backupPath)
     {
         if (!options.AddBackupToGitignore || options.NoBackup || string.IsNullOrEmpty(backupPath))
         {
@@ -138,7 +138,7 @@ public class BackupManager
     /// </summary>
     /// <param name="backupPath">Path to the backup directory.</param>
     /// <param name="manifest">The manifest to write.</param>
-    public async Task WriteManifestAsync(string backupPath, BackupManifest manifest)
+    public static async Task WriteManifestAsync(string backupPath, BackupManifest manifest)
     {
         var manifestPath = Path.Combine(backupPath, ManifestFileName);
         var json = JsonSerializer.Serialize(manifest, JsonOptions);
@@ -177,7 +177,7 @@ public class BackupManager
     /// </summary>
     /// <param name="options">Migration options containing backup settings.</param>
     /// <returns>The full path to the backup directory.</returns>
-    public string GetBackupDirectoryPath(Options options)
+    public static string GetBackupDirectoryPath(Options options)
     {
         return Path.Combine(
             Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),

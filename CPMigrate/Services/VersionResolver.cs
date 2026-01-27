@@ -19,7 +19,7 @@ public class VersionResolver
     /// </summary>
     /// <param name="packageVersions">Dictionary mapping package names to their version sets.</param>
     /// <returns>List of package names that have version conflicts, sorted alphabetically.</returns>
-    public List<string> DetectConflicts(Dictionary<string, HashSet<string>> packageVersions)
+    public static List<string> DetectConflicts(Dictionary<string, HashSet<string>> packageVersions)
     {
         return packageVersions
             .Where(kvp => kvp.Value.Count > 1)
@@ -93,10 +93,10 @@ public class VersionResolver
 
         var selectedVersion = strategy switch
         {
-            ConflictStrategy.Highest => parseableVersions.Last(),
-            ConflictStrategy.Lowest => parseableVersions.First(),
-            ConflictStrategy.Fail => parseableVersions.Last(), // Should be handled by caller logic
-            _ => parseableVersions.Last()
+            ConflictStrategy.Highest => parseableVersions[parseableVersions.Count - 1],
+            ConflictStrategy.Lowest => parseableVersions[0],
+            ConflictStrategy.Fail => parseableVersions[parseableVersions.Count - 1], // Should be handled by caller logic
+            _ => parseableVersions[parseableVersions.Count - 1]
         };
 
         return selectedVersion.Parsed!.ToNormalizedString();
