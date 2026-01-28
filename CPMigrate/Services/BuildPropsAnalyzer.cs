@@ -8,8 +8,8 @@ public class BuildPropsAnalyzer
     private readonly IConsoleService _consoleService;
 
     // Properties that are typically unique to a project and should not be moved to Directory.Build.props
-    private static readonly HashSet<string> IgnoredProperties = new(StringComparer.OrdinalIgnoreCase)
-    {
+    private static readonly HashSet<string> IgnoredProperties =
+    [
         "ProjectGuid",
         "AssemblyName",
         "RootNamespace",
@@ -20,7 +20,7 @@ public class BuildPropsAnalyzer
         "Win32Resource",
         "SignAssembly",
         "AssemblyOriginatorKeyFile"
-    };
+    ];
 
     public BuildPropsAnalyzer(IConsoleService consoleService)
     {
@@ -72,12 +72,13 @@ public class BuildPropsAnalyzer
 
                 var key = $"{property.Name}|{property.Value}";
 
-                if (!result.PropertyOccurrences.ContainsKey(key))
+                if (!result.PropertyOccurrences.TryGetValue(key, out var list))
                 {
-                    result.PropertyOccurrences[key] = new List<ProjectProperty>();
+                    list = [];
+                    result.PropertyOccurrences[key] = list;
                 }
 
-                result.PropertyOccurrences[key].Add(new ProjectProperty(
+                list.Add(new ProjectProperty(
                     property.Name,
                     property.Value,
                     projectPath
@@ -114,12 +115,13 @@ public class BuildPropsAnalyzer
                 var metadata = item.Metadata.ToDictionary(m => m.Name, m => m.Value);
                 var key = CreateItemKey(item, metadata);
 
-                if (!result.ItemOccurrences.ContainsKey(key))
+                if (!result.ItemOccurrences.TryGetValue(key, out var itemList))
                 {
-                    result.ItemOccurrences[key] = new List<ProjectItem>();
+                    itemList = [];
+                    result.ItemOccurrences[key] = itemList;
                 }
 
-                result.ItemOccurrences[key].Add(new ProjectItem(
+                itemList.Add(new ProjectItem(
                     item.ItemType,
                     item.Include,
                     projectPath,

@@ -126,8 +126,8 @@ public class MigrationService
                 _display.ShowDiscoveredProjects(basePath, projectPaths);
             }
 
-            var packages = new Dictionary<string, HashSet<string>>();
-            var existingPackages = new Dictionary<string, HashSet<string>>();
+            Dictionary<string, HashSet<string>> packages = [];
+            Dictionary<string, HashSet<string>> existingPackages = [];
             var propsFileExisted = propsFileExists;
             var hadConditionalPackageVersions = false;
 
@@ -160,7 +160,7 @@ public class MigrationService
                 ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
                 : null;
             var propsBackupEntry = CreatePropsBackup(options, propsFileExists, propsPath, backupPath, backupTimestamp);
-            var backupEntries = new List<BackupEntry>();
+            List<BackupEntry> backupEntries = [];
 
             if (propsBackupEntry != null)
             {
@@ -383,7 +383,7 @@ public class MigrationService
     {
         if (!usageCounts.ContainsKey(packageName))
         {
-            usageCounts[packageName] = new Dictionary<string, int>();
+            usageCounts[packageName] = [];
         }
 
         if (!usageCounts[packageName].ContainsKey(version))
@@ -412,7 +412,7 @@ public class MigrationService
         var selected = _consoleService.AskSelection($"Version for {packageName}?", choices);
         var selectedVersion = selected.Split(' ')[0];
 
-        packages[packageName] = new HashSet<string> { selectedVersion };
+        packages[packageName] = [selectedVersion];
     }
 
     private static List<string> BuildVersionChoices(
@@ -501,13 +501,13 @@ public class MigrationService
         }
 
         _consoleService.Error("Either solution (-s) or project (-p) path must be specified.");
-        return (string.Empty, new List<string>());
+        return (string.Empty, []);
     }
 
     private async Task<List<BackupEntry>> ProcessProjectsWithProgressAsync(Options options, List<string> projectPaths,
         Dictionary<string, HashSet<string>> packages, string? backupPath, string? backupTimestamp)
     {
-        var backupEntries = new List<BackupEntry>();
+        List<BackupEntry> backupEntries = [];
 
         // Process without progress bar in quiet mode
         if (_quietMode)
