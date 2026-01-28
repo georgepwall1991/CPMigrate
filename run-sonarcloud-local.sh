@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}=== CPMigrate SonarCloud Local Analysis ===${NC}"
 
 # Check if token is set
-if [ -z "$SONAR_TOKEN" ]; then
+if [[ -z "$SONAR_TOKEN" ]]; then
     echo -e "${RED}Error: SONAR_TOKEN environment variable not set${NC}"
     echo "Set it with: export SONAR_TOKEN=\"your_token_here\""
     echo "Get your token from: https://sonarcloud.io/account/security"

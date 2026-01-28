@@ -25,37 +25,14 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
     public (string BasePath, List<string> ProjectPaths) DiscoverProjectsFromSolution(string solutionPath)
     {
         var projectPaths = new List<string>();
-        var fullPath = Path.GetFullPath(solutionPath);
+        var fullPath = ResolveSolutionFilePath(solutionPath);
 
-        if (Directory.Exists(fullPath))
+        if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath))
         {
-            // Discover both .sln and .slnx solution files
-            var slnFiles = GetSolutionFiles(fullPath);
-            if (slnFiles.Length == 0)
-            {
-                _consoleService.Info("No solution file found in the specified directory.");
-                return (string.Empty, projectPaths);
-            }
-
-            if (slnFiles.Length > 1)
-            {
-                fullPath = PromptForSolutionSelection(slnFiles);
-                // Re-validate selected file exists (defensive - shouldn't fail but protects against race conditions)
-                if (!File.Exists(fullPath))
-                {
-                    _consoleService.Error($"Selected solution file no longer exists: {Path.GetFileName(fullPath)}");
-                    return (string.Empty, projectPaths);
-                }
-            }
-            else
-            {
-                fullPath = slnFiles[0];
-            }
-        }
-
-        if (!File.Exists(fullPath))
-        {
-            _consoleService.Info("Solution file not found.");
+            var message = fullPath == null
+                ? "No solution file found in the specified directory."
+                : "Solution file not found.";
+            _consoleService.Info(message);
             return (string.Empty, projectPaths);
         }
 
@@ -68,48 +45,9 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
 
         try
         {
-            // Use Microsoft.VisualStudio.SolutionPersistence for unified .sln/.slnx parsing
-            var serializer = SolutionSerializers.GetSerializerByMoniker(fullPath);
-            if (serializer == null)
+            if (!DiscoverProjectsInSolution(fullPath, basePath, projectPaths))
             {
-                _consoleService.Error($"Unsupported solution file format: {Path.GetExtension(fullPath)}");
                 return (string.Empty, projectPaths);
-            }
-
-            var solution = serializer
-                .OpenAsync(fullPath, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
-
-            var validProjects = solution.SolutionProjects
-                .Where(p => !string.IsNullOrEmpty(p.FilePath))
-                .Select(p => (Project: p, Extension: GetSafeExtension(p.FilePath)))
-                .Where(t => t.Extension is ".csproj" or ".fsproj" or ".vbproj");
-
-            foreach (var (project, _) in validProjects)
-            {
-                var absolutePath = Path.GetFullPath(Path.Combine(basePath, project.FilePath));
-                if (File.Exists(absolutePath))
-                {
-                    projectPaths.Add(absolutePath);
-                    _consoleService.Info($"Found project: {Path.GetFileNameWithoutExtension(project.FilePath)}");
-                }
-                else
-                {
-                    _consoleService.Warning($"Project found in solution but file missing: {absolutePath}");
-                }
-            }
-
-            static string? GetSafeExtension(string filePath)
-            {
-                try
-                {
-                    return Path.GetExtension(filePath)?.ToLowerInvariant();
-                }
-                catch
-                {
-                    return null;
-                }
             }
         }
         catch (Exception ex)
@@ -119,6 +57,79 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
         }
 
         return (basePath, projectPaths);
+    }
+
+    private string? ResolveSolutionFilePath(string solutionPath)
+    {
+        var fullPath = Path.GetFullPath(solutionPath);
+
+        if (!Directory.Exists(fullPath))
+        {
+            return fullPath;
+        }
+
+        var slnFiles = GetSolutionFiles(fullPath);
+        if (slnFiles.Length == 0)
+        {
+            return null;
+        }
+
+        if (slnFiles.Length == 1)
+        {
+            return slnFiles[0];
+        }
+
+        var selected = PromptForSolutionSelection(slnFiles);
+        return File.Exists(selected) ? selected : null;
+    }
+
+    private bool DiscoverProjectsInSolution(string solutionFullPath, string basePath, List<string> projectPaths)
+    {
+        // Use Microsoft.VisualStudio.SolutionPersistence for unified .sln/.slnx parsing
+        var serializer = SolutionSerializers.GetSerializerByMoniker(solutionFullPath);
+        if (serializer == null)
+        {
+            _consoleService.Error($"Unsupported solution file format: {Path.GetExtension(solutionFullPath)}");
+            return false;
+        }
+
+        var solution = serializer
+            .OpenAsync(solutionFullPath, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+
+        var validProjects = solution.SolutionProjects
+            .Where(p => !string.IsNullOrEmpty(p.FilePath))
+            .Select(p => (Project: p, Extension: GetSafeExtension(p.FilePath)))
+            .Where(t => t.Extension is ".csproj" or ".fsproj" or ".vbproj");
+
+        foreach (var (project, _) in validProjects)
+        {
+            var absolutePath = Path.GetFullPath(Path.Combine(basePath, project.FilePath));
+            if (File.Exists(absolutePath))
+            {
+                projectPaths.Add(absolutePath);
+                _consoleService.Info($"Found project: {Path.GetFileNameWithoutExtension(project.FilePath)}");
+            }
+            else
+            {
+                _consoleService.Warning($"Project found in solution but file missing: {absolutePath}");
+            }
+        }
+
+        return true;
+    }
+
+    private static string? GetSafeExtension(string filePath)
+    {
+        try
+        {
+            return Path.GetExtension(filePath)?.ToLowerInvariant();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>

@@ -92,26 +92,10 @@ public class MigrationService
 
         try
         {
-            if (!options.DryRun)
+            var validationResult = await ValidateMigrationPrerequisitesAsync(options, outputPath, propsFileExists, propsPath);
+            if (validationResult != null)
             {
-                var directoryError = await _validator.ValidateOutputDirectoryAsync(outputPath);
-                if (directoryError != null)
-                {
-                    return directoryError;
-                }
-
-                // Warn about unstaged changes if in a git repo
-                await _validator.CheckForUnstagedChangesAsync(outputPath);
-            }
-
-            if (propsFileExists && !options.MergeExisting)
-            {
-                return _display.CreateAlreadyMigratedResult(propsPath);
-            }
-
-            if (!_quietMode)
-            {
-                _display.ShowDryRunBannerIfNeeded(options);
+                return validationResult;
             }
 
             var (basePath, projectPaths) = await DiscoverProjectsWithSpinnerAsync(options);
@@ -125,55 +109,20 @@ public class MigrationService
             {
                 _display.ShowDiscoveredProjects(basePath, projectPaths);
             }
-
-            Dictionary<string, HashSet<string>> packages = [];
-            Dictionary<string, HashSet<string>> existingPackages = [];
-            var propsFileExisted = propsFileExists;
-            var hadConditionalPackageVersions = false;
-
-            if (propsFileExists && options.MergeExisting)
+            var (success, packages, existingPackages, propsFileExisted) = LoadPackageState(options, propsPath, propsFileExists);
+            if (!success)
             {
-                if (!TryLoadExistingPropsPackages(propsPath, existingPackages, out var existingCount, out hadConditionalPackageVersions))
-                {
-                    return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
-                }
-
-                // Add existing to the union map
-                foreach (var kvp in existingPackages)
-                {
-                    packages.Add(kvp.Key, new HashSet<string>(kvp.Value));
-                }
-
-                if (!_quietMode)
-                {
-                    _consoleService.Info($"Loaded {existingCount} package(s) from existing Directory.Packages.props.");
-                }
-
-                if (hadConditionalPackageVersions && !_quietMode)
-                {
-                    _consoleService.Warning("Conditional PackageVersion entries detected; merge will normalize versions.");
-                }
+                return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
             }
 
             backupPath = SetupBackupDirectory(options);
             backupTimestamp = !options.DryRun && !options.NoBackup && !string.IsNullOrEmpty(backupPath)
                 ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
                 : null;
-            var propsBackupEntry = CreatePropsBackup(options, propsFileExists, propsPath, backupPath, backupTimestamp);
-            List<BackupEntry> backupEntries = [];
 
-            if (propsBackupEntry != null)
-            {
-                backupsCreated = true;
-                backupEntries.Add(propsBackupEntry);
-            }
-
-            var projectBackups = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath, backupTimestamp);
-            if (projectBackups.Count > 0)
-            {
-                backupsCreated = true;
-                backupEntries.AddRange(projectBackups);
-            }
+            var backupEntries = await CreateBackupsAndProcessProjectsAsync(
+                options, projectPaths, packages, propsPath, propsFileExists, backupPath, backupTimestamp);
+            backupsCreated = backupEntries.Count > 0;
 
             var conflicts = VersionResolver.DetectConflicts(packages, existingPackages);
 
@@ -206,6 +155,98 @@ public class MigrationService
             await HandleMigrationErrorAsync(ex, backupsCreated, options.DryRun, backupPath);
             throw; // Re-throw to be handled by Program.cs or caller
         }
+    }
+
+    private async Task<MigrationResult?> ValidateMigrationPrerequisitesAsync(
+        Options options,
+        string outputPath,
+        bool propsFileExists,
+        string propsPath)
+    {
+        if (!options.DryRun)
+        {
+            var directoryError = await _validator.ValidateOutputDirectoryAsync(outputPath);
+            if (directoryError != null)
+            {
+                return directoryError;
+            }
+
+            await _validator.CheckForUnstagedChangesAsync(outputPath);
+        }
+
+        if (propsFileExists && !options.MergeExisting)
+        {
+            return _display.CreateAlreadyMigratedResult(propsPath);
+        }
+
+        if (!_quietMode)
+        {
+            _display.ShowDryRunBannerIfNeeded(options);
+        }
+
+        return null;
+    }
+
+    private (bool Success, Dictionary<string, HashSet<string>> Packages, Dictionary<string, HashSet<string>> ExistingPackages, bool PropsFileExisted) LoadPackageState(
+        Options options,
+        string propsPath,
+        bool propsFileExists)
+    {
+        Dictionary<string, HashSet<string>> packages = [];
+        Dictionary<string, HashSet<string>> existingPackages = [];
+        bool hadConditionalPackageVersions = false;
+
+        if (propsFileExists && options.MergeExisting)
+        {
+            // If merging is requested but we can't parse the existing file, we must abort
+            if (!TryLoadExistingPropsPackages(propsPath, existingPackages, out var existingCount, out hadConditionalPackageVersions))
+            {
+                return (false, packages, existingPackages, propsFileExists);
+            }
+
+            foreach (var kvp in existingPackages)
+            {
+                packages.Add(kvp.Key, new HashSet<string>(kvp.Value));
+            }
+
+            if (!_quietMode)
+            {
+                _consoleService.Info($"Loaded {existingCount} package(s) from existing Directory.Packages.props.");
+            }
+
+            if (hadConditionalPackageVersions && !_quietMode)
+            {
+                _consoleService.Warning("Conditional PackageVersion entries detected; merge will normalize versions.");
+            }
+        }
+
+        return (true, packages, existingPackages, propsFileExists);
+    }
+
+    private async Task<List<BackupEntry>> CreateBackupsAndProcessProjectsAsync(
+        Options options,
+        List<string> projectPaths,
+        Dictionary<string, HashSet<string>> packages,
+        string propsPath,
+        bool propsFileExists,
+        string? backupPath,
+        string? backupTimestamp)
+    {
+        List<BackupEntry> backupEntries = [];
+        var propsBackupEntry = CreatePropsBackup(options, propsFileExists, propsPath, backupPath, backupTimestamp);
+
+        if (propsBackupEntry != null)
+        {
+            backupEntries.Add(propsBackupEntry);
+        }
+
+        var projectBackups = await ProcessProjectsWithProgressAsync(options, projectPaths, packages, backupPath, backupTimestamp);
+        if (projectBackups.Count > 0)
+        {
+            backupEntries.AddRange(projectBackups);
+        }
+
+        return backupEntries;
     }
 
 
@@ -568,35 +609,51 @@ public class MigrationService
 
         if (shouldMerge)
         {
-            var (mergedContent, addedCount, updatedCount, _) = _propsGenerator.MergeExisting(
-                propsFilePath, packages, options.ConflictStrategy);
-
-            if (options.DryRun)
-            {
-                if (!_quietMode)
-                {
-                    _consoleService.WriteLine();
-                    _consoleService.DryRun($"Would update: {propsFilePath}");
-                    _consoleService.WriteLine();
-                    _consoleService.WritePropsPreview(mergedContent);
-                }
-            }
-            else
-            {
-                await File.WriteAllTextAsync(propsFilePath, mergedContent);
-                if (!_quietMode)
-                {
-                    _consoleService.WriteMarkup($"\n[green]:page_facing_up: Updated:[/] [cyan]{Markup.Escape(propsFilePath)}[/]\n");
-                    if (addedCount > 0 || updatedCount > 0)
-                    {
-                        _consoleService.Dim($"Added {addedCount} package(s), updated {updatedCount}.");
-                    }
-                }
-            }
-
-            return propsFilePath;
+            return await MergeAndWritePropsFileAsync(options, propsFilePath, packages);
         }
 
+        return await CreateNewPropsFileAsync(options, propsFilePath, packages);
+    }
+
+    private async Task<string> MergeAndWritePropsFileAsync(
+        Options options,
+        string propsFilePath,
+        Dictionary<string, HashSet<string>> packages)
+    {
+        var (mergedContent, addedCount, updatedCount, _) = _propsGenerator.MergeExisting(
+            propsFilePath, packages, options.ConflictStrategy);
+
+        if (options.DryRun)
+        {
+            if (!_quietMode)
+            {
+                _consoleService.WriteLine();
+                _consoleService.DryRun($"Would update: {propsFilePath}");
+                _consoleService.WriteLine();
+                _consoleService.WritePropsPreview(mergedContent);
+            }
+        }
+        else
+        {
+            await File.WriteAllTextAsync(propsFilePath, mergedContent);
+            if (!_quietMode)
+            {
+                _consoleService.WriteMarkup($"\n[green]:page_facing_up: Updated:[/] [cyan]{Markup.Escape(propsFilePath)}[/]\n");
+                if (addedCount > 0 || updatedCount > 0)
+                {
+                    _consoleService.Dim($"Added {addedCount} package(s), updated {updatedCount}.");
+                }
+            }
+        }
+
+        return propsFilePath;
+    }
+
+    private async Task<string> CreateNewPropsFileAsync(
+        Options options,
+        string propsFilePath,
+        Dictionary<string, HashSet<string>> packages)
+    {
         var updatedPackagePropsContent = _propsGenerator.Generate(packages, options.ConflictStrategy);
 
         if (options.DryRun)
@@ -998,23 +1055,39 @@ public class MigrationService
         _consoleService.Banner("ANALYZE MODE - Scanning for package issues");
         _consoleService.WriteLine();
 
-        // Discover projects
-        var (_, projectPaths) = await AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(Style.Parse("cyan"))
-            .StartAsync("Discovering projects...", async ctx =>
-            {
-                await Task.Delay(100);
-                return DiscoverProjects(options);
-            });
-
+        var (_, projectPaths) = await DiscoverProjectsWithSpinnerAsync(options);
         if (projectPaths.Count == 0)
         {
             _consoleService.Error("No projects found to analyze.");
             return new MigrationResult { ExitCode = ExitCodes.NoProjectsFound };
         }
 
-        // Scan all packages
+        var (packageInfo, scanFailures) = await PerformAnalysisScanAsync(options, projectPaths);
+
+        _consoleService.WriteLine();
+        ReportScanFailures(scanFailures, projectPaths.Count);
+
+        // Filter out bad data if high failure rate? 
+        // Current logic keeps going even with failures, which is fine.
+
+        _consoleService.WriteAnalysisHeader(packageInfo.ProjectCount, packageInfo.TotalReferences, packageInfo.VulnerabilityCount);
+
+        var report = _analysisService.Analyze(packageInfo);
+
+        foreach (var result in report.Results)
+        {
+            _consoleService.WriteAnalyzerResult(result);
+        }
+
+        _consoleService.WriteAnalysisSummary(report);
+
+        return await ApplyAnalysisFixesIfNeededAsync(options, report, packageInfo);
+    }
+
+    private async Task<(ProjectPackageInfo PackageInfo, int ScanFailures)> PerformAnalysisScanAsync(
+        Options options,
+        List<string> projectPaths)
+    {
         var allReferences = new List<PackageReference>();
         var allVulnerabilities = new List<VulnerabilityInfo>();
         var scanFailures = 0;
@@ -1037,31 +1110,8 @@ public class MigrationService
                     var projectName = Path.GetFileName(projectPath);
                     task.Description = $"[cyan]Scanning[/] [white]{Markup.Escape(projectName)}[/]";
 
-                    var (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
-                    allReferences.AddRange(references);
-
-                    if (options.IncludeTransitive || options.AuditSecurity)
-                    {
-                        task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
-
-                        if (options.IncludeTransitive)
-                        {
-                            var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectPath);
-                            if (transitiveSuccess)
-                            {
-                                allReferences.AddRange(transitiveRefs);
-                            }
-                        }
-
-                        if (options.AuditSecurity)
-                        {
-                            var (vulnerabilities, auditSuccess) = await _projectAnalyzer.ScanVulnerabilitiesAsync(projectPath);
-                            if (auditSuccess)
-                            {
-                                allVulnerabilities.AddRange(vulnerabilities);
-                            }
-                        }
-                    }
+                    var success = await ScanSingleProjectForAnalysisAsync(
+                        options, projectPath, task, allReferences, allVulnerabilities);
 
                     if (!success)
                     {
@@ -1075,37 +1125,64 @@ public class MigrationService
                 task.Description = "[green]Scan complete[/]";
             });
 
-        _consoleService.WriteLine();
+        return (new ProjectPackageInfo(allReferences, allVulnerabilities), scanFailures);
+    }
 
-        // Warn if significant number of projects failed to scan
+    private async Task<bool> ScanSingleProjectForAnalysisAsync(
+        Options options,
+        string projectPath,
+        ProgressTask task,
+        List<PackageReference> allReferences,
+        List<VulnerabilityInfo> allVulnerabilities)
+    {
+        var (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
+        allReferences.AddRange(references);
+
+        if (options.IncludeTransitive || options.AuditSecurity)
+        {
+            var projectName = Path.GetFileName(projectPath);
+            task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
+
+            if (options.IncludeTransitive)
+            {
+                var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectPath);
+                if (transitiveSuccess)
+                {
+                    allReferences.AddRange(transitiveRefs);
+                }
+            }
+
+            if (options.AuditSecurity)
+            {
+                var (vulnerabilities, auditSuccess) = await _projectAnalyzer.ScanVulnerabilitiesAsync(projectPath);
+                if (auditSuccess)
+                {
+                    allVulnerabilities.AddRange(vulnerabilities);
+                }
+            }
+        }
+
+        return success;
+    }
+
+    private void ReportScanFailures(int scanFailures, int totalProjects)
+    {
         if (scanFailures > 0)
         {
-            var failureRate = (double)scanFailures / projectPaths.Count * 100;
-            _consoleService.Warning($"{scanFailures} of {projectPaths.Count} projects ({failureRate:F0}%) failed to scan.");
+            var failureRate = (double)scanFailures / totalProjects * 100;
+            _consoleService.Warning($"{scanFailures} of {totalProjects} projects ({failureRate:F0}%) failed to scan.");
             if (failureRate > 50)
             {
                 _consoleService.Warning("High failure rate detected - analysis results may be incomplete.");
             }
         }
+    }
 
-        var packageInfo = new ProjectPackageInfo(allReferences, allVulnerabilities);
-
-        // Write header
-        _consoleService.WriteAnalysisHeader(packageInfo.ProjectCount, packageInfo.TotalReferences, packageInfo.VulnerabilityCount);
-
-        // Run analysis
-        var report = _analysisService.Analyze(packageInfo);
-
-        // Write results for each analyzer
-        foreach (var result in report.Results)
-        {
-            _consoleService.WriteAnalyzerResult(result);
-        }
-
-        // Write summary
-        _consoleService.WriteAnalysisSummary(report);
-
-        // Apply fixes if requested
+    private async Task<MigrationResult> ApplyAnalysisFixesIfNeededAsync(
+        Options options,
+        AnalysisReport report,
+        ProjectPackageInfo packageInfo)
+    {
         if ((options.Fix || options.FixDryRun) && report.HasIssues)
         {
             _consoleService.WriteLine();
@@ -1114,27 +1191,25 @@ public class MigrationService
 
             var fixReport = _fixService.ApplyFixes(report, packageInfo, options, options.FixDryRun);
 
-            // Adjust exit code based on fix results
             if (fixReport.HasChanges && !options.FixDryRun)
             {
-                // Fixes were applied successfully
                 return new MigrationResult
                 {
                     ProjectsProcessed = packageInfo.ProjectCount,
                     PackagesCentralized = packageInfo.TotalReferences,
                     ExitCode = fixReport.GetFailedFixes().Count > 0
-                        ? ExitCodes.AnalysisIssuesFound  // Some fixes failed
-                        : ExitCodes.Success              // All fixes succeeded
+                        ? ExitCodes.AnalysisIssuesFound
+                        : ExitCodes.Success
                 };
             }
         }
 
-        return new MigrationResult
+        return await Task.FromResult(new MigrationResult
         {
             ProjectsProcessed = packageInfo.ProjectCount,
             PackagesCentralized = packageInfo.TotalReferences,
             ExitCode = report.HasIssues ? ExitCodes.AnalysisIssuesFound : ExitCodes.Success
-        };
+        });
     }
 
     /// <summary>
