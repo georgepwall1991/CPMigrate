@@ -11,10 +11,12 @@ namespace CPMigrate.Services;
 public partial class ProjectAnalyzer : IProjectAnalyzer
 {
     private readonly IConsoleService _consoleService;
+    private readonly IDotNetCliService _dotNetCliService;
 
-    public ProjectAnalyzer(IConsoleService consoleService)
+    public ProjectAnalyzer(IConsoleService consoleService, IDotNetCliService? dotNetCliService = null)
     {
         _consoleService = consoleService;
+        _dotNetCliService = dotNetCliService ?? new DotNetCliService();
     }
 
     /// <summary>

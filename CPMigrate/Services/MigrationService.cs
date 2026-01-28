@@ -13,7 +13,7 @@ public class MigrationService
     private readonly IProjectAnalyzer _projectAnalyzer;
     private readonly VersionResolver _versionResolver;
     private readonly PropsGenerator _propsGenerator;
-    private readonly BackupManager _backupManager;
+    private readonly IBackupManager _backupManager;
     private readonly IConsoleService _consoleService;
     private readonly IAnalysisService _analysisService;
     private readonly IFixService _fixService;
@@ -26,7 +26,7 @@ public class MigrationService
         IProjectAnalyzer? projectAnalyzer = null,
         VersionResolver? versionResolver = null,
         PropsGenerator? propsGenerator = null,
-        BackupManager? backupManager = null,
+        IBackupManager? backupManager = null,
         IAnalysisService? analysisService = null,
         IFixService? fixService = null,
         bool quietMode = false)

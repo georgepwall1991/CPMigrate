@@ -17,28 +17,9 @@ public partial class ProjectAnalyzer
 
         try
         {
-            var startInfo = new ProcessStartInfo
-            {
-#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses dotnet from PATH
-                FileName = "dotnet",
-#pragma warning restore S4036
-                Arguments = "list package --include-transitive",
-                WorkingDirectory = projectDir,
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
+            var (output, success) = await _dotNetCliService.RunListPackageAsync(projectDir, includeTransitive: true, vulnerable: false);
 
-            using var process = Process.Start(startInfo);
-            if (process == null)
-            {
-                return (new List<PackageReference>(), false);
-            }
-
-            var output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
+            if (!success)
             {
                 return (new List<PackageReference>(), false);
             }
@@ -63,26 +44,12 @@ public partial class ProjectAnalyzer
 
         try
         {
-            var startInfo = new ProcessStartInfo
-            {
-#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses dotnet from PATH
-                FileName = "dotnet",
-#pragma warning restore S4036
-                Arguments = "list package --vulnerable --include-transitive",
-                WorkingDirectory = projectDir,
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
+            var (output, success) = await _dotNetCliService.RunListPackageAsync(projectDir, includeTransitive: true, vulnerable: true);
 
-            using var process = Process.Start(startInfo);
-            if (process == null)
+            if (!success)
             {
                 return (new List<VulnerabilityInfo>(), false);
             }
-
-            var output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
 
             var vulnerabilities = ParseVulnerabilities(output, projectName);
             return (vulnerabilities, true);

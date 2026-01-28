@@ -17,7 +17,7 @@ internal static class CommandRouter
         IInteractiveService interactiveService,
         VersionResolver versionResolver,
         ConfigService configService,
-        BackupManager backupManager)
+        IBackupManager backupManager)
     {
         // Load and merge config if available
         var startDir = DetermineStartDirectory(options);
@@ -144,7 +144,7 @@ internal static class CommandRouter
         IInteractiveService interactiveService,
         VersionResolver versionResolver,
         ConfigService configService,
-        BackupManager backupManager)
+        IBackupManager backupManager)
     {
         consoleService.WriteHeader();
 
@@ -185,7 +185,7 @@ internal static class CommandRouter
         Options options,
         IConsoleService consoleService,
         VersionResolver versionResolver,
-        BackupManager backupManager)
+        IBackupManager backupManager)
     {
         if (!string.IsNullOrEmpty(options.BatchDir))
         {
@@ -222,7 +222,7 @@ internal static class CommandRouter
     public static async Task<int> RunPruneModeAsync(
         Options options,
         IConsoleService consoleService,
-        BackupManager backupManager)
+        IBackupManager backupManager)
     {
         if (!ValidateOptions(options, consoleService))
         {
@@ -269,7 +269,7 @@ internal static class CommandRouter
     private static Task<int> PruneAllBackupsAsync(
         Options options,
         IConsoleService consoleService,
-        BackupManager backupManager,
+        IBackupManager backupManager,
         string backupPath)
     {
         consoleService.Banner("PRUNE ALL BACKUPS");
@@ -310,7 +310,7 @@ internal static class CommandRouter
     private static Task<int> PruneOldBackupsAsync(
         Options options,
         IConsoleService consoleService,
-        BackupManager backupManager,
+        IBackupManager backupManager,
         string backupPath)
     {
         consoleService.Banner($"PRUNE BACKUPS - Keeping last {options.Retention}");
@@ -361,7 +361,7 @@ internal static class CommandRouter
         Options options,
         IConsoleService consoleService,
         VersionResolver versionResolver,
-        BackupManager backupManager)
+        IBackupManager backupManager)
     {
         if (!ValidateOptions(options, consoleService))
         {
@@ -428,7 +428,7 @@ internal static class CommandRouter
         Options options,
         IConsoleService consoleService,
         VersionResolver versionResolver,
-        BackupManager backupManager)
+        IBackupManager backupManager)
     {
         try
         {

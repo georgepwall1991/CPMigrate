@@ -8,7 +8,7 @@ namespace CPMigrate;
 /// <summary>
 /// Manages backup operations for project files during CPM migration.
 /// </summary>
-public class BackupManager
+public class BackupManager : IBackupManager
 {
     private const string ManifestFileName = "backup_manifest.json";
     private const string BackupDirectoryName = ".cpmigrate_backup";

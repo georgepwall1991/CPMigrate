@@ -3,6 +3,7 @@ using CPMigrate.Models;
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
+using Moq;
 
 namespace CPMigrate.Tests;
 
@@ -16,7 +17,7 @@ public class CommandRouterTests : IDisposable
     private readonly FakeInteractiveService _interactiveService;
     private readonly VersionResolver _versionResolver;
     private readonly ConfigService _configService;
-    private readonly BackupManager _backupManager;
+    private readonly IBackupManager _backupManager;
 
     public CommandRouterTests()
     {
@@ -511,6 +512,84 @@ EndProject
          await CommandRouter.RunMigrationAsync(options, _console, _versionResolver, _backupManager);
          
          // Assert - branch hit
+    }
+
+    [Fact]
+    public async Task PruneAllBackupsAsync_PartialFailure_ReturnsFileOperationError_And_ReportsErrors()
+    {
+        // Arrange
+        var options = new Options { PruneAll = true, SolutionFileDir = _testDirectory, Quiet = true };
+        
+        var failureResult = new PruneResult(); // Success is read-only derived property
+        // PruneResult.Success => Errors.Count == 0 (Line 84 in BackupModels.cs).
+        // So I just need to add errors.
+        failureResult.Errors.Add("Failed to delete file X");
+        
+        var mockBackup = new Mock<IBackupManager>();
+        mockBackup.Setup(m => m.GetBackupHistory(It.IsAny<string>()))
+            .Returns(new List<BackupSetInfo> { new BackupSetInfo { Timestamp = "20240101" } });
+        
+        mockBackup.Setup(m => m.PruneAllBackups(It.IsAny<string>()))
+            .Returns(failureResult);
+
+        // Act
+        var result = await CommandRouter.RunPruneModeAsync(options, _console, mockBackup.Object);
+
+        // Assert
+        result.Should().Be(ExitCodes.FileOperationError);
+        _console.OutputMessages.Should().Contain("Failed to delete file X");
+    }
+
+    [Fact]
+    public async Task PruneOldBackupsAsync_PartialFailure_ReportsErrors()
+    {
+        // Arrange
+        var options = new Options { PruneBackups = true, Retention = 0, SolutionFileDir = _testDirectory, Quiet = true };
+        
+        var failureResult = new PruneResult();
+        failureResult.Errors.Add("Failed to prune backup Y");
+
+        var mockBackup = new Mock<IBackupManager>();
+        mockBackup.Setup(m => m.GetBackupHistory(It.IsAny<string>()))
+            .Returns(new List<BackupSetInfo> { new BackupSetInfo { Timestamp = "20240101" } });
+            
+        mockBackup.Setup(m => m.PruneBackups(It.IsAny<string>(), It.IsAny<int>()))
+            .Returns(failureResult);
+
+        // Act
+        var result = await CommandRouter.RunPruneModeAsync(options, _console, mockBackup.Object);
+
+        // Assert
+        result.Should().Be(ExitCodes.FileOperationError);
+        _console.OutputMessages.Should().Contain("Failed to prune backup Y");
+    }
+
+    [Fact]
+    public async Task RunMigrationAsync_UnauthorizedAccess_ReturnsFileOperationError()
+    {
+        // Arrange
+        var projectPath = CreateTestProject("Test.csproj", @"<Project Sdk=""Microsoft.NET.Sdk""><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>");
+        var solutionPath = CreateTestSolution("Test.sln", projectPath);
+        var options = new Options 
+        { 
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
+            NoBackup = false,
+            DryRun = false,
+            BackupDir = _testDirectory // Ensure backup dir is in test directory
+        };
+
+        var mockBackup = new Mock<IBackupManager>();
+        
+        // Mock CreateBackupForProject to throw UnauthorizedAccessException
+        mockBackup.Setup(m => m.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+            .Throws(new UnauthorizedAccessException("Access denied to backup"));
+
+        // Act
+        var result = await CommandRouter.RunMigrationAsync(options, _console, _versionResolver, mockBackup.Object);
+
+        // Assert
+        result.Should().Be(ExitCodes.FileOperationError);
+        _console.OutputMessages.Should().Contain($"\nPermission denied: Access denied to backup");
     }
 
     // Helper methods
