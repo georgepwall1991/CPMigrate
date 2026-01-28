@@ -71,7 +71,7 @@ public class PropsGenerator
         out bool hasConditionalPackageVersions)
     {
         hasConditionalPackageVersions = false;
-        var packageVersions = new Dictionary<string, HashSet<string>>();
+        Dictionary<string, HashSet<string>> packageVersions = [];
         if (!File.Exists(propsFilePath))
         {
             throw new FileNotFoundException($"Props file not found: {propsFilePath}", propsFilePath);
@@ -99,7 +99,7 @@ public class PropsGenerator
 
             if (!packageVersions.TryGetValue(packageName, out var versions))
             {
-                versions = new HashSet<string>();
+                versions = [];
                 packageVersions.Add(packageName, versions);
             }
 
@@ -137,7 +137,7 @@ public class PropsGenerator
     private static (Dictionary<string, List<ProjectItemElement>> ItemsByPackage, bool HasConditionalVersions)
         BuildExistingItemsMap(ProjectRootElement projectRoot)
     {
-        var itemsByPackage = new Dictionary<string, List<ProjectItemElement>>();
+        Dictionary<string, List<ProjectItemElement>> itemsByPackage = [];
         var hasConditionalPackageVersions = false;
 
         foreach (var item in projectRoot.Items.Where(i => i.ItemType == PackageVersionItemType))
@@ -171,7 +171,7 @@ public class PropsGenerator
     {
         if (!itemsByPackage.TryGetValue(packageName, out var items))
         {
-            items = new List<ProjectItemElement>();
+            items = [];
             itemsByPackage.Add(packageName, items);
         }
 

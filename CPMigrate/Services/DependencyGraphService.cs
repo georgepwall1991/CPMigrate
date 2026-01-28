@@ -20,7 +20,7 @@ public class DependencyGraphService : IDependencyGraphService
     /// </summary>
     public List<string> IdentifyRedundantDirectReferences(string projectFilePath)
     {
-        var redundant = new List<string>();
+        List<string> redundant = [];
         var projectDir = Path.GetDirectoryName(projectFilePath) ?? ".";
         var assetsPath = Path.Combine(projectDir, "obj", "project.assets.json");
 
@@ -39,7 +39,7 @@ public class DependencyGraphService : IDependencyGraphService
 
             foreach (var framework in frameworksNode.EnumerateObject())
             {
-                var directDeps = new Dictionary<string, string>();
+                Dictionary<string, string> directDeps = [];
                 if (framework.Value.TryGetProperty("dependencies", out var depsNode))
                 {
                     foreach (var dep in depsNode.EnumerateObject())
@@ -58,7 +58,7 @@ public class DependencyGraphService : IDependencyGraphService
                     // For each direct dependency, find what it brings in
                     foreach (var directDep in directDeps.Keys)
                     {
-                        CollectTransitiveRecursive(targetNode, directDep, directDeps[directDep], transitiveClosure, new HashSet<string>());
+                        CollectTransitiveRecursive(targetNode, directDep, directDeps[directDep], transitiveClosure, []);
                     }
 
                     // Check if any direct dependency is in the transitive closure of OTHER direct dependencies
@@ -68,7 +68,7 @@ public class DependencyGraphService : IDependencyGraphService
                         var otherTransitiveClosure = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                         foreach (var otherDep in directDeps.Keys.Where(k => k != directDep))
                         {
-                            CollectTransitiveRecursive(targetNode, otherDep, directDeps[otherDep], otherTransitiveClosure, new HashSet<string>());
+                            CollectTransitiveRecursive(targetNode, otherDep, directDeps[otherDep], otherTransitiveClosure, []);
                         }
 
                         if (otherTransitiveClosure.Contains(directDep))
