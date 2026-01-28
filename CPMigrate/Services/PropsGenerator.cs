@@ -202,40 +202,51 @@ public class PropsGenerator
                 continue;
             }
 
-            var resolvedVersion = ResolvePackageVersion(kvp.Value, strategy);
-
-            if (itemsByPackage.TryGetValue(kvp.Key, out var existingItems))
-            {
-                // Graceful refinement for conditional versions:
-                // If there are multiple existing items (conditional) and they already cover 
-                // all versions found (including existing ones), don't flatten them.
-                if (existingItems.Count > 1)
-                {
-                    var existingVersions = existingItems
-                        .Select(item => GetMetadataValue(item, VersionMetadataName))
-                        .Where(v => !string.IsNullOrEmpty(v))
-                        .Select(v => v!)
-                        .ToHashSet();
-
-                    if (kvp.Value.IsSubsetOf(existingVersions))
-                    {
-                        continue;
-                    }
-                }
-
-                if (UpdateExistingItems(existingItems, resolvedVersion))
-                {
-                    updatedCount++;
-                }
-            }
-            else
-            {
-                AddNewPackageVersion(targetItemGroup, kvp.Key, resolvedVersion);
-                addedCount++;
-            }
+            var (added, updated) = ProcessSinglePackageVersion(kvp.Key, kvp.Value, strategy, itemsByPackage, targetItemGroup);
+            addedCount += added;
+            updatedCount += updated;
         }
 
         return (addedCount, updatedCount);
+    }
+
+    private (int Added, int Updated) ProcessSinglePackageVersion(
+        string packageName,
+        HashSet<string> versions,
+        ConflictStrategy strategy,
+        Dictionary<string, List<ProjectItemElement>> itemsByPackage,
+        ProjectItemGroupElement targetItemGroup)
+    {
+        var resolvedVersion = ResolvePackageVersion(versions, strategy);
+
+        if (itemsByPackage.TryGetValue(packageName, out var existingItems))
+        {
+            if (ShouldSkipUpdateForConditionalItems(existingItems, versions))
+            {
+                return (0, 0);
+            }
+
+            return UpdateExistingItems(existingItems, resolvedVersion) ? (0, 1) : (0, 0);
+        }
+
+        AddNewPackageVersion(targetItemGroup, packageName, resolvedVersion);
+        return (1, 0);
+    }
+
+    private static bool ShouldSkipUpdateForConditionalItems(List<ProjectItemElement> existingItems, HashSet<string> versions)
+    {
+        if (existingItems.Count <= 1)
+        {
+            return false;
+        }
+
+        var existingVersions = existingItems
+            .Select(item => GetMetadataValue(item, VersionMetadataName))
+            .Where(v => !string.IsNullOrEmpty(v))
+            .Select(v => v!)
+            .ToHashSet();
+
+        return versions.IsSubsetOf(existingVersions);
     }
 
     private string ResolvePackageVersion(HashSet<string> versions, ConflictStrategy strategy)

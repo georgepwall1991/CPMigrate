@@ -39,44 +39,7 @@ public class DependencyGraphService : IDependencyGraphService
 
             foreach (var framework in frameworksNode.EnumerateObject())
             {
-                Dictionary<string, string> directDeps = [];
-                if (framework.Value.TryGetProperty("dependencies", out var depsNode))
-                {
-                    foreach (var dep in depsNode.EnumerateObject())
-                    {
-                        directDeps[dep.Name] = dep.Value.GetProperty("version").GetString() ?? "";
-                    }
-                }
-
-                // Now find the targets for this framework to see transitive deps
-                var targetFramework = framework.Name;
-                if (doc.RootElement.GetProperty("targets").TryGetProperty(targetFramework, out var targetNode))
-                {
-                    // Map of package -> its transitive dependencies
-                    var transitiveClosure = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                    // For each direct dependency, find what it brings in
-                    foreach (var directDep in directDeps.Keys)
-                    {
-                        CollectTransitiveRecursive(targetNode, directDep, directDeps[directDep], transitiveClosure, []);
-                    }
-
-                    // Check if any direct dependency is in the transitive closure of OTHER direct dependencies
-                    foreach (var directDep in directDeps.Keys)
-                    {
-                        // We need to check if it's brought in by ANY OTHER direct dep
-                        var otherTransitiveClosure = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        foreach (var otherDep in directDeps.Keys.Where(k => k != directDep))
-                        {
-                            CollectTransitiveRecursive(targetNode, otherDep, directDeps[otherDep], otherTransitiveClosure, []);
-                        }
-
-                        if (otherTransitiveClosure.Contains(directDep))
-                        {
-                            redundant.Add(directDep);
-                        }
-                    }
-                }
+                AnalyzeFrameworkDependencies(doc, framework, redundant);
             }
         }
         catch (Exception ex)
@@ -85,6 +48,48 @@ public class DependencyGraphService : IDependencyGraphService
         }
 
         return redundant.Distinct().ToList();
+    }
+
+    private void AnalyzeFrameworkDependencies(JsonDocument doc, JsonProperty framework, List<string> redundant)
+    {
+        Dictionary<string, string> directDeps = [];
+        if (framework.Value.TryGetProperty("dependencies", out var depsNode))
+        {
+            foreach (var dep in depsNode.EnumerateObject())
+            {
+                directDeps[dep.Name] = dep.Value.GetProperty("version").GetString() ?? "";
+            }
+        }
+
+        var targetFramework = framework.Name;
+        if (doc.RootElement.GetProperty("targets").TryGetProperty(targetFramework, out var targetNode))
+        {
+            AnalyzeRedundancyForTarget(targetNode, directDeps, redundant);
+        }
+    }
+
+    private void AnalyzeRedundancyForTarget(
+        JsonElement targetNode,
+        Dictionary<string, string> directDeps,
+        List<string> redundant)
+    {
+        // Check if any direct dependency is in the transitive closure of OTHER direct dependencies
+        redundant.AddRange(directDeps.Keys.Where(directDep => IsTransitiveDependencyOfOthers(targetNode, directDep, directDeps)));
+    }
+
+    private bool IsTransitiveDependencyOfOthers(
+        JsonElement targetNode,
+        string targetDep,
+        Dictionary<string, string> directDeps)
+    {
+        // We need to check if it's brought in by ANY OTHER direct dep
+        var otherTransitiveClosure = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var otherDep in directDeps.Keys.Where(k => k != targetDep))
+        {
+            CollectTransitiveRecursive(targetNode, otherDep, directDeps[otherDep], otherTransitiveClosure, []);
+        }
+
+        return otherTransitiveClosure.Contains(targetDep);
     }
 
     private void CollectTransitiveRecursive(JsonElement targetNode, string package, string version, HashSet<string> closure, HashSet<string> visited)
