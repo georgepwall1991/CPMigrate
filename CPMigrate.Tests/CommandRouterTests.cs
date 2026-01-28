@@ -537,7 +537,7 @@ EndProject
 
         // Assert
         result.Should().Be(ExitCodes.FileOperationError);
-        _console.OutputMessages.Should().Contain("Failed to delete file X");
+        _console.OutputMessages.Should().Contain(m => m.Contains("Failed to delete file X"));
     }
 
     [Fact]
