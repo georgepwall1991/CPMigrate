@@ -13,8 +13,8 @@ public class FrameworkAlignmentAnalyzer : IAnalyzer
 
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
     {
-        var issues = new List<AnalysisIssue>();
-        var frameworks = new Dictionary<string, List<string>>();
+        List<AnalysisIssue> issues = [];
+        Dictionary<string, List<string>> frameworks = [];
 
         // We need to get frameworks for each project.
         // PackageReference doesn't have it, but we can extract it.
@@ -23,12 +23,13 @@ public class FrameworkAlignmentAnalyzer : IAnalyzer
         foreach (var path in projectPaths)
         {
             var tfm = ProjectAnalyzer.GetTargetFramework(path);
-            if (!frameworks.ContainsKey(tfm))
+            if (!frameworks.TryGetValue(tfm, out var list))
             {
-                frameworks[tfm] = new List<string>();
+                list = [];
+                frameworks[tfm] = list;
             }
 
-            frameworks[tfm].Add(Path.GetFileName(path));
+            list.Add(Path.GetFileName(path));
         }
 
         if (frameworks.Count > 1)

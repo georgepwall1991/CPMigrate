@@ -12,7 +12,7 @@ public class RedundantReferenceAnalyzer : IAnalyzer
 
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
     {
-        var issues = new List<AnalysisIssue>();
+        List<AnalysisIssue> issues = [];
 
         // Group by project, then by package name (case-insensitive)
         var projectGroups = packageInfo.References
@@ -44,7 +44,7 @@ public class RedundantReferenceAnalyzer : IAnalyzer
                 issues.Add(new AnalysisIssue(
                     packageGroup.Key,
                     description,
-                    new List<string> { projectName }
+                    [projectName]
                 ));
             }
         }

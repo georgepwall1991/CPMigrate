@@ -19,7 +19,7 @@ public class LiftingAnalyzer : IAnalyzer
 
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
     {
-        var issues = new List<AnalysisIssue>();
+        List<AnalysisIssue> issues = [];
 
         foreach (var reference in packageInfo.References.DistinctBy(r => r.ProjectPath))
         {
@@ -29,7 +29,7 @@ public class LiftingAnalyzer : IAnalyzer
                 issues.Add(new AnalysisIssue(
                     packageName,
                     $"Direct reference is redundant; it is already provided transitively by another top-level package in {reference.ProjectName}.",
-                    new List<string> { reference.ProjectName }
+                    [reference.ProjectName]
                 ));
             }
         }
