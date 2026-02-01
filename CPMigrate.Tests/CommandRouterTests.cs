@@ -518,7 +518,9 @@ EndProject
     public async Task PruneAllBackupsAsync_PartialFailure_ReturnsFileOperationError_And_ReportsErrors()
     {
         // Arrange
-        var options = new Options { PruneAll = true, SolutionFileDir = _testDirectory, Quiet = true };
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+        var options = new Options { PruneAll = true, BackupDir = _testDirectory, Quiet = true };
         
         var failureResult = new PruneResult(); // Success is read-only derived property
         // PruneResult.Success => Errors.Count == 0 (Line 84 in BackupModels.cs).
@@ -544,7 +546,9 @@ EndProject
     public async Task PruneOldBackupsAsync_PartialFailure_ReportsErrors()
     {
         // Arrange
-        var options = new Options { PruneBackups = true, Retention = 0, SolutionFileDir = _testDirectory, Quiet = true };
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+        var options = new Options { PruneBackups = true, Retention = 0, BackupDir = _testDirectory, Quiet = true };
         
         var failureResult = new PruneResult();
         failureResult.Errors.Add("Failed to prune backup Y");
