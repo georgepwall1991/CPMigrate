@@ -267,6 +267,11 @@ internal static class CommandRouter
         VersionResolver versionResolver,
         IBackupManager backupManager)
     {
+        if (options.UpdatePackages)
+        {
+            return await RunUpdatePackagesModeAsync(options, consoleService, backupManager);
+        }
+
         if (!string.IsNullOrEmpty(options.BatchDir))
         {
             return await RunBatchModeAsync(options, consoleService, versionResolver, backupManager);

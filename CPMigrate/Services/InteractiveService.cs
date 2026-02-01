@@ -18,6 +18,7 @@ public class InteractiveService : IInteractiveService
     private const string ModeBatch = "📦 Batch migrate multiple solutions";
     private const string ModeRollback = "↩️  Rollback a previous migration";
     private const string ModeBackups = "💾 Manage backups (List/Prune)";
+    private const string ModeUpdatePackages = "📡 Update NuGet packages to latest versions";
     private const string ModeUnifyProps = "🏗  Unify Directory.Build.props (Clean Architecture)";
 
     private const string ConflictHighest = "⬆️  Highest version (recommended)";
@@ -86,6 +87,10 @@ public class InteractiveService : IInteractiveService
             {
                 AskRollbackOptions(options);
             }
+            else if (options.UpdatePackages)
+            {
+                AskUpdatePackagesOptions(options);
+            }
             else if (options.UnifyProps)
             { /* No extra options for unify currently */ }
             else if (string.IsNullOrEmpty(options.BatchDir) && !options.InteractiveConflicts)
@@ -139,6 +144,11 @@ public class InteractiveService : IInteractiveService
         migrationActions.Add("⚙️  Custom Migration (Manual Setup)");
 
         // 2. Maintenance Actions
+        if (ctx.IsCpm)
+        {
+            maintenanceActions.Add(ModeUpdatePackages);
+        }
+
         maintenanceActions.Add(ModeUnifyProps);
         maintenanceActions.Add("📦 Batch migrate multiple solutions");
 
@@ -393,6 +403,24 @@ public class InteractiveService : IInteractiveService
         }
     }
 
+    private void AskUpdatePackagesOptions(Options options)
+    {
+        var transitive = _console.AskSelection(
+            "Include transitive dependencies?",
+            new[] { "No - direct packages only", "Yes - include transitive dependencies" });
+        options.IncludeTransitive = transitive.StartsWith("Yes");
+
+        var prerelease = _console.AskSelection(
+            "Include pre-release versions?",
+            new[] { "No - stable versions only", "Yes - include pre-release versions" });
+        options.IncludePrerelease = prerelease.StartsWith("Yes");
+
+        var dryRun = _console.AskSelection(
+            "Run as dry-run first?",
+            new[] { "Yes - preview changes without modifying files", "No - make changes immediately" });
+        options.DryRun = dryRun.StartsWith("Yes");
+    }
+
     private void AskRollbackOptions(Options options)
     {
         _console.Info("Locating backup directory for rollback...");
@@ -428,6 +456,7 @@ public class InteractiveService : IInteractiveService
             ModeRollback => "ROLLBACK",
             ModeBackups when options.PruneAll => "PRUNE ALL",
             ModeBackups when options.PruneBackups => "PRUNE",
+            _ when options.UpdatePackages => "UPDATE PACKAGES",
             _ when mode.Contains("Unify") || options.UnifyProps => "UNIFY PROPS",
             _ => "UNKNOWN"
         };
@@ -474,6 +503,10 @@ public class InteractiveService : IInteractiveService
         else if (mode == ModeBackups)
         {
             AddBackupRows(grid, options);
+        }
+        else if (options.UpdatePackages)
+        {
+            AddUpdatePackagesRows(grid, options);
         }
         else if (options.UnifyProps)
         {
@@ -532,6 +565,13 @@ public class InteractiveService : IInteractiveService
         {
             grid.AddRow("[white]Action[/]", "[red]DELETE ALL BACKUPS[/]");
         }
+    }
+
+    private static void AddUpdatePackagesRows(Grid grid, Options options)
+    {
+        grid.AddRow("[white]Transitive Deps[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
+        grid.AddRow("[white]Pre-release[/]", $"[cyan1]{(options.IncludePrerelease ? "Yes" : "No")}[/]");
+        grid.AddRow("[white]Dry Run[/]", $"[cyan1]{(options.DryRun ? "Yes" : "No")}[/]");
     }
 
     private static void AddUnifyPropsRows(Grid grid)
@@ -594,6 +634,10 @@ public class InteractiveService : IInteractiveService
         {
             AskBackupManagementOptions(options);
             return (false, true); // Early return
+        }
+        else if (action.Contains("Update NuGet packages"))
+        {
+            options.UpdatePackages = true;
         }
         else if (action.Contains("Unify Directory.Build.props"))
         {
