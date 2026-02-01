@@ -36,6 +36,12 @@ internal static class CommandRouter
             return await RunUpdateModeAsync(consoleService, loggerFactory);
         }
 
+        // Handle Update Packages command
+        if (options.UpdatePackages)
+        {
+            return await RunUpdatePackagesModeAsync(options, consoleService, backupManager, loggerFactory);
+        }
+
         // Route to appropriate command handler
         if (options.Interactive)
         {
@@ -113,6 +119,55 @@ internal static class CommandRouter
         catch (Exception ex)
         {
             consoleService.Error($"Update failed: {ex.Message}");
+            return ExitCodes.UnexpectedError;
+        }
+    }
+
+    /// <summary>
+    /// Executes the update-packages mode: updates NuGet packages to latest, runs tests, rolls back on failure.
+    /// </summary>
+    private static async Task<int> RunUpdatePackagesModeAsync(
+        Options options,
+        IConsoleService consoleService,
+        IBackupManager backupManager,
+        ILoggerFactory? loggerFactory = null)
+    {
+        if (!ValidateOptions(options, consoleService))
+        {
+            return ExitCodes.ValidationError;
+        }
+
+        consoleService.WriteHeader();
+        consoleService.Banner("UPDATE PACKAGES");
+        consoleService.WriteLine();
+
+        try
+        {
+            var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
+            var propsGenerator = new PropsGenerator();
+            using var nuGetLookup = new NuGetVersionLookupService(logger: loggerFactory?.CreateLogger<NuGetVersionLookupService>());
+            var dotNetCli = new DotNetCliService();
+
+            var updateService = new PackageUpdateService(
+                consoleService,
+                projectAnalyzer,
+                propsGenerator,
+                nuGetLookup,
+                dotNetCli,
+                backupManager,
+                loggerFactory?.CreateLogger<PackageUpdateService>());
+
+            var result = await updateService.UpdatePackagesAsync(options);
+            return result.ExitCode;
+        }
+        catch (IOException ex)
+        {
+            consoleService.Error($"\nFile operation error: {ex.Message}");
+            return ExitCodes.FileOperationError;
+        }
+        catch (Exception ex)
+        {
+            consoleService.Error($"\nUnexpected error: {ex.Message}");
             return ExitCodes.UnexpectedError;
         }
     }

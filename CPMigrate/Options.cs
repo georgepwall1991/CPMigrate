@@ -29,6 +29,7 @@ public static class ExitCodes
     public const int NoProjectsFound = 4;
     public const int AnalysisIssuesFound = 5;
     public const int UnexpectedError = 6;
+    public const int TestFailure = 7;
 }
 
 /// <summary>
@@ -192,6 +193,18 @@ public class Options
         HelpText = "Check for and install the latest version of CPMigrate.")]
     public bool Update { get; set; }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // v3.0 Options - Package Updates
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Option("update-packages", Default = false,
+        HelpText = "Update all packages to latest versions, run tests, rollback on failure.")]
+    public bool UpdatePackages { get; set; }
+
+    [Option("include-prerelease", Default = false,
+        HelpText = "Include pre-release versions when updating packages.")]
+    public bool IncludePrerelease { get; set; }
+
     [Usage(ApplicationAlias = "cpmigrate")]
     public static IEnumerable<Example> Examples =>
         new List<Example>()
@@ -234,6 +247,12 @@ public class Options
 
         // Prune mode exits early after validation
         if (ValidatePruneOptions())
+        {
+            return;
+        }
+
+        // Update-packages mode exits early after validation
+        if (ValidateUpdatePackagesOptions())
         {
             return;
         }
@@ -398,6 +417,46 @@ public class Options
         if (string.IsNullOrWhiteSpace(BackupDir))
         {
             throw new ArgumentException("backup-dir must be specified for rollback.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validates update-packages mode options.
+    /// Returns true if update-packages mode is active (skip remaining validation).
+    /// </summary>
+    private bool ValidateUpdatePackagesOptions()
+    {
+        // Check --include-prerelease dependency before early return
+        if (IncludePrerelease && !UpdatePackages)
+        {
+            throw new ArgumentException("--include-prerelease requires --update-packages.");
+        }
+
+        if (!UpdatePackages)
+        {
+            return false;
+        }
+
+        if (Rollback)
+        {
+            throw new ArgumentException("--update-packages cannot be used with --rollback.");
+        }
+
+        if (Analyze)
+        {
+            throw new ArgumentException("--update-packages cannot be used with --analyze.");
+        }
+
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            throw new ArgumentException("--update-packages cannot be used with --batch.");
+        }
+
+        if (UnifyProps)
+        {
+            throw new ArgumentException("--update-packages cannot be used with --unify-props.");
         }
 
         return true;
