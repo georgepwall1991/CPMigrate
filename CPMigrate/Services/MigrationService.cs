@@ -1,6 +1,8 @@
 using System.Globalization;
 using CPMigrate.Models;
 using CPMigrate.Services.Migration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console;
 
 namespace CPMigrate.Services;
@@ -19,7 +21,13 @@ public class MigrationService
     private readonly IFixService _fixService;
     private readonly MigrationValidator _validator;
     private readonly MigrationDisplay _display;
+    private readonly ILogger<MigrationService> _logger;
     private readonly bool _quietMode;
+
+    /// <summary>
+    /// Cached scan results from project discovery, to avoid redundant re-scanning.
+    /// </summary>
+    private Dictionary<string, List<PackageReference>>? _cachedProjectScans;
 
     public MigrationService(
         IConsoleService consoleService,
@@ -29,7 +37,8 @@ public class MigrationService
         IBackupManager? backupManager = null,
         IAnalysisService? analysisService = null,
         IFixService? fixService = null,
-        bool quietMode = false)
+        bool quietMode = false,
+        ILogger<MigrationService>? logger = null)
     {
         _consoleService = consoleService;
         _versionResolver = versionResolver ?? new VersionResolver(_consoleService);
@@ -41,6 +50,7 @@ public class MigrationService
         _fixService = fixService ?? new FixService(_consoleService, _versionResolver);
         _validator = new MigrationValidator(_consoleService);
         _display = new MigrationDisplay(_consoleService);
+        _logger = logger ?? NullLogger<MigrationService>.Instance;
         _quietMode = quietMode;
     }
 
@@ -165,7 +175,7 @@ public class MigrationService
     {
         if (!options.DryRun)
         {
-            var directoryError = await _validator.ValidateOutputDirectoryAsync(outputPath);
+            var directoryError = _validator.ValidateOutputDirectory(outputPath);
             if (directoryError != null)
             {
                 return directoryError;
@@ -403,7 +413,24 @@ public class MigrationService
     private Dictionary<string, Dictionary<string, int>> BuildPackageUsageCounts(Options options)
     {
         var usageCounts = new Dictionary<string, Dictionary<string, int>>();
-        var (_, projectPaths) = DiscoverProjects(options);
+
+        // Use cached scan results if available to avoid redundant project re-scanning
+        if (_cachedProjectScans != null)
+        {
+            foreach (var (_, refs) in _cachedProjectScans)
+            {
+                foreach (var reference in refs)
+                {
+                    AddToUsageCounts(usageCounts, reference.PackageName, reference.Version);
+                }
+            }
+
+            return usageCounts;
+        }
+
+        _logger.LogDebug("No cached scan results available, re-scanning projects for usage counts");
+        var (_, projectPaths) = _projectAnalyzer.DiscoverProjectsFromSolution(
+            !string.IsNullOrWhiteSpace(options.SolutionFileDir) ? options.SolutionFileDir : ".");
 
         foreach (var path in projectPaths)
         {
@@ -689,7 +716,7 @@ public class MigrationService
         _consoleService.WriteLine();
 
         var backupPath = BackupManager.GetBackupDirectoryPath(options);
-        var validationError = await ValidateRollbackPrerequisites(backupPath);
+        var validationError = ValidateRollbackPrerequisites(backupPath);
         if (validationError != null)
         {
             return validationError;
@@ -722,7 +749,7 @@ public class MigrationService
         };
     }
 
-    private async Task<MigrationResult?> ValidateRollbackPrerequisites(string backupPath)
+    private MigrationResult? ValidateRollbackPrerequisites(string backupPath)
     {
         if (!Directory.Exists(backupPath))
         {
@@ -731,7 +758,6 @@ public class MigrationService
             return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
         }
 
-        await Task.CompletedTask;
         return null;
     }
 
@@ -958,7 +984,6 @@ public class MigrationService
         _consoleService.Info($"Total: {backups.Count} backup set(s), {totalFiles} file(s), {FormatFileSize(totalSize)}");
         _consoleService.Dim($"Backup directory: {backupPath}");
 
-        await Task.CompletedTask;
         return new MigrationResult { ExitCode = ExitCodes.Success };
     }
 
@@ -1137,6 +1162,10 @@ public class MigrationService
     {
         var (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
         allReferences.AddRange(references);
+
+        // Cache scan results for later reuse (e.g., interactive conflict resolution)
+        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>();
+        _cachedProjectScans[projectPath] = references;
 
         if (options.IncludeTransitive || options.AuditSecurity)
         {
@@ -1331,6 +1360,11 @@ public class MigrationService
             backupEntry = _backupManager.CreateBackupForProject(
                 options, projectFilePath, backupPath, backupTimestamp);
         }
+
+        // Cache scan results before processing (for use by interactive conflict resolution)
+        var (scannedRefs, _) = _projectAnalyzer.ScanProjectPackages(projectFilePath);
+        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>();
+        _cachedProjectScans[projectFilePath] = scannedRefs;
 
         // Process project file
         var projectFileContent = ProjectAnalyzer.ProcessProject(

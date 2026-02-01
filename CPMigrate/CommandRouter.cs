@@ -1,5 +1,7 @@
 using CPMigrate.Models;
 using CPMigrate.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CPMigrate;
 
@@ -17,7 +19,8 @@ internal static class CommandRouter
         IInteractiveService interactiveService,
         VersionResolver versionResolver,
         ConfigService configService,
-        IBackupManager backupManager)
+        IBackupManager backupManager,
+        ILoggerFactory? loggerFactory = null)
     {
         // Load and merge config if available
         var startDir = DetermineStartDirectory(options);
@@ -30,7 +33,7 @@ internal static class CommandRouter
         // Handle Update command
         if (options.Update)
         {
-            return await RunUpdateModeAsync(consoleService);
+            return await RunUpdateModeAsync(consoleService, loggerFactory);
         }
 
         // Route to appropriate command handler
@@ -46,20 +49,21 @@ internal static class CommandRouter
 
         if (!string.IsNullOrEmpty(options.BatchDir))
         {
-            return await RunBatchModeAsync(options, consoleService, versionResolver, backupManager);
+            return await RunBatchModeAsync(options, consoleService, versionResolver, backupManager, loggerFactory);
         }
 
         if (options.UnifyProps)
         {
-            return await RunUnifyPropsModeAsync(options, consoleService);
+            return await RunUnifyPropsModeAsync(options, consoleService, loggerFactory);
         }
 
         // Check for updates in background for standard commands (if not quiet)
         if (!options.Quiet && !options.Output.Equals(OutputFormat.Json))
         {
+            var bgLoggerFactory = loggerFactory;
             _ = Task.Run(async () =>
             {
-                var updateService = new UpdateService(consoleService);
+                var updateService = new UpdateService(consoleService, logger: bgLoggerFactory?.CreateLogger<UpdateService>());
                 var latestVersion = await updateService.CheckForUpdatesAsync();
                 if (latestVersion != null)
                 {
@@ -71,17 +75,17 @@ internal static class CommandRouter
             });
         }
 
-        return await RunMigrationAsync(options, consoleService, versionResolver, backupManager);
+        return await RunMigrationAsync(options, consoleService, versionResolver, backupManager, loggerFactory);
     }
 
     /// <summary>
     /// Executes the self-update mode.
     /// </summary>
-    private static async Task<int> RunUpdateModeAsync(IConsoleService consoleService)
+    private static async Task<int> RunUpdateModeAsync(IConsoleService consoleService, ILoggerFactory? loggerFactory = null)
     {
         try
         {
-            var updateService = new UpdateService(consoleService);
+            var updateService = new UpdateService(consoleService, logger: loggerFactory?.CreateLogger<UpdateService>());
             var success = await updateService.PerformUpdateAsync();
             return success ? ExitCodes.Success : ExitCodes.UnexpectedError;
         }
@@ -118,13 +122,13 @@ internal static class CommandRouter
     /// <summary>
     /// Executes the unify Directory.Build.props mode.
     /// </summary>
-    public static async Task<int> RunUnifyPropsModeAsync(Options options, IConsoleService consoleService)
+    public static async Task<int> RunUnifyPropsModeAsync(Options options, IConsoleService consoleService, ILoggerFactory? loggerFactory = null)
     {
         try
         {
             consoleService.WriteHeader();
 
-            var projectAnalyzer = new ProjectAnalyzer(consoleService);
+            var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
             var buildPropsService = new BuildPropsService(consoleService, projectAnalyzer);
 
             return await buildPropsService.UnifyPropertiesAsync(options);
@@ -361,7 +365,8 @@ internal static class CommandRouter
         Options options,
         IConsoleService consoleService,
         VersionResolver versionResolver,
-        IBackupManager backupManager)
+        IBackupManager backupManager,
+        ILoggerFactory? loggerFactory = null)
     {
         if (!ValidateOptions(options, consoleService))
         {
@@ -373,15 +378,17 @@ internal static class CommandRouter
         // Create batch service with a migration executor function
         var batchService = new BatchService(consoleService, async solutionOptions =>
         {
+            var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
             var migrationService = new MigrationService(
                 consoleService,
-                null,
+                projectAnalyzer,
                 versionResolver,
                 null,
                 backupManager,
                 null,
                 null,
-                quietMode: options.Quiet);
+                quietMode: options.Quiet,
+                logger: loggerFactory?.CreateLogger<MigrationService>());
 
             return await migrationService.ExecuteAsync(solutionOptions);
         });
@@ -428,19 +435,22 @@ internal static class CommandRouter
         Options options,
         IConsoleService consoleService,
         VersionResolver versionResolver,
-        IBackupManager backupManager)
+        IBackupManager backupManager,
+        ILoggerFactory? loggerFactory = null)
     {
         try
         {
+            var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
             var migrationService = new MigrationService(
                 consoleService,
-                null,
+                projectAnalyzer,
                 versionResolver,
                 null,
                 backupManager,
                 null,
                 null,
-                quietMode: options.Quiet);
+                quietMode: options.Quiet,
+                logger: loggerFactory?.CreateLogger<MigrationService>());
 
             var result = await migrationService.ExecuteAsync(options);
 

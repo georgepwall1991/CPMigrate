@@ -1,6 +1,8 @@
 using CPMigrate.Models;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.SolutionPersistence.Serializer;
 
 namespace CPMigrate.Services;
@@ -12,11 +14,13 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
 {
     private readonly IConsoleService _consoleService;
     private readonly IDotNetCliService _dotNetCliService;
+    private readonly ILogger<ProjectAnalyzer> _logger;
 
-    public ProjectAnalyzer(IConsoleService consoleService, IDotNetCliService? dotNetCliService = null)
+    public ProjectAnalyzer(IConsoleService consoleService, IDotNetCliService? dotNetCliService = null, ILogger<ProjectAnalyzer>? logger = null)
     {
         _consoleService = consoleService;
         _dotNetCliService = dotNetCliService ?? new DotNetCliService();
+        _logger = logger ?? NullLogger<ProjectAnalyzer>.Instance;
     }
 
     /// <summary>
@@ -24,7 +28,7 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
     /// </summary>
     /// <param name="solutionPath">Path to solution file or directory containing .sln files.</param>
     /// <returns>Tuple of (base path, list of project file paths).</returns>
-    public (string BasePath, List<string> ProjectPaths) DiscoverProjectsFromSolution(string solutionPath)
+    public async Task<(string BasePath, List<string> ProjectPaths)> DiscoverProjectsFromSolutionAsync(string solutionPath)
     {
         var projectPaths = new List<string>();
         var fullPath = ResolveSolutionFilePath(solutionPath);
@@ -47,18 +51,26 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
 
         try
         {
-            if (!DiscoverProjectsInSolution(fullPath, basePath, projectPaths))
+            if (!await DiscoverProjectsInSolutionAsync(fullPath, basePath, projectPaths))
             {
                 return (string.Empty, projectPaths);
             }
         }
         catch (Exception ex)
         {
+#pragma warning disable S2139 // Exceptions should be either logged or rethrown but not both - console message is user-facing, not logging
             _consoleService.Error($"Failed to parse solution file: {ex.Message}");
             throw;
+#pragma warning restore S2139
         }
 
         return (basePath, projectPaths);
+    }
+
+    /// <inheritdoc />
+    public (string BasePath, List<string> ProjectPaths) DiscoverProjectsFromSolution(string solutionPath)
+    {
+        return DiscoverProjectsFromSolutionAsync(solutionPath).GetAwaiter().GetResult();
     }
 
     private string? ResolveSolutionFilePath(string solutionPath)
@@ -85,7 +97,7 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
         return File.Exists(selected) ? selected : null;
     }
 
-    private bool DiscoverProjectsInSolution(string solutionFullPath, string basePath, List<string> projectPaths)
+    private async Task<bool> DiscoverProjectsInSolutionAsync(string solutionFullPath, string basePath, List<string> projectPaths)
     {
         // Use Microsoft.VisualStudio.SolutionPersistence for unified .sln/.slnx parsing
         var serializer = SolutionSerializers.GetSerializerByMoniker(solutionFullPath);
@@ -95,10 +107,7 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
             return false;
         }
 
-        var solution = serializer
-            .OpenAsync(solutionFullPath, CancellationToken.None)
-            .GetAwaiter()
-            .GetResult();
+        var solution = await serializer.OpenAsync(solutionFullPath, CancellationToken.None);
 
         var validProjects = solution.SolutionProjects
             .Where(p => !string.IsNullOrEmpty(p.FilePath))
@@ -128,7 +137,7 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
         {
             return Path.GetExtension(filePath)?.ToLowerInvariant();
         }
-        catch
+        catch (ArgumentException)
         {
             return null;
         }
@@ -194,7 +203,7 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
 
             return targetFramework;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Build.Exceptions.InvalidProjectFileException)
         {
             return "Unknown";
         }
@@ -326,6 +335,7 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
         }
         catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Could not scan project: {ProjectName}", projectName);
             _consoleService.Warning($"Could not scan {projectName}: {ex.Message}");
             return (references, false);
         }

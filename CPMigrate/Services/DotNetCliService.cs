@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 
 namespace CPMigrate.Services;
@@ -32,15 +33,27 @@ public class DotNetCliService : IDotNetCliService
             CreateNoWindow = true
         };
 
-        using var process = Process.Start(startInfo);
+        Process? process;
+        try
+        {
+            process = Process.Start(startInfo);
+        }
+        catch (Win32Exception)
+        {
+            return ("The 'dotnet' CLI was not found in PATH. Ensure the .NET SDK is installed and 'dotnet' is accessible.", false);
+        }
+
         if (process == null)
         {
             return (string.Empty, false);
         }
 
-        var output = await process.StandardOutput.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        using (process)
+        {
+            var output = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
 
-        return (output, process.ExitCode == 0);
+            return (output, process.ExitCode == 0);
+        }
     }
 }

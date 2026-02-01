@@ -36,7 +36,7 @@ internal class MigrationValidator
     /// <summary>
     /// Validates that the output directory exists or can be created.
     /// </summary>
-    public async Task<MigrationResult?> ValidateOutputDirectoryAsync(string outputPath)
+    public MigrationResult? ValidateOutputDirectory(string outputPath)
     {
         if (string.IsNullOrEmpty(outputPath))
         {
@@ -53,7 +53,6 @@ internal class MigrationValidator
                 Directory.CreateDirectory(outputPath);
             }
 
-            await Task.CompletedTask;
             return null; // No error
         }
         catch (Exception ex)
@@ -97,9 +96,9 @@ internal class MigrationValidator
                 _consoleService.WriteLine();
             }
         }
-        catch
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or InvalidOperationException)
         {
-            // Git not available or other error - silently continue
+            // Git not available, not in PATH, or other expected error - silently continue
         }
     }
 
