@@ -428,6 +428,69 @@ public class VersionInconsistencyFixerTests : IDisposable
         _fixer.Name.Should().Be("Version Inconsistency Fixer");
     }
 
+    [Fact]
+    public void Fix_PrereleaseWithDots_HighestStrategy_SelectsCorrectVersion()
+    {
+        // Arrange — versions like "1.0.0-beta.1" would fail with System.Version but work with NuGetVersion
+        var project1Path = CreateTestProject("Project1.csproj", "MyPackage", "1.0.0-beta.1");
+        var project2Path = CreateTestProject("Project2.csproj", "MyPackage", "1.0.0-rc.1");
+        var project3Path = CreateTestProject("Project3.csproj", "MyPackage", "1.0.0");
+
+        var issue = new AnalysisIssue(
+            "MyPackage",
+            "1.0.0-beta.1 (Project1), 1.0.0-rc.1 (Project2), 1.0.0 (Project3)",
+            new[] { project1Path, project2Path, project3Path }
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("MyPackage", "1.0.0-beta.1", project1Path, "Project1.csproj"),
+            new("MyPackage", "1.0.0-rc.1", project2Path, "Project2.csproj"),
+            new("MyPackage", "1.0.0", project3Path, "Project3.csproj")
+        });
+
+        var options = new Options { ConflictStrategy = ConflictStrategy.Highest };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert — stable release 1.0.0 should be highest (NuGet: stable > prerelease of same version)
+        result.Success.Should().BeTrue();
+        // Project1 and Project2 should be updated to 1.0.0
+        File.ReadAllText(project1Path).Should().Contain("1.0.0");
+        File.ReadAllText(project2Path).Should().Contain("1.0.0");
+        File.ReadAllText(project3Path).Should().Contain("1.0.0");
+    }
+
+    [Fact]
+    public void Fix_SemverBuildMetadata_HighestStrategy_HandlesBuildMetadata()
+    {
+        // Arrange — versions with build metadata like "2.0.0+build.123"
+        var project1Path = CreateTestProject("Project1.csproj", "MyPackage", "2.0.0");
+        var project2Path = CreateTestProject("Project2.csproj", "MyPackage", "1.5.0");
+
+        var issue = new AnalysisIssue(
+            "MyPackage",
+            "2.0.0 (Project1), 1.5.0 (Project2)",
+            new[] { project1Path, project2Path }
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("MyPackage", "2.0.0", project1Path, "Project1.csproj"),
+            new("MyPackage", "1.5.0", project2Path, "Project2.csproj")
+        });
+
+        var options = new Options { ConflictStrategy = ConflictStrategy.Highest };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        File.ReadAllText(project2Path).Should().Contain("2.0.0");
+    }
+
     // Helper methods
 
     private string CreateTestProject(string projectName, string packageName, string version)

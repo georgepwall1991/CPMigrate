@@ -93,4 +93,23 @@ public class VersionResolverTests
 
         result.Should().Be("10.0.0");
     }
+
+    [Fact]
+    public void DetectConflicts_CaseInsensitivePackageNames_MergesCorrectly()
+    {
+        // Packages with different casing should be treated as the same package
+        // The dictionaries now use OrdinalIgnoreCase, so the caller must also use case-insensitive dictionaries
+        var packageVersions = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Newtonsoft.Json"] = new() { "13.0.1", "12.0.3" },
+        };
+        // Add with different casing — should merge into the same key
+        packageVersions["newtonsoft.json"].Add("11.0.0");
+
+        var conflicts = VersionResolver.DetectConflicts(packageVersions);
+
+        // All three versions should be in one entry, creating one conflict
+        conflicts.Should().HaveCount(1);
+        conflicts.Should().Contain("Newtonsoft.Json");
+    }
 }

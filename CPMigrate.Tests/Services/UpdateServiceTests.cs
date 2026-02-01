@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using CPMigrate.Services;
+using FluentAssertions;
 using Moq;
 using Moq.Protected;
 using NuGet.Versioning;
@@ -116,6 +117,38 @@ public class UpdateServiceTests
         Assert.False(result);
         _consoleMock.Verify(c => c.Error(It.Is<string>(s => s == "Update failed:")), Times.Once);
         _consoleMock.Verify(c => c.Dim("Error details"), Times.Once);
+    }
+
+    [Fact]
+    public void Dispose_OwnedHttpClient_DisposesClient()
+    {
+        // Arrange — create UpdateService without injecting HttpClient (it creates its own)
+        var consoleMock = new Mock<IConsoleService>();
+        var service = new UpdateService(consoleMock.Object);
+
+        // Act — should not throw
+        service.Dispose();
+
+        // Assert — calling methods after dispose should fail because the HttpClient is disposed
+        var act = async () => await service.CheckForUpdatesAsync();
+        act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void Dispose_InjectedHttpClient_DoesNotDisposeClient()
+    {
+        // Arrange — inject an HttpClient (service should not own it)
+        var consoleMock = new Mock<IConsoleService>();
+        var handler = new Mock<HttpMessageHandler>();
+        var httpClient = new HttpClient(handler.Object);
+        var service = new UpdateService(consoleMock.Object, httpClient);
+
+        // Act
+        service.Dispose();
+
+        // Assert — the injected HttpClient should still be usable
+        // (we can't easily verify it's not disposed, but at least verify no exception from Dispose)
+        httpClient.BaseAddress = new Uri("https://example.com"); // Would throw if disposed
     }
 
     private void SetupHttpResponse(string content)

@@ -58,13 +58,30 @@ internal static class CommandRouter
         }
 
         // Check for updates in background for standard commands (if not quiet)
+        Task? updateCheckTask = null;
         if (!options.Quiet && !options.Output.Equals(OutputFormat.Json))
         {
             var bgLoggerFactory = loggerFactory;
-            _ = Task.Run(async () =>
+            updateCheckTask = Task.Run(async () =>
             {
-                var updateService = new UpdateService(consoleService, logger: bgLoggerFactory?.CreateLogger<UpdateService>());
+                using var updateService = new UpdateService(consoleService, logger: bgLoggerFactory?.CreateLogger<UpdateService>());
                 var latestVersion = await updateService.CheckForUpdatesAsync();
+                if (latestVersion != null)
+                {
+                    return latestVersion;
+                }
+                return null;
+            });
+        }
+
+        var result = await RunMigrationAsync(options, consoleService, versionResolver, backupManager, loggerFactory);
+
+        // Show update notification after main work completes to avoid interleaved output
+        if (updateCheckTask != null)
+        {
+            try
+            {
+                var latestVersion = await (Task<NuGet.Versioning.NuGetVersion?>)updateCheckTask;
                 if (latestVersion != null)
                 {
                     consoleService.WriteLine();
@@ -72,10 +89,14 @@ internal static class CommandRouter
                     consoleService.Dim("Run 'cpmigrate --update' to upgrade.");
                     consoleService.WriteLine();
                 }
-            });
+            }
+            catch (Exception)
+            {
+                // Update check failure should never affect the main workflow
+            }
         }
 
-        return await RunMigrationAsync(options, consoleService, versionResolver, backupManager, loggerFactory);
+        return result;
     }
 
     /// <summary>

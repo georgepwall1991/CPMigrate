@@ -238,7 +238,7 @@ public class BatchService
 
         // Use a CancellationTokenSource to support early termination when --batch-continue is false
         using var cts = new CancellationTokenSource();
-        var hasFailure = false;
+        var hasFailure = 0; // 0 = false, 1 = true; use Interlocked for thread-safe access
 
         var parallelOptions = new ParallelOptions
         {
@@ -282,7 +282,7 @@ public class BatchService
                     // Check for failure and cancel if --batch-continue is not set
                     if (migrationResult.ExitCode != ExitCodes.Success && !options.BatchContinue)
                     {
-                        hasFailure = true;
+                        Interlocked.Exchange(ref hasFailure, 1);
                         await cts.CancelAsync();
                     }
                 }
@@ -300,7 +300,7 @@ public class BatchService
                     // Cancel remaining operations if --batch-continue is not set
                     if (!options.BatchContinue)
                     {
-                        hasFailure = true;
+                        Interlocked.Exchange(ref hasFailure, 1);
                         await cts.CancelAsync();
                     }
                 }
@@ -309,7 +309,7 @@ public class BatchService
         catch (OperationCanceledException)
         {
             // Expected when we cancel due to failure with --batch-continue=false
-            if (hasFailure && !options.BatchContinue)
+            if (Interlocked.CompareExchange(ref hasFailure, 0, 0) == 1 && !options.BatchContinue)
             {
                 _consoleService.Warning("Stopping batch (use --batch-continue to continue on failure)");
             }

@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using CPMigrate.Models;
+using NuGet.Versioning;
 
 namespace CPMigrate.Fixers;
 
@@ -79,15 +80,14 @@ public class VersionInconsistencyFixer : IFixer
         };
     }
 
-    private static Version ParseVersion(string versionString)
+    private static NuGetVersion ParseVersion(string versionString)
     {
-        // Handle versions like "1.0.0", "1.0.0-preview", etc.
-        var cleanVersion = versionString.Split('-')[0];
-        if (Version.TryParse(cleanVersion, out var version))
+        if (NuGetVersion.TryParse(versionString, out var version))
         {
             return version;
         }
-        return new Version(0, 0, 0);
+        // Return lowest possible version so unparseable strings sort to the bottom
+        return new NuGetVersion(0, 0, 0);
     }
 
     private static FileChange? UpdateProjectVersions(string projectPath, string packageName, string targetVersion, bool dryRun)

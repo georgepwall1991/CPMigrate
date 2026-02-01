@@ -38,7 +38,8 @@ public class BuildPropsAnalyzer
         {
             try
             {
-                var projectRoot = ProjectRootElement.Open(path);
+                using var projectCollection = new Microsoft.Build.Evaluation.ProjectCollection();
+                var projectRoot = ProjectRootElement.Open(path, projectCollection);
                 AnalyzeProjectProperties(projectRoot, path, result);
                 AnalyzeProjectItems(projectRoot, path, result);
             }

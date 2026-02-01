@@ -1,6 +1,7 @@
 using System.Security;
 using System.Text;
 using Microsoft.Build.Construction;
+using Microsoft.Build.Evaluation;
 
 namespace CPMigrate.Services;
 
@@ -71,12 +72,13 @@ public class PropsGenerator
         out bool hasConditionalPackageVersions)
     {
         hasConditionalPackageVersions = false;
-        Dictionary<string, HashSet<string>> packageVersions = [];
+        Dictionary<string, HashSet<string>> packageVersions = new(StringComparer.OrdinalIgnoreCase);
         if (!File.Exists(propsFilePath))
         {
             throw new FileNotFoundException($"Props file not found: {propsFilePath}", propsFilePath);
         }
-        var projectRoot = ProjectRootElement.Open(propsFilePath);
+        using var projectCollection = new ProjectCollection();
+        var projectRoot = ProjectRootElement.Open(propsFilePath, projectCollection);
 
         foreach (var item in projectRoot.Items.Where(i => i.ItemType == PackageVersionItemType))
         {
@@ -119,7 +121,8 @@ public class PropsGenerator
             throw new FileNotFoundException($"Props file not found: {propsFilePath}", propsFilePath);
         }
 
-        var projectRoot = ProjectRootElement.Open(propsFilePath);
+        using var projectCollection = new ProjectCollection();
+        var projectRoot = ProjectRootElement.Open(propsFilePath, projectCollection);
         var (itemsByPackage, hasConditionalPackageVersions) = BuildExistingItemsMap(projectRoot);
 
         EnsureManagePackageVersionsCentrally(projectRoot);

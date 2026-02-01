@@ -9,7 +9,7 @@ using Spectre.Console;
 
 namespace CPMigrate.Services;
 
-public class UpdateService : IUpdateService
+public sealed class UpdateService : IUpdateService, IDisposable
 {
     private const string PackageId = "CPMigrate";
 
@@ -26,6 +26,7 @@ public class UpdateService : IUpdateService
     private static readonly TimeSpan UpdateCheckTimeout = TimeSpan.FromSeconds(3);
 
     private readonly HttpClient _httpClient;
+    private readonly bool _ownsHttpClient;
     private readonly IConsoleService _consoleService;
     private readonly IProcessRunner _processRunner;
     private readonly ILogger<UpdateService> _logger;
@@ -33,8 +34,9 @@ public class UpdateService : IUpdateService
     public UpdateService(IConsoleService consoleService, HttpClient? httpClient = null, IProcessRunner? processRunner = null, ILogger<UpdateService>? logger = null)
     {
         _consoleService = consoleService;
+        _ownsHttpClient = httpClient == null;
         _httpClient = httpClient ?? new HttpClient();
-        if (httpClient == null)
+        if (_ownsHttpClient)
         {
             _httpClient.Timeout = UpdateCheckTimeout;
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "CPMigrate-CLI");
@@ -179,5 +181,13 @@ public class UpdateService : IUpdateService
                     return false;
                 }
             });
+    }
+
+    public void Dispose()
+    {
+        if (_ownsHttpClient)
+        {
+            _httpClient.Dispose();
+        }
     }
 }

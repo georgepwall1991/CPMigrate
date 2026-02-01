@@ -678,6 +678,37 @@ public class ProjectAnalyzerTests : IDisposable
 
     #endregion
 
+    #region ScanProjectPackages MSBuild Variable Tests
+
+    [Fact]
+    public void ScanProjectPackages_MsBuildVariableVersion_SkipsPackageWithVariableVersion()
+    {
+        // Arrange — create a .csproj with one package using a MSBuild variable and one with a literal version
+        var projectPath = Path.Combine(_testDirectory, "Test.csproj");
+        var content = @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <FooVersion>1.2.3</FooVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include=""Foo"" Version=""$(FooVersion)"" />
+    <PackageReference Include=""Bar"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>";
+        File.WriteAllText(projectPath, content);
+
+        // Act
+        var (references, success) = _analyzer.ScanProjectPackages(projectPath);
+
+        // Assert — only "Bar" should be returned, not "Foo"
+        success.Should().BeTrue();
+        references.Should().HaveCount(1);
+        references.Should().Contain(r => r.PackageName == "Bar" && r.Version == "1.0.0");
+        references.Should().NotContain(r => r.PackageName == "Foo");
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private void CreateMinimalProject(string projectPath)

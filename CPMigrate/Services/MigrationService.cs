@@ -202,8 +202,8 @@ public class MigrationService
         string propsPath,
         bool propsFileExists)
     {
-        Dictionary<string, HashSet<string>> packages = [];
-        Dictionary<string, HashSet<string>> existingPackages = [];
+        Dictionary<string, HashSet<string>> packages = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, HashSet<string>> existingPackages = new(StringComparer.OrdinalIgnoreCase);
         bool hadConditionalPackageVersions = false;
 
         if (propsFileExists && options.MergeExisting)
@@ -412,7 +412,7 @@ public class MigrationService
 
     private Dictionary<string, Dictionary<string, int>> BuildPackageUsageCounts(Options options)
     {
-        var usageCounts = new Dictionary<string, Dictionary<string, int>>();
+        var usageCounts = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
 
         // Use cached scan results if available to avoid redundant project re-scanning
         if (_cachedProjectScans != null)
@@ -662,7 +662,7 @@ public class MigrationService
         }
         else
         {
-            await File.WriteAllTextAsync(propsFilePath, mergedContent);
+            await FileHelper.WriteAtomicAsync(propsFilePath, mergedContent);
             if (!_quietMode)
             {
                 _consoleService.WriteMarkup($"\n[green]:page_facing_up: Updated:[/] [cyan]{Markup.Escape(propsFilePath)}[/]\n");
@@ -695,7 +695,7 @@ public class MigrationService
         }
         else
         {
-            await File.WriteAllTextAsync(propsFilePath, updatedPackagePropsContent);
+            await FileHelper.WriteAtomicAsync(propsFilePath, updatedPackagePropsContent);
             if (!_quietMode)
             {
                 _consoleService.WriteMarkup($"\n[green]:page_facing_up: Generated:[/] [cyan]{Markup.Escape(propsFilePath)}[/]\n");
@@ -1164,7 +1164,7 @@ public class MigrationService
         allReferences.AddRange(references);
 
         // Cache scan results for later reuse (e.g., interactive conflict resolution)
-        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>();
+        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>(StringComparer.OrdinalIgnoreCase);
         _cachedProjectScans[projectPath] = references;
 
         if (options.IncludeTransitive || options.AuditSecurity)
@@ -1363,7 +1363,7 @@ public class MigrationService
 
         // Cache scan results before processing (for use by interactive conflict resolution)
         var (scannedRefs, _) = _projectAnalyzer.ScanProjectPackages(projectFilePath);
-        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>();
+        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>(StringComparer.OrdinalIgnoreCase);
         _cachedProjectScans[projectFilePath] = scannedRefs;
 
         // Process project file
@@ -1385,7 +1385,7 @@ public class MigrationService
         // Write modified project file
         if (!options.DryRun)
         {
-            await File.WriteAllTextAsync(projectFilePath, projectFileContent);
+            await FileHelper.WriteAtomicAsync(projectFilePath, projectFileContent);
         }
 
         return backupEntry;

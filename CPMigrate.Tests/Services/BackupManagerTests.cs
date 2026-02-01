@@ -65,6 +65,24 @@ public class BackupManagerTests : IDisposable
     }
 
     [Fact]
+    public void CreateBackupDirectory_WhitespaceOnlyBackupDir_FallsBackToCurrentDirectory()
+    {
+        var options = new Options
+        {
+            NoBackup = false,
+            BackupDir = "   "
+        };
+
+        var result = BackupManager.CreateBackupDirectory(options);
+
+        // Should fall back to current directory rather than creating a whitespace-named path
+        result.Should().NotBeEmpty();
+        result.Should().EndWith(".cpmigrate_backup");
+        // Should be relative to current dir, not a whitespace directory
+        result.Should().NotContain("   ");
+    }
+
+    [Fact]
     public void CreateBackupForProject_NoBackupTrue_DoesNotCreateFile()
     {
         var projectFile = CreateTestFile("Test.csproj", "<Project></Project>");

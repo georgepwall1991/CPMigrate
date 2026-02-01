@@ -316,6 +316,15 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
                         var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
                         if (versionMetadata != null && !string.IsNullOrEmpty(versionMetadata.Value))
                         {
+                            // Skip MSBuild variable references (e.g., $(SomeVariable)) — these
+                            // can't be resolved statically and would corrupt version parsing downstream
+                            if (versionMetadata.Value.Contains("$("))
+                            {
+                                _logger.LogDebug("Skipping MSBuild variable version '{Version}' for package {Package} in {Project}",
+                                    versionMetadata.Value, item.Include, projectName);
+                                continue;
+                            }
+
                             references.Add(new PackageReference(
                                 item.Include,
                                 versionMetadata.Value,

@@ -33,7 +33,7 @@ public class BackupManager : IBackupManager
         }
 
         var backupPath = Path.Combine(
-            Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),
+            Path.GetFullPath(string.IsNullOrWhiteSpace(options.BackupDir) ? "." : options.BackupDir),
             BackupDirectoryName);
 
         try
@@ -180,7 +180,7 @@ public class BackupManager : IBackupManager
     public static string GetBackupDirectoryPath(Options options)
     {
         return Path.Combine(
-            Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),
+            Path.GetFullPath(string.IsNullOrWhiteSpace(options.BackupDir) ? "." : options.BackupDir),
             BackupDirectoryName);
     }
 
