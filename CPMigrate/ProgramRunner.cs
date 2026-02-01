@@ -1,6 +1,7 @@
 using CommandLine;
 using CPMigrate.Models;
 using CPMigrate.Services;
+using Microsoft.Extensions.Logging;
 
 namespace CPMigrate;
 
@@ -38,7 +39,12 @@ public static class ProgramRunner
                 async options =>
                 {
                     // Merge config file with CLI args (CLI args take precedence)
-                    await MergeConfigWithCliArgsAsync(options, args, configService);
+                    MergeConfigWithCliArgs(options, args, configService);
+
+                    // Initialize logging based on --verbose flag
+                    using var loggerFactory = LoggingConfiguration.CreateLoggerFactory(options.Verbose);
+                    var logger = loggerFactory.CreateLogger("CPMigrate");
+                    logger.LogDebug("CPMigrate started with args: {Args}", string.Join(" ", args));
 
                     // Route to appropriate command handler
                     return await CommandRouter.RouteCommand(
@@ -62,7 +68,7 @@ public static class ProgramRunner
     /// <summary>
     /// Loads config file and merges with CLI arguments (CLI args take precedence).
     /// </summary>
-    private static async Task MergeConfigWithCliArgsAsync(Options options, string[] args, ConfigService configService)
+    private static void MergeConfigWithCliArgs(Options options, string[] args, ConfigService configService)
     {
         var startDir = DetermineStartDirectory(options);
         var config = configService.LoadConfig(startDir);
@@ -72,8 +78,6 @@ public static class ProgramRunner
             var cliArgsProvided = CliArgumentParser.GetExplicitArguments(args);
             ConfigService.MergeConfig(options, config, cliArgsProvided);
         }
-
-        await Task.CompletedTask;
     }
 
     /// <summary>

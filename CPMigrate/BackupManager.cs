@@ -347,10 +347,10 @@ public class BackupManager : IBackupManager
                     File.Delete(file);
                     result.FilesRemoved++;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // Track but continue
-                    result.Errors.Add($"Failed to delete: {file}");
+                    result.Errors.Add($"Failed to delete: {file} ({ex.Message})");
                 }
             }
             result.BackupsRemoved++;
@@ -416,9 +416,9 @@ public class BackupManager : IBackupManager
             File.Delete(filePath);
             result.FilesRemoved++;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            result.Errors.Add($"Failed to delete: {filePath}");
+            result.Errors.Add($"Failed to delete: {filePath} ({ex.Message})");
         }
     }
 

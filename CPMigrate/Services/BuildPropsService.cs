@@ -5,6 +5,12 @@ namespace CPMigrate.Services;
 
 public class BuildPropsService
 {
+    /// <summary>
+    /// Minimum percentage of projects that must share the same property value
+    /// for it to be considered a unification candidate.
+    /// </summary>
+    private const double ConsensusThresholdPercent = 0.6;
+
     private readonly IConsoleService _consoleService;
     private readonly BuildPropsAnalyzer _analyzer;
     private readonly ProjectAnalyzer _projectAnalyzer;
@@ -19,7 +25,7 @@ public class BuildPropsService
     public async Task<int> UnifyPropertiesAsync(Options options)
     {
         var startDir = !string.IsNullOrEmpty(options.SolutionFileDir) ? options.SolutionFileDir : ".";
-        var (basePath, projectPaths) = _projectAnalyzer.DiscoverProjectsFromSolution(startDir);
+        var (basePath, projectPaths) = await _projectAnalyzer.DiscoverProjectsFromSolutionAsync(startDir);
 
         if (projectPaths.Count == 0)
         {
@@ -30,8 +36,8 @@ public class BuildPropsService
         _consoleService.Banner("Analyzing Project Properties...");
         var analysis = _analyzer.Analyze(projectPaths);
 
-        // Filter for properties that are present in at least 60% of projects with the SAME value
-        var threshold = Math.Ceiling(analysis.TotalProjects * 0.6);
+        // Filter for properties that are present in at least the consensus threshold of projects with the SAME value
+        var threshold = Math.Ceiling(analysis.TotalProjects * ConsensusThresholdPercent);
 
         // --- PROPERTIES ---
         var propertyCandidates = analysis.PropertyOccurrences
@@ -68,13 +74,13 @@ public class BuildPropsService
 
         if (propertyCandidates.Count == 0 && itemCandidates.Count == 0)
         {
-            _consoleService.Info("No common properties or items found (checked for >60% consensus).");
+            _consoleService.Info($"No common properties or items found (checked for >{ConsensusThresholdPercent:P0} consensus).");
             return ExitCodes.Success;
         }
 
         if (propertyCandidates.Count > 0)
         {
-            _consoleService.Info($"Found {propertyCandidates.Count} common properties (consensus > 60%):");
+            _consoleService.Info($"Found {propertyCandidates.Count} common properties (consensus > {ConsensusThresholdPercent:P0}):");
             foreach (var candidate in propertyCandidates)
             {
                 var percentage = (double)candidate.Count / analysis.TotalProjects * 100;
@@ -84,7 +90,7 @@ public class BuildPropsService
 
         if (itemCandidates.Count > 0)
         {
-            _consoleService.Info($"Found {itemCandidates.Count} common items (consensus > 60%):");
+            _consoleService.Info($"Found {itemCandidates.Count} common items (consensus > {ConsensusThresholdPercent:P0}):");
             foreach (var candidate in itemCandidates)
             {
                 var percentage = (double)candidate.Count / analysis.TotalProjects * 100;

@@ -13,6 +13,11 @@ public interface IProjectAnalyzer
     (string BasePath, List<string> ProjectPaths) DiscoverProjectsFromSolution(string solutionPath);
 
     /// <summary>
+    /// Discovers project paths from a solution file or directory (async version).
+    /// </summary>
+    Task<(string BasePath, List<string> ProjectPaths)> DiscoverProjectsFromSolutionAsync(string solutionPath);
+
+    /// <summary>
     /// Discovers project path from a directory or direct file path.
     /// </summary>
     (string BasePath, List<string> ProjectPaths) DiscoverProjectFromPath(string projectPath);

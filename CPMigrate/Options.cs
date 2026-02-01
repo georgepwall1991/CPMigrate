@@ -116,6 +116,10 @@ public class Options
         HelpText = "Suppress non-essential output (progress bars, spinners). Useful for scripts.")]
     public bool Quiet { get; set; }
 
+    [Option('v', "verbose", Default = false,
+        HelpText = "Enable verbose diagnostic logging to a file (cpmigrate.log in current directory).")]
+    public bool Verbose { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Batch Processing
     // ═══════════════════════════════════════════════════════════════════════
@@ -420,10 +424,11 @@ public class Options
             throw new ArgumentException("gitignore-dir must be specified when add-gitignore is enabled.");
         }
 
-        if (!string.IsNullOrEmpty(SolutionFileDir) && !string.IsNullOrWhiteSpace(ProjectFileDir))
+        if (!string.IsNullOrEmpty(SolutionFileDir) && SolutionFileDir != "." && !string.IsNullOrWhiteSpace(ProjectFileDir))
         {
-            Console.WriteLine("Both solution and project directories are included, will use solution file as source." +
-                              "\r\nWill ignore the project file specified.");
+            throw new ArgumentException(
+                "Both --solution and --project were specified. Use only one: " +
+                "--solution to scan a .sln file, or --project to scan a specific project.");
         }
     }
 }

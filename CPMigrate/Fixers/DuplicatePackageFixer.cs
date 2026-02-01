@@ -114,9 +114,10 @@ public class DuplicatePackageFixer : IFixer
                 standardCasing
             );
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException)
         {
-            // File may be locked, inaccessible, or contain invalid XML
+            // File may be locked, inaccessible, or contain invalid XML.
+            // Returns null to skip this file; callers handle the absence gracefully.
             return null;
         }
     }

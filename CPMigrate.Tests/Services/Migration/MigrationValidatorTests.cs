@@ -37,13 +37,13 @@ public class MigrationValidatorTests
     }
 
     [Fact]
-    public async Task ValidateOutputDirectoryAsync_DirectoryExists_ReturnsNull()
+    public void ValidateOutputDirectory_DirectoryExists_ReturnsNull()
     {
         var temp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(temp);
         try
         {
-            var result = await _validator.ValidateOutputDirectoryAsync(temp);
+            var result = _validator.ValidateOutputDirectory(temp);
             result.Should().BeNull();
         }
         finally
@@ -53,12 +53,12 @@ public class MigrationValidatorTests
     }
 
     [Fact]
-    public async Task ValidateOutputDirectoryAsync_DirectoryDoesNotExist_CreatesIt()
+    public void ValidateOutputDirectory_DirectoryDoesNotExist_CreatesIt()
     {
         var temp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         try
         {
-            var result = await _validator.ValidateOutputDirectoryAsync(temp);
+            var result = _validator.ValidateOutputDirectory(temp);
             result.Should().BeNull();
             Directory.Exists(temp).Should().BeTrue();
             _mockConsole.Verify(c => c.Info(It.Is<string>(s => s.Contains("Creating"))), Times.Once);
@@ -70,10 +70,10 @@ public class MigrationValidatorTests
     }
 
     [Fact]
-    public async Task ValidateOutputDirectoryAsync_InvalidPath_ReturnsError()
+    public void ValidateOutputDirectory_InvalidPath_ReturnsError()
     {
         var invalidPath = "/invalid/path/that/cannot/be/created/???/###";
-        var result = await _validator.ValidateOutputDirectoryAsync(invalidPath);
+        var result = _validator.ValidateOutputDirectory(invalidPath);
         result.Should().NotBeNull();
         result!.ExitCode.Should().Be(ExitCodes.FileOperationError);
         _mockConsole.Verify(c => c.Error(It.IsAny<string>()), Times.Once);
