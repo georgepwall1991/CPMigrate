@@ -1,8 +1,9 @@
-# CPMigrate: The Ultimate .NET Central Package Management (CPM) Migration Tool
+# CPMigrate — .NET Central Package Management Migration, Analysis & Update Tool
+
 <div align="center">
-  <img src="./docs/images/logo.png" alt="CPMigrate Logo" width="128" />
+  <img src="./docs/images/logo.png" alt="CPMigrate Logo — .NET NuGet Central Package Management CLI Tool" width="128" />
   <br/>
-  <img src="./docs/images/banner.png" alt="CPMigrate Banner" width="100%" />
+  <img src="./docs/images/banner.png" alt="CPMigrate Banner — Migrate, Analyze, and Update NuGet Packages" width="100%" />
 </div>
 
 <div align="center">
@@ -12,65 +13,72 @@
 [![NuGet](https://img.shields.io/nuget/v/CPMigrate.svg?style=flat-square&logo=nuget)](https://www.nuget.org/packages/CPMigrate/)
 [![Downloads](https://img.shields.io/nuget/dt/CPMigrate.svg?style=flat-square&color=blue)](https://www.nuget.org/packages/CPMigrate/)
 
+**Migrate to NuGet Central Package Management | Analyze dependency health | Update packages safely | Auto-fix issues**
+
 </div>
 
 ![CPMigrate Interactive Wizard](./docs/images/cpmigrate-interactive.gif)
 
-## 🚀 Why CPMigrate?
+---
 
-Stop wrestling with **dependency hell** and **version drift**. CPMigrate is the advanced **CLI tool** that instantly modernizes your **.NET solutions** to use **NuGet Central Package Management (CPM)**.
+## Why CPMigrate?
 
-It doesn't just move XML around; it is a full-featured **repository health auditor** that:
-*   **Analyzes** your entire dependency graph.
-*   **Resolves** deep version conflicts automatically.
-*   **Cleans** redundant `<PackageReference>` entries to reduce technical debt.
-*   **Secures** your codebase by detecting high-severity vulnerabilities before they are locked in.
+Managing NuGet dependencies across large .NET solutions is painful. Version drift, duplicated references, transitive conflicts, and security vulnerabilities accumulate silently until they break your build or compromise your supply chain.
+
+**CPMigrate** is a .NET global tool that automates the migration to [NuGet Central Package Management (CPM)](https://learn.microsoft.com/nuget/consume-packages/central-package-management), analyzes your entire dependency graph, auto-fixes common issues, and keeps packages up to date — with automatic rollback when tests fail.
+
+### What it does
+
+- **Migrates** any .NET solution to CPM by generating `Directory.Packages.props` and cleaning `.csproj` files
+- **Analyzes** dependency health: version inconsistencies, duplicates, redundant references, transitive conflicts, framework alignment, and security vulnerabilities
+- **Auto-fixes** detected issues with a single command
+- **Updates** NuGet packages to latest versions, runs `dotnet test`, and rolls back automatically on failure
+- **Unifies** repeated project properties into `Directory.Build.props`
+- **Batch processes** monorepos with dozens of solutions in parallel
+- Supports `.sln` and the new `.slnx` format (Visual Studio 17.10+)
 
 ---
 
-## ✨ Key Features & Capabilities
+## Table of Contents
 
-### 🛡️ **Intelligent Dependency Management**
-*   **Transitive Conflict Resolution:** Automatically detects and resolves deep dependency conflicts that `dotnet restore` often misses.
-*   **Dependency Lifting (Cleanup):** Identifies redundant explicit package references that are already transitively provided, keeping your `.csproj` files clean and minimal.
-*   **Smart Versioning Strategies:** Choose between *Highest*, *Lowest*, or *Fail* strategies to handle version mismatches across your repository.
-
-### 🔒 **Security-First Architecture**
-*   **Automated Vulnerability Audits:** Runs integrated security scans (`dotnet list package --vulnerable`) to prevent locking in insecure packages.
-*   **Secure Execution:** Strict path resolution prevents PATH injection attacks.
-*   **Supply Chain Hardening:** CI/CD workflows are pinned to secure hashes to prevent upstream compromises.
-
-### 🚀 **Modern Development Workflow**
-*   **SLNX Support:** Fully compatible with the new Visual Studio 17.10+ `.slnx` solution format.
-*   **Directory.Build.props Unification:** Automatically promotes repeated properties (Authors, TargetFramework, etc.) to a root-level configuration file, enforcing consistency across 100+ projects instantly.
-*   **Self-Updating:** Includes a built-in update checker to ensure you're always using the latest version of the tool.
-    *   `cpmigrate --update`
-
-### 🎮 **Mission Control Dashboard**
-An immersive, keyboard-driven Terminal User Interface (TUI) that provides:
-*   **Real-time Risk Assessment:** Scans your repo and calculates a "Migration Risk" score.
-*   **Dry-Run Previews:** Visualize massively destructive changes before they happen.
-*   **Live Verification:** Automatically verifies build integrity after every migration step.
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Features](#features)
+  - [CPM Migration](#cpm-migration)
+  - [Dependency Analysis](#dependency-analysis)
+  - [Auto-Fix](#auto-fix)
+  - [Package Updates with Test Verification](#package-updates-with-test-verification)
+  - [Directory.Build.props Unification](#directorybuildprops-unification)
+  - [Batch Processing](#batch-processing)
+  - [Backup & Rollback](#backup--rollback)
+  - [Configuration File](#configuration-file)
+- [CLI Reference](#cli-reference)
+- [Exit Codes](#exit-codes)
+- [CI/CD Integration](#cicd-integration)
+- [Gallery](#gallery)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## 📦 Installation & Updating
+## Installation
 
-### As a .NET Global Tool (Recommended)
+### .NET Global Tool (Recommended)
 
-Requires **.NET SDK 8.0** or later (supports .NET 10).
+Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
-**Install:**
 ```bash
 dotnet tool install --global CPMigrate
 ```
 
-**Update:**
-You can let the tool update itself:
+**Update to the latest version:**
+
 ```bash
 cpmigrate --update
 ```
-Or manually via .NET CLI:
+
+Or via the .NET CLI:
+
 ```bash
 dotnet tool update --global CPMigrate
 ```
@@ -88,74 +96,374 @@ dotnet build
 
 ---
 
-## 🕹️ Usage Scenarios
+## Quick Start
 
-### 1. The "Mission Control" (Interactive Mode)
-Ideal for first-time users or complex repositories.
+### Interactive Mode (Recommended for first-time users)
 
 ```bash
 cpmigrate
 ```
-*   Drives the entire process via a step-by-step wizard.
-*   Offers rollbacks, backups, and detailed explanations.
 
-### 2. CI/CD & Automation (Headless Mode)
-Perfect for GitHub Actions, Azure DevOps, or Git hooks.
+Launches the Mission Control dashboard — a step-by-step wizard that guides you through migration, analysis, rollback, and more.
 
-**Migrate a specific solution:**
+### Migrate a solution to CPM
+
 ```bash
 cpmigrate -s ./MySolution.sln
 ```
 
-**Analyze repository health (No changes):**
+### Preview changes without modifying files
+
+```bash
+cpmigrate -s ./MySolution.sln --dry-run
+```
+
+### Analyze dependency health
+
 ```bash
 cpmigrate --analyze
 ```
 
-**Auto-fix common issues (No migration):**
+### Update all packages to latest versions
+
 ```bash
-cpmigrate --analyze --fix
+cpmigrate --update-packages
 ```
-
-### 3. Repository Modernization
-Refactor your entire codebase structure in one command.
-
-**Unify generic properties to `Directory.Build.props`:**
-```bash
-cpmigrate --unify-props
-```
-
-**Batch migrate a monorepo with 50+ solutions:**
-```bash
-cpmigrate --batch /path/to/repo --batch-parallel
-```
-
-
-### Options Reference
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--interactive` | `-i` | Launch the Mission Control TUI (Default if no args). |
-| `--solution` | `-s` | Path to `.sln` or `.slnx` file or directory. |
-| `--unify-props` | - | Migrate common project properties to `Directory.Build.props`. |
-| `--dry-run` | `-d` | Simulate operations without writing files. |
-| `--analyze` | `-a` | Run health checks (duplicates, security, transitive). |
-| `--fix` | - | Apply automatic fixes to discovered analysis issues. |
-| `--rollback` | `-r` | Restore the last backup state. |
-| `--prune-backups` | - | Clean up old backup files to save space. |
-| `--output` | - | Output format: `Terminal` (default) or `Json` (for CI pipes). |
 
 ---
 
-## 🖼️ Gallery
+## Features
+
+### CPM Migration
+
+Scans your `.sln` or `.slnx` file, extracts all `<PackageReference>` entries from `.csproj` / `.fsproj` / `.vbproj` files, resolves version conflicts, and generates a centralized `Directory.Packages.props`.
+
+```bash
+# Standard migration
+cpmigrate -s ./MySolution.sln
+
+# Merge into an existing Directory.Packages.props
+cpmigrate -s ./MySolution.sln --merge
+
+# Fail if any version conflicts exist (strict mode)
+cpmigrate -s ./MySolution.sln --conflict-strategy Fail
+
+# Prompt for each conflict interactively
+cpmigrate -s ./MySolution.sln --interactive-conflicts
+```
+
+**Conflict resolution strategies:**
+
+| Strategy | Behavior |
+|----------|----------|
+| `Highest` | Use the highest version found across projects (default) |
+| `Lowest` | Use the lowest version found |
+| `Fail` | Exit with error if any package has conflicting versions |
+
+---
+
+### Dependency Analysis
+
+Run 7 built-in analyzers without modifying any files:
+
+```bash
+cpmigrate --analyze
+```
+
+| Analyzer | What it detects |
+|----------|----------------|
+| **Version Inconsistencies** | Same package with different versions across projects |
+| **Duplicate Packages** | Same package referenced with different casing (e.g., `Newtonsoft.Json` vs `newtonsoft.json`) |
+| **Redundant References** | Same package referenced multiple times within a single project |
+| **Transitive Conflicts** | Transitive dependencies with divergent versions across projects |
+| **Framework Alignment** | Projects targeting different `TargetFramework` values |
+| **Redundant Direct References** | Explicit references already provided transitively (lifting candidates) |
+| **Security Vulnerabilities** | Known CVEs in direct and transitive dependencies (requires `--audit`) |
+
+```bash
+# Include transitive dependencies in analysis
+cpmigrate --analyze --transitive
+
+# Include security vulnerability scanning
+cpmigrate --analyze --audit
+
+# Full analysis with all checks
+cpmigrate --analyze --transitive --audit
+```
+
+---
+
+### Auto-Fix
+
+Automatically fix detected issues:
+
+```bash
+# Fix all auto-fixable issues
+cpmigrate --analyze --fix
+
+# Preview what fixes would be applied
+cpmigrate --analyze --fix-dry-run
+```
+
+**Available fixers:**
+
+| Fixer | What it fixes |
+|-------|---------------|
+| **Version Inconsistency Fixer** | Standardizes package versions across projects using the configured conflict strategy |
+| **Duplicate Package Casing Fixer** | Normalizes package name casing to the most common variant |
+| **Redundant Reference Fixer** | Removes duplicate `<PackageReference>` entries within the same project |
+| **Transitive Conflict Pinner** | Pins divergent transitive dependencies in `Directory.Packages.props` |
+
+---
+
+### Package Updates with Test Verification
+
+**New in v3.0.** Update all NuGet packages to their latest versions with automatic test verification and rollback.
+
+```bash
+# Preview available updates
+cpmigrate --update-packages --dry-run
+
+# Update packages, run tests, rollback on failure
+cpmigrate --update-packages
+
+# Include pre-release versions
+cpmigrate --update-packages --include-prerelease
+```
+
+**How it works:**
+
+1. Reads current versions from `Directory.Packages.props`
+2. Queries the NuGet API for latest versions (8 concurrent lookups)
+3. Shows a table of available updates
+4. For **major version bumps**, prompts you interactively: accept or skip
+5. Minor/patch updates are auto-accepted
+6. Creates a backup of `Directory.Packages.props`
+7. Applies version updates atomically
+8. Runs `dotnet restore` then `dotnet test`
+9. **Tests pass** — keeps updates, cleans up backup
+10. **Tests fail** — rolls back to previous versions automatically
+
+> Requires CPM to be enabled. If `Directory.Packages.props` doesn't exist, run `cpmigrate` first to migrate.
+
+---
+
+### Directory.Build.props Unification
+
+Promote repeated properties and items from individual project files into a shared `Directory.Build.props`:
+
+```bash
+# Preview what would be unified
+cpmigrate --unify-props --dry-run
+
+# Apply unification
+cpmigrate --unify-props
+
+# Skip confirmation prompt
+cpmigrate --unify-props --force
+```
+
+Identifies properties and items present in at least 60% of projects with the same value (e.g., `TargetFramework`, `ImplicitUsings`, `Nullable`, `Authors`) and migrates them to the root-level file. Individual project files are cleaned up automatically.
+
+---
+
+### Batch Processing
+
+Process multiple solutions in a monorepo:
+
+```bash
+# Sequential processing
+cpmigrate --batch /path/to/repo
+
+# Parallel processing (uses all CPU cores)
+cpmigrate --batch /path/to/repo --batch-parallel
+
+# Continue on failure
+cpmigrate --batch /path/to/repo --batch-parallel --batch-continue
+```
+
+Recursively discovers `.sln` and `.slnx` files, excluding common non-project directories (`node_modules`, `bin`, `obj`, `.git`, etc.). Each solution gets an isolated backup directory to prevent collisions.
+
+---
+
+### Backup & Rollback
+
+Every migration creates a timestamped backup. Roll back at any time:
+
+```bash
+# Rollback to previous state
+cpmigrate --rollback
+
+# List all backups
+cpmigrate --list-backups
+
+# Prune old backups, keeping the last 3
+cpmigrate --prune-backups --retention 3
+
+# Delete all backups
+cpmigrate --prune-all
+```
+
+Backups are stored in `.cpmigrate_backup/` with a JSON manifest for reliable restoration. Use `--add-gitignore` to automatically add the backup directory to `.gitignore`.
+
+---
+
+### Configuration File
+
+Create a `.cpmigrate.json` in your repository root to set default options:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate.schema.json",
+  "ConflictStrategy": "Highest",
+  "Backup": true,
+  "BackupDir": ".",
+  "AddGitignore": true,
+  "MergeExisting": false,
+  "OutputFormat": "Terminal",
+  "Retention": {
+    "Enabled": true,
+    "MaxBackups": 5
+  }
+}
+```
+
+The config file is discovered by walking up from the current directory. CLI arguments always take precedence over config file values.
+
+---
+
+## CLI Reference
+
+### Migration & Core
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--solution` | `-s` | `.` | Path to `.sln` / `.slnx` file or directory |
+| `--project` | `-p` | | Path to a specific project file |
+| `--output-dir` | `-o` | `.` | Output directory for `Directory.Packages.props` |
+| `--dry-run` | `-d` | `false` | Preview changes without modifying files |
+| `--merge` | | `false` | Merge into existing `Directory.Packages.props` |
+| `--conflict-strategy` | | `Highest` | Version conflict resolution: `Highest`, `Lowest`, `Fail` |
+| `--interactive-conflicts` | | `false` | Prompt for each version conflict |
+| `--keep-attrs` | `-k` | `false` | Keep `Version` attributes in project files |
+| `--interactive` | `-i` | `false` | Launch the interactive Mission Control wizard |
+
+### Analysis & Auto-Fix
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--analyze` | `-a` | `false` | Run dependency health analysis |
+| `--transitive` | | `false` | Include transitive dependencies |
+| `--audit` | | `false` | Include security vulnerability scanning |
+| `--fix` | | `false` | Apply auto-fixes (requires `--analyze`) |
+| `--fix-dry-run` | | `false` | Preview auto-fixes without applying |
+
+### Package Updates (v3.0)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--update-packages` | `false` | Update all packages to latest, run tests, rollback on failure |
+| `--include-prerelease` | `false` | Include pre-release versions when updating |
+
+### Modernization
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--unify-props` | `false` | Migrate common properties to `Directory.Build.props` |
+| `--force` | `false` | Skip confirmation prompts |
+
+### Batch Processing
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--batch` | | Directory to scan recursively for solutions |
+| `--batch-parallel` | `false` | Process solutions in parallel |
+| `--batch-continue` | `false` | Continue even if a solution fails |
+
+### Backup & Rollback
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--rollback` | `-r` | `false` | Restore from most recent backup |
+| `--no-backup` | `-n` | `false` | Disable backup creation |
+| `--backup-dir` | | `.` | Backup directory location |
+| `--list-backups` | | `false` | List all available backups |
+| `--prune-backups` | | `false` | Delete old backups based on `--retention` |
+| `--prune-all` | | `false` | Delete all backups |
+| `--retention` | | `5` | Number of backups to keep when pruning |
+| `--add-gitignore` | | `false` | Add backup directory to `.gitignore` |
+
+### Output & Logging
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--output` | | `Terminal` | Output format: `Terminal` or `Json` |
+| `--output-file` | | | Write JSON output to a file |
+| `--quiet` | `-q` | `false` | Suppress non-essential output |
+| `--verbose` | `-v` | `false` | Enable diagnostic logging to `cpmigrate.log` |
+
+### Self-Update
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--update` | `false` | Check for and install the latest version of CPMigrate |
+
+---
+
+## Exit Codes
+
+| Code | Name | Meaning |
+|------|------|---------|
+| `0` | Success | Operation completed successfully |
+| `1` | ValidationError | Invalid command-line options |
+| `2` | FileOperationError | File I/O or permission failure |
+| `3` | VersionConflict | Unresolvable version conflict (with `--conflict-strategy Fail`) |
+| `4` | NoProjectsFound | No `.csproj` / `.fsproj` / `.vbproj` files discovered |
+| `5` | AnalysisIssuesFound | Analysis detected issues (useful for CI gates) |
+| `6` | UnexpectedError | Unhandled exception |
+| `7` | TestFailure | Tests failed after package update (rollback performed) |
+
+---
+
+## CI/CD Integration
+
+### GitHub Actions Example
+
+```yaml
+- name: Install CPMigrate
+  run: dotnet tool install --global CPMigrate
+
+- name: Check dependency health
+  run: cpmigrate --analyze --audit --output Json --output-file analysis.json --quiet
+
+- name: Fail on issues
+  run: |
+    EXIT_CODE=$(cpmigrate --analyze --audit --quiet; echo $?)
+    if [ $EXIT_CODE -eq 5 ]; then
+      echo "::error::Dependency issues detected"
+      exit 1
+    fi
+```
+
+### JSON Output
+
+Use `--output Json` to produce machine-readable output for CI/CD pipelines:
+
+```bash
+cpmigrate --analyze --output Json --output-file report.json
+```
+
+---
+
+## Gallery
 
 ### Mission Control Dashboard
 ![CPMigrate Interactive](./docs/images/cpmigrate-interactive.gif)
-*The state-driven dashboard assessing migration risk.*
+*The interactive wizard assessing migration risk and guiding you through each step.*
 
 ### Risk Analysis & Dry Run
 ![CPMigrate Demo](./docs/images/cpmigrate-demo.gif)
-*Previewing massive changes safely before committing.*
+*Previewing changes safely before committing.*
 
 ### Security & Package Analysis
 ![CPMigrate Analyze](./docs/images/cpmigrate-analyze.gif)
@@ -163,23 +471,22 @@ cpmigrate --batch /path/to/repo --batch-parallel
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Contributions are welcome. To get started:
 
-1.  Fork the Project
-2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4.  Push to the Branch (`git push origin feature/AmazingFeature`)
-5.  Open a Pull Request
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Write tests for your changes
+4. Ensure all 476+ tests pass (`dotnet test`)
+5. Open a Pull Request
 
 ---
 
-## 📄 License
+## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
-## 👤 Author
+## Author
 
-**George Wall**
--   GitHub: [@georgepwall1991](https://github.com/georgepwall1991)
+**George Wall** — [@georgepwall1991](https://github.com/georgepwall1991)
