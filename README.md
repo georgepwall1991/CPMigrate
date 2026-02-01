@@ -104,7 +104,7 @@ dotnet build
 cpmigrate
 ```
 
-Launches the Mission Control dashboard — a step-by-step wizard that guides you through migration, analysis, rollback, and more.
+Launches the Mission Control dashboard — a step-by-step wizard that guides you through migration, analysis, package updates, rollback, and more. The wizard adapts to your environment: when CPM is already enabled, it offers **Update NuGet Packages** as a quick action with prompts for transitive dependencies, pre-release versions, and dry-run mode.
 
 ### Migrate a solution to CPM
 
@@ -221,7 +221,7 @@ cpmigrate --analyze --fix-dry-run
 
 ### Package Updates with Test Verification
 
-**New in v3.0.** Update all NuGet packages to their latest versions with automatic test verification and rollback.
+**New in v3.0.** Update all NuGet packages to their latest versions with automatic test verification and rollback. **v3.2** adds full support in the interactive wizard — run `cpmigrate -i` and select "Update NuGet packages" from the maintenance menu.
 
 ```bash
 # Preview available updates
@@ -232,6 +232,9 @@ cpmigrate --update-packages
 
 # Include pre-release versions
 cpmigrate --update-packages --include-prerelease
+
+# Or use the interactive wizard (v3.2+)
+cpmigrate -i
 ```
 
 #### Transitive Dependency Pinning (v3.1)
@@ -376,7 +379,7 @@ The config file is discovered by walking up from the current directory. CLI argu
 | `--conflict-strategy` | | `Highest` | Version conflict resolution: `Highest`, `Lowest`, `Fail` |
 | `--interactive-conflicts` | | `false` | Prompt for each version conflict |
 | `--keep-attrs` | `-k` | `false` | Keep `Version` attributes in project files |
-| `--interactive` | `-i` | `false` | Launch the interactive Mission Control wizard |
+| `--interactive` | `-i` | `false` | Launch the interactive Mission Control wizard (migration, analysis, package updates, rollback, batch, backups) |
 
 ### Analysis & Auto-Fix
 
@@ -509,7 +512,7 @@ Contributions are welcome. To get started:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Write tests for your changes
-4. Ensure all 483+ tests pass (`dotnet test`)
+4. Ensure all 487+ tests pass (`dotnet test`)
 5. Open a Pull Request
 
 ---
