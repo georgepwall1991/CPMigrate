@@ -43,6 +43,11 @@ public static class ProgramRunner
 
                     // Initialize logging based on --verbose flag
                     using var loggerFactory = LoggingConfiguration.CreateLoggerFactory(options.Verbose);
+                    if (options.Verbose)
+                    {
+                        var logPath = Path.Combine(Directory.GetCurrentDirectory(), "cpmigrate.log");
+                        consoleService.Dim($"Verbose logging enabled: {logPath}");
+                    }
                     var logger = loggerFactory.CreateLogger("CPMigrate");
                     logger.LogDebug("CPMigrate started with args: {Args}", string.Join(" ", args));
 
@@ -53,7 +58,8 @@ public static class ProgramRunner
                         interactiveService,
                         versionResolver,
                         configService,
-                        backupManager);
+                        backupManager,
+                        loggerFactory);
                 },
                 errors =>
                 {

@@ -1361,6 +1361,11 @@ public class MigrationService
                 options, projectFilePath, backupPath, backupTimestamp);
         }
 
+        // Cache scan results before processing (for use by interactive conflict resolution)
+        var (scannedRefs, _) = _projectAnalyzer.ScanProjectPackages(projectFilePath);
+        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>();
+        _cachedProjectScans[projectFilePath] = scannedRefs;
+
         // Process project file
         var projectFileContent = ProjectAnalyzer.ProcessProject(
             projectFilePath, packages, options.KeepAttributes);

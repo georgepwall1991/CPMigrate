@@ -96,9 +96,9 @@ internal class MigrationValidator
                 _consoleService.WriteLine();
             }
         }
-        catch
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or InvalidOperationException)
         {
-            // Git not available or other error - silently continue
+            // Git not available, not in PATH, or other expected error - silently continue
         }
     }
 
