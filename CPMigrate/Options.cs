@@ -428,6 +428,12 @@ public class Options
     /// </summary>
     private bool ValidateUpdatePackagesOptions()
     {
+        // Check --include-prerelease dependency before early return
+        if (IncludePrerelease && !UpdatePackages)
+        {
+            throw new ArgumentException("--include-prerelease requires --update-packages.");
+        }
+
         if (!UpdatePackages)
         {
             return false;
@@ -451,11 +457,6 @@ public class Options
         if (UnifyProps)
         {
             throw new ArgumentException("--update-packages cannot be used with --unify-props.");
-        }
-
-        if (IncludePrerelease && !UpdatePackages)
-        {
-            throw new ArgumentException("--include-prerelease requires --update-packages.");
         }
 
         return true;

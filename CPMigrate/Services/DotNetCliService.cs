@@ -99,12 +99,13 @@ public class DotNetCliService : IDotNetCliService
 
         using (process)
         {
+            // Read streams before WaitForExitAsync to prevent deadlock when output buffers fill
             var outputTask = process.StandardOutput.ReadToEndAsync();
             var errorTask = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
 
             var output = await outputTask;
             var error = await errorTask;
+            await process.WaitForExitAsync();
 
             var combined = string.IsNullOrEmpty(error) ? output : $"{output}\n{error}";
             return (combined, process.ExitCode == 0);

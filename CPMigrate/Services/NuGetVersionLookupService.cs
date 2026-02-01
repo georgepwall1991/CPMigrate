@@ -46,7 +46,8 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
             return versions[0]; // Already sorted descending
         }
 
-        return versions.FirstOrDefault(v => !v.IsPrerelease) ?? versions[0];
+        // Don't fall back to prerelease when user didn't opt in
+        return versions.FirstOrDefault(v => !v.IsPrerelease);
     }
 
     /// <inheritdoc />
@@ -82,7 +83,9 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
                 return versionsProp.EnumerateArray()
                     .Select(v => v.GetString())
                     .Where(v => v != null)
-                    .Select(v => NuGetVersion.Parse(v!))
+                    .Select(v => NuGetVersion.TryParse(v!, out var parsed) ? parsed : null)
+                    .Where(v => v != null)
+                    .Cast<NuGetVersion>()
                     .OrderByDescending(v => v)
                     .ToList();
             }

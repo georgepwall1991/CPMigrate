@@ -57,18 +57,17 @@ public class NuGetVersionLookupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetLatestVersionAsync_NoStableVersion_ReturnsPrereleaseAsFallback()
+    public async Task GetLatestVersionAsync_NoStableVersion_ReturnsNull()
     {
-        // Arrange
+        // Arrange — only prerelease versions, user didn't opt in
         var json = """{ "versions": [ "1.0.0-alpha", "2.0.0-beta" ] }""";
         SetupHttpResponse(json);
 
         // Act
         var result = await _sut.GetLatestVersionAsync("TestPackage");
 
-        // Assert
-        result.Should().NotBeNull();
-        result!.ToNormalizedString().Should().Be("2.0.0-beta");
+        // Assert — should not return prerelease when user didn't opt in
+        result.Should().BeNull();
     }
 
     [Fact]

@@ -113,4 +113,18 @@ public class UpdatePackagesValidationTests
         var options = new Options();
         options.IncludePrerelease.Should().BeFalse();
     }
+
+    [Fact]
+    public void Validate_IncludePrereleaseWithoutUpdatePackages_ThrowsArgumentException()
+    {
+        var options = new Options
+        {
+            IncludePrerelease = true,
+            UpdatePackages = false
+        };
+
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--include-prerelease requires --update-packages*");
+    }
 }

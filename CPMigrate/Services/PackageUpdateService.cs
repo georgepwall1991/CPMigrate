@@ -63,9 +63,14 @@ public class PackageUpdateService : IPackageUpdateService
         _consoleService.Info($"Checking {currentVersions.Count} packages for updates...");
         var updates = await QueryNuGetForUpdatesAsync(currentVersions, options.IncludePrerelease);
 
-        // Step 5: Build update list
+        // Step 5: Build update list — use semantic version comparison, not string equality
         var availableUpdates = updates
-            .Where(u => u.LatestVersion != u.CurrentVersion)
+            .Where(u =>
+            {
+                var current = NuGetVersion.TryParse(u.CurrentVersion, out var c) ? c : null;
+                var latest = NuGetVersion.TryParse(u.LatestVersion, out var l) ? l : null;
+                return current != null && latest != null && latest > current;
+            })
             .ToList();
 
         if (availableUpdates.Count == 0)
@@ -200,12 +205,18 @@ public class PackageUpdateService : IPackageUpdateService
         bool includePrerelease)
     {
         var updates = new List<PackageUpdateEntry>();
-        var semaphore = new SemaphoreSlim(8);
+        using var semaphore = new SemaphoreSlim(8);
         var tasks = new List<Task<PackageUpdateEntry?>>();
 
         foreach (var (packageName, versions) in currentVersions)
         {
-            var currentVersion = versions.First();
+            // Resolve to highest version when multiple exist (version conflicts)
+            var currentVersion = ResolveCurrentVersion(versions);
+            if (currentVersion == null)
+            {
+                _logger.LogWarning("Could not parse any version for {PackageName}, skipping", packageName);
+                continue;
+            }
             tasks.Add(QuerySinglePackageAsync(packageName, currentVersion, includePrerelease, semaphore));
         }
 
@@ -213,6 +224,22 @@ public class PackageUpdateService : IPackageUpdateService
         updates.AddRange(results.Where(r => r != null).Cast<PackageUpdateEntry>());
 
         return updates;
+    }
+
+    private static string? ResolveCurrentVersion(HashSet<string> versions)
+    {
+        if (versions.Count == 1)
+        {
+            return versions.First();
+        }
+
+        // When multiple versions exist (conflicts), pick the highest
+        return versions
+            .Select(v => NuGetVersion.TryParse(v, out var parsed) ? parsed : null)
+            .Where(v => v != null)
+            .OrderByDescending(v => v)
+            .FirstOrDefault()
+            ?.ToNormalizedString();
     }
 
     private async Task<PackageUpdateEntry?> QuerySinglePackageAsync(
