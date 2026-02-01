@@ -128,6 +128,9 @@ cpmigrate --analyze
 
 ```bash
 cpmigrate --update-packages
+
+# Include transitive dependencies
+cpmigrate --update-packages --transitive
 ```
 
 ---
@@ -231,20 +234,47 @@ cpmigrate --update-packages
 cpmigrate --update-packages --include-prerelease
 ```
 
+#### Transitive Dependency Pinning (v3.1)
+
+**New in v3.1.** Add `--transitive` to also scan and pin transitive (indirect) dependencies:
+
+```bash
+# Preview direct + transitive updates
+cpmigrate --update-packages --transitive --dry-run
+
+# Update direct packages and pin transitive deps
+cpmigrate --update-packages --transitive
+
+# With pre-release versions
+cpmigrate --update-packages --transitive --include-prerelease
+```
+
+When `--transitive` is enabled, CPMigrate:
+- Scans all projects via `dotnet list package --include-transitive`
+- Deduplicates across projects (picks the highest resolved version)
+- Excludes transitive deps already managed as direct dependencies
+- Queries NuGet for the latest version of each transitive dep
+- Shows separate **DIRECT UPDATES** and **TRANSITIVE UPDATES** sections
+- Pins accepted transitive updates as new `<PackageVersion>` entries in `Directory.Packages.props`
+
+Per-project scan failures are logged and skipped gracefully. If all scans fail, the tool continues with direct-only updates.
+
 **How it works:**
 
 1. Reads current versions from `Directory.Packages.props`
 2. Queries the NuGet API for latest versions (8 concurrent lookups)
-3. Shows a table of available updates
-4. For **major version bumps**, prompts you interactively: accept or skip
-5. Minor/patch updates are auto-accepted
-6. Creates a backup of `Directory.Packages.props`
-7. Applies version updates atomically
-8. Runs `dotnet restore` then `dotnet test`
-9. **Tests pass** — keeps updates, cleans up backup
-10. **Tests fail** — rolls back to previous versions automatically
+3. Optionally scans transitive dependencies (`--transitive`)
+4. Shows a table of available updates (separate sections for direct and transitive)
+5. For **major version bumps**, prompts you interactively: accept or skip
+6. Minor/patch updates are auto-accepted
+7. Creates a backup of `Directory.Packages.props`
+8. Applies version updates and transitive pins atomically
+9. Runs `dotnet restore` then `dotnet test`
+10. **Tests pass** — keeps updates, cleans up backup
+11. **Tests fail** — rolls back all changes (including transitive pins) automatically
 
 > Requires CPM to be enabled. If `Directory.Packages.props` doesn't exist, run `cpmigrate` first to migrate.
+> Transitive scanning requires `dotnet restore` to have been run beforehand.
 
 ---
 
@@ -358,11 +388,12 @@ The config file is discovered by walking up from the current directory. CLI argu
 | `--fix` | | `false` | Apply auto-fixes (requires `--analyze`) |
 | `--fix-dry-run` | | `false` | Preview auto-fixes without applying |
 
-### Package Updates (v3.0)
+### Package Updates (v3.0+)
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--update-packages` | `false` | Update all packages to latest, run tests, rollback on failure |
+| `--transitive` | `false` | Also scan and pin transitive dependencies (v3.1) |
 | `--include-prerelease` | `false` | Include pre-release versions when updating |
 
 ### Modernization
@@ -478,7 +509,7 @@ Contributions are welcome. To get started:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Write tests for your changes
-4. Ensure all 476+ tests pass (`dotnet test`)
+4. Ensure all 483+ tests pass (`dotnet test`)
 5. Open a Pull Request
 
 ---
