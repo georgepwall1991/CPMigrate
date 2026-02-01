@@ -110,6 +110,7 @@ public class PackageUpdateService : IPackageUpdateService
                 ExitCode = ExitCodes.Success,
                 PackagesChecked = currentVersions.Count,
                 PackagesSkipped = currentVersions.Count,
+                TransitivePackagesFound = transitiveFound,
                 Updates = acceptedUpdates
             };
         }
@@ -182,7 +183,7 @@ public class PackageUpdateService : IPackageUpdateService
         {
             _consoleService.Error("dotnet restore failed. Rolling back...");
             _consoleService.Dim(restoreOutput);
-            return await RollbackAndReturn(backupPath, manifest, currentVersions.Count, acceptedUpdates);
+            return await RollbackAndReturn(backupPath, manifest, currentVersions.Count, acceptedUpdates, transitiveFound);
         }
 
         _consoleService.Info("Running dotnet test...");
@@ -193,7 +194,7 @@ public class PackageUpdateService : IPackageUpdateService
         {
             _consoleService.Error("Tests failed! Rolling back...");
             _consoleService.Dim(testOutput);
-            return await RollbackAndReturn(backupPath, manifest, currentVersions.Count, acceptedUpdates);
+            return await RollbackAndReturn(backupPath, manifest, currentVersions.Count, acceptedUpdates, transitiveFound);
         }
 
         // Step 12: Success
@@ -534,7 +535,8 @@ public class PackageUpdateService : IPackageUpdateService
         string backupPath,
         BackupManifest manifest,
         int packagesChecked,
-        List<PackageUpdateEntry> updates)
+        List<PackageUpdateEntry> updates,
+        int transitivePackagesFound = 0)
     {
         try
         {
@@ -553,6 +555,7 @@ public class PackageUpdateService : IPackageUpdateService
             {
                 ExitCode = ExitCodes.FileOperationError,
                 PackagesChecked = packagesChecked,
+                TransitivePackagesFound = transitivePackagesFound,
                 TestsPassed = false,
                 WasRolledBack = false,
                 Updates = updates
@@ -563,6 +566,7 @@ public class PackageUpdateService : IPackageUpdateService
         {
             ExitCode = ExitCodes.TestFailure,
             PackagesChecked = packagesChecked,
+            TransitivePackagesFound = transitivePackagesFound,
             TestsPassed = false,
             WasRolledBack = true,
             Updates = updates
