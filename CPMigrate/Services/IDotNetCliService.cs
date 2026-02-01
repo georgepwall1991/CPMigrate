@@ -9,4 +9,14 @@ public interface IDotNetCliService
     /// Execute 'dotnet list package' command.
     /// </summary>
     Task<(string Output, bool Success)> RunListPackageAsync(string projectDir, bool includeTransitive, bool vulnerable);
+
+    /// <summary>
+    /// Execute 'dotnet restore' command.
+    /// </summary>
+    Task<(string Output, bool Success)> RunRestoreAsync(string solutionOrProjectPath);
+
+    /// <summary>
+    /// Execute 'dotnet test' command.
+    /// </summary>
+    Task<(string Output, bool Success)> RunTestAsync(string solutionOrProjectPath);
 }
