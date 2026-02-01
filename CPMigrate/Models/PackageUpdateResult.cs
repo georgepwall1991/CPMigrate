@@ -39,6 +39,16 @@ public class PackageUpdateResult
     /// Individual package update entries.
     /// </summary>
     public List<PackageUpdateEntry> Updates { get; init; } = [];
+
+    /// <summary>
+    /// Number of transitive dependencies found during scanning.
+    /// </summary>
+    public int TransitivePackagesFound { get; init; }
+
+    /// <summary>
+    /// Number of transitive dependencies that were pinned/updated.
+    /// </summary>
+    public int TransitivePackagesUpdated { get; init; }
 }
 
 /// <summary>
@@ -49,9 +59,11 @@ public class PackageUpdateResult
 /// <param name="LatestVersion">The latest available version from NuGet.</param>
 /// <param name="IsMajorUpdate">Whether this update crosses a major version boundary.</param>
 /// <param name="Accepted">Whether the user accepted this update in the wizard.</param>
+/// <param name="IsTransitive">Whether this is a transitive (indirect) dependency.</param>
 public record PackageUpdateEntry(
     string PackageName,
     string CurrentVersion,
     string LatestVersion,
     bool IsMajorUpdate,
-    bool Accepted);
+    bool Accepted,
+    bool IsTransitive = false);
