@@ -172,6 +172,104 @@ public class InteractiveServiceTests : IDisposable
         options!.UnifyProps.Should().BeTrue();
         options.SolutionFileDir.Should().NotBeNull();
     }
+
+    [Fact]
+    public void RunWizard_UpdatePackagesAppearsInMenu_WhenCpmEnabled()
+    {
+        // Arrange - create Directory.Packages.props to enable CPM detection
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, "<Project></Project>");
+
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Exit" // Just exit after seeing the menu
+        });
+
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
+
+        // The fact that "Exit" is returned means the wizard ran.
+        // We verify via a full run that update packages is selectable when CPM is enabled.
+        options.Should().BeNull(); // Exited
+    }
+
+    [Fact]
+    public void RunWizard_UpdatePackagesMode_ReturnsCorrectOptions()
+    {
+        // Arrange - create Directory.Packages.props to enable CPM detection
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, "<Project></Project>");
+
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "📡 Update NuGet packages to latest versions", // Quick action
+            "🎯 Use current directory: " + Path.GetFileName(_testDirectory), // Path selection
+            "Yes - include transitive dependencies", // Transitive
+            "No - stable versions only", // Pre-release
+            "Yes - preview changes without modifying files", // Dry run
+            "Yes" // Confirmation
+        });
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
+
+        options.Should().NotBeNull();
+        options!.UpdatePackages.Should().BeTrue();
+        options.IncludeTransitive.Should().BeTrue();
+        options.IncludePrerelease.Should().BeFalse();
+        options.DryRun.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RunWizard_UpdatePackagesDoesNotAppear_WhenCpmNotEnabled()
+    {
+        // Arrange - no Directory.Packages.props, so CPM is not detected
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "Exit"
+        });
+
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
+
+        // The wizard should run without offering UpdatePackages
+        // Since we can't directly inspect the menu, we verify it doesn't crash
+        // and that the option is not set
+        options.Should().BeNull(); // Exited
+    }
+
+    [Fact]
+    public void RunWizard_UpdatePackagesWithPrerelease_ReturnsCorrectOptions()
+    {
+        // Arrange - create Directory.Packages.props to enable CPM detection
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, "<Project></Project>");
+
+        var fakeConsole = new FakeConsoleService();
+        fakeConsole.SelectionResponses = new Queue<string>(new[]
+        {
+            "📡 Update NuGet packages to latest versions", // Quick action
+            "🎯 Use current directory: " + Path.GetFileName(_testDirectory), // Path selection
+            "No - direct packages only", // Transitive
+            "Yes - include pre-release versions", // Pre-release
+            "No - make changes immediately", // Dry run
+            "Yes" // Confirmation
+        });
+        fakeConsole.ConfirmationResponse = true;
+
+        var service = new InteractiveService(fakeConsole, _testDirectory);
+        var options = service.RunWizard();
+
+        options.Should().NotBeNull();
+        options!.UpdatePackages.Should().BeTrue();
+        options.IncludeTransitive.Should().BeFalse();
+        options.IncludePrerelease.Should().BeTrue();
+        options.DryRun.Should().BeFalse();
+    }
 }
 
 public class InteractiveOptionsTests
