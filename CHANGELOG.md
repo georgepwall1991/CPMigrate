@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-02-02
+
 ### Added
 - `--analyze` flags: `--outdated` and `--deprecated`.
 - JSON schema field `outputSchemaVersion` for machine-contract evolution.
