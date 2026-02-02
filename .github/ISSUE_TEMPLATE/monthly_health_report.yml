@@ -1,0 +1,49 @@
+name: Monthly health report
+description: Publish monthly distribution and reliability metrics for CPMigrate.
+title: "[Health] YYYY-MM report"
+labels:
+  - report
+  - metrics
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for the public monthly health report.
+        Keep metrics aggregate-only and privacy-safe.
+  - type: textarea
+    id: highlights
+    attributes:
+      label: Highlights
+      description: One short paragraph on notable wins and regressions.
+    validations:
+      required: true
+  - type: textarea
+    id: distribution
+    attributes:
+      label: Distribution metrics
+      description: NuGet downloads, new installs, active CI consumers (if known).
+      value: |
+        - Total downloads:
+        - New downloads (month):
+        - Estimated first-run successes:
+    validations:
+      required: true
+  - type: textarea
+    id: reliability
+    attributes:
+      label: Reliability metrics
+      description: Top failure categories and trend vs previous month.
+      value: |
+        - Success rate:
+        - Top failure category #1:
+        - Top failure category #2:
+        - Top failure category #3:
+    validations:
+      required: true
+  - type: textarea
+    id: actions
+    attributes:
+      label: Next actions
+      description: 3-5 concrete engineering or docs actions.
+    validations:
+      required: true

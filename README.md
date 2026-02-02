@@ -43,6 +43,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [60-Second Quickstart](#60-second-quickstart)
 - [Features](#features)
   - [CPM Migration](#cpm-migration)
   - [Dependency Analysis](#dependency-analysis)
@@ -55,6 +56,10 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 - [CLI Reference](#cli-reference)
 - [Exit Codes](#exit-codes)
 - [CI/CD Integration](#cicd-integration)
+- [Examples & Benchmarks](#examples--benchmarks)
+- [Release Cadence](#release-cadence)
+- [Telemetry (Opt-in)](#telemetry-opt-in)
+- [Community Growth](#community-growth)
 - [Gallery](#gallery)
 - [Contributing](#contributing)
 - [License](#license)
@@ -135,6 +140,24 @@ cpmigrate --update-packages --transitive
 
 ---
 
+## 60-Second Quickstart
+
+```bash
+# 1) Scan for issues (CI-safe exit codes)
+cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analysis.json
+
+# 2) Preview migration
+cpmigrate -s ./MySolution.sln --dry-run
+
+# 3) Migrate to CPM
+cpmigrate -s ./MySolution.sln
+
+# 4) Safely update packages with rollback protection
+cpmigrate --update-packages --dry-run
+```
+
+---
+
 ## Features
 
 ### CPM Migration
@@ -192,6 +215,9 @@ cpmigrate --analyze --audit
 
 # Full analysis with all checks
 cpmigrate --analyze --transitive --audit
+
+# Include outdated + deprecated checks
+cpmigrate --analyze --outdated --deprecated
 ```
 
 ---
@@ -388,6 +414,8 @@ The config file is discovered by walking up from the current directory. CLI argu
 | `--analyze` | `-a` | `false` | Run dependency health analysis |
 | `--transitive` | | `false` | Include transitive dependencies |
 | `--audit` | | `false` | Include security vulnerability scanning |
+| `--outdated` | | `false` | Include outdated package checks |
+| `--deprecated` | | `false` | Include deprecated package checks |
 | `--fix` | | `false` | Apply auto-fixes (requires `--analyze`) |
 | `--fix-dry-run` | | `false` | Preview auto-fixes without applying |
 
@@ -461,6 +489,24 @@ The config file is discovered by walking up from the current directory. CLI argu
 
 ## CI/CD Integration
 
+### Strict JSON Contract Mode
+
+Use `--output Json --quiet` to guarantee JSON-only stdout (no banners/preamble), which is ideal for CI parsing.
+
+```bash
+# analyze
+cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analyze.json
+
+# migrate
+cpmigrate -s ./MySolution.sln --dry-run --output Json --quiet > migrate.json
+
+# rollback
+cpmigrate --rollback --backup-dir . --output Json --quiet > rollback.json
+
+# update-packages
+cpmigrate --update-packages --dry-run --output Json --quiet > update-packages.json
+```
+
 ### GitHub Actions Example
 
 ```yaml
@@ -486,6 +532,45 @@ Use `--output Json` to produce machine-readable output for CI/CD pipelines:
 ```bash
 cpmigrate --analyze --output Json --output-file report.json
 ```
+
+---
+
+## Examples & Benchmarks
+
+- Starter example: `examples/small-solution/`
+- Monorepo example: `examples/monorepo/`
+- Benchmark table: `docs/benchmarks.md`
+
+These sample repositories are designed for onboarding, CI templates, and reproducible before/after conversion demos.
+
+---
+
+## Release Cadence
+
+- **Stable releases:** weekly, versioned and changeloged
+- **Release candidates (RC):** published for fast feedback before stable promotion
+- **Change log source of truth:** `CHANGELOG.md`
+- **Policy details:** `docs/release-cadence.md`
+
+---
+
+## Telemetry (Opt-in)
+
+CPMigrate supports privacy-first telemetry that is **disabled by default**.
+
+- Enable by setting `CPMIGRATE_TELEMETRY_OPT_IN=true`
+- Captures only command-level metrics (operation, duration, exit code category, high-level flags)
+- Captures **no** project paths, package names, file contents, or source code
+- Stores local events at `~/.cpmigrate/telemetry/events.ndjson`
+
+---
+
+## Community Growth
+
+- Enable **GitHub Discussions** and pin:
+  - `Start here` (first-run flow + CI JSON mode)
+  - `Success stories` (before/after migration outcomes)
+- Use Discussions as the primary intake for usage feedback and roadmap voting.
 
 ---
 

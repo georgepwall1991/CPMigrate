@@ -20,7 +20,7 @@ public class TransitiveConflictFixer : IFixer
 
     public bool CanFix(AnalysisIssue issue)
     {
-        return issue.Description.Contains("Transitive dependency");
+        return issue.IssueCode == AnalysisIssueCode.TransitiveConflict;
     }
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun)

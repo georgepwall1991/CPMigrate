@@ -29,7 +29,10 @@ public class LiftingAnalyzer : IAnalyzer
                 issues.Add(new AnalysisIssue(
                     packageName,
                     $"Direct reference is redundant; it is already provided transitively by another top-level package in {reference.ProjectName}.",
-                    [reference.ProjectName]
+                    [reference.ProjectName],
+                    AnalysisIssueCode.RedundantDirectReference,
+                    AnalysisSeverity.Low,
+                    Fixable: false
                 ));
             }
         }

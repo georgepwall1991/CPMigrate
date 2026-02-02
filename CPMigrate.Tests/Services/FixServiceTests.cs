@@ -95,7 +95,8 @@ public class FixServiceTests
             {
                 new("Newtonsoft.Json",
                     "12.0.1 (Project1), 13.0.1 (Project2)",
-                    new[] { project1Path, project2Path })
+                    new[] { project1Path, project2Path },
+                    AnalysisIssueCode.VersionInconsistency)
             };
             var analyzerResults = new List<AnalyzerResult>
             {
@@ -154,7 +155,8 @@ public class FixServiceTests
             {
                 new("Newtonsoft.Json",
                     "Version inconsistency",
-                    new[] { project1Path })
+                    new[] { project1Path },
+                    AnalysisIssueCode.VersionInconsistency)
             };
             var analyzerResults = new List<AnalyzerResult>
             {
@@ -250,10 +252,12 @@ public class FixServiceTests
             {
                 new("Newtonsoft.Json",
                     "12.0.1 (Project1), 13.0.1 (Project2)",
-                    new[] { project1Path, project2Path }),
+                    new[] { project1Path, project2Path },
+                    AnalysisIssueCode.VersionInconsistency),
                 new("Serilog",
                     "2.10.0 (Project1), 2.11.0 (Project2)",
-                    new[] { project1Path, project2Path })
+                    new[] { project1Path, project2Path },
+                    AnalysisIssueCode.VersionInconsistency)
             };
             var analyzerResults = new List<AnalyzerResult>
             {

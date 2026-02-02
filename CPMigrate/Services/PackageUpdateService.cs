@@ -99,7 +99,7 @@ public class PackageUpdateService : IPackageUpdateService
         ShowUpdatesTable(availableUpdates);
 
         // Step 6: Interactive wizard for major bumps
-        var acceptedUpdates = RunMajorVersionWizard(availableUpdates);
+        var acceptedUpdates = RunMajorVersionWizard(availableUpdates, options);
 
         var updatesToApply = acceptedUpdates.Where(u => u.Accepted).ToList();
         if (updatesToApply.Count == 0)
@@ -349,9 +349,10 @@ public class PackageUpdateService : IPackageUpdateService
         }
     }
 
-    private List<PackageUpdateEntry> RunMajorVersionWizard(List<PackageUpdateEntry> updates)
+    private List<PackageUpdateEntry> RunMajorVersionWizard(List<PackageUpdateEntry> updates, Options options)
     {
         var result = new List<PackageUpdateEntry>();
+        var nonInteractive = options.Quiet || options.Output == OutputFormat.Json;
 
         foreach (var update in updates)
         {
@@ -359,6 +360,13 @@ public class PackageUpdateService : IPackageUpdateService
             {
                 // Auto-accept minor/patch
                 result.Add(update with { Accepted = true });
+                continue;
+            }
+
+            if (nonInteractive)
+            {
+                // Keep CI / JSON mode deterministic: skip major bumps unless explicitly run interactively.
+                result.Add(update with { Accepted = false });
                 continue;
             }
 

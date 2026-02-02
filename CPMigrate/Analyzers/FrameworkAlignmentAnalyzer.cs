@@ -38,7 +38,10 @@ public class FrameworkAlignmentAnalyzer : IAnalyzer
             issues.Add(new AnalysisIssue(
                 "Multiple Frameworks",
                 $"Repository uses {frameworks.Count} different Target Frameworks: {tfmList}. Ensure package versions in Directory.Packages.props are compatible with all.",
-                frameworks.Values.SelectMany(v => v).ToList()
+                frameworks.Values.SelectMany(v => v).ToList(),
+                AnalysisIssueCode.FrameworkAlignment,
+                AnalysisSeverity.Info,
+                Fixable: false
             ));
         }
 

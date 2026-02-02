@@ -1,4 +1,5 @@
 using System.Globalization;
+using CPMigrate.Fixers;
 using CPMigrate.Models;
 using CPMigrate.Services.Migration;
 using Microsoft.Extensions.Logging;
@@ -162,7 +163,7 @@ public class MigrationService
         }
         catch (Exception ex)
         {
-            await HandleMigrationErrorAsync(ex, backupsCreated, options.DryRun, backupPath);
+            await HandleMigrationErrorAsync(ex, options, backupsCreated, options.DryRun, backupPath);
             throw; // Re-throw to be handled by Program.cs or caller
         }
     }
@@ -712,8 +713,11 @@ public class MigrationService
     /// <returns>Migration result with exit code.</returns>
     private async Task<MigrationResult> ExecuteRollbackAsync(Options options)
     {
-        _consoleService.Banner("ROLLBACK MODE - Restoring from backup");
-        _consoleService.WriteLine();
+        if (!_quietMode)
+        {
+            _consoleService.Banner("ROLLBACK MODE - Restoring from backup");
+            _consoleService.WriteLine();
+        }
 
         var backupPath = BackupManager.GetBackupDirectoryPath(options);
         var validationError = ValidateRollbackPrerequisites(backupPath);
@@ -728,7 +732,7 @@ public class MigrationService
             return HandleEmptyOrMissingManifest(manifest);
         }
 
-        if (!ShowPreviewAndConfirm(manifest))
+        if (!ShowPreviewAndConfirm(options, manifest))
         {
             _consoleService.Info("Rollback cancelled.");
             return new MigrationResult { ExitCode = ExitCodes.Success };
@@ -737,7 +741,10 @@ public class MigrationService
         _consoleService.WriteLine();
 
         var (restoredCount, failedCount) = await RestoreFilesWithProgress(backupPath, manifest);
-        _consoleService.WriteLine();
+        if (!_quietMode)
+        {
+            _consoleService.WriteLine();
+        }
 
         HandlePostRestoreCleanup(backupPath, manifest, failedCount);
         ShowRollbackSummary(restoredCount, failedCount);
@@ -777,8 +784,24 @@ public class MigrationService
         return new MigrationResult { ExitCode = ExitCodes.Success };
     }
 
-    private bool ShowPreviewAndConfirm(BackupManifest manifest)
+    private bool ShowPreviewAndConfirm(Options options, BackupManifest manifest)
     {
+        if (options.Force)
+        {
+            return true;
+        }
+
+        if (_quietMode)
+        {
+            // In strict JSON mode we never auto-confirm destructive operations.
+            if (options.Output == OutputFormat.Json)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         var filesToRestore = manifest.Backups.Select(b => b.OriginalPath).ToList();
         _consoleService.WriteRollbackPreview(filesToRestore, manifest.PropsFilePath);
         return _consoleService.AskConfirmation("Proceed with rollback?");
@@ -790,6 +813,24 @@ public class MigrationService
     {
         var restoredCount = 0;
         var failedCount = 0;
+
+        if (_quietMode)
+        {
+            foreach (var entry in manifest.Backups)
+            {
+                var fileName = Path.GetFileName(entry.OriginalPath);
+                if (TryRestoreFile(backupPath, entry, fileName))
+                {
+                    restoredCount++;
+                }
+                else
+                {
+                    failedCount++;
+                }
+            }
+
+            return (restoredCount, failedCount);
+        }
 
         await AnsiConsole.Progress()
             .AutoRefresh(true)
@@ -928,6 +969,11 @@ public class MigrationService
 
     private void ShowRollbackSummary(int restoredCount, int failedCount)
     {
+        if (_quietMode)
+        {
+            return;
+        }
+
         _consoleService.WriteLine();
 
         if (failedCount == 0)
@@ -948,8 +994,11 @@ public class MigrationService
     /// <returns>Migration result with exit code.</returns>
     private async Task<MigrationResult> ExecuteListBackupsAsync(Options options)
     {
-        _consoleService.Banner("BACKUP HISTORY");
-        _consoleService.WriteLine();
+        if (!_quietMode)
+        {
+            _consoleService.Banner("BACKUP HISTORY");
+            _consoleService.WriteLine();
+        }
 
         var backupPath = Path.GetFullPath(options.BackupDir);
 
@@ -979,7 +1028,10 @@ public class MigrationService
         var (totalSize, totalFiles) = PopulateBackupTable(table, backups);
 
         AnsiConsole.Write(table);
-        _consoleService.WriteLine();
+        if (!_quietMode)
+        {
+            _consoleService.WriteLine();
+        }
 
         _consoleService.Info($"Total: {backups.Count} backup set(s), {totalFiles} file(s), {FormatFileSize(totalSize)}");
         _consoleService.Dim($"Backup directory: {backupPath}");
@@ -1077,8 +1129,11 @@ public class MigrationService
     /// <returns>Migration result with exit code based on issues found.</returns>
     private async Task<MigrationResult> ExecuteAnalysisAsync(Options options)
     {
-        _consoleService.Banner("ANALYZE MODE - Scanning for package issues");
-        _consoleService.WriteLine();
+        if (!_quietMode)
+        {
+            _consoleService.Banner("ANALYZE MODE - Scanning for package issues");
+            _consoleService.WriteLine();
+        }
 
         var (_, projectPaths) = await DiscoverProjectsWithSpinnerAsync(options);
         if (projectPaths.Count == 0)
@@ -1089,22 +1144,34 @@ public class MigrationService
 
         var (packageInfo, scanFailures) = await PerformAnalysisScanAsync(options, projectPaths);
 
-        _consoleService.WriteLine();
+        if (!_quietMode)
+        {
+            _consoleService.WriteLine();
+        }
         ReportScanFailures(scanFailures, projectPaths.Count);
 
         // Filter out bad data if high failure rate? 
         // Current logic keeps going even with failures, which is fine.
 
-        _consoleService.WriteAnalysisHeader(packageInfo.ProjectCount, packageInfo.TotalReferences, packageInfo.VulnerabilityCount);
+        if (!_quietMode)
+        {
+            _consoleService.WriteAnalysisHeader(packageInfo.ProjectCount, packageInfo.TotalReferences, packageInfo.VulnerabilityCount);
+        }
 
         var report = _analysisService.Analyze(packageInfo);
 
-        foreach (var result in report.Results)
+        if (!_quietMode)
         {
-            _consoleService.WriteAnalyzerResult(result);
+            foreach (var result in report.Results)
+            {
+                _consoleService.WriteAnalyzerResult(result);
+            }
         }
 
-        _consoleService.WriteAnalysisSummary(report);
+        if (!_quietMode)
+        {
+            _consoleService.WriteAnalysisSummary(report);
+        }
 
         return await ApplyAnalysisFixesIfNeededAsync(options, report, packageInfo);
     }
@@ -1115,70 +1182,110 @@ public class MigrationService
     {
         var allReferences = new List<PackageReference>();
         var allVulnerabilities = new List<VulnerabilityInfo>();
+        var allOutdatedPackages = new List<OutdatedPackageInfo>();
+        var allDeprecatedPackages = new List<DeprecatedPackageInfo>();
         var scanFailures = 0;
 
-        await AnsiConsole.Progress()
-            .AutoRefresh(true)
-            .AutoClear(false)
-            .HideCompleted(false)
-            .Columns(
-                new TaskDescriptionColumn(),
-                new ProgressBarColumn(),
-                new PercentageColumn(),
-                new SpinnerColumn())
-            .StartAsync(async ctx =>
+        if (_quietMode)
+        {
+            foreach (var projectPath in projectPaths)
             {
-                var task = ctx.AddTask("[cyan]Scanning packages[/]", maxValue: projectPaths.Count);
+                var success = await ScanSingleProjectForAnalysisAsync(
+                    options,
+                    projectPath,
+                    null,
+                    allReferences,
+                    allVulnerabilities,
+                    allOutdatedPackages,
+                    allDeprecatedPackages);
 
-                foreach (var projectPath in projectPaths)
+                if (!success)
                 {
-                    var projectName = Path.GetFileName(projectPath);
-                    task.Description = $"[cyan]Scanning[/] [white]{Markup.Escape(projectName)}[/]";
+                    scanFailures++;
+                }
+            }
+        }
+        else
+        {
+            await AnsiConsole.Progress()
+                .AutoRefresh(true)
+                .AutoClear(false)
+                .HideCompleted(false)
+                .Columns(
+                    new TaskDescriptionColumn(),
+                    new ProgressBarColumn(),
+                    new PercentageColumn(),
+                    new SpinnerColumn())
+                .StartAsync(async ctx =>
+                {
+                    var task = ctx.AddTask("[cyan]Scanning packages[/]", maxValue: projectPaths.Count);
 
-                    var success = await ScanSingleProjectForAnalysisAsync(
-                        options, projectPath, task, allReferences, allVulnerabilities);
-
-                    if (!success)
+                    foreach (var projectPath in projectPaths)
                     {
-                        scanFailures++;
+                        var projectName = Path.GetFileName(projectPath);
+                        task.Description = $"[cyan]Scanning[/] [white]{Markup.Escape(projectName)}[/]";
+
+                        var success = await ScanSingleProjectForAnalysisAsync(
+                            options,
+                            projectPath,
+                            task,
+                            allReferences,
+                            allVulnerabilities,
+                            allOutdatedPackages,
+                            allDeprecatedPackages);
+
+                        if (!success)
+                        {
+                            scanFailures++;
+                        }
+
+                        task.Increment(1);
+                        await Task.Delay(30);
                     }
 
-                    task.Increment(1);
-                    await Task.Delay(30);
-                }
+                    task.Description = "[green]Scan complete[/]";
+                });
+        }
 
-                task.Description = "[green]Scan complete[/]";
-            });
-
-        return (new ProjectPackageInfo(allReferences, allVulnerabilities), scanFailures);
+        return (new ProjectPackageInfo(allReferences, allVulnerabilities, allOutdatedPackages, allDeprecatedPackages), scanFailures);
     }
 
     private async Task<bool> ScanSingleProjectForAnalysisAsync(
         Options options,
         string projectPath,
-        ProgressTask task,
+        ProgressTask? task,
         List<PackageReference> allReferences,
-        List<VulnerabilityInfo> allVulnerabilities)
+        List<VulnerabilityInfo> allVulnerabilities,
+        List<OutdatedPackageInfo> allOutdatedPackages,
+        List<DeprecatedPackageInfo> allDeprecatedPackages)
     {
-        var (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
+        var (references, success) = await _projectAnalyzer.ScanResolvedPackagesAsync(projectPath, options.IncludeTransitive);
+        var resolvedScanSucceeded = success;
+        if (!resolvedScanSucceeded && !options.IncludeTransitive)
+        {
+            // Fallback for environments where dotnet list package cannot run.
+            (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
+        }
+
         allReferences.AddRange(references);
 
         // Cache scan results for later reuse (e.g., interactive conflict resolution)
         _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>(StringComparer.OrdinalIgnoreCase);
         _cachedProjectScans[projectPath] = references;
 
-        if (options.IncludeTransitive || options.AuditSecurity)
+        // If transitive data was requested and resolved-package scan failed, keep the project marked as failed.
+        // XML fallback only provides direct PackageReference entries and cannot satisfy --transitive accuracy.
+        if (options.IncludeTransitive && !resolvedScanSucceeded)
+        {
+            success = false;
+        }
+
+        if (options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated)
         {
             var projectName = Path.GetFileName(projectPath);
-            task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
-
-            if (options.IncludeTransitive)
+            if (task != null)
             {
-                var (transitiveRefs, transitiveSuccess) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectPath);
-                if (transitiveSuccess)
-                {
-                    allReferences.AddRange(transitiveRefs);
-                }
+                task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
             }
 
             if (options.AuditSecurity)
@@ -1187,6 +1294,30 @@ public class MigrationService
                 if (auditSuccess)
                 {
                     allVulnerabilities.AddRange(vulnerabilities);
+                }
+            }
+
+            if (options.AnalyzeOutdated)
+            {
+                var (outdated, outdatedSuccess) = await _projectAnalyzer.ScanOutdatedPackagesAsync(
+                    projectPath,
+                    options.IncludeTransitive,
+                    options.IncludePrerelease);
+                if (outdatedSuccess)
+                {
+                    allOutdatedPackages.AddRange(outdated);
+                }
+            }
+
+            if (options.AnalyzeDeprecated)
+            {
+                var (deprecated, deprecatedSuccess) = await _projectAnalyzer.ScanDeprecatedPackagesAsync(
+                    projectPath,
+                    options.IncludeTransitive,
+                    options.IncludePrerelease);
+                if (deprecatedSuccess)
+                {
+                    allDeprecatedPackages.AddRange(deprecated);
                 }
             }
         }
@@ -1212,13 +1343,18 @@ public class MigrationService
         AnalysisReport report,
         ProjectPackageInfo packageInfo)
     {
+        FixReport? fixReport = null;
+
         if ((options.Fix || options.FixDryRun) && report.HasIssues)
         {
-            _consoleService.WriteLine();
-            _consoleService.Banner(options.FixDryRun ? "FIX DRY RUN - Showing proposed changes" : "APPLYING FIXES");
-            _consoleService.WriteLine();
+            if (!_quietMode)
+            {
+                _consoleService.WriteLine();
+                _consoleService.Banner(options.FixDryRun ? "FIX DRY RUN - Showing proposed changes" : "APPLYING FIXES");
+                _consoleService.WriteLine();
+            }
 
-            var fixReport = _fixService.ApplyFixes(report, packageInfo, options, options.FixDryRun);
+            fixReport = _fixService.ApplyFixes(report, packageInfo, options, options.FixDryRun);
 
             if (fixReport.HasChanges && !options.FixDryRun)
             {
@@ -1226,6 +1362,8 @@ public class MigrationService
                 {
                     ProjectsProcessed = packageInfo.ProjectCount,
                     PackagesCentralized = packageInfo.TotalReferences,
+                    AnalysisReport = report,
+                    FixReport = fixReport,
                     ExitCode = fixReport.GetFailedFixes().Count > 0
                         ? ExitCodes.AnalysisIssuesFound
                         : ExitCodes.Success
@@ -1237,6 +1375,8 @@ public class MigrationService
         {
             ProjectsProcessed = packageInfo.ProjectCount,
             PackagesCentralized = packageInfo.TotalReferences,
+            AnalysisReport = report,
+            FixReport = fixReport,
             ExitCode = report.HasIssues ? ExitCodes.AnalysisIssuesFound : ExitCodes.Success
         });
     }
@@ -1289,9 +1429,9 @@ public class MigrationService
 
             if (backupsCreated && !string.IsNullOrEmpty(backupPath))
             {
-                if (_consoleService.AskConfirmation("Would you like to rollback changes using the created backup?"))
+                if (ShouldProceedWithAutomaticRollback(options, "Would you like to rollback changes using the created backup?"))
                 {
-                    await ExecuteRollbackAsync(new Options { BackupDir = options.BackupDir, Rollback = true });
+                    await ExecuteRollbackAsync(CreateRollbackOptions(options, backupPath));
                 }
             }
             else
@@ -1327,18 +1467,68 @@ public class MigrationService
     /// <summary>
     /// Handles migration errors and offers automatic rollback if backups exist.
     /// </summary>
-    private async Task HandleMigrationErrorAsync(Exception ex, bool backupsCreated, bool dryRun, string? backupPath)
+    private async Task HandleMigrationErrorAsync(Exception ex, Options options, bool backupsCreated, bool dryRun, string? backupPath)
     {
         _consoleService.Error($"\nAn error occurred during migration: {ex.Message}");
 
         if (backupsCreated && !dryRun && !string.IsNullOrEmpty(backupPath))
         {
             _consoleService.Warning("Project files may have been partially modified.");
-            if (_consoleService.AskConfirmation("Would you like to attempt an automatic rollback to the last backup?"))
+            if (ShouldProceedWithAutomaticRollback(options, "Would you like to attempt an automatic rollback to the last backup?"))
             {
-                await ExecuteRollbackAsync(new Options { BackupDir = backupPath, Rollback = true });
+                await ExecuteRollbackAsync(CreateRollbackOptions(options, backupPath));
             }
         }
+    }
+
+    private bool ShouldProceedWithAutomaticRollback(Options options, string prompt)
+    {
+        if (options.Force)
+        {
+            return true;
+        }
+
+        if (options.Output == OutputFormat.Json)
+        {
+            return false;
+        }
+
+        if (_quietMode)
+        {
+            return true;
+        }
+
+        return _consoleService.AskConfirmation(prompt);
+    }
+
+    private static Options CreateRollbackOptions(Options sourceOptions, string backupPath)
+    {
+        var rollbackBackupDir = ResolveRollbackBackupDir(backupPath, sourceOptions.BackupDir);
+
+        return new Options
+        {
+            BackupDir = rollbackBackupDir,
+            Rollback = true,
+            Force = sourceOptions.Force,
+            Output = sourceOptions.Output,
+            Quiet = sourceOptions.Quiet
+        };
+    }
+
+    private static string ResolveRollbackBackupDir(string backupPath, string fallbackBackupDir)
+    {
+        if (string.IsNullOrWhiteSpace(backupPath))
+        {
+            return fallbackBackupDir;
+        }
+
+        var normalizedPath = backupPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (string.Equals(Path.GetFileName(normalizedPath), ".cpmigrate_backup", StringComparison.OrdinalIgnoreCase))
+        {
+            return Path.GetDirectoryName(normalizedPath) ?? fallbackBackupDir;
+        }
+
+        return normalizedPath;
     }
 
     /// <summary>

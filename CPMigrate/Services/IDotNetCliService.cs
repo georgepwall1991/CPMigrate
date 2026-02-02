@@ -8,7 +8,12 @@ public interface IDotNetCliService
     /// <summary>
     /// Execute 'dotnet list package' command.
     /// </summary>
-    Task<(string Output, bool Success)> RunListPackageAsync(string projectDir, bool includeTransitive, bool vulnerable);
+    Task<(string Output, bool Success)> RunListPackageAsync(string projectPathOrDirectory, bool includeTransitive, bool vulnerable);
+
+    /// <summary>
+    /// Execute package list command with JSON output (prefers 'dotnet list package').
+    /// </summary>
+    Task<(string Output, bool Success)> RunPackageListJsonAsync(string projectPathOrDirectory, DotNetPackageListOptions options);
 
     /// <summary>
     /// Execute 'dotnet restore' command.

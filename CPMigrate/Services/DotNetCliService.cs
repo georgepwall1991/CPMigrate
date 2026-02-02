@@ -8,53 +8,43 @@ namespace CPMigrate.Services;
 /// </summary>
 public class DotNetCliService : IDotNetCliService
 {
-    public async Task<(string Output, bool Success)> RunListPackageAsync(string projectDir, bool includeTransitive, bool vulnerable)
+    public async Task<(string Output, bool Success)> RunListPackageAsync(string projectPathOrDirectory, bool includeTransitive, bool vulnerable)
     {
-        var args = "list package";
-        if (vulnerable)
+        var options = new DotNetPackageListOptions
         {
-            args += " --vulnerable";
-        }
-
-        if (includeTransitive)
-        {
-            args += " --include-transitive";
-        }
-
-        var startInfo = new ProcessStartInfo
-        {
-#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses dotnet from PATH
-            FileName = "dotnet",
-#pragma warning restore S4036
-            Arguments = args,
-            WorkingDirectory = projectDir,
-            RedirectStandardOutput = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
+            IncludeTransitive = includeTransitive,
+            Vulnerable = vulnerable
         };
 
-        Process? process;
-        try
+        return await RunPackageListJsonAsync(projectPathOrDirectory, options);
+    }
+
+    public async Task<(string Output, bool Success)> RunPackageListJsonAsync(string projectPathOrDirectory, DotNetPackageListOptions options)
+    {
+        var target = ResolveProjectListTarget(projectPathOrDirectory);
+        // Primary command for stable SDKs: dotnet list [project] package
+        var args = BuildListPackageArguments(options, target.TargetArgument);
+        var (stdOut, stdErr, success) = await RunDotNetCommandDetailedAsync(args, target.WorkingDirectory);
+        if (success)
         {
-            process = Process.Start(startInfo);
-        }
-        catch (Win32Exception)
-        {
-            return ("The 'dotnet' CLI was not found in PATH. Ensure the .NET SDK is installed and 'dotnet' is accessible.", false);
+            return (stdOut, true);
         }
 
-        if (process == null)
+        // Compatibility fallback for SDKs/preview channels that expose `dotnet package list`.
+        var combined = CombineOutput(stdOut, stdErr);
+        if (ShouldTryPackageVerbFallback(combined))
         {
-            return (string.Empty, false);
+            var packageVerbArgs = BuildPackageListArguments(options, target.TargetArgument);
+            var (packageVerbOut, packageVerbErr, packageVerbSuccess) = await RunDotNetCommandDetailedAsync(packageVerbArgs, target.WorkingDirectory);
+            if (packageVerbSuccess)
+            {
+                return (packageVerbOut, true);
+            }
+
+            return (CombineOutput(packageVerbOut, packageVerbErr), false);
         }
 
-        using (process)
-        {
-            var output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            return (output, process.ExitCode == 0);
-        }
+        return (combined, false);
     }
 
     public async Task<(string Output, bool Success)> RunRestoreAsync(string solutionOrProjectPath)
@@ -67,7 +57,117 @@ public class DotNetCliService : IDotNetCliService
         return await RunDotNetCommandAsync($"test \"{solutionOrProjectPath}\" --no-restore", Path.GetDirectoryName(solutionOrProjectPath) ?? ".");
     }
 
+    private static string BuildListPackageArguments(DotNetPackageListOptions options, string? targetArgument)
+    {
+        var args = "list";
+
+        if (!string.IsNullOrWhiteSpace(targetArgument))
+        {
+            args += $" {targetArgument}";
+        }
+
+        args += " package --format json --output-version 1";
+
+        if (options.Vulnerable)
+        {
+            args += " --vulnerable";
+        }
+        else if (options.Outdated)
+        {
+            args += " --outdated";
+        }
+        else if (options.Deprecated)
+        {
+            args += " --deprecated";
+        }
+
+        if (options.IncludeTransitive)
+        {
+            args += " --include-transitive";
+        }
+
+        if (options.IncludePrerelease && (options.Outdated || options.Deprecated))
+        {
+            args += " --include-prerelease";
+        }
+
+        return args;
+    }
+
+    private static string BuildPackageListArguments(DotNetPackageListOptions options, string? targetArgument)
+    {
+        var args = "package list";
+
+        if (!string.IsNullOrWhiteSpace(targetArgument))
+        {
+            args += $" --project {targetArgument}";
+        }
+
+        args += " --format json --output-version 1";
+
+        if (options.Vulnerable)
+        {
+            args += " --vulnerable";
+        }
+        else if (options.Outdated)
+        {
+            args += " --outdated";
+        }
+        else if (options.Deprecated)
+        {
+            args += " --deprecated";
+        }
+
+        if (options.IncludeTransitive)
+        {
+            args += " --include-transitive";
+        }
+
+        if (options.IncludePrerelease && (options.Outdated || options.Deprecated))
+        {
+            args += " --include-prerelease";
+        }
+
+        return args;
+    }
+
+    private static bool ShouldTryPackageVerbFallback(string output)
+    {
+        return output.Contains("Unrecognized command or argument 'list'", StringComparison.OrdinalIgnoreCase) ||
+               output.Contains("Unrecognized command or argument 'package'", StringComparison.OrdinalIgnoreCase) ||
+               output.Contains("No executable found matching command \"dotnet-list\"", StringComparison.OrdinalIgnoreCase) ||
+               output.Contains("Unknown command 'list'", StringComparison.OrdinalIgnoreCase) ||
+               output.Contains("Unknown command 'package'", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string CombineOutput(string stdOut, string stdErr)
+    {
+        return string.IsNullOrEmpty(stdErr) ? stdOut : $"{stdOut}\n{stdErr}";
+    }
+
+    private static (string? TargetArgument, string WorkingDirectory) ResolveProjectListTarget(string projectPathOrDirectory)
+    {
+        if (File.Exists(projectPathOrDirectory))
+        {
+            var fullPath = Path.GetFullPath(projectPathOrDirectory);
+            var workingDirectory = Path.GetDirectoryName(fullPath) ?? ".";
+            return ($"\"{fullPath}\"", workingDirectory);
+        }
+
+        var directory = string.IsNullOrWhiteSpace(projectPathOrDirectory) ? "." : projectPathOrDirectory;
+        var fullDirectoryPath = Path.GetFullPath(directory);
+        return (null, fullDirectoryPath);
+    }
+
     private static async Task<(string Output, bool Success)> RunDotNetCommandAsync(string arguments, string workingDirectory)
+    {
+        var (stdOut, stdErr, success) = await RunDotNetCommandDetailedAsync(arguments, workingDirectory);
+        return (CombineOutput(stdOut, stdErr), success);
+    }
+
+    private static async Task<(string StdOut, string StdErr, bool Success)> RunDotNetCommandDetailedAsync(
+        string arguments,
+        string workingDirectory)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -89,12 +189,12 @@ public class DotNetCliService : IDotNetCliService
         }
         catch (Win32Exception)
         {
-            return ("The 'dotnet' CLI was not found in PATH. Ensure the .NET SDK is installed and 'dotnet' is accessible.", false);
+            return (string.Empty, "The 'dotnet' CLI was not found in PATH. Ensure the .NET SDK is installed and 'dotnet' is accessible.", false);
         }
 
         if (process == null)
         {
-            return (string.Empty, false);
+            return (string.Empty, string.Empty, false);
         }
 
         using (process)
@@ -107,8 +207,7 @@ public class DotNetCliService : IDotNetCliService
             var error = await errorTask;
             await process.WaitForExitAsync();
 
-            var combined = string.IsNullOrEmpty(error) ? output : $"{output}\n{error}";
-            return (combined, process.ExitCode == 0);
+            return (output, error, process.ExitCode == 0);
         }
     }
 }

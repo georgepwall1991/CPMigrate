@@ -40,7 +40,8 @@ public class TransitiveConflictFixerTests : IDisposable
         var issue = new AnalysisIssue(
             "Newtonsoft.Json",
             "Transitive dependency conflict detected",
-            Array.Empty<string>()
+            Array.Empty<string>(),
+            AnalysisIssueCode.TransitiveConflict
         );
 
         // Act

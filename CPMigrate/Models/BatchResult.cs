@@ -8,10 +8,16 @@ namespace CPMigrate.Models;
 public class BatchResult
 {
     /// <summary>
+    /// JSON contract version for this payload.
+    /// </summary>
+    [JsonPropertyName("outputSchemaVersion")]
+    public string OutputSchemaVersion { get; init; } = OutputMetadata.SchemaVersion;
+
+    /// <summary>
     /// CPMigrate version that produced this result.
     /// </summary>
     [JsonPropertyName("version")]
-    public string Version { get; init; } = "2.9.0";
+    public string Version { get; init; } = OutputMetadata.CurrentVersion;
 
     /// <summary>
     /// The type of operation performed.

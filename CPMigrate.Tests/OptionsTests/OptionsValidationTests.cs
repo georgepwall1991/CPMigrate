@@ -1,4 +1,5 @@
 using FluentAssertions;
+using CPMigrate.Services;
 
 namespace CPMigrate.Tests.OptionsTests;
 
@@ -153,5 +154,88 @@ public class OptionsValidationTests
     {
         var options = new CPMigrate.Options();
         options.Analyze.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Validate_OutdatedWithoutAnalyze_ThrowsArgumentException()
+    {
+        var options = new CPMigrate.Options
+        {
+            AnalyzeOutdated = true
+        };
+
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--outdated requires --analyze*");
+    }
+
+    [Fact]
+    public void Validate_DeprecatedWithoutAnalyze_ThrowsArgumentException()
+    {
+        var options = new CPMigrate.Options
+        {
+            AnalyzeDeprecated = true
+        };
+
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--deprecated requires --analyze*");
+    }
+
+    [Fact]
+    public void Validate_AnalyzeWithOutdatedAndDeprecated_DoesNotThrow()
+    {
+        var options = new CPMigrate.Options
+        {
+            Analyze = true,
+            AnalyzeOutdated = true,
+            AnalyzeDeprecated = true
+        };
+
+        var action = () => options.Validate();
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_JsonOutputWithInteractiveConflicts_ThrowsArgumentException()
+    {
+        var options = new CPMigrate.Options
+        {
+            Output = OutputFormat.Json,
+            InteractiveConflicts = true
+        };
+
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--output Json cannot be used with --interactive-conflicts*");
+    }
+
+    [Fact]
+    public void Validate_RollbackWithJsonOutputWithoutForce_ThrowsArgumentException()
+    {
+        var options = new CPMigrate.Options
+        {
+            Rollback = true,
+            BackupDir = ".",
+            Output = OutputFormat.Json
+        };
+
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--rollback requires --force when --output Json is used*");
+    }
+
+    [Fact]
+    public void Validate_PruneWithJsonOutputWithoutForce_ThrowsArgumentException()
+    {
+        var options = new CPMigrate.Options
+        {
+            PruneBackups = true,
+            Output = OutputFormat.Json
+        };
+
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--prune-backups and --prune-all require --force when --output Json is used*");
     }
 }

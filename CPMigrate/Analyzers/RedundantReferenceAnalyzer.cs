@@ -44,7 +44,10 @@ public class RedundantReferenceAnalyzer : IAnalyzer
                 issues.Add(new AnalysisIssue(
                     packageGroup.Key,
                     description,
-                    [projectName]
+                    [projectName],
+                    AnalysisIssueCode.RedundantReference,
+                    AnalysisSeverity.Low,
+                    Fixable: true
                 ));
             }
         }
