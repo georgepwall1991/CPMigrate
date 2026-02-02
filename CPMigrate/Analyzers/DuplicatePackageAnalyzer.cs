@@ -38,7 +38,10 @@ public class DuplicatePackageAnalyzer : IAnalyzer
             issues.Add(new AnalysisIssue(
                 variations[0], // Use the first variation as the canonical name
                 description,
-                affectedProjects
+                affectedProjects,
+                AnalysisIssueCode.DuplicatePackageCasing,
+                AnalysisSeverity.Low,
+                Fixable: true
             ));
         }
 

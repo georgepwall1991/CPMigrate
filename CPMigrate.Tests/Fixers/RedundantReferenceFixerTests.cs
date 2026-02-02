@@ -35,7 +35,8 @@ public class RedundantReferenceFixerTests : IDisposable
         var issue = new AnalysisIssue(
             "Newtonsoft.Json",
             "Package has redundant references",
-            new[] { "Project1.csproj" }
+            new[] { "Project1.csproj" },
+            AnalysisIssueCode.RedundantReference
         );
 
         // Act
@@ -52,7 +53,8 @@ public class RedundantReferenceFixerTests : IDisposable
         var issue = new AnalysisIssue(
             "Newtonsoft.Json",
             "Package appears 3 times in same project",
-            new[] { "Project1.csproj" }
+            new[] { "Project1.csproj" },
+            AnalysisIssueCode.RedundantReference
         );
 
         // Act

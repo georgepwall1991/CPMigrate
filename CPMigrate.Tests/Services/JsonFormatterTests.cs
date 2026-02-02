@@ -190,4 +190,20 @@ public class JsonFormatterTests
         deserializedResult!.Operation.Should().Be("Test operation");
         deserializedResult.ExitCode.Should().Be(ExitCodes.ValidationError);
     }
+
+    [Fact]
+    public void OperationResult_DefaultMetadata_UsesRuntimeVersionAndSchema()
+    {
+        // Arrange
+        var formatter = new JsonFormatter();
+        var result = new OperationResult { ExitCode = ExitCodes.Success };
+
+        // Act
+        var json = formatter.Format(result);
+
+        // Assert
+        json.Should().Contain("\"outputSchemaVersion\": \"1.0.0\"");
+        json.Should().Contain("\"version\": \"");
+        json.Should().NotContain("\"version\": \"2.9.0\"");
+    }
 }

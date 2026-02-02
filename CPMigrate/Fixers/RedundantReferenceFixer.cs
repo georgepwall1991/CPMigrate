@@ -12,9 +12,7 @@ public class RedundantReferenceFixer : IFixer
 
     public bool CanFix(AnalysisIssue issue)
     {
-        // This fixer handles issues about redundant references in same project
-        return issue.Description.Contains("redundant") ||
-               issue.Description.Contains("appears") && issue.Description.Contains("times");
+        return issue.IssueCode == AnalysisIssueCode.RedundantReference;
     }
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun)

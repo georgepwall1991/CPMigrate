@@ -8,10 +8,16 @@ namespace CPMigrate.Models;
 public class OperationResult
 {
     /// <summary>
+    /// JSON contract version for this payload.
+    /// </summary>
+    [JsonPropertyName("outputSchemaVersion")]
+    public string OutputSchemaVersion { get; init; } = OutputMetadata.SchemaVersion;
+
+    /// <summary>
     /// CPMigrate version that produced this result.
     /// </summary>
     [JsonPropertyName("version")]
-    public string Version { get; init; } = "2.9.0";
+    public string Version { get; init; } = OutputMetadata.CurrentVersion;
 
     /// <summary>
     /// The type of operation performed.
@@ -54,6 +60,12 @@ public class OperationResult
     /// </summary>
     [JsonPropertyName("fixes")]
     public List<FixInfo> Fixes { get; init; } = new();
+
+    /// <summary>
+    /// Package update entries (for update-packages mode).
+    /// </summary>
+    [JsonPropertyName("packageUpdates")]
+    public List<PackageUpdateInfo> PackageUpdates { get; init; } = new();
 
     /// <summary>
     /// Errors encountered during the operation.
@@ -114,6 +126,27 @@ public class OperationSummary
 
     [JsonPropertyName("filesModified")]
     public int FilesModified { get; init; }
+
+    [JsonPropertyName("packagesChecked")]
+    public int? PackagesChecked { get; init; }
+
+    [JsonPropertyName("packagesUpdated")]
+    public int? PackagesUpdated { get; init; }
+
+    [JsonPropertyName("packagesSkipped")]
+    public int? PackagesSkipped { get; init; }
+
+    [JsonPropertyName("transitivePackagesFound")]
+    public int? TransitivePackagesFound { get; init; }
+
+    [JsonPropertyName("transitivePackagesUpdated")]
+    public int? TransitivePackagesUpdated { get; init; }
+
+    [JsonPropertyName("testsPassed")]
+    public bool? TestsPassed { get; init; }
+
+    [JsonPropertyName("wasRolledBack")]
+    public bool? WasRolledBack { get; init; }
 }
 
 /// <summary>
@@ -157,6 +190,12 @@ public class AnalysisIssueInfo
     [JsonPropertyName("type")]
     public string Type { get; init; } = string.Empty;
 
+    [JsonPropertyName("issueCode")]
+    public string IssueCode { get; init; } = string.Empty;
+
+    [JsonPropertyName("severity")]
+    public string Severity { get; init; } = string.Empty;
+
     [JsonPropertyName("package")]
     public string Package { get; init; } = string.Empty;
 
@@ -168,6 +207,9 @@ public class AnalysisIssueInfo
 
     [JsonPropertyName("fixable")]
     public bool Fixable { get; init; }
+
+    [JsonPropertyName("metadata")]
+    public Dictionary<string, string>? Metadata { get; init; }
 }
 
 /// <summary>
@@ -192,6 +234,30 @@ public class FixInfo
 
     [JsonPropertyName("applied")]
     public bool Applied { get; init; }
+}
+
+/// <summary>
+/// Information about a single package update candidate/application.
+/// </summary>
+public class PackageUpdateInfo
+{
+    [JsonPropertyName("package")]
+    public string Package { get; init; } = string.Empty;
+
+    [JsonPropertyName("currentVersion")]
+    public string CurrentVersion { get; init; } = string.Empty;
+
+    [JsonPropertyName("latestVersion")]
+    public string LatestVersion { get; init; } = string.Empty;
+
+    [JsonPropertyName("isMajorUpdate")]
+    public bool IsMajorUpdate { get; init; }
+
+    [JsonPropertyName("accepted")]
+    public bool Accepted { get; init; }
+
+    [JsonPropertyName("transitive")]
+    public bool Transitive { get; init; }
 }
 
 /// <summary>

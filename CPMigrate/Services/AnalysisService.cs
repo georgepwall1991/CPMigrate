@@ -24,7 +24,9 @@ public class AnalysisService : IAnalysisService
                 new DuplicatePackageAnalyzer(),
                 new RedundantReferenceAnalyzer(),
                 new TransitiveDependencyAnalyzer(),
-                new VulnerabilityAnalyzer()
+                new VulnerabilityAnalyzer(),
+                new OutdatedPackageAnalyzer(),
+                new DeprecatedPackageAnalyzer()
             };
 
             if (graphService != null)

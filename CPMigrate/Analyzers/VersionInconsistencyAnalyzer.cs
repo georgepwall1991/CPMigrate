@@ -33,7 +33,10 @@ public class VersionInconsistencyAnalyzer : IAnalyzer
             issues.Add(new AnalysisIssue(
                 group.Key,
                 description,
-                affectedProjects
+                affectedProjects,
+                AnalysisIssueCode.VersionInconsistency,
+                AnalysisSeverity.Moderate,
+                Fixable: true
             ));
         }
 

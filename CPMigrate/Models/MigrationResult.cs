@@ -1,3 +1,5 @@
+using CPMigrate.Fixers;
+
 namespace CPMigrate.Models;
 
 /// <summary>
@@ -39,4 +41,14 @@ public class MigrationResult
     /// Exit code for the operation.
     /// </summary>
     public int ExitCode { get; init; }
+
+    /// <summary>
+    /// Analysis report, when run in analyze mode.
+    /// </summary>
+    public AnalysisReport? AnalysisReport { get; init; }
+
+    /// <summary>
+    /// Fix report, when analyze mode runs with --fix or --fix-dry-run.
+    /// </summary>
+    public FixReport? FixReport { get; init; }
 }

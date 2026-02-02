@@ -97,6 +97,14 @@ public class Options
         HelpText = "Perform security audit for known vulnerabilities (requires 'dotnet restore').")]
     public bool AuditSecurity { get; set; }
 
+    [Option("outdated", Default = false,
+        HelpText = "Include outdated package checks (requires --analyze).")]
+    public bool AnalyzeOutdated { get; set; }
+
+    [Option("deprecated", Default = false,
+        HelpText = "Include deprecated package checks (requires --analyze).")]
+    public bool AnalyzeDeprecated { get; set; }
+
     [Option('i', "interactive", Default = false,
         HelpText = "Run in interactive wizard mode with guided prompts.")]
     public bool Interactive { get; set; }
@@ -231,6 +239,8 @@ public class Options
                 new Options { BatchDir = Path.Combine("path", "to", "repo") }),
             new("Analyze and auto-fix issues",
                 new Options { Analyze = true, Fix = true }),
+            new("Analyze and include outdated/deprecated package checks",
+                new Options { Analyze = true, AnalyzeOutdated = true, AnalyzeDeprecated = true }),
             new("Prune old backups, keeping last 3",
                 new Options { PruneBackups = true, Retention = 3 }),
         };
@@ -287,6 +297,11 @@ public class Options
         if (Output == OutputFormat.Json && Interactive)
         {
             throw new ArgumentException("--output Json cannot be used with --interactive mode.");
+        }
+
+        if (Output == OutputFormat.Json && InteractiveConflicts)
+        {
+            throw new ArgumentException("--output Json cannot be used with --interactive-conflicts.");
         }
     }
 
@@ -350,6 +365,11 @@ public class Options
             throw new ArgumentException("--retention must be 0 or greater.");
         }
 
+        if (Output == OutputFormat.Json && !Force)
+        {
+            throw new ArgumentException("--prune-backups and --prune-all require --force when --output Json is used.");
+        }
+
         return true;
     }
 
@@ -380,6 +400,16 @@ public class Options
     /// </summary>
     private bool ValidateAnalyzeOptions()
     {
+        if (AnalyzeOutdated && !Analyze)
+        {
+            throw new ArgumentException("--outdated requires --analyze.");
+        }
+
+        if (AnalyzeDeprecated && !Analyze)
+        {
+            throw new ArgumentException("--deprecated requires --analyze.");
+        }
+
         if (!Analyze)
         {
             return false;
@@ -417,6 +447,11 @@ public class Options
         if (string.IsNullOrWhiteSpace(BackupDir))
         {
             throw new ArgumentException("backup-dir must be specified for rollback.");
+        }
+
+        if (Output == OutputFormat.Json && !Force)
+        {
+            throw new ArgumentException("--rollback requires --force when --output Json is used.");
         }
 
         return true;

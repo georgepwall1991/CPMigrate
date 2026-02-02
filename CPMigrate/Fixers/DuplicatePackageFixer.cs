@@ -12,9 +12,7 @@ public class DuplicatePackageFixer : IFixer
 
     public bool CanFix(AnalysisIssue issue)
     {
-        // This fixer handles issues about casing variations
-        return issue.Description.Contains("casing variations") ||
-               issue.Description.Contains("different casings");
+        return issue.IssueCode == AnalysisIssueCode.DuplicatePackageCasing;
     }
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun)

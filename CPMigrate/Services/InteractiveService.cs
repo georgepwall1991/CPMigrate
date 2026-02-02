@@ -268,6 +268,21 @@ public class InteractiveService : IInteractiveService
 
         options.IncludeTransitive = transitiveChoice.StartsWith("Yes");
 
+        var auditChoice = _console.AskSelection(
+            "Include vulnerability auditing?",
+            new[] { "No", "Yes - run security vulnerability checks" });
+        options.AuditSecurity = auditChoice.StartsWith("Yes");
+
+        var outdatedChoice = _console.AskSelection(
+            "Include outdated package checks?",
+            new[] { "No", "Yes - detect available newer versions" });
+        options.AnalyzeOutdated = outdatedChoice.StartsWith("Yes");
+
+        var deprecatedChoice = _console.AskSelection(
+            "Include deprecated package checks?",
+            new[] { "No", "Yes - detect deprecated packages and alternatives" });
+        options.AnalyzeDeprecated = deprecatedChoice.StartsWith("Yes");
+
         var fixChoice = _console.AskSelection(
             "Would you like to automatically fix issues?",
             new[] { "No - just report", "Yes - apply fixes", "Dry run - show proposed fixes" });
@@ -531,6 +546,9 @@ public class InteractiveService : IInteractiveService
     private static void AddAnalyzeRows(Grid grid, Options options)
     {
         grid.AddRow("[white]Transitive Deps[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
+        grid.AddRow("[white]Audit[/]", $"[cyan1]{(options.AuditSecurity ? "Yes" : "No")}[/]");
+        grid.AddRow("[white]Outdated[/]", $"[cyan1]{(options.AnalyzeOutdated ? "Yes" : "No")}[/]");
+        grid.AddRow("[white]Deprecated[/]", $"[cyan1]{(options.AnalyzeDeprecated ? "Yes" : "No")}[/]");
         var autoFixStatus = GetAutoFixStatus(options);
         grid.AddRow("[white]Auto-Fix[/]", $"[cyan1]{autoFixStatus}[/]");
     }

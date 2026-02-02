@@ -30,16 +30,18 @@ internal static class CommandRouter
             ConfigService.MergeConfig(options, config);
         }
 
+        var executionConsole = GetExecutionConsole(options, consoleService);
+
         // Handle Update command
         if (options.Update)
         {
-            return await RunUpdateModeAsync(consoleService, loggerFactory);
+            return await RunUpdateModeAsync(executionConsole, loggerFactory);
         }
 
         // Handle Update Packages command
         if (options.UpdatePackages)
         {
-            return await RunUpdatePackagesModeAsync(options, consoleService, backupManager, loggerFactory);
+            return await RunUpdatePackagesModeAsync(options, executionConsole, backupManager, loggerFactory);
         }
 
         // Route to appropriate command handler
@@ -50,17 +52,17 @@ internal static class CommandRouter
 
         if (options.PruneBackups || options.PruneAll)
         {
-            return await RunPruneModeAsync(options, consoleService, backupManager);
+            return await RunPruneModeAsync(options, executionConsole, backupManager);
         }
 
         if (!string.IsNullOrEmpty(options.BatchDir))
         {
-            return await RunBatchModeAsync(options, consoleService, versionResolver, backupManager, loggerFactory);
+            return await RunBatchModeAsync(options, executionConsole, versionResolver, backupManager, loggerFactory);
         }
 
         if (options.UnifyProps)
         {
-            return await RunUnifyPropsModeAsync(options, consoleService, loggerFactory);
+            return await RunUnifyPropsModeAsync(options, executionConsole, loggerFactory);
         }
 
         // Check for updates in background for standard commands (if not quiet)
@@ -80,7 +82,7 @@ internal static class CommandRouter
             });
         }
 
-        var result = await RunMigrationAsync(options, consoleService, versionResolver, backupManager, loggerFactory);
+        var result = await RunMigrationAsync(options, executionConsole, versionResolver, backupManager, loggerFactory);
 
         // Show update notification after main work completes to avoid interleaved output
         if (updateCheckTask != null)
@@ -103,6 +105,16 @@ internal static class CommandRouter
         }
 
         return result;
+    }
+
+    private static IConsoleService GetExecutionConsole(Options options, IConsoleService consoleService)
+    {
+        return options.Output == OutputFormat.Json ? SilentConsoleService.Instance : consoleService;
+    }
+
+    private static bool ShouldSuppressHeadersAndBanners(Options options)
+    {
+        return options.Quiet || options.Output == OutputFormat.Json;
     }
 
     /// <summary>
@@ -132,14 +144,22 @@ internal static class CommandRouter
         IBackupManager backupManager,
         ILoggerFactory? loggerFactory = null)
     {
-        if (!ValidateOptions(options, consoleService))
+        if (!ValidateOptions(options, consoleService, out var validationError))
         {
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                "update-packages",
+                ExitCodes.ValidationError,
+                validationError ?? "Validation failed.");
             return ExitCodes.ValidationError;
         }
 
-        consoleService.WriteHeader();
-        consoleService.Banner("UPDATE PACKAGES");
-        consoleService.WriteLine();
+        if (!ShouldSuppressHeadersAndBanners(options))
+        {
+            consoleService.WriteHeader();
+            consoleService.Banner("UPDATE PACKAGES");
+            consoleService.WriteLine();
+        }
 
         try
         {
@@ -158,16 +178,19 @@ internal static class CommandRouter
                 loggerFactory?.CreateLogger<PackageUpdateService>());
 
             var result = await updateService.UpdatePackagesAsync(options);
+            await WriteJsonOutputForPackageUpdate(options, result, consoleService);
             return result.ExitCode;
         }
         catch (IOException ex)
         {
             consoleService.Error($"\nFile operation error: {ex.Message}");
+            await WriteErrorJsonOutputIfRequested(options, "update-packages", ExitCodes.FileOperationError, ex.Message);
             return ExitCodes.FileOperationError;
         }
         catch (Exception ex)
         {
             consoleService.Error($"\nUnexpected error: {ex.Message}");
+            await WriteErrorJsonOutputIfRequested(options, "update-packages", ExitCodes.UnexpectedError, ex.Message);
             return ExitCodes.UnexpectedError;
         }
     }
@@ -202,7 +225,10 @@ internal static class CommandRouter
     {
         try
         {
-            consoleService.WriteHeader();
+            if (!ShouldSuppressHeadersAndBanners(options))
+            {
+                consoleService.WriteHeader();
+            }
 
             var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
             var buildPropsService = new BuildPropsService(consoleService, projectAnalyzer);
@@ -309,8 +335,13 @@ internal static class CommandRouter
         IConsoleService consoleService,
         IBackupManager backupManager)
     {
-        if (!ValidateOptions(options, consoleService))
+        if (!ValidateOptions(options, consoleService, out var validationError))
         {
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                options.PruneAll ? "prune-all-backups" : "prune-backups",
+                ExitCodes.ValidationError,
+                validationError ?? "Validation failed.");
             return ExitCodes.ValidationError;
         }
 
@@ -321,7 +352,10 @@ internal static class CommandRouter
             return ExitCodes.FileOperationError;
         }
 
-        consoleService.WriteHeader();
+        if (!ShouldSuppressHeadersAndBanners(options))
+        {
+            consoleService.WriteHeader();
+        }
 
         if (options.PruneAll)
         {
@@ -334,8 +368,9 @@ internal static class CommandRouter
     /// <summary>
     /// Validates options and shows error if validation fails.
     /// </summary>
-    private static bool ValidateOptions(Options options, IConsoleService consoleService)
+    private static bool ValidateOptions(Options options, IConsoleService consoleService, out string? validationError)
     {
+        validationError = null;
         try
         {
             options.Validate();
@@ -343,6 +378,7 @@ internal static class CommandRouter
         }
         catch (ArgumentException ex)
         {
+            validationError = ex.Message;
             consoleService.Error(ex.Message);
             return false;
         }
@@ -357,8 +393,11 @@ internal static class CommandRouter
         IBackupManager backupManager,
         string backupPath)
     {
-        consoleService.Banner("PRUNE ALL BACKUPS");
-        consoleService.WriteLine();
+        if (!ShouldSuppressHeadersAndBanners(options))
+        {
+            consoleService.Banner("PRUNE ALL BACKUPS");
+            consoleService.WriteLine();
+        }
 
         var history = backupManager.GetBackupHistory(backupPath);
         if (history.Count == 0)
@@ -369,8 +408,13 @@ internal static class CommandRouter
 
         consoleService.Warning($"This will delete ALL {history.Count} backup set(s).");
 
-        if (!options.Quiet && !consoleService.AskConfirmation("Are you sure you want to delete ALL backups?"))
+        if (!ShouldProceedWithDestructiveAction(options, consoleService, "Are you sure you want to delete ALL backups?"))
         {
+            if (options.Output == OutputFormat.Json)
+            {
+                return Task.FromResult(ExitCodes.ValidationError);
+            }
+
             consoleService.Info("Prune cancelled.");
             return Task.FromResult(ExitCodes.Success);
         }
@@ -398,8 +442,11 @@ internal static class CommandRouter
         IBackupManager backupManager,
         string backupPath)
     {
-        consoleService.Banner($"PRUNE BACKUPS - Keeping last {options.Retention}");
-        consoleService.WriteLine();
+        if (!ShouldSuppressHeadersAndBanners(options))
+        {
+            consoleService.Banner($"PRUNE BACKUPS - Keeping last {options.Retention}");
+            consoleService.WriteLine();
+        }
 
         var history = backupManager.GetBackupHistory(backupPath);
         if (history.Count == 0)
@@ -419,8 +466,13 @@ internal static class CommandRouter
         var toRemove = history.Count - options.Retention;
         consoleService.Warning($"Will remove {toRemove} oldest backup set(s).");
 
-        if (!options.Quiet && !consoleService.AskConfirmation("Proceed with pruning?"))
+        if (!ShouldProceedWithDestructiveAction(options, consoleService, "Proceed with pruning?"))
         {
+            if (options.Output == OutputFormat.Json)
+            {
+                return Task.FromResult(ExitCodes.ValidationError);
+            }
+
             consoleService.Info("Prune cancelled.");
             return Task.FromResult(ExitCodes.Success);
         }
@@ -449,12 +501,20 @@ internal static class CommandRouter
         IBackupManager backupManager,
         ILoggerFactory? loggerFactory = null)
     {
-        if (!ValidateOptions(options, consoleService))
+        if (!ValidateOptions(options, consoleService, out var validationError))
         {
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                options.Analyze ? "batch-analyze" : "batch-migrate",
+                ExitCodes.ValidationError,
+                validationError ?? "Validation failed.");
             return ExitCodes.ValidationError;
         }
 
-        consoleService.WriteHeader();
+        if (!ShouldSuppressHeadersAndBanners(options))
+        {
+            consoleService.WriteHeader();
+        }
 
         // Create batch service with a migration executor function
         var batchService = new BatchService(consoleService, async solutionOptions =>
@@ -468,7 +528,7 @@ internal static class CommandRouter
                 backupManager,
                 null,
                 null,
-                quietMode: options.Quiet,
+                quietMode: solutionOptions.Quiet || solutionOptions.Output == OutputFormat.Json,
                 logger: loggerFactory?.CreateLogger<MigrationService>());
 
             return await migrationService.ExecuteAsync(solutionOptions);
@@ -509,6 +569,26 @@ internal static class CommandRouter
         }
     }
 
+    private static bool ShouldProceedWithDestructiveAction(Options options, IConsoleService consoleService, string confirmationPrompt)
+    {
+        if (options.Force)
+        {
+            return true;
+        }
+
+        if (options.Output == OutputFormat.Json)
+        {
+            return false;
+        }
+
+        if (options.Quiet)
+        {
+            return true;
+        }
+
+        return consoleService.AskConfirmation(confirmationPrompt);
+    }
+
     /// <summary>
     /// Executes standard migration, analysis, or rollback mode.
     /// </summary>
@@ -519,8 +599,23 @@ internal static class CommandRouter
         IBackupManager backupManager,
         ILoggerFactory? loggerFactory = null)
     {
+        if (options is null)
+        {
+            return ExitCodes.UnexpectedError;
+        }
+
         try
         {
+            if (!ValidateOptions(options, consoleService, out var validationError))
+            {
+                await WriteErrorJsonOutputIfRequested(
+                    options,
+                    GetOperationName(options),
+                    ExitCodes.ValidationError,
+                    validationError ?? "Validation failed.");
+                return ExitCodes.ValidationError;
+            }
+
             var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
             var migrationService = new MigrationService(
                 consoleService,
@@ -530,7 +625,7 @@ internal static class CommandRouter
                 backupManager,
                 null,
                 null,
-                quietMode: options.Quiet,
+                quietMode: options.Quiet || options.Output == OutputFormat.Json,
                 logger: loggerFactory?.CreateLogger<MigrationService>());
 
             var result = await migrationService.ExecuteAsync(options);
@@ -543,22 +638,49 @@ internal static class CommandRouter
         catch (IOException ex)
         {
             consoleService.Error($"\nFile operation error: {ex.Message}");
-            await Console.Error.WriteLineAsync("\nSuggestion: Check file permissions and ensure no files are locked by another process.");
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                GetOperationName(options),
+                ExitCodes.FileOperationError,
+                ex.Message);
+            if (options.Output != OutputFormat.Json)
+            {
+                await Console.Error.WriteLineAsync("\nSuggestion: Check file permissions and ensure no files are locked by another process.");
+            }
             return ExitCodes.FileOperationError;
         }
         catch (UnauthorizedAccessException ex)
         {
             consoleService.Error($"\nPermission denied: {ex.Message}");
-            await Console.Error.WriteLineAsync("\nSuggestion: Run with elevated permissions or check file/folder access rights.");
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                GetOperationName(options),
+                ExitCodes.FileOperationError,
+                ex.Message);
+            if (options.Output != OutputFormat.Json)
+            {
+                await Console.Error.WriteLineAsync("\nSuggestion: Run with elevated permissions or check file/folder access rights.");
+            }
             return ExitCodes.FileOperationError;
         }
         catch (Exception ex)
         {
             consoleService.Error($"\nUnexpected error: {ex.Message}");
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                GetOperationName(options),
+                ExitCodes.UnexpectedError,
+                ex.Message);
 #if DEBUG
-            await Console.Error.WriteLineAsync(ex.StackTrace);
+            if (options.Output != OutputFormat.Json)
+            {
+                await Console.Error.WriteLineAsync(ex.StackTrace);
+            }
 #endif
-            await Console.Error.WriteLineAsync("\nSuggestion: Please report this issue at https://github.com/georgepwall1991/CPMigrate/issues");
+            if (options.Output != OutputFormat.Json)
+            {
+                await Console.Error.WriteLineAsync("\nSuggestion: Please report this issue at https://github.com/georgepwall1991/CPMigrate/issues");
+            }
             return ExitCodes.UnexpectedError;
         }
     }
@@ -577,19 +699,36 @@ internal static class CommandRouter
         }
 
         var formatter = new JsonFormatter();
-        string operation;
-        if (options.Analyze)
-        {
-            operation = "analyze";
-        }
-        else if (options.Rollback)
-        {
-            operation = "rollback";
-        }
-        else
-        {
-            operation = "migrate";
-        }
+        var operation = GetOperationName(options);
+
+        var analysisIssues = result.AnalysisReport == null
+            ? new List<AnalysisIssueInfo>()
+            : result.AnalysisReport.Results
+                .SelectMany(analyzer => analyzer.Issues.Select(issue => new AnalysisIssueInfo
+                {
+                    Type = analyzer.AnalyzerName,
+                    IssueCode = issue.IssueCode.ToString(),
+                    Severity = issue.Severity.ToString(),
+                    Package = issue.PackageName,
+                    Description = issue.Description,
+                    AffectedProjects = issue.AffectedProjects.ToList(),
+                    Fixable = issue.Fixable,
+                    Metadata = issue.Metadata?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                }))
+                .ToList();
+
+        var fixes = result.FixReport == null
+            ? new List<FixInfo>()
+            : result.FixReport.Results.SelectMany(fixResult =>
+                fixResult.Changes.Select(change => new FixInfo
+                {
+                    Type = fixResult.Description,
+                    Package = string.Empty,
+                    File = change.FilePath,
+                    From = change.Before,
+                    To = change.After,
+                    Applied = fixResult.Success
+                })).ToList();
 
         var operationResult = new OperationResult
         {
@@ -600,9 +739,15 @@ internal static class CommandRouter
             {
                 ProjectsProcessed = result.ProjectsProcessed,
                 PackagesFound = result.PackagesCentralized,
-                ConflictsResolved = result.ConflictsResolved
+                ConflictsResolved = result.ConflictsResolved,
+                IssuesFound = result.AnalysisReport?.TotalIssues ?? 0,
+                IssuesFixed = result.FixReport?.TotalFixesApplied ?? 0,
+                FilesModified = result.FixReport?.TotalFileChanges ?? 0
             },
-            PropsFile = result.PropsFilePath != null ? new PropsFileInfo { Path = result.PropsFilePath } : null,
+            AnalysisIssues = analysisIssues,
+            Fixes = fixes,
+            PropsFile = string.IsNullOrWhiteSpace(result.PropsFilePath) ? null : new PropsFileInfo { Path = result.PropsFilePath },
+            Backup = string.IsNullOrWhiteSpace(result.BackupPath) ? null : new BackupInfo { Path = result.BackupPath, FilesBackedUp = 0 },
             DryRun = result.WasDryRun,
             Timestamp = DateTime.UtcNow.ToString("o")
         };
@@ -621,5 +766,110 @@ internal static class CommandRouter
         {
             Console.WriteLine(output);
         }
+    }
+
+    private static async Task WriteJsonOutputForPackageUpdate(
+        Options options,
+        PackageUpdateResult result,
+        IConsoleService consoleService)
+    {
+        if (options.Output != OutputFormat.Json)
+        {
+            return;
+        }
+
+        var formatter = new JsonFormatter();
+        var operationResult = new OperationResult
+        {
+            Operation = "update-packages",
+            Success = result.ExitCode == ExitCodes.Success,
+            ExitCode = result.ExitCode,
+            Summary = new OperationSummary
+            {
+                PackagesChecked = result.PackagesChecked,
+                PackagesUpdated = result.PackagesUpdated,
+                PackagesSkipped = result.PackagesSkipped,
+                TransitivePackagesFound = result.TransitivePackagesFound,
+                TransitivePackagesUpdated = result.TransitivePackagesUpdated,
+                TestsPassed = result.TestsPassed,
+                WasRolledBack = result.WasRolledBack
+            },
+            PackageUpdates = result.Updates.Select(update => new PackageUpdateInfo
+            {
+                Package = update.PackageName,
+                CurrentVersion = update.CurrentVersion,
+                LatestVersion = update.LatestVersion,
+                IsMajorUpdate = update.IsMajorUpdate,
+                Accepted = update.Accepted,
+                Transitive = update.IsTransitive
+            }).ToList(),
+            DryRun = options.DryRun,
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+
+        var output = formatter.Format(operationResult);
+
+        if (!string.IsNullOrEmpty(options.OutputFile))
+        {
+            await File.WriteAllTextAsync(options.OutputFile, output);
+            if (!options.Quiet)
+            {
+                consoleService.Dim($"JSON output written to: {options.OutputFile}");
+            }
+        }
+        else
+        {
+            Console.WriteLine(output);
+        }
+    }
+
+    private static async Task WriteErrorJsonOutputIfRequested(
+        Options options,
+        string operation,
+        int exitCode,
+        string errorMessage)
+    {
+        if (options.Output != OutputFormat.Json)
+        {
+            return;
+        }
+
+        var formatter = new JsonFormatter();
+        var operationResult = new OperationResult
+        {
+            Operation = operation,
+            Success = false,
+            ExitCode = exitCode,
+            Errors = new List<string> { errorMessage },
+            DryRun = options.DryRun,
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+
+        var output = formatter.Format(operationResult);
+
+        var outputFile = options.OutputFile;
+        if (!string.IsNullOrEmpty(outputFile))
+        {
+            await File.WriteAllTextAsync(outputFile, output);
+        }
+        else
+        {
+            Console.WriteLine(output);
+        }
+    }
+
+    private static string GetOperationName(Options options)
+    {
+        if (options.Analyze)
+        {
+            return "analyze";
+        }
+
+        if (options.Rollback)
+        {
+            return "rollback";
+        }
+
+        return "migrate";
     }
 }

@@ -1,13 +1,50 @@
 namespace CPMigrate.Models;
 
 /// <summary>
+/// Stable issue codes for analyzer findings.
+/// </summary>
+public enum AnalysisIssueCode
+{
+    Unknown,
+    VersionInconsistency,
+    DuplicatePackageCasing,
+    RedundantReference,
+    TransitiveConflict,
+    SecurityVulnerability,
+    RedundantDirectReference,
+    FrameworkAlignment,
+    OutdatedPackage,
+    DeprecatedPackage
+}
+
+/// <summary>
+/// Severity level for analysis findings.
+/// </summary>
+public enum AnalysisSeverity
+{
+    Info,
+    Low,
+    Moderate,
+    High,
+    Critical
+}
+
+/// <summary>
 /// Represents a single issue found by an analyzer.
 /// </summary>
 /// <param name="PackageName">The name of the package with the issue.</param>
 /// <param name="Description">A description of the issue found.</param>
 /// <param name="AffectedProjects">List of project names/paths affected by this issue.</param>
+/// <param name="IssueCode">Stable issue code for programmatic matching.</param>
+/// <param name="Severity">Issue severity for reporting and CI policy decisions.</param>
+/// <param name="Fixable">Whether a built-in fixer can address this issue.</param>
+/// <param name="Metadata">Optional structured metadata for machine consumers.</param>
 public record AnalysisIssue(
     string PackageName,
     string Description,
-    IReadOnlyList<string> AffectedProjects
+    IReadOnlyList<string> AffectedProjects,
+    AnalysisIssueCode IssueCode = AnalysisIssueCode.Unknown,
+    AnalysisSeverity Severity = AnalysisSeverity.Info,
+    bool Fixable = false,
+    IReadOnlyDictionary<string, string>? Metadata = null
 );

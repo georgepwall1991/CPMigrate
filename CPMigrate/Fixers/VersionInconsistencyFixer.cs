@@ -14,9 +14,7 @@ public class VersionInconsistencyFixer : IFixer
 
     public bool CanFix(AnalysisIssue issue)
     {
-        // This fixer handles issues where a package has multiple different versions
-        // The description typically contains version info like "13.0.1 (Project1), 12.0.3 (Project2)"
-        return issue.Description.Contains("(") && issue.Description.Contains(",");
+        return issue.IssueCode == AnalysisIssueCode.VersionInconsistency;
     }
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun)

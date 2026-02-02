@@ -33,6 +33,11 @@ public interface IProjectAnalyzer
     bool ScanProjectPackages(string projectFilePath, Dictionary<string, HashSet<string>> packageVersions);
 
     /// <summary>
+    /// Scans a project for resolved package references via dotnet package list JSON output.
+    /// </summary>
+    Task<(List<PackageReference> References, bool Success)> ScanResolvedPackagesAsync(string projectFilePath, bool includeTransitive = false);
+
+    /// <summary>
     /// Scans a project for transitive package dependencies.
     /// </summary>
     Task<(List<PackageReference> References, bool Success)> ScanTransitivePackagesAsync(string projectFilePath);
@@ -41,4 +46,20 @@ public interface IProjectAnalyzer
     /// Scans a project for package vulnerabilities.
     /// </summary>
     Task<(List<VulnerabilityInfo> Vulnerabilities, bool Success)> ScanVulnerabilitiesAsync(string projectFilePath);
+
+    /// <summary>
+    /// Scans a project for outdated packages.
+    /// </summary>
+    Task<(List<OutdatedPackageInfo> Packages, bool Success)> ScanOutdatedPackagesAsync(
+        string projectFilePath,
+        bool includeTransitive,
+        bool includePrerelease = false);
+
+    /// <summary>
+    /// Scans a project for deprecated packages.
+    /// </summary>
+    Task<(List<DeprecatedPackageInfo> Packages, bool Success)> ScanDeprecatedPackagesAsync(
+        string projectFilePath,
+        bool includeTransitive,
+        bool includePrerelease = false);
 }

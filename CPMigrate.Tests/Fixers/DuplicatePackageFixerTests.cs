@@ -35,7 +35,8 @@ public class DuplicatePackageFixerTests : IDisposable
         var issue = new AnalysisIssue(
             "Newtonsoft.Json",
             "Package has casing variations in different projects",
-            new[] { "Project1.csproj" }
+            new[] { "Project1.csproj" },
+            AnalysisIssueCode.DuplicatePackageCasing
         );
 
         // Act
@@ -52,7 +53,8 @@ public class DuplicatePackageFixerTests : IDisposable
         var issue = new AnalysisIssue(
             "Newtonsoft.Json",
             "Found different casings for this package",
-            new[] { "Project1.csproj" }
+            new[] { "Project1.csproj" },
+            AnalysisIssueCode.DuplicatePackageCasing
         );
 
         // Act

@@ -110,6 +110,43 @@ public class MigrationServiceCoverageTests
     }
 
     [Fact]
+    public async Task ExecuteAnalysisAsync_IncludeTransitive_WhenResolvedScanFails_DoesNotFallbackToProjectXml()
+    {
+        // Arrange
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, "<Project />");
+
+        var options = new Options { Analyze = true, IncludeTransitive = true, SolutionFileDir = tempDir };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        _mockAnalyzer.Setup(a => a.ScanResolvedPackagesAsync(projectPath, true))
+            .ReturnsAsync((new List<PackageReference>(), false));
+
+        _mockAnalyzer.Setup(a => a.ScanProjectPackages(It.IsAny<string>()))
+            .Returns((new List<PackageReference> { new("Fallback.Package", "1.0.0", projectPath, "P1.csproj") }, true));
+
+        _mockAnalysis.Setup(a => a.Analyze(It.Is<ProjectPackageInfo>(info => info.TotalReferences == 0)))
+            .Returns(new AnalysisReport(0, 0, new List<AnalyzerResult>()));
+
+        try
+        {
+            // Act
+            await _service.ExecuteAsync(options);
+
+            // Assert
+            _mockAnalyzer.Verify(a => a.ScanProjectPackages(projectPath), Times.Never);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public async Task ExecuteMigrationAsync_WithVulnerabilities_ReportsCorrectly()
     {
         // Arrange

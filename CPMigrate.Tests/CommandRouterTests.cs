@@ -4,6 +4,7 @@ using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
 using Moq;
+using System.Text.Json;
 
 namespace CPMigrate.Tests;
 
@@ -388,7 +389,50 @@ EndProject
 
             // JSON should be written to console
             var output = stringWriter.ToString();
+            output.TrimStart().Should().StartWith("{");
             output.Should().Contain("\"operation\":");
+            var parsed = JsonDocument.Parse(output);
+            parsed.RootElement.GetProperty("operation").GetString().Should().Be("migrate");
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+    }
+
+    [Fact]
+    public async Task RunMigrationAsync_JsonValidationError_WritesErrorJsonToConsole()
+    {
+        // Arrange
+        var options = new Options
+        {
+            Rollback = true,
+            BackupDir = ".",
+            Output = OutputFormat.Json
+        };
+
+        var originalOut = Console.Out;
+        using var stringWriter = new StringWriter();
+        Console.SetOut(stringWriter);
+
+        try
+        {
+            // Act
+            var result = await CommandRouter.RunMigrationAsync(
+                options,
+                _console,
+                _versionResolver,
+                _backupManager);
+
+            // Assert
+            result.Should().Be(ExitCodes.ValidationError);
+            var output = stringWriter.ToString();
+            output.TrimStart().Should().StartWith("{");
+
+            var parsed = JsonDocument.Parse(output);
+            parsed.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+            parsed.RootElement.GetProperty("errors")[0].GetString()
+                .Should().Contain("--rollback requires --force when --output Json is used");
         }
         finally
         {

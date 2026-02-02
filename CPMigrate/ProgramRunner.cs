@@ -2,6 +2,7 @@ using CommandLine;
 using CPMigrate.Models;
 using CPMigrate.Services;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace CPMigrate;
 
@@ -52,7 +53,8 @@ public static class ProgramRunner
                     logger.LogDebug("CPMigrate started with args: {Args}", string.Join(" ", args));
 
                     // Route to appropriate command handler
-                    return await CommandRouter.RouteCommand(
+                    var stopwatch = Stopwatch.StartNew();
+                    var exitCode = await CommandRouter.RouteCommand(
                         options,
                         consoleService,
                         interactiveService,
@@ -60,6 +62,10 @@ public static class ProgramRunner
                         configService,
                         backupManager,
                         loggerFactory);
+                    stopwatch.Stop();
+
+                    TelemetryService.RecordCommandRun(options, exitCode, stopwatch.Elapsed);
+                    return exitCode;
                 },
                 errors =>
                 {

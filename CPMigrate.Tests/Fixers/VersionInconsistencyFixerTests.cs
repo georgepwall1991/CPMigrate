@@ -35,7 +35,8 @@ public class VersionInconsistencyFixerTests : IDisposable
         var issue = new AnalysisIssue(
             "Newtonsoft.Json",
             "12.0.1 (Project1), 13.0.1 (Project2)",
-            new[] { "Project1.csproj", "Project2.csproj" }
+            new[] { "Project1.csproj", "Project2.csproj" },
+            AnalysisIssueCode.VersionInconsistency
         );
 
         // Act

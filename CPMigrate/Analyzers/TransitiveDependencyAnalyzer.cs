@@ -32,7 +32,10 @@ public class TransitiveDependencyAnalyzer : IAnalyzer
                 issues.Add(new AnalysisIssue(
                     packageName,
                     $"Transitive dependency has {versions.Count} different versions across {projectCount} projects: {versionList}. Pinning this package in Directory.Packages.props is recommended.",
-                    group.Select(r => r.ProjectName).Distinct().ToList()
+                    group.Select(r => r.ProjectName).Distinct().ToList(),
+                    AnalysisIssueCode.TransitiveConflict,
+                    AnalysisSeverity.Moderate,
+                    Fixable: true
                 ));
             }
         }
