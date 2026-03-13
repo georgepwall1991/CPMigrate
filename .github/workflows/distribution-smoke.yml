@@ -67,7 +67,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet restore CPMigrate/CPMigrate.csproj -r win-x64
-      - run: dotnet publish CPMigrate/CPMigrate.csproj --configuration Release --no-restore -r win-x64 --self-contained false -p:UseAppHost=true -o ./artifacts/win-x64
+      - run: dotnet publish CPMigrate/CPMigrate.csproj --configuration Release --no-restore -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:DebugType=None -o ./artifacts/win-x64
       - name: Build and run Windows portable package
         shell: pwsh
         run: |
@@ -102,7 +102,7 @@ jobs:
             winget settings --enable LocalManifestFiles
             winget install --manifest $manifestRoot --disable-interactivity --accept-package-agreements --accept-source-agreements
             & "$env:LOCALAPPDATA\Microsoft\WinGet\Links\cpmigrate.exe" --help > $null
-            winget uninstall --id GeorgeWall.CPMigrate --disable-interactivity
+            winget uninstall --id GeorgeWall.CPMigrate --disable-interactivity --accept-source-agreements
           }
           finally {
             if ($server -and -not $server.HasExited) {
