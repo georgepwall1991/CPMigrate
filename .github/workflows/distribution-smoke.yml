@@ -7,6 +7,7 @@ on:
       - '.github/workflows/distribution-smoke.yml'
       - 'scripts/release/**'
       - 'packaging/homebrew/**'
+      - 'packaging/winget/**'
   push:
     branches: [main]
     paths:
@@ -14,6 +15,7 @@ on:
       - '.github/workflows/distribution-smoke.yml'
       - 'scripts/release/**'
       - 'packaging/homebrew/**'
+      - 'packaging/winget/**'
 
 jobs:
   nuget-tool-smoke:
@@ -65,7 +67,6 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet restore CPMigrate/CPMigrate.csproj -r win-x64
-      - run: dotnet build --configuration Release --no-restore
       - run: dotnet publish CPMigrate/CPMigrate.csproj --configuration Release --no-restore -r win-x64 --self-contained false -p:UseAppHost=true -o ./artifacts/win-x64
       - name: Build and run Windows portable package
         shell: pwsh
