@@ -29,9 +29,40 @@ jobs:
       - name: Test
         run: dotnet test --configuration Release --no-build --verbosity normal
 
+  portable-windows-package:
+    runs-on: windows-latest
+    needs: build-and-test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore CPMigrate/CPMigrate.csproj -r win-x64
+
+      - name: Publish Windows apphost
+        run: dotnet publish CPMigrate/CPMigrate.csproj --configuration Release --no-restore -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:DebugType=None -o ./artifacts/win-x64
+
+      - name: Build Windows portable package
+        shell: pwsh
+        run: |
+          ./scripts/release/build-portable-windows-package.ps1 `
+            -PublishDirectory "./artifacts/win-x64" `
+            -OutputPath "./artifacts/CPMigrate-portable-win-x64.zip"
+
+      - name: Upload Windows portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-windows-package
+          path: ./artifacts/CPMigrate-portable-win-x64.zip
+
   publish:
     runs-on: ubuntu-latest
-    needs: build-and-test
+    needs: [build-and-test, portable-windows-package]
     permissions:
       contents: write
 
@@ -52,6 +83,31 @@ jobs:
       - name: Pack
         run: dotnet pack --configuration Release --no-build --output ./artifacts
 
+      - name: Download Windows portable package
+        uses: actions/download-artifact@v4
+        with:
+          name: portable-windows-package
+          path: ./artifacts
+
+      - name: Generate Homebrew formula artifact
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/CPMigrate.${VERSION}.nupkg"
+          PACKAGE_SHA="$(sha256sum "./artifacts/CPMigrate.${VERSION}.nupkg" | awk '{print $1}')"
+          bash ./scripts/release/generate-homebrew-formula.sh "$VERSION" "$PACKAGE_URL" "$PACKAGE_SHA" > ./artifacts/cpmigrate.rb
+
+      - name: Generate Winget manifest artifact
+        shell: pwsh
+        run: |
+          $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          $installerUrl = "https://github.com/${env:GITHUB_REPOSITORY}/releases/download/${env:GITHUB_REF_NAME}/CPMigrate-portable-win-x64.zip"
+          $installerSha = (Get-FileHash "./artifacts/CPMigrate-portable-win-x64.zip" -Algorithm SHA256).Hash
+          ./scripts/release/generate-winget-manifests.ps1 `
+            -Version $version `
+            -InstallerUrl $installerUrl `
+            -InstallerSha256 $installerSha `
+            -OutputDirectory "./artifacts/winget"
+
       - name: Push to NuGet
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
@@ -60,7 +116,17 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
-          files: ./artifacts/*.nupkg
+          files: |
+            ./artifacts/*.nupkg
+            ./artifacts/*.zip
+            ./artifacts/cpmigrate.rb
+            ./artifacts/winget/*.yaml
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew tap
+        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: bash ./scripts/release/update-homebrew-tap.sh ./artifacts/cpmigrate.rb "$HOMEBREW_TAP_TOKEN"

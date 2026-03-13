@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CPM for Monorepos and Multi-Solution .NET Repos</title>
+  <meta name="description" content="Use CPMigrate to analyze and migrate multiple .NET solutions in a monorepo with Central Package Management." />
+  <link rel="canonical" href="https://georgepwall1991.github.io/CPMigrate/guides/monorepos/" />
+  <meta property="og:title" content="CPM for Monorepos and Multi-Solution .NET Repos" />
+  <meta property="og:description" content="Batch-process .NET solutions and standardize package management across monorepos with CPMigrate." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://georgepwall1991.github.io/CPMigrate/guides/monorepos/" />
+  <link rel="stylesheet" href="/CPMigrate/assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/CPMigrate/"><span class="brand-mark"></span><span>CPMigrate</span></a>
+      <nav class="nav">
+        <a href="/CPMigrate/install/">Install</a>
+        <a href="https://github.com/georgepwall1991/CPMigrate/tree/main/examples/monorepo">Example repo</a>
+      </nav>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="section">
+      <div class="eyebrow">Monorepos</div>
+      <h1>Use CPM across multiple .NET solutions, not just one project tree</h1>
+      <p class="page-intro">CPMigrate includes batch processing for teams managing several solutions in one repository. That matters when the problem is not “one migration” but “repeatable dependency policy across many app surfaces”.</p>
+      <pre><code>cpmigrate --batch /path/to/repo --analyze
+cpmigrate --batch /path/to/repo --batch-parallel --batch-continue</code></pre>
+      <div class="callout">
+        Proof asset: <a href="https://github.com/georgepwall1991/CPMigrate/tree/main/examples/monorepo">see the monorepo example</a> bundled with CPMigrate.
+      </div>
+    </section>
+    <footer class="footer">
+      Use batch mode to establish one repeatable migration and analysis workflow across many solutions.
+    </footer>
+  </main>
+</body>
+</html>

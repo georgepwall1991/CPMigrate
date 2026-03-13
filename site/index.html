@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NuGet Central Package Management Migration Tool for .NET Teams | CPMigrate</title>
+  <meta name="description" content="Migrate .NET solutions to NuGet Central Package Management, generate Directory.Packages.props, analyze dependency health, and update packages safely with rollback." />
+  <link rel="canonical" href="https://georgepwall1991.github.io/CPMigrate/" />
+  <meta property="og:title" content="NuGet Central Package Management Migration Tool for .NET Teams" />
+  <meta property="og:description" content="Use CPMigrate to migrate to Directory.Packages.props, analyze NuGet dependency health, and update packages safely with rollback." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://georgepwall1991.github.io/CPMigrate/" />
+  <meta property="og:image" content="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/banner.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="NuGet Central Package Management Migration Tool for .NET Teams" />
+  <meta name="twitter:description" content="Migrate .NET solutions to NuGet Central Package Management and update packages safely with rollback." />
+  <link rel="stylesheet" href="/CPMigrate/assets/styles.css" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "CPMigrate",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Windows, macOS, Linux",
+      "url": "https://georgepwall1991.github.io/CPMigrate/",
+      "downloadUrl": "https://www.nuget.org/packages/CPMigrate/",
+      "codeRepository": "https://github.com/georgepwall1991/CPMigrate",
+      "description": "Migrate .NET solutions to NuGet Central Package Management, analyze dependency health, and update packages safely with rollback.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/CPMigrate/">
+        <span class="brand-mark"></span>
+        <span>CPMigrate</span>
+      </a>
+      <nav class="nav">
+        <a href="/CPMigrate/install/">Install</a>
+        <a href="/CPMigrate/guides/migrate-directory-packages-props/">Migrate</a>
+        <a href="/CPMigrate/guides/ci-cd/">CI/CD</a>
+        <a href="/CPMigrate/compare/manual-cpm-migration/">Manual vs CPMigrate</a>
+        <a href="https://github.com/georgepwall1991/CPMigrate">GitHub</a>
+      </nav>
+    </div>
+  </div>
+
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">NuGet Central Package Management migration</div>
+        <h1>Stop hand-migrating .NET solutions to <code>Directory.Packages.props</code>.</h1>
+        <p class="lede">CPMigrate is a .NET dependency analysis CLI for app teams adopting NuGet Central Package Management. It generates <code>Directory.Packages.props</code>, audits dependency drift, fixes common issues, and updates packages with rollback when tests fail.</p>
+        <div class="cta-row">
+          <a class="button" href="/CPMigrate/install/">Install CPMigrate</a>
+          <a class="button-secondary" href="/CPMigrate/guides/migrate-directory-packages-props/">See the migration guide</a>
+        </div>
+        <div class="pill-row">
+          <span class="pill">NuGet Central Package Management migration</span>
+          <span class="pill">Directory.Packages.props generator</span>
+          <span class="pill">.NET dependency analysis CLI</span>
+          <span class="pill">NuGet package updates with rollback</span>
+        </div>
+      </div>
+      <div class="hero-panel">
+        <h3>Built for .NET app teams</h3>
+        <ul class="kicker-list">
+          <li>Modernize multi-project solutions without manual XML cleanup.</li>
+          <li>Catch version drift, vulnerability issues, and redundant references before CI breaks.</li>
+          <li>Update packages with test verification and automatic rollback protection.</li>
+          <li>Work across standard repos, monorepos, and `.slnx`-based solutions.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="image-frame">
+        <img src="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-demo.gif" alt="CPMigrate previewing a Central Package Management migration" />
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>Why teams find CPMigrate through problem searches, not just the name</h2>
+        <p class="page-intro">Brand SEO alone is weak for CPMigrate. The real discovery path is intent-led: teams searching for “migrate to central package management”, “Directory.Packages.props migration”, “NuGet dependency analysis CLI”, or “safe package updates with rollback”.</p>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <h3>Migrate to CPM</h3>
+          <p>Generate <code>Directory.Packages.props</code> from existing project references and resolve conflicts with a defined strategy.</p>
+          <a href="/CPMigrate/guides/migrate-directory-packages-props/">How to migrate to Directory.Packages.props</a>
+        </article>
+        <article class="card">
+          <h3>Analyze dependency health</h3>
+          <p>Find version inconsistencies, duplicate references, transitive issues, outdated packages, and vulnerabilities.</p>
+          <a href="/CPMigrate/guides/ci-cd/">Use CPMigrate in CI/CD</a>
+        </article>
+        <article class="card">
+          <h3>Update packages safely</h3>
+          <p>Preview updates, include transitive packages, run tests, and roll back automatically if verification fails.</p>
+          <a href="/CPMigrate/guides/safe-package-updates/">See the safe package update flow</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="section split">
+      <article class="panel">
+        <h2>Who this is for</h2>
+        <ul class="plain-list">
+          <li>.NET solution owners migrating to Central Package Management.</li>
+          <li>App teams modernizing package management without writing one-off migration scripts.</li>
+          <li>Monorepo and multi-solution teams standardizing dependency policy.</li>
+          <li>CI/CD maintainers who need machine-readable dependency analysis and safe update workflows.</li>
+        </ul>
+      </article>
+      <article class="panel">
+        <h2>Proof before promise</h2>
+        <ul class="plain-list">
+          <li>Starter example repo: <a href="https://github.com/georgepwall1991/CPMigrate/tree/main/examples/small-solution">small solution</a></li>
+          <li>Monorepo example repo: <a href="https://github.com/georgepwall1991/CPMigrate/tree/main/examples/monorepo">multi-solution repo</a></li>
+          <li>GitHub release assets: <a href="https://github.com/georgepwall1991/CPMigrate/releases/latest">latest release</a></li>
+          <li>NuGet package: <a href="https://www.nuget.org/packages/CPMigrate/">CPMigrate on NuGet</a></li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>How CPMigrate compares to manual migration and ad hoc scripts</h2>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Approach</th>
+            <th>Good fit</th>
+            <th>Where it falls short</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Manual CPM migration</strong></td>
+            <td>One-off experiments and tiny solutions</td>
+            <td>Slow, repetitive, and easy to get wrong across many projects</td>
+          </tr>
+          <tr>
+            <td><strong>Ad hoc scripts</strong></td>
+            <td>Internal repo-specific automation</td>
+            <td>Brittle logic, little reuse, weak docs, and no standard rollback path</td>
+          </tr>
+          <tr>
+            <td><strong>Raw <code>dotnet package list</code></strong></td>
+            <td>Inventory, outdated package checks, vulnerability data</td>
+            <td>No migration, no central props generation, no fixers, no rollback workflow</td>
+          </tr>
+          <tr>
+            <td><strong>CPMigrate</strong></td>
+            <td>Teams adopting CPM across real .NET solutions</td>
+            <td>Purpose-built for this exact modernization path</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="cta-row">
+        <a class="button-secondary" href="/CPMigrate/compare/manual-cpm-migration/">CPMigrate vs manual migration</a>
+        <a class="button-secondary" href="/CPMigrate/compare/ad-hoc-scripts/">CPMigrate vs ad hoc scripts</a>
+      </div>
+    </section>
+
+    <section class="cta-strip">
+      <h2>Start with one command</h2>
+      <pre><code>dotnet tool install --global CPMigrate
+cpmigrate --analyze --audit --outdated --deprecated</code></pre>
+      <div class="cta-row">
+        <a class="button" href="/CPMigrate/install/">See all install paths</a>
+        <a class="button-secondary" href="/CPMigrate/guides/ci-cd/">Use CPMigrate in CI</a>
+      </div>
+    </section>
+
+    <footer class="footer">
+      CPMigrate is a .NET global tool for NuGet Central Package Management migration, dependency analysis, and safe package updates.
+    </footer>
+  </main>
+</body>
+</html>

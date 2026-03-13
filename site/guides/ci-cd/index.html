@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Use CPMigrate in CI/CD with JSON Output and Dependency Gates</title>
+  <meta name="description" content="Use CPMigrate in CI/CD with JSON-only output, dependency health analysis, and machine-readable exit codes." />
+  <link rel="canonical" href="https://georgepwall1991.github.io/CPMigrate/guides/ci-cd/" />
+  <meta property="og:title" content="Use CPMigrate in CI/CD" />
+  <meta property="og:description" content="Run dependency analysis in CI with JSON output, stable exit codes, and example GitHub Actions snippets." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://georgepwall1991.github.io/CPMigrate/guides/ci-cd/" />
+  <link rel="stylesheet" href="/CPMigrate/assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/CPMigrate/"><span class="brand-mark"></span><span>CPMigrate</span></a>
+      <nav class="nav">
+        <a href="/CPMigrate/install/">Install</a>
+        <a href="https://github.com/georgepwall1991/CPMigrate#cicd-integration">README CI section</a>
+      </nav>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="section">
+      <div class="eyebrow">CI/CD</div>
+      <h1>Use CPMigrate in CI with JSON-only output and stable exit codes</h1>
+      <p class="page-intro">Infrastructure teams do not need another hand-parsed CLI. CPMigrate already supports JSON output, quiet mode, dependency analysis, and exit codes suitable for gates and scheduled checks.</p>
+      <pre><code>cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analysis.json</code></pre>
+      <div class="panel">
+        <h2>GitHub Actions example</h2>
+        <pre><code>- name: Install CPMigrate
+  run: dotnet tool install --global CPMigrate
+
+- name: Analyze dependency health
+  run: cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analysis.json</code></pre>
+      </div>
+    </section>
+    <footer class="footer">
+      Use JSON mode early. It turns CPMigrate into a dependable dependency gate rather than a human-only console tool.
+    </footer>
+  </main>
+</body>
+</html>

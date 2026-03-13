@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CPMigrate vs Ad Hoc Scripts for .NET Package Management</title>
+  <meta name="description" content="Compare CPMigrate with custom scripts for Central Package Management migration, dependency analysis, and package updates." />
+  <link rel="canonical" href="https://georgepwall1991.github.io/CPMigrate/compare/ad-hoc-scripts/" />
+  <meta property="og:title" content="CPMigrate vs Ad Hoc Scripts" />
+  <meta property="og:description" content="Custom migration scripts solve one repo. CPMigrate gives app teams a maintained path for migration, analysis, and rollback." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://georgepwall1991.github.io/CPMigrate/compare/ad-hoc-scripts/" />
+  <link rel="stylesheet" href="/CPMigrate/assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/CPMigrate/"><span class="brand-mark"></span><span>CPMigrate</span></a>
+      <nav class="nav">
+        <a href="/CPMigrate/install/">Install</a>
+        <a href="https://github.com/georgepwall1991/CPMigrate/tree/main/examples/monorepo">Monorepo example</a>
+      </nav>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="section">
+      <div class="eyebrow">Comparison</div>
+      <h1>CPMigrate vs ad hoc migration scripts</h1>
+      <p class="page-intro">Repo-specific scripts often start as the quickest way to migrate one solution. They usually become expensive when teams need docs, repeatability, safe updates, and CI-friendly output across more than one repository shape.</p>
+      <div class="grid">
+        <article class="card">
+          <h3>What scripts do well</h3>
+          <p>Encode local conventions fast, especially for one repository with known quirks.</p>
+        </article>
+        <article class="card">
+          <h3>Where scripts drift</h3>
+          <p>Logic gets copied, edge cases multiply, and rollback or analysis behavior rarely stays consistent.</p>
+        </article>
+        <article class="card">
+          <h3>Where CPMigrate fits</h3>
+          <p>A maintained CLI for migration, dependency analysis, auto-fix, package updates, JSON output, and backup-aware workflows.</p>
+        </article>
+      </div>
+      <pre><code>cpmigrate --analyze --audit --output Json --quiet
+cpmigrate --update-packages --transitive --dry-run</code></pre>
+    </section>
+    <footer class="footer">
+      Use scripts when your goal is repo-local glue. Use CPMigrate when your goal is a repeatable package management workflow.
+    </footer>
+  </main>
+</body>
+</html>

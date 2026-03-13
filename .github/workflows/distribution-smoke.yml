@@ -1,0 +1,110 @@
+name: Distribution Smoke
+
+on:
+  pull_request:
+    paths:
+      - 'CPMigrate/CPMigrate.csproj'
+      - '.github/workflows/distribution-smoke.yml'
+      - 'scripts/release/**'
+      - 'packaging/homebrew/**'
+      - 'packaging/winget/**'
+  push:
+    branches: [main]
+    paths:
+      - 'CPMigrate/CPMigrate.csproj'
+      - '.github/workflows/distribution-smoke.yml'
+      - 'scripts/release/**'
+      - 'packaging/homebrew/**'
+      - 'packaging/winget/**'
+
+jobs:
+  nuget-tool-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore
+      - run: dotnet build --configuration Release --no-restore
+      - run: dotnet pack CPMigrate/CPMigrate.csproj --configuration Release --no-build --output ./artifacts
+      - name: Install local tool package
+        run: |
+          VERSION="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' CPMigrate/CPMigrate.csproj | head -1)"
+          dotnet tool install --tool-path ./.tool-smoke CPMigrate --add-source ./artifacts --version "$VERSION"
+          ./.tool-smoke/cpmigrate --help >/dev/null
+
+  homebrew-formula-smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore
+      - run: dotnet build --configuration Release --no-restore
+      - run: dotnet pack CPMigrate/CPMigrate.csproj --configuration Release --no-build --output ./artifacts
+      - name: Install through generated Homebrew formula
+        run: |
+          VERSION="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' CPMigrate/CPMigrate.csproj | head -1)"
+          PACKAGE_PATH="$PWD/artifacts/CPMigrate.${VERSION}.nupkg"
+          PACKAGE_SHA="$(shasum -a 256 "$PACKAGE_PATH" | awk '{print $1}')"
+          PACKAGE_URL="file://${PACKAGE_PATH}"
+          bash ./scripts/release/generate-homebrew-formula.sh "$VERSION" "$PACKAGE_URL" "$PACKAGE_SHA" > /tmp/cpmigrate.rb
+          HOMEBREW_NO_AUTO_UPDATE=1 brew tap-new local/cpmigrate-smoke
+          TAP_DIR="$(brew --repo local/cpmigrate-smoke)"
+          cp /tmp/cpmigrate.rb "$TAP_DIR/Formula/cpmigrate.rb"
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install local/cpmigrate-smoke/cpmigrate
+          cpmigrate --help >/dev/null
+          brew uninstall local/cpmigrate-smoke/cpmigrate
+          brew untap local/cpmigrate-smoke
+
+  windows-portable-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore CPMigrate/CPMigrate.csproj -r win-x64
+      - run: dotnet publish CPMigrate/CPMigrate.csproj --configuration Release --no-restore -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:DebugType=None -o ./artifacts/win-x64
+      - name: Build and run Windows portable package
+        shell: pwsh
+        run: |
+          ./scripts/release/build-portable-windows-package.ps1 `
+            -PublishDirectory "./artifacts/win-x64" `
+            -OutputPath "./artifacts/CPMigrate-portable-win-x64.zip"
+          Expand-Archive -Path "./artifacts/CPMigrate-portable-win-x64.zip" -DestinationPath "./portable" -Force
+          .\portable\CPMigrate.exe --help > $null
+
+      - name: Install through local Winget manifest
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path "CPMigrate/CPMigrate.csproj" -Pattern "<Version>(.+)</Version>").Matches[0].Groups[1].Value
+          $serverLog = Join-Path $env:RUNNER_TEMP "cpmigrate-http.log"
+          $serverError = Join-Path $env:RUNNER_TEMP "cpmigrate-http.err"
+          $server = Start-Process py `
+            -ArgumentList @("-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", (Join-Path $PWD "artifacts")) `
+            -RedirectStandardOutput $serverLog `
+            -RedirectStandardError $serverError `
+            -PassThru
+          Start-Sleep -Seconds 2
+          $zipPath = (Resolve-Path "./artifacts/CPMigrate-portable-win-x64.zip").Path
+          $zipUri = "http://127.0.0.1:8765/CPMigrate-portable-win-x64.zip"
+          $zipSha = (Get-FileHash $zipPath -Algorithm SHA256).Hash
+          $manifestRoot = Join-Path $PWD "artifacts/winget"
+          try {
+            ./scripts/release/generate-winget-manifests.ps1 `
+              -Version $version `
+              -InstallerUrl $zipUri `
+              -InstallerSha256 $zipSha `
+              -OutputDirectory $manifestRoot
+            winget settings --enable LocalManifestFiles
+            winget install --manifest $manifestRoot --disable-interactivity --accept-package-agreements --accept-source-agreements
+            & "$env:LOCALAPPDATA\Microsoft\WinGet\Links\cpmigrate.exe" --help > $null
+          }
+          finally {
+            if ($server -and -not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force
+            }
+          }

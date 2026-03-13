@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CPMigrate vs Manual Central Package Management Migration</title>
+  <meta name="description" content="Compare CPMigrate with manual Directory.Packages.props migration for .NET solutions." />
+  <link rel="canonical" href="https://georgepwall1991.github.io/CPMigrate/compare/manual-cpm-migration/" />
+  <meta property="og:title" content="CPMigrate vs Manual Central Package Management Migration" />
+  <meta property="og:description" content="See when CPMigrate is faster and safer than manual XML migration to Directory.Packages.props." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://georgepwall1991.github.io/CPMigrate/compare/manual-cpm-migration/" />
+  <link rel="stylesheet" href="/CPMigrate/assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/CPMigrate/"><span class="brand-mark"></span><span>CPMigrate</span></a>
+      <nav class="nav">
+        <a href="/CPMigrate/guides/migrate-directory-packages-props/">Migration guide</a>
+        <a href="/CPMigrate/compare/ad-hoc-scripts/">Ad hoc scripts</a>
+      </nav>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="section">
+      <div class="eyebrow">Comparison</div>
+      <h1>CPMigrate vs manual CPM migration</h1>
+      <p class="page-intro">Manual migration works for very small solutions. It gets expensive fast when teams need dry-runs, repeatability, version conflict policy, and rollback support.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Need</th>
+            <th>Manual migration</th>
+            <th>CPMigrate</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Generate `Directory.Packages.props`</td>
+            <td>Hand-build and verify XML</td>
+            <td>Generated from real project references</td>
+          </tr>
+          <tr>
+            <td>Version conflict handling</td>
+            <td>Manual comparison across projects</td>
+            <td>Conflict strategy with optional interactive resolution</td>
+          </tr>
+          <tr>
+            <td>Preview before editing</td>
+            <td>Usually manual file diffing</td>
+            <td>First-class dry-run mode</td>
+          </tr>
+          <tr>
+            <td>Rollback</td>
+            <td>Team-defined backup discipline</td>
+            <td>Built-in backups and rollback workflow</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <footer class="footer">
+      Best next action: try a dry run on one representative solution and compare the output with your current manual checklist.
+    </footer>
+  </main>
+</body>
+</html>
