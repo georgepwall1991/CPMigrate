@@ -1,5 +1,6 @@
 using CPMigrate.Fixers;
 using CPMigrate.Models;
+using CPMigrate.Services.Migration;
 
 namespace CPMigrate.Services;
 
@@ -11,17 +12,15 @@ public class FixService : IFixService
     private readonly List<IFixer> _fixers;
     private readonly IConsoleService _console;
 
-    public FixService(IConsoleService console, VersionResolver? versionResolver = null)
+    public FixService(IConsoleService console, IEnumerable<IFixer> fixers)
     {
         _console = console;
-        var resolver = versionResolver ?? new VersionResolver(_console);
-        _fixers = new List<IFixer>
-        {
-            new VersionInconsistencyFixer(),
-            new DuplicatePackageFixer(),
-            new RedundantReferenceFixer(),
-            new TransitiveConflictFixer(resolver)
-        };
+        _fixers = fixers.ToList();
+    }
+
+    public FixService(IConsoleService console, VersionResolver? versionResolver = null)
+        : this(console, FixerCatalog.CreateDefault(versionResolver ?? new VersionResolver(console)))
+    {
     }
 
     /// <summary>
@@ -29,10 +28,17 @@ public class FixService : IFixService
     /// </summary>
     /// <param name="report">The analysis report containing issues to fix.</param>
     /// <param name="packageInfo">Package information from the analysis.</param>
-    /// <param name="options">Options controlling fix behavior.</param>
-    /// <param name="dryRun">If true, shows what would be changed without modifying files.</param>
-    /// <returns>Report of all fixes applied.</returns>
     public FixReport ApplyFixes(AnalysisReport report, ProjectPackageInfo packageInfo, Options options, bool dryRun)
+    {
+        return ApplyFixes(
+            report,
+            packageInfo,
+            new FixRequest(MigrationValidator.GetOutputPaths(options).PropsPath, options.ConflictStrategy, dryRun));
+    }
+
+    /// <param name="request">Mode-specific fix settings.</param>
+    /// <returns>Report of all fixes applied.</returns>
+    public FixReport ApplyFixes(AnalysisReport report, ProjectPackageInfo packageInfo, FixRequest request)
     {
         var fixReport = new FixReport();
 
@@ -53,7 +59,7 @@ public class FixService : IFixService
             return fixReport;
         }
 
-        _console.Info($"Found {allIssues.Count} issue(s) to fix{(dryRun ? " (dry run)" : "")}...");
+        _console.Info($"Found {allIssues.Count} issue(s) to fix{(request.DryRun ? " (dry run)" : "")}...");
 
         foreach (var issue in allIssues)
         {
@@ -66,12 +72,12 @@ public class FixService : IFixService
 
             try
             {
-                var result = fixer.Fix(issue, packageInfo, options, dryRun);
+                var result = fixer.Fix(issue, packageInfo, request);
                 fixReport.Results.Add(result);
 
                 if (result.Success && result.Changes.Count > 0)
                 {
-                    WriteFixResult(result, dryRun);
+                    WriteFixResult(result, request.DryRun);
                 }
                 else if (!result.Success)
                 {
@@ -86,7 +92,7 @@ public class FixService : IFixService
             }
         }
 
-        WriteSummary(fixReport, dryRun);
+        WriteSummary(fixReport, request.DryRun);
         return fixReport;
     }
 

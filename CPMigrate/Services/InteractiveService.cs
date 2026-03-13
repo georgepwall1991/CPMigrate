@@ -12,6 +12,7 @@ public class InteractiveService : IInteractiveService
 {
     private readonly IConsoleService _console;
     private readonly EnvironmentAnalyzer _environmentAnalyzer;
+    private readonly ISolutionDiscovery _solutionDiscovery;
 
     private const string ModeMigrate = "🚀 Migrate to Central Package Management";
     private const string ModeAnalyze = "🔍 Analyze packages for issues";
@@ -30,11 +31,15 @@ public class InteractiveService : IInteractiveService
 
     private readonly string? _workingDirectory;
 
-    public InteractiveService(IConsoleService console, string? workingDirectory = null)
+    public InteractiveService(
+        IConsoleService console,
+        string? workingDirectory = null,
+        ISolutionDiscovery? solutionDiscovery = null)
     {
         _console = console;
         _workingDirectory = workingDirectory;
-        _environmentAnalyzer = new EnvironmentAnalyzer(console, workingDirectory);
+        _solutionDiscovery = solutionDiscovery ?? new SolutionDiscovery(console);
+        _environmentAnalyzer = new EnvironmentAnalyzer(console, workingDirectory, _solutionDiscovery);
     }
 
     /// <inheritdoc />
@@ -183,7 +188,7 @@ public class InteractiveService : IInteractiveService
     {
         while (true)
         {
-            var solutions = ProjectAnalyzer.GetSolutionFiles(rootPath)
+            var solutions = _solutionDiscovery.GetSolutionFiles(rootPath)
                 .Select(Path.GetFileName).Cast<string>().ToList();
 
             var projects = Directory.GetFiles(rootPath, "*.*proj", SearchOption.TopDirectoryOnly)

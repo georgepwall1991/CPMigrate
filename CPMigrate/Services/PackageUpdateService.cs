@@ -36,11 +36,16 @@ public class PackageUpdateService : IPackageUpdateService
         _logger = logger ?? NullLogger<PackageUpdateService>.Instance;
     }
 
+    public Task<PackageUpdateResult> UpdatePackagesAsync(Options options)
+    {
+        return UpdatePackagesAsync(PackageUpdateRequest.FromOptions(options));
+    }
+
     /// <inheritdoc />
-    public async Task<PackageUpdateResult> UpdatePackagesAsync(Options options)
+    public async Task<PackageUpdateResult> UpdatePackagesAsync(PackageUpdateRequest request)
     {
         // Step 1: Discover solution
-        var solutionDir = Path.GetFullPath(options.SolutionFileDir);
+        var solutionDir = Path.GetFullPath(request.SolutionPath);
         var (basePath, projectPaths) = await _projectAnalyzer.DiscoverProjectsFromSolutionAsync(solutionDir);
 
         // Step 2: Find Directory.Packages.props
@@ -61,14 +66,14 @@ public class PackageUpdateService : IPackageUpdateService
 
         // Step 4: Query NuGet for latest versions
         _consoleService.Info($"Checking {currentVersions.Count} packages for updates...");
-        var updates = await QueryNuGetForUpdatesAsync(currentVersions, options.IncludePrerelease);
+        var updates = await QueryNuGetForUpdatesAsync(currentVersions, request.IncludePrerelease);
 
         // Step 4b: If --transitive, scan transitive deps
         var transitiveFound = 0;
-        if (options.IncludeTransitive)
+        if (request.IncludeTransitive)
         {
             var (transitive, found) = await ScanAndQueryTransitiveUpdatesAsync(
-                projectPaths, currentVersions, options.IncludePrerelease);
+                projectPaths, currentVersions, request.IncludePrerelease);
             transitiveFound = found;
             updates.AddRange(transitive);
         }
@@ -99,7 +104,7 @@ public class PackageUpdateService : IPackageUpdateService
         ShowUpdatesTable(availableUpdates);
 
         // Step 6: Interactive wizard for major bumps
-        var acceptedUpdates = RunMajorVersionWizard(availableUpdates, options);
+        var acceptedUpdates = RunMajorVersionWizard(availableUpdates, request);
 
         var updatesToApply = acceptedUpdates.Where(u => u.Accepted).ToList();
         if (updatesToApply.Count == 0)
@@ -116,7 +121,7 @@ public class PackageUpdateService : IPackageUpdateService
         }
 
         // Step 7: Dry-run check
-        if (options.DryRun)
+        if (request.DryRun)
         {
             var directDryRun = updatesToApply.Where(u => !u.IsTransitive).ToList();
             var transitiveDryRun = updatesToApply.Where(u => u.IsTransitive).ToList();
@@ -139,7 +144,7 @@ public class PackageUpdateService : IPackageUpdateService
         string backupPath;
         try
         {
-            backupPath = BackupManager.CreateBackupDirectory(options);
+            backupPath = BackupManager.CreateBackupDirectory(request.Backup);
         }
         catch (IOException ex)
         {
@@ -148,7 +153,7 @@ public class PackageUpdateService : IPackageUpdateService
         }
 
         var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-        var backupEntry = _backupManager.CreateBackupForProject(options, propsPath, backupPath, timestamp);
+        var backupEntry = _backupManager.CreateBackupForProject(request.Backup, propsPath, backupPath, timestamp);
 
         var manifest = new BackupManifest
         {
@@ -349,10 +354,10 @@ public class PackageUpdateService : IPackageUpdateService
         }
     }
 
-    private List<PackageUpdateEntry> RunMajorVersionWizard(List<PackageUpdateEntry> updates, Options options)
+    private List<PackageUpdateEntry> RunMajorVersionWizard(List<PackageUpdateEntry> updates, PackageUpdateRequest request)
     {
         var result = new List<PackageUpdateEntry>();
-        var nonInteractive = options.Quiet || options.Output == OutputFormat.Json;
+        var nonInteractive = request.Output.IsNonInteractive;
 
         foreach (var update in updates)
         {

@@ -9,11 +9,22 @@ internal class EnvironmentAnalyzer
 {
     private readonly string? _workingDirectory;
     private readonly IConsoleService _console;
+    private readonly ISolutionDiscovery _solutionDiscovery;
+    private readonly IProjectFileScanner _projectFileScanner;
+    private readonly IBackupManager _backupManager;
 
-    public EnvironmentAnalyzer(IConsoleService console, string? workingDirectory = null)
+    public EnvironmentAnalyzer(
+        IConsoleService console,
+        string? workingDirectory = null,
+        ISolutionDiscovery? solutionDiscovery = null,
+        IProjectFileScanner? projectFileScanner = null,
+        IBackupManager? backupManager = null)
     {
         _console = console;
         _workingDirectory = workingDirectory;
+        _solutionDiscovery = solutionDiscovery ?? new SolutionDiscovery(console);
+        _projectFileScanner = projectFileScanner ?? new ProjectFileScanner(console);
+        _backupManager = backupManager ?? new BackupManager();
     }
 
     /// <summary>
@@ -24,12 +35,11 @@ internal class EnvironmentAnalyzer
         var ctx = new EnvironmentContext { Directory = _workingDirectory ?? Directory.GetCurrentDirectory() };
 
         // Discover solutions
-        ctx.Solutions = ProjectAnalyzer.GetSolutionFiles(ctx.Directory).ToList();
+        ctx.Solutions = _solutionDiscovery.GetSolutionFiles(ctx.Directory).ToList();
         ctx.IsCpm = File.Exists(Path.Combine(ctx.Directory, "Directory.Packages.props"));
 
         // Check backups
-        var backupManager = new BackupManager();
-        ctx.Backups = backupManager.GetBackupHistory(Path.Combine(ctx.Directory, ".cpmigrate_backup"));
+        ctx.Backups = _backupManager.GetBackupHistory(Path.Combine(ctx.Directory, ".cpmigrate_backup"));
 
         // Analyze git status
         AnalyzeGitStatus(ctx);
@@ -79,7 +89,7 @@ internal class EnvironmentAnalyzer
     /// </summary>
     private void AnalyzeProjectsAndConflicts(EnvironmentContext ctx)
     {
-        var analyzer = new ProjectAnalyzer(_console);
+        var analyzer = new ProjectAnalyzer(_console, _solutionDiscovery, _projectFileScanner, new DotNetPackageQueryService(_console));
         var (basePath, projects) = analyzer.DiscoverProjectsFromSolution(ctx.Directory);
 
         if (projects.Count == 0)
@@ -100,7 +110,7 @@ internal class EnvironmentAnalyzer
         {
             analyzer.ScanProjectPackages(project, packages);
 
-            var targetFrameworks = ProjectAnalyzer.GetTargetFramework(project);
+            var targetFrameworks = _projectFileScanner.GetTargetFramework(project);
             AccumulateTargetFrameworks(ctx, targetFrameworks);
         }
 

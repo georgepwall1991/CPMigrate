@@ -81,12 +81,16 @@ public interface IFixer
     bool CanFix(AnalysisIssue issue);
 
     /// <summary>
+    /// Compatibility overload for callers that still pass CLI options directly.
+    /// </summary>
+    FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun);
+
+    /// <summary>
     /// Applies a fix for the given issue.
     /// </summary>
     /// <param name="issue">The issue to fix.</param>
     /// <param name="packageInfo">Package information from the analysis.</param>
-    /// <param name="options">Options controlling fix behavior.</param>
-    /// <param name="dryRun">If true, returns what would be changed without modifying files.</param>
+    /// <param name="request">Mode-specific fix request settings.</param>
     /// <returns>Result of the fix operation.</returns>
-    FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun);
+    FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, FixRequest request);
 }

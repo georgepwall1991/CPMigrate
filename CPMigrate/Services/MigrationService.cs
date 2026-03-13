@@ -46,9 +46,8 @@ public class MigrationService
         _projectAnalyzer = projectAnalyzer ?? new ProjectAnalyzer(_consoleService);
         _propsGenerator = propsGenerator ?? new PropsGenerator(_versionResolver);
         _backupManager = backupManager ?? new BackupManager();
-        var graphService = new DependencyGraphService(_consoleService);
-        _analysisService = analysisService ?? new AnalysisService(null, graphService, _projectAnalyzer);
-        _fixService = fixService ?? new FixService(_consoleService, _versionResolver);
+        _analysisService = analysisService ?? new AnalysisService(AnalyzerCatalog.CreateDefault(_consoleService));
+        _fixService = fixService ?? new FixService(_consoleService, FixerCatalog.CreateDefault(_versionResolver));
         _validator = new MigrationValidator(_consoleService);
         _display = new MigrationDisplay(_consoleService);
         _logger = logger ?? NullLogger<MigrationService>.Instance;

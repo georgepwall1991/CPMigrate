@@ -10,6 +10,18 @@ namespace CPMigrate;
 /// </summary>
 internal static class CommandRouter
 {
+    public static Task<int> RouteCommand(Options options, ApplicationServices services)
+    {
+        return RouteCommand(
+            options,
+            services.ConsoleService,
+            services.InteractiveService,
+            services.VersionResolver,
+            services.ConfigService,
+            services.BackupManager,
+            services);
+    }
+
     /// <summary>
     /// Routes the command based on options and executes the appropriate mode.
     /// </summary>
@@ -22,18 +34,45 @@ internal static class CommandRouter
         IBackupManager backupManager,
         ILoggerFactory? loggerFactory = null)
     {
+        var services = CreateApplicationServices(
+            consoleService,
+            interactiveService,
+            versionResolver,
+            configService,
+            backupManager,
+            loggerFactory);
+
+        return await RouteCommand(
+            options,
+            consoleService,
+            interactiveService,
+            versionResolver,
+            configService,
+            backupManager,
+            services);
+    }
+
+    private static async Task<int> RouteCommand(
+        Options options,
+        IConsoleService consoleService,
+        IInteractiveService interactiveService,
+        VersionResolver versionResolver,
+        ConfigService configService,
+        IBackupManager backupManager,
+        ApplicationServices services)
+    {
         var executionConsole = GetExecutionConsole(options, consoleService);
 
         // Handle Update command
         if (options.Update)
         {
-            return await RunUpdateModeAsync(executionConsole, loggerFactory);
+            return await RunUpdateModeAsync(executionConsole, services);
         }
 
         // Handle Update Packages command
         if (options.UpdatePackages)
         {
-            return await RunUpdatePackagesModeAsync(options, executionConsole, backupManager, loggerFactory);
+            return await RunUpdatePackagesModeAsync(options, executionConsole, services);
         }
 
         // Route to appropriate command handler
@@ -49,22 +88,21 @@ internal static class CommandRouter
 
         if (!string.IsNullOrEmpty(options.BatchDir))
         {
-            return await RunBatchModeAsync(options, executionConsole, versionResolver, backupManager, loggerFactory);
+            return await RunBatchModeAsync(options, executionConsole, versionResolver, backupManager, services);
         }
 
         if (options.UnifyProps)
         {
-            return await RunUnifyPropsModeAsync(options, executionConsole, loggerFactory);
+            return await RunUnifyPropsModeAsync(options, executionConsole, services);
         }
 
         // Check for updates in background for standard commands (if not quiet)
         Task? updateCheckTask = null;
         if (!options.Quiet && !options.Output.Equals(OutputFormat.Json))
         {
-            var bgLoggerFactory = loggerFactory;
             updateCheckTask = Task.Run(async () =>
             {
-                using var updateService = new UpdateService(consoleService, logger: bgLoggerFactory?.CreateLogger<UpdateService>());
+                using var updateService = services.CreateUpdateService();
                 var latestVersion = await updateService.CheckForUpdatesAsync();
                 if (latestVersion != null)
                 {
@@ -74,7 +112,7 @@ internal static class CommandRouter
             });
         }
 
-        var result = await RunMigrationAsync(options, executionConsole, versionResolver, backupManager, loggerFactory);
+        var result = await RunMigrationAsync(options, executionConsole, versionResolver, backupManager, services);
 
         // Show update notification after main work completes to avoid interleaved output
         if (updateCheckTask != null)
@@ -112,11 +150,11 @@ internal static class CommandRouter
     /// <summary>
     /// Executes the self-update mode.
     /// </summary>
-    private static async Task<int> RunUpdateModeAsync(IConsoleService consoleService, ILoggerFactory? loggerFactory = null)
+    private static async Task<int> RunUpdateModeAsync(IConsoleService consoleService, ApplicationServices services)
     {
         try
         {
-            var updateService = new UpdateService(consoleService, logger: loggerFactory?.CreateLogger<UpdateService>());
+            using var updateService = services.CreateUpdateService();
             var success = await updateService.PerformUpdateAsync();
             return success ? ExitCodes.Success : ExitCodes.UnexpectedError;
         }
@@ -133,8 +171,7 @@ internal static class CommandRouter
     private static async Task<int> RunUpdatePackagesModeAsync(
         Options options,
         IConsoleService consoleService,
-        IBackupManager backupManager,
-        ILoggerFactory? loggerFactory = null)
+        ApplicationServices services)
     {
         if (!ValidateOptions(options, consoleService, out var validationError))
         {
@@ -155,21 +192,8 @@ internal static class CommandRouter
 
         try
         {
-            var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
-            var propsGenerator = new PropsGenerator();
-            using var nuGetLookup = new NuGetVersionLookupService(logger: loggerFactory?.CreateLogger<NuGetVersionLookupService>());
-            var dotNetCli = new DotNetCliService();
-
-            var updateService = new PackageUpdateService(
-                consoleService,
-                projectAnalyzer,
-                propsGenerator,
-                nuGetLookup,
-                dotNetCli,
-                backupManager,
-                loggerFactory?.CreateLogger<PackageUpdateService>());
-
-            var result = await updateService.UpdatePackagesAsync(options);
+            var updateService = services.CreatePackageUpdateService();
+            var result = await updateService.UpdatePackagesAsync(PackageUpdateRequest.FromOptions(options));
             await WriteJsonOutputForPackageUpdate(options, result, consoleService);
             return result.ExitCode;
         }
@@ -192,6 +216,18 @@ internal static class CommandRouter
     /// </summary>
     public static async Task<int> RunUnifyPropsModeAsync(Options options, IConsoleService consoleService, ILoggerFactory? loggerFactory = null)
     {
+        var services = CreateApplicationServices(
+            consoleService,
+            new InteractiveService(consoleService),
+            new VersionResolver(consoleService),
+            new ConfigService(consoleService),
+            new BackupManager(),
+            loggerFactory);
+        return await RunUnifyPropsModeAsync(options, consoleService, services);
+    }
+
+    private static async Task<int> RunUnifyPropsModeAsync(Options options, IConsoleService consoleService, ApplicationServices services)
+    {
         try
         {
             if (!ShouldSuppressHeadersAndBanners(options))
@@ -199,9 +235,7 @@ internal static class CommandRouter
                 consoleService.WriteHeader();
             }
 
-            var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
-            var buildPropsService = new BuildPropsService(consoleService, projectAnalyzer);
-
+            var buildPropsService = services.CreateBuildPropsService();
             return await buildPropsService.UnifyPropertiesAsync(options);
         }
         catch (Exception ex)
@@ -262,9 +296,16 @@ internal static class CommandRouter
         VersionResolver versionResolver,
         IBackupManager backupManager)
     {
+        var services = CreateApplicationServices(
+            consoleService,
+            new InteractiveService(consoleService),
+            versionResolver,
+            new ConfigService(consoleService),
+            backupManager);
+
         if (options.UpdatePackages)
         {
-            return await RunUpdatePackagesModeAsync(options, consoleService, backupManager);
+            return await RunUpdatePackagesModeAsync(options, consoleService, services);
         }
 
         if (!string.IsNullOrEmpty(options.BatchDir))
@@ -276,16 +317,7 @@ internal static class CommandRouter
         {
             if (options.ListBackups)
             {
-                var migrationService = new MigrationService(
-                    consoleService,
-                    null,
-                    versionResolver,
-                    null,
-                    backupManager,
-                    null,
-                    null,
-                    quietMode: options.Quiet);
-
+                var migrationService = services.CreateMigrationService(options.Quiet);
                 var migrationResult = await migrationService.ExecuteAsync(options);
                 return migrationResult.ExitCode;
             }
@@ -293,7 +325,7 @@ internal static class CommandRouter
             return await RunPruneModeAsync(options, consoleService, backupManager);
         }
 
-        return await RunMigrationAsync(options, consoleService, versionResolver, backupManager);
+        return await RunMigrationAsync(options, consoleService, versionResolver, backupManager, services);
     }
 
     /// <summary>
@@ -470,6 +502,25 @@ internal static class CommandRouter
         IBackupManager backupManager,
         ILoggerFactory? loggerFactory = null)
     {
+        var services = CreateApplicationServices(
+            consoleService,
+            new InteractiveService(consoleService),
+            versionResolver,
+            new ConfigService(consoleService),
+            backupManager,
+            loggerFactory);
+        return await RunBatchModeAsync(options, consoleService, versionResolver, backupManager, services);
+    }
+
+    private static async Task<int> RunBatchModeAsync(
+        Options options,
+        IConsoleService consoleService,
+        VersionResolver versionResolver,
+        IBackupManager backupManager,
+        ApplicationServices services)
+    {
+        _ = versionResolver;
+        _ = backupManager;
         if (!ValidateOptions(options, consoleService, out var validationError))
         {
             await WriteErrorJsonOutputIfRequested(
@@ -488,18 +539,7 @@ internal static class CommandRouter
         // Create batch service with a migration executor function
         var batchService = new BatchService(consoleService, async solutionOptions =>
         {
-            var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
-            var migrationService = new MigrationService(
-                consoleService,
-                projectAnalyzer,
-                versionResolver,
-                null,
-                backupManager,
-                null,
-                null,
-                quietMode: solutionOptions.Quiet || solutionOptions.Output == OutputFormat.Json,
-                logger: loggerFactory?.CreateLogger<MigrationService>());
-
+            var migrationService = services.CreateMigrationService(solutionOptions.Quiet || solutionOptions.Output == OutputFormat.Json);
             return await migrationService.ExecuteAsync(solutionOptions);
         });
 
@@ -568,6 +608,25 @@ internal static class CommandRouter
         IBackupManager backupManager,
         ILoggerFactory? loggerFactory = null)
     {
+        var services = CreateApplicationServices(
+            consoleService,
+            new InteractiveService(consoleService),
+            versionResolver,
+            new ConfigService(consoleService),
+            backupManager,
+            loggerFactory);
+        return await RunMigrationAsync(options, consoleService, versionResolver, backupManager, services);
+    }
+
+    private static async Task<int> RunMigrationAsync(
+        Options options,
+        IConsoleService consoleService,
+        VersionResolver versionResolver,
+        IBackupManager backupManager,
+        ApplicationServices services)
+    {
+        _ = versionResolver;
+        _ = backupManager;
         if (options is null)
         {
             return ExitCodes.UnexpectedError;
@@ -585,18 +644,7 @@ internal static class CommandRouter
                 return ExitCodes.ValidationError;
             }
 
-            var projectAnalyzer = new ProjectAnalyzer(consoleService, logger: loggerFactory?.CreateLogger<ProjectAnalyzer>());
-            var migrationService = new MigrationService(
-                consoleService,
-                projectAnalyzer,
-                versionResolver,
-                null,
-                backupManager,
-                null,
-                null,
-                quietMode: options.Quiet || options.Output == OutputFormat.Json,
-                logger: loggerFactory?.CreateLogger<MigrationService>());
-
+            var migrationService = services.CreateMigrationService(options.Quiet || options.Output == OutputFormat.Json);
             var result = await migrationService.ExecuteAsync(options);
 
             // Handle JSON output
@@ -840,5 +888,33 @@ internal static class CommandRouter
         }
 
         return "migrate";
+    }
+
+    private static ApplicationServices CreateApplicationServices(
+        IConsoleService consoleService,
+        IInteractiveService interactiveService,
+        VersionResolver versionResolver,
+        ConfigService configService,
+        IBackupManager backupManager,
+        ILoggerFactory? loggerFactory = null)
+    {
+        var solutionDiscovery = new SolutionDiscovery(consoleService);
+        var projectFileScanner = new ProjectFileScanner(consoleService);
+        var packageQueryService = new DotNetPackageQueryService(consoleService);
+        var projectAnalyzer = new ProjectAnalyzer(
+            consoleService,
+            solutionDiscovery,
+            projectFileScanner,
+            packageQueryService,
+            loggerFactory?.CreateLogger<ProjectAnalyzer>());
+
+        return new ApplicationServices(
+            consoleService,
+            interactiveService,
+            versionResolver,
+            configService,
+            backupManager,
+            projectAnalyzer,
+            loggerFactory);
     }
 }

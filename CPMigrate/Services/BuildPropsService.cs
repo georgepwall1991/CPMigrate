@@ -13,9 +13,9 @@ public class BuildPropsService
 
     private readonly IConsoleService _consoleService;
     private readonly BuildPropsAnalyzer _analyzer;
-    private readonly ProjectAnalyzer _projectAnalyzer;
+    private readonly IProjectAnalyzer _projectAnalyzer;
 
-    public BuildPropsService(IConsoleService consoleService, ProjectAnalyzer projectAnalyzer)
+    public BuildPropsService(IConsoleService consoleService, IProjectAnalyzer projectAnalyzer)
     {
         _consoleService = consoleService;
         _projectAnalyzer = projectAnalyzer;
