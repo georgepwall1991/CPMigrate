@@ -48,7 +48,7 @@ jobs:
           PACKAGE_PATH="$PWD/artifacts/CPMigrate.${VERSION}.nupkg"
           PACKAGE_SHA="$(shasum -a 256 "$PACKAGE_PATH" | awk '{print $1}')"
           PACKAGE_URL="file://${PACKAGE_PATH}"
-          ./scripts/release/generate-homebrew-formula.sh "$VERSION" "$PACKAGE_URL" "$PACKAGE_SHA" > /tmp/cpmigrate.rb
+          bash ./scripts/release/generate-homebrew-formula.sh "$VERSION" "$PACKAGE_URL" "$PACKAGE_SHA" > /tmp/cpmigrate.rb
           HOMEBREW_NO_AUTO_UPDATE=1 brew tap-new local/cpmigrate-smoke
           TAP_DIR="$(brew --repo local/cpmigrate-smoke)"
           cp /tmp/cpmigrate.rb "$TAP_DIR/Formula/cpmigrate.rb"
@@ -64,9 +64,9 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - run: dotnet restore
+      - run: dotnet restore CPMigrate/CPMigrate.csproj -r win-x64
       - run: dotnet build --configuration Release --no-restore
-      - run: dotnet publish CPMigrate/CPMigrate.csproj --configuration Release --no-build -r win-x64 --self-contained false -p:UseAppHost=true -o ./artifacts/win-x64
+      - run: dotnet publish CPMigrate/CPMigrate.csproj --configuration Release --no-restore -r win-x64 --self-contained false -p:UseAppHost=true -o ./artifacts/win-x64
       - name: Build and run Windows portable package
         shell: pwsh
         run: |

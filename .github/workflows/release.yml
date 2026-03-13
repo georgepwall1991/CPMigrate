@@ -42,13 +42,13 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore CPMigrate/CPMigrate.csproj -r win-x64
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
       - name: Publish Windows apphost
-        run: dotnet publish CPMigrate/CPMigrate.csproj --configuration Release --no-build -r win-x64 --self-contained false -p:UseAppHost=true -o ./artifacts/win-x64
+        run: dotnet publish CPMigrate/CPMigrate.csproj --configuration Release --no-restore -r win-x64 --self-contained false -p:UseAppHost=true -o ./artifacts/win-x64
 
       - name: Build Windows portable package
         shell: pwsh
@@ -97,7 +97,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           PACKAGE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/CPMigrate.${VERSION}.nupkg"
           PACKAGE_SHA="$(sha256sum "./artifacts/CPMigrate.${VERSION}.nupkg" | awk '{print $1}')"
-          ./scripts/release/generate-homebrew-formula.sh "$VERSION" "$PACKAGE_URL" "$PACKAGE_SHA" > ./artifacts/cpmigrate.rb
+          bash ./scripts/release/generate-homebrew-formula.sh "$VERSION" "$PACKAGE_URL" "$PACKAGE_SHA" > ./artifacts/cpmigrate.rb
 
       - name: Generate Winget manifest artifact
         shell: pwsh
@@ -132,4 +132,4 @@ jobs:
         if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: ./scripts/release/update-homebrew-tap.sh ./artifacts/cpmigrate.rb "$HOMEBREW_TAP_TOKEN"
+        run: bash ./scripts/release/update-homebrew-tap.sh ./artifacts/cpmigrate.rb "$HOMEBREW_TAP_TOKEN"
