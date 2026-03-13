@@ -102,7 +102,6 @@ jobs:
             winget settings --enable LocalManifestFiles
             winget install --manifest $manifestRoot --disable-interactivity --accept-package-agreements --accept-source-agreements
             & "$env:LOCALAPPDATA\Microsoft\WinGet\Links\cpmigrate.exe" --help > $null
-            winget uninstall --id GeorgeWall.CPMigrate --disable-interactivity --accept-source-agreements
           }
           finally {
             if ($server -and -not $server.HasExited) {
