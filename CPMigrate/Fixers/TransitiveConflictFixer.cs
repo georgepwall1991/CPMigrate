@@ -26,7 +26,12 @@ public class TransitiveConflictFixer : IFixer
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun)
     {
-        var (_, propsPath) = MigrationValidator.GetOutputPaths(options);
+        return Fix(issue, packageInfo, new FixRequest(MigrationValidator.GetOutputPaths(options).PropsPath, options.ConflictStrategy, dryRun));
+    }
+
+    public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, FixRequest request)
+    {
+        var propsPath = request.PropsFilePath;
         if (!File.Exists(propsPath))
         {
             return FixResult.Failed("Directory.Packages.props not found. Transitive pinning requires an existing CPM setup.");
@@ -43,7 +48,7 @@ public class TransitiveConflictFixer : IFixer
             return FixResult.Failed("Could not determine versions for package.");
         }
 
-        var bestVersion = _versionResolver.ResolveVersion(versions, options.ConflictStrategy);
+        var bestVersion = _versionResolver.ResolveVersion(versions, request.ConflictStrategy);
 
         var originalContent = File.ReadAllText(propsPath);
         string updatedContent;
@@ -70,7 +75,7 @@ public class TransitiveConflictFixer : IFixer
             return FixResult.NoFixNeeded("Version already aligned or package entry not found in suitable format.");
         }
 
-        if (!dryRun)
+        if (!request.DryRun)
         {
             File.WriteAllText(propsPath, updatedContent);
         }

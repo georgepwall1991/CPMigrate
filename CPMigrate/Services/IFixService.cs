@@ -9,7 +9,12 @@ namespace CPMigrate.Services;
 public interface IFixService
 {
     /// <summary>
-    /// Applies fixes for all issues in the analysis report.
+    /// Compatibility overload for callers that still pass CLI options directly.
     /// </summary>
     FixReport ApplyFixes(AnalysisReport report, ProjectPackageInfo packageInfo, Options options, bool dryRun);
+
+    /// <summary>
+    /// Applies fixes for all issues in the analysis report.
+    /// </summary>
+    FixReport ApplyFixes(AnalysisReport report, ProjectPackageInfo packageInfo, FixRequest request);
 }

@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using CPMigrate.Models;
+using CPMigrate.Services.Migration;
 using NuGet.Versioning;
 
 namespace CPMigrate.Fixers;
@@ -19,6 +20,11 @@ public class VersionInconsistencyFixer : IFixer
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun)
     {
+        return Fix(issue, packageInfo, new FixRequest(MigrationValidator.GetOutputPaths(options).PropsPath, options.ConflictStrategy, dryRun));
+    }
+
+    public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, FixRequest request)
+    {
         // Find all references for this package
         var references = packageInfo.References
             .Where(r => r.PackageName.Equals(issue.PackageName, StringComparison.OrdinalIgnoreCase))
@@ -36,7 +42,7 @@ public class VersionInconsistencyFixer : IFixer
             return FixResult.NoFixNeeded($"No version conflict for {issue.PackageName}");
         }
 
-        var targetVersion = ResolveVersion(versions, options.ConflictStrategy);
+        var targetVersion = ResolveVersion(versions, request.ConflictStrategy);
         if (targetVersion == null)
         {
             return FixResult.Failed($"Cannot resolve version for {issue.PackageName} with Fail strategy");
@@ -50,7 +56,7 @@ public class VersionInconsistencyFixer : IFixer
             .GroupBy(r => r.ProjectPath);
 
         var projectResults = projectGroups
-            .Select(group => UpdateProjectVersions(group.Key, issue.PackageName, targetVersion, dryRun))
+            .Select(group => UpdateProjectVersions(group.Key, issue.PackageName, targetVersion, request.DryRun))
             .Where(result => result != null)
             .Cast<FileChange>();
 

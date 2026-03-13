@@ -6,6 +6,13 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-03-13
+
+### Changed
+- Centralized application wiring through a single internal composition root so command routing no longer constructs concrete services inline.
+- Introduced mode-specific request records and analyzer/fixer catalogs to reduce deep coupling to the full CLI option surface while preserving existing command behavior.
+- Split project inspection responsibilities into solution discovery, project file scanning, and `dotnet package list` query services, keeping migration and analysis flows stable behind narrower seams.
+
 ## [3.3.1] - 2026-03-13
 
 ### Fixed

@@ -27,13 +27,18 @@ public class BackupManager : IBackupManager
     /// <exception cref="IOException">Thrown when the backup directory cannot be created.</exception>
     public static string CreateBackupDirectory(Options options)
     {
-        if (options.NoBackup)
+        return CreateBackupDirectory(BackupSettings.FromOptions(options));
+    }
+
+    public static string CreateBackupDirectory(BackupSettings backupSettings)
+    {
+        if (!backupSettings.Enabled)
         {
             return string.Empty;
         }
 
         var backupPath = Path.Combine(
-            Path.GetFullPath(string.IsNullOrWhiteSpace(options.BackupDir) ? "." : options.BackupDir),
+            Path.GetFullPath(string.IsNullOrWhiteSpace(backupSettings.BackupDir) ? "." : backupSettings.BackupDir),
             BackupDirectoryName);
 
         try
@@ -62,7 +67,12 @@ public class BackupManager : IBackupManager
     /// <exception cref="IOException">Thrown when the backup file cannot be created.</exception>
     public BackupEntry? CreateBackupForProject(Options options, string filePath, string backupPath, string? timestampOverride = null)
     {
-        if (options.NoBackup)
+        return CreateBackupForProject(BackupSettings.FromOptions(options), filePath, backupPath, timestampOverride);
+    }
+
+    public BackupEntry? CreateBackupForProject(BackupSettings backupSettings, string filePath, string backupPath, string? timestampOverride = null)
+    {
+        if (!backupSettings.Enabled)
         {
             return null;
         }
@@ -94,15 +104,20 @@ public class BackupManager : IBackupManager
     /// </summary>
     /// <param name="options">Migration options containing gitignore settings.</param>
     /// <param name="backupPath">Path to the backup directory to add to gitignore.</param>
-    public static async Task ManageGitIgnore(Options options, string? backupPath)
+    public static Task ManageGitIgnore(Options options, string? backupPath)
     {
-        if (!options.AddBackupToGitignore || options.NoBackup || string.IsNullOrEmpty(backupPath))
+        return ManageGitIgnore(BackupSettings.FromOptions(options), backupPath);
+    }
+
+    public static async Task ManageGitIgnore(BackupSettings backupSettings, string? backupPath)
+    {
+        if (!backupSettings.AddBackupToGitignore || !backupSettings.Enabled || string.IsNullOrEmpty(backupPath))
         {
             return;
         }
 
         var gitignorePath = Path.Combine(
-            Path.GetFullPath(string.IsNullOrEmpty(options.GitignoreDir) ? "." : options.GitignoreDir),
+            Path.GetFullPath(string.IsNullOrEmpty(backupSettings.GitignoreDir) ? "." : backupSettings.GitignoreDir),
             ".gitignore");
 
         var backupDirName = Path.GetFileName(backupPath);
@@ -179,8 +194,13 @@ public class BackupManager : IBackupManager
     /// <returns>The full path to the backup directory.</returns>
     public static string GetBackupDirectoryPath(Options options)
     {
+        return GetBackupDirectoryPath(BackupSettings.FromOptions(options));
+    }
+
+    public static string GetBackupDirectoryPath(BackupSettings backupSettings)
+    {
         return Path.Combine(
-            Path.GetFullPath(string.IsNullOrWhiteSpace(options.BackupDir) ? "." : options.BackupDir),
+            Path.GetFullPath(string.IsNullOrWhiteSpace(backupSettings.BackupDir) ? "." : backupSettings.BackupDir),
             BackupDirectoryName);
     }
 

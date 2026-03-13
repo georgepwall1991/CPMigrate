@@ -10,37 +10,14 @@ public class AnalysisService : IAnalysisService
 {
     private readonly IReadOnlyList<IAnalyzer> _analyzers;
 
-    public AnalysisService(IEnumerable<IAnalyzer>? analyzers = null, DependencyGraphService? graphService = null, IProjectAnalyzer? projectAnalyzer = null)
+    public AnalysisService()
+        : this(AnalyzerCatalog.CreateDefault(SilentConsoleService.Instance))
     {
-        if (analyzers != null)
-        {
-            _analyzers = analyzers.ToList();
-        }
-        else
-        {
-            var analyzersList = new List<IAnalyzer>
-            {
-                new VersionInconsistencyAnalyzer(),
-                new DuplicatePackageAnalyzer(),
-                new RedundantReferenceAnalyzer(),
-                new TransitiveDependencyAnalyzer(),
-                new VulnerabilityAnalyzer(),
-                new OutdatedPackageAnalyzer(),
-                new DeprecatedPackageAnalyzer()
-            };
+    }
 
-            if (graphService != null)
-            {
-                analyzersList.Add(new LiftingAnalyzer(graphService));
-            }
-
-            if (projectAnalyzer != null)
-            {
-                analyzersList.Add(new FrameworkAlignmentAnalyzer());
-            }
-
-            _analyzers = analyzersList;
-        }
+    public AnalysisService(IEnumerable<IAnalyzer> analyzers)
+    {
+        _analyzers = analyzers.ToList();
     }
 
     /// <summary>

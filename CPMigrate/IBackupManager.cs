@@ -10,6 +10,11 @@ public interface IBackupManager
     /// <summary>
     /// Creates a timestamped backup of a file and returns the backup entry.
     /// </summary>
+    BackupEntry? CreateBackupForProject(BackupSettings backupSettings, string filePath, string backupPath, string? timestampOverride = null);
+
+    /// <summary>
+    /// Creates a timestamped backup of a file and returns the backup entry.
+    /// </summary>
     BackupEntry? CreateBackupForProject(Options options, string filePath, string backupPath, string? timestampOverride = null);
 
     /// <summary>

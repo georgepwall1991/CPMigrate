@@ -9,6 +9,13 @@ namespace CPMigrate.Analyzers;
 /// </summary>
 public class FrameworkAlignmentAnalyzer : IAnalyzer
 {
+    private readonly IProjectFileScanner _projectFileScanner;
+
+    public FrameworkAlignmentAnalyzer(IProjectFileScanner? projectFileScanner = null)
+    {
+        _projectFileScanner = projectFileScanner ?? new ProjectFileScanner(SilentConsoleService.Instance);
+    }
+
     public string Name => "Framework Alignment";
 
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
@@ -22,7 +29,7 @@ public class FrameworkAlignmentAnalyzer : IAnalyzer
 
         foreach (var path in projectPaths)
         {
-            var tfm = ProjectAnalyzer.GetTargetFramework(path);
+            var tfm = _projectFileScanner.GetTargetFramework(path);
             if (!frameworks.TryGetValue(tfm, out var list))
             {
                 list = [];

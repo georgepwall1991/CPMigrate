@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using CPMigrate.Models;
+using CPMigrate.Services.Migration;
 
 namespace CPMigrate.Fixers;
 
@@ -16,6 +17,11 @@ public class DuplicatePackageFixer : IFixer
     }
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun)
+    {
+        return Fix(issue, packageInfo, new FixRequest(MigrationValidator.GetOutputPaths(options).PropsPath, options.ConflictStrategy, dryRun));
+    }
+
+    public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, FixRequest request)
     {
         // Find all references for this package (case-insensitive)
         var references = packageInfo.References
@@ -47,7 +53,7 @@ public class DuplicatePackageFixer : IFixer
             .GroupBy(r => r.ProjectPath);
 
         var changes = nonStandardRefs
-            .Select(group => StandardizePackageCasing(group.Key, issue.PackageName, standardCasing, dryRun))
+            .Select(group => StandardizePackageCasing(group.Key, issue.PackageName, standardCasing, request.DryRun))
             .Where(result => result != null)
             .Cast<FileChange>()
             .ToList();

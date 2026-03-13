@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using CPMigrate.Models;
+using CPMigrate.Services.Migration;
 
 namespace CPMigrate.Fixers;
 
@@ -17,6 +18,11 @@ public class RedundantReferenceFixer : IFixer
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun)
     {
+        return Fix(issue, packageInfo, new FixRequest(MigrationValidator.GetOutputPaths(options).PropsPath, options.ConflictStrategy, dryRun));
+    }
+
+    public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, FixRequest request)
+    {
         var changes = new List<FileChange>();
 
         // Process each affected project
@@ -31,7 +37,7 @@ public class RedundantReferenceFixer : IFixer
                 continue;
             }
 
-            var result = RemoveDuplicateReferences(projectPath, issue.PackageName, dryRun);
+            var result = RemoveDuplicateReferences(projectPath, issue.PackageName, request.DryRun);
             if (result != null)
             {
                 changes.Add(result);

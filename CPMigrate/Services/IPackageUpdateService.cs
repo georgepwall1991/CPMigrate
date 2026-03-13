@@ -10,7 +10,7 @@ public interface IPackageUpdateService
     /// <summary>
     /// Updates packages in Directory.Packages.props to latest versions, runs tests, and rolls back on failure.
     /// </summary>
-    /// <param name="options">CLI options including dry-run, include-prerelease, etc.</param>
+    /// <param name="request">Mode-specific package update settings.</param>
     /// <returns>Result of the update operation.</returns>
-    Task<PackageUpdateResult> UpdatePackagesAsync(Options options);
+    Task<PackageUpdateResult> UpdatePackagesAsync(PackageUpdateRequest request);
 }

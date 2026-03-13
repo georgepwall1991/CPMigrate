@@ -16,22 +16,12 @@ public static class ProgramRunner
     /// </summary>
     public static async Task<int> RunAsync(string[] args, IConsoleService? customConsole = null)
     {
-        // Setup composition root
-        var versionResolver = new VersionResolver(null);
-        var consoleService = customConsole ?? new SpectreConsoleService(versionResolver);
-        var interactiveService = new InteractiveService(consoleService);
-        var configService = new ConfigService(consoleService);
-        var backupManager = new BackupManager();
+        var bootstrapServices = ApplicationServices.Create(customConsole);
 
         // Check for interactive mode (no args)
         if (args.Length == 0)
         {
-            return await CommandRouter.RunInteractiveModeAsync(
-                consoleService,
-                interactiveService,
-                versionResolver,
-                configService,
-                backupManager);
+            return await CommandRouter.RouteCommand(new Options { Interactive = true }, bootstrapServices);
         }
 
         // Parse command-line arguments
@@ -39,29 +29,24 @@ public static class ProgramRunner
             .MapResult(
                 async options =>
                 {
+                    using var loggerFactory = LoggingConfiguration.CreateLoggerFactory(options.Verbose);
+                    var services = ApplicationServices.Create(customConsole, loggerFactory);
+
                     // Merge config file with CLI args (CLI args take precedence)
-                    MergeConfigWithCliArgs(options, args, configService, consoleService);
+                    MergeConfigWithCliArgs(options, args, services.ConfigService, services.ConsoleService);
 
                     // Initialize logging based on --verbose flag
-                    using var loggerFactory = LoggingConfiguration.CreateLoggerFactory(options.Verbose);
                     if (options.Verbose)
                     {
                         var logPath = Path.Combine(Directory.GetCurrentDirectory(), "cpmigrate.log");
-                        consoleService.Dim($"Verbose logging enabled: {logPath}");
+                        services.ConsoleService.Dim($"Verbose logging enabled: {logPath}");
                     }
                     var logger = loggerFactory.CreateLogger("CPMigrate");
                     logger.LogDebug("CPMigrate started with args: {Args}", string.Join(" ", args));
 
                     // Route to appropriate command handler
                     var stopwatch = Stopwatch.StartNew();
-                    var exitCode = await CommandRouter.RouteCommand(
-                        options,
-                        consoleService,
-                        interactiveService,
-                        versionResolver,
-                        configService,
-                        backupManager,
-                        loggerFactory);
+                    var exitCode = await CommandRouter.RouteCommand(options, services);
                     stopwatch.Stop();
 
                     TelemetryService.RecordCommandRun(options, exitCode, stopwatch.Elapsed);
