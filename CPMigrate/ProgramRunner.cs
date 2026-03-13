@@ -40,7 +40,7 @@ public static class ProgramRunner
                 async options =>
                 {
                     // Merge config file with CLI args (CLI args take precedence)
-                    MergeConfigWithCliArgs(options, args, configService);
+                    MergeConfigWithCliArgs(options, args, configService, consoleService);
 
                     // Initialize logging based on --verbose flag
                     using var loggerFactory = LoggingConfiguration.CreateLoggerFactory(options.Verbose);
@@ -80,38 +80,36 @@ public static class ProgramRunner
     /// <summary>
     /// Loads config file and merges with CLI arguments (CLI args take precedence).
     /// </summary>
-    private static void MergeConfigWithCliArgs(Options options, string[] args, ConfigService configService)
+    private static void MergeConfigWithCliArgs(
+        Options options,
+        string[] args,
+        ConfigService configService,
+        IConsoleService consoleService)
     {
-        var startDir = DetermineStartDirectory(options);
-        var config = configService.LoadConfig(startDir);
+        var startDir = options.GetConfigSearchStartDirectory();
+        var (config, configPath, errorMessage) = configService.LoadConfigDetailed(startDir);
 
-        if (config != null)
+        if (!string.IsNullOrWhiteSpace(errorMessage))
         {
-            var cliArgsProvided = CliArgumentParser.GetExplicitArguments(args);
-            ConfigService.MergeConfig(options, config, cliArgsProvided);
-        }
-    }
+            if (options.Output != OutputFormat.Json)
+            {
+                consoleService.Warning(errorMessage);
+            }
 
-    /// <summary>
-    /// Determines the starting directory from options.
-    /// </summary>
-    private static string DetermineStartDirectory(Options options)
-    {
-        if (!string.IsNullOrEmpty(options.BatchDir))
-        {
-            return options.BatchDir;
+            return;
         }
 
-        if (!string.IsNullOrEmpty(options.SolutionFileDir) && options.SolutionFileDir != ".")
+        if (config == null)
         {
-            return options.SolutionFileDir;
+            return;
         }
 
-        if (!string.IsNullOrEmpty(options.ProjectFileDir))
-        {
-            return options.ProjectFileDir;
-        }
+        var cliArgsProvided = CliArgumentParser.GetExplicitArguments(args);
+        ConfigService.MergeConfig(options, config, cliArgsProvided);
 
-        return ".";
+        if (options.Output != OutputFormat.Json && !string.IsNullOrWhiteSpace(configPath))
+        {
+            consoleService.Dim($"Loaded config from: {configPath}");
+        }
     }
 }

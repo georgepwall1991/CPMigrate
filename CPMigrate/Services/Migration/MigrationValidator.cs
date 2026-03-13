@@ -119,11 +119,11 @@ internal class MigrationValidator
         {
             outputPath = options.OutputDir;
         }
-        else if (!string.IsNullOrEmpty(options.SolutionFileDir) && options.SolutionFileDir != ".")
+        else if (options.HasExplicitSolutionPath)
         {
             outputPath = options.SolutionFileDir;
         }
-        else if (!string.IsNullOrEmpty(options.ProjectFileDir))
+        else if (options.HasExplicitProjectPath)
         {
             outputPath = Path.GetDirectoryName(options.ProjectFileDir) ?? ".";
         }

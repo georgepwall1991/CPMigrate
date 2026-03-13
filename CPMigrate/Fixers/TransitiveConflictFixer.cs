@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using CPMigrate.Models;
 using CPMigrate.Services;
+using CPMigrate.Services.Migration;
 
 namespace CPMigrate.Fixers;
 
@@ -25,7 +26,7 @@ public class TransitiveConflictFixer : IFixer
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun)
     {
-        var propsPath = Path.Combine(options.SolutionFileDir, "Directory.Packages.props");
+        var (_, propsPath) = MigrationValidator.GetOutputPaths(options);
         if (!File.Exists(propsPath))
         {
             return FixResult.Failed("Directory.Packages.props not found. Transitive pinning requires an existing CPM setup.");

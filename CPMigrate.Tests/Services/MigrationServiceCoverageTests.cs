@@ -110,6 +110,39 @@ public class MigrationServiceCoverageTests
     }
 
     [Fact]
+    public async Task ExecuteAnalysisAsync_ProjectMode_UsesProjectDiscovery()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, "<Project />");
+
+        var options = new Options { Analyze = true, ProjectFileDir = projectPath };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectFromPath(projectPath))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        _mockAnalyzer.Setup(a => a.ScanProjectPackages(projectPath))
+            .Returns((new List<PackageReference>(), true));
+
+        _mockAnalysis.Setup(a => a.Analyze(It.IsAny<ProjectPackageInfo>()))
+            .Returns(new AnalysisReport(1, 0, new List<AnalyzerResult>()));
+
+        try
+        {
+            var result = await _service.ExecuteAsync(options);
+
+            result.ExitCode.Should().Be(ExitCodes.Success);
+            _mockAnalyzer.Verify(a => a.DiscoverProjectFromPath(projectPath), Times.Once);
+            _mockAnalyzer.Verify(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()), Times.Never);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public async Task ExecuteAnalysisAsync_IncludeTransitive_WhenResolvedScanFails_DoesNotFallbackToProjectXml()
     {
         // Arrange
@@ -612,6 +645,91 @@ public class MigrationServiceCoverageTests
             result.ConflictsResolved.Should().Be(1);
             File.ReadAllText(result.PropsFilePath).Should().Contain("Version=\"1.0.0\"");
             _mockConsole.Verify(c => c.AskSelection(It.Is<string>(s => s.Contains("Version for Pkg")), It.IsAny<IEnumerable<string>>()), Times.AtLeastOnce);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteMigrationAsync_ProjectMode_UsesProjectDiscovery()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <PackageReference Include=""Pkg"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var options = new Options
+        {
+            ProjectFileDir = projectPath,
+            OutputDir = tempDir,
+            NoBackup = true,
+            DryRun = true
+        };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectFromPath(projectPath))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        try
+        {
+            var result = await _service.ExecuteAsync(options);
+
+            result.ExitCode.Should().Be(ExitCodes.Success);
+            _mockAnalyzer.Verify(a => a.DiscoverProjectFromPath(projectPath), Times.Once);
+            _mockAnalyzer.Verify(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()), Times.Never);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteMigrationAsync_ProjectModeInteractiveConflicts_DoesNotRescanSolution()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <PackageReference Include=""Pkg"" Version=""1.0.0"" />
+    <PackageReference Include=""Pkg"" Version=""2.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var options = new Options
+        {
+            ProjectFileDir = projectPath,
+            InteractiveConflicts = true,
+            OutputDir = tempDir,
+            NoBackup = true
+        };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectFromPath(projectPath))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        _mockAnalyzer.Setup(a => a.ScanProjectPackages(It.IsAny<string>()))
+            .Returns((new List<PackageReference>
+            {
+                new("Pkg", "1.0.0", projectPath, "P1.csproj"),
+                new("Pkg", "2.0.0", projectPath, "P1.csproj")
+            }, true));
+
+        _mockConsole.Setup(c => c.AskSelection(It.IsAny<string>(), It.IsAny<IEnumerable<string>>()))
+            .Returns("2.0.0 (Used by 1 project)");
+
+        try
+        {
+            var result = await _service.ExecuteAsync(options);
+
+            result.ExitCode.Should().Be(ExitCodes.Success);
+            _mockAnalyzer.Verify(a => a.DiscoverProjectFromPath(projectPath), Times.AtLeastOnce);
+            _mockAnalyzer.Verify(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()), Times.Never);
         }
         finally
         {

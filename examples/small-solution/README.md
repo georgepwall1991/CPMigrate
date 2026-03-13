@@ -20,6 +20,9 @@ cd examples/small-solution
 # Preview migration
 cpmigrate -s . --dry-run
 
+# Preview a single project
+cpmigrate --project ./src/Api/Api.csproj --dry-run
+
 # Analyze dependency health
 cpmigrate --analyze --audit --outdated --deprecated
 ```

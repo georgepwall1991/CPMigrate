@@ -28,13 +28,24 @@ public class ConfigService
     /// <returns>The loaded config, or null if no config file found.</returns>
     public ConfigModel? LoadConfig(string startDirectory)
     {
+        var (config, _, errorMessage) = LoadConfigDetailed(startDirectory);
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            _consoleService?.Warning(errorMessage);
+        }
+
+        return config;
+    }
+
+    public (ConfigModel? Config, string? ConfigPath, string? ErrorMessage) LoadConfigDetailed(string startDirectory)
+    {
         var configPath = DiscoverConfig(startDirectory);
         if (configPath == null)
         {
-            return null;
+            return (null, null, null);
         }
 
-        return ParseConfig(configPath);
+        return ParseConfigDetailed(configPath);
     }
 
     /// <summary>
@@ -74,6 +85,17 @@ public class ConfigService
     /// <returns>The parsed config, or null if parsing failed.</returns>
     public ConfigModel? ParseConfig(string configPath)
     {
+        var (config, _, errorMessage) = ParseConfigDetailed(configPath);
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            _consoleService?.Warning(errorMessage);
+        }
+
+        return config;
+    }
+
+    private (ConfigModel? Config, string? ConfigPath, string? ErrorMessage) ParseConfigDetailed(string configPath)
+    {
         try
         {
             var json = File.ReadAllText(configPath);
@@ -85,18 +107,15 @@ public class ConfigService
             };
 
             var config = JsonSerializer.Deserialize<ConfigModel>(json, options);
-            _consoleService?.Dim($"Loaded config from: {configPath}");
-            return config;
+            return (config, configPath, null);
         }
         catch (JsonException ex)
         {
-            _consoleService?.Warning($"Failed to parse config file {configPath}: {ex.Message}");
-            return null;
+            return (null, configPath, $"Failed to parse config file {configPath}: {ex.Message}");
         }
         catch (IOException ex)
         {
-            _consoleService?.Warning($"Failed to read config file {configPath}: {ex.Message}");
-            return null;
+            return (null, configPath, $"Failed to read config file {configPath}: {ex.Message}");
         }
     }
 

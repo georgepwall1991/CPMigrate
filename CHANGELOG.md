@@ -6,6 +6,16 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-03-13
+
+### Fixed
+- `--project` now consistently scopes migrate and analyze flows to the selected project instead of falling back to implicit solution discovery.
+- JSON output mode no longer emits config discovery chatter before structured output, keeping stdout machine-safe for CI and scripts.
+- Config loading now happens once per invocation, preserving CLI-over-config precedence and avoiding duplicate config notices.
+
+### Changed
+- Help text and documentation now describe explicit solution/project targeting more accurately, including single-project examples and JSON contract expectations.
+
 ## [3.3.0] - 2026-02-02
 
 ### Added

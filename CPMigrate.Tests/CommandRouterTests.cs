@@ -145,24 +145,19 @@ public class CommandRouterTests : IDisposable
     }
 
     [Fact]
-    public async Task RouteCommand_ConfigExists_LoadsConfig()
+    public async Task RouteCommand_ConfigExists_DoesNotReloadConfig()
     {
-        // Arrange - Create config file
-        var configPath = Path.Combine(_testDirectory, ".cpmigrate");
-        var configContent = @"{
-  ""ConflictStrategy"": ""Lowest"",
-  ""DryRun"": true,
-  ""NoBackup"": true
-}";
-        File.WriteAllText(configPath, configContent);
+        // Arrange - ProgramRunner is responsible for config loading before routing
+        File.WriteAllText(Path.Combine(_testDirectory, ".cpmigrate.json"), "{\"outputFormat\":1}");
 
         var options = new Options
         {
             SolutionFileDir = _testDirectory,
-            ConflictStrategy = ConflictStrategy.Highest
+            Output = OutputFormat.Terminal,
+            Quiet = true
         };
 
-        // Act - Will fail with UnexpectedError (no projects), but config should be attempted to load
+        // Act
         var result = await CommandRouter.RouteCommand(
             options,
             _console,
@@ -171,8 +166,10 @@ public class CommandRouterTests : IDisposable
             _configService,
             _backupManager);
 
-        // Assert - Just verify it attempted to run (any result is fine, we're testing config loading path)
-        result.Should().BeOneOf(ExitCodes.Success, ExitCodes.UnexpectedError, ExitCodes.ValidationError, ExitCodes.NoProjectsFound);
+        // Assert
+        result.Should().Be(ExitCodes.NoProjectsFound);
+        options.Output.Should().Be(OutputFormat.Terminal);
+        _console.OutputMessages.Should().NotContain(m => m.Contains("Loaded config from:"));
     }
 
     [Fact]

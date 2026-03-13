@@ -123,6 +123,12 @@ cpmigrate -s ./MySolution.sln
 cpmigrate -s ./MySolution.sln --dry-run
 ```
 
+### Migrate a single project
+
+```bash
+cpmigrate --project ./src/Api/Api.csproj --dry-run
+```
+
 ### Analyze dependency health
 
 ```bash
@@ -387,7 +393,7 @@ Create a `.cpmigrate.json` in your repository root to set default options:
 }
 ```
 
-The config file is discovered by walking up from the current directory. CLI arguments always take precedence over config file values.
+The config file is discovered by walking up from the selected solution/project path, or from the current directory when no path is provided. CLI arguments always take precedence over config file values.
 
 ---
 
@@ -397,8 +403,8 @@ The config file is discovered by walking up from the current directory. CLI argu
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--solution` | `-s` | `.` | Path to `.sln` / `.slnx` file or directory |
-| `--project` | `-p` | | Path to a specific project file |
+| `--solution` | `-s` | current directory | Path to `.sln` / `.slnx` file or directory |
+| `--project` | `-p` | | Path to a specific project file, or a directory containing one project |
 | `--output-dir` | `-o` | `.` | Output directory for `Directory.Packages.props` |
 | `--dry-run` | `-d` | `false` | Preview changes without modifying files |
 | `--merge` | | `false` | Merge into existing `Directory.Packages.props` |
@@ -491,7 +497,7 @@ The config file is discovered by walking up from the current directory. CLI argu
 
 ### Strict JSON Contract Mode
 
-Use `--output Json --quiet` to guarantee JSON-only stdout (no banners/preamble), which is ideal for CI parsing.
+Use `--output Json --quiet` to guarantee JSON-only stdout, including when CPMigrate discovers a `.cpmigrate.json` file. That makes it safe for CI parsing without stripping banners, config notices, or other preamble.
 
 ```bash
 # analyze
