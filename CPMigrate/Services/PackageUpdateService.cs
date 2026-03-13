@@ -8,7 +8,7 @@ namespace CPMigrate.Services;
 /// <summary>
 /// Orchestrates updating NuGet packages to latest versions with test verification and rollback.
 /// </summary>
-public class PackageUpdateService : IPackageUpdateService
+public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 {
     private readonly IConsoleService _consoleService;
     private readonly IProjectAnalyzer _projectAnalyzer;
@@ -224,6 +224,11 @@ public class PackageUpdateService : IPackageUpdateService
             TestsPassed = true,
             Updates = acceptedUpdates
         };
+    }
+
+    public void Dispose()
+    {
+        _nuGetLookup.Dispose();
     }
 
     private static string? FindPropsFile(string basePath)

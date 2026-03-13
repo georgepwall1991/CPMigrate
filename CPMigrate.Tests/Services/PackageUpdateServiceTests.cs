@@ -306,6 +306,26 @@ public class PackageUpdateServiceTests : IDisposable
         _nuGetLookupMock.Verify(n => n.GetLatestVersionAsync("TestPkg", true), Times.Once);
     }
 
+    [Fact]
+    public void Dispose_DisposesLookupService_WhenLookupOwnsResources()
+    {
+        // Arrange
+        var disposableLookup = new DisposableNuGetVersionLookupService();
+        var service = new PackageUpdateService(
+            _consoleService,
+            _projectAnalyzerMock.Object,
+            _propsGenerator,
+            disposableLookup,
+            _dotNetCliMock.Object,
+            _backupManagerMock.Object);
+
+        // Act
+        service.Dispose();
+
+        // Assert
+        disposableLookup.Disposed.Should().BeTrue();
+    }
+
     private void SetupProjectAnalyzer()
     {
         _projectAnalyzerMock.Setup(p => p.DiscoverProjectsFromSolutionAsync(It.IsAny<string>()))
@@ -358,5 +378,25 @@ public class PackageUpdateServiceTests : IDisposable
             BackupDir = _testDirectory,
             NoBackup = false
         };
+    }
+
+    private sealed class DisposableNuGetVersionLookupService : INuGetVersionLookupService, IDisposable
+    {
+        public bool Disposed { get; private set; }
+
+        public Task<NuGetVersion?> GetLatestVersionAsync(string packageId, bool includePrerelease = false)
+        {
+            return Task.FromResult<NuGetVersion?>(null);
+        }
+
+        public Task<NuGetVersion?> GetLatestVersionInMajorAsync(string packageId, int majorVersion, bool includePrerelease = false)
+        {
+            return Task.FromResult<NuGetVersion?>(null);
+        }
+
+        public void Dispose()
+        {
+            Disposed = true;
+        }
     }
 }

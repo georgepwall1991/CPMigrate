@@ -192,7 +192,7 @@ internal static class CommandRouter
 
         try
         {
-            var updateService = services.CreatePackageUpdateService();
+            using var updateService = services.CreatePackageUpdateService();
             var result = await updateService.UpdatePackagesAsync(PackageUpdateRequest.FromOptions(options));
             await WriteJsonOutputForPackageUpdate(options, result, consoleService);
             return result.ExitCode;

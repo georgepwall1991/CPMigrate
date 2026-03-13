@@ -336,9 +336,7 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
                 var advisoryUrl = TryGetStringCaseInsensitive(vulnerability, "advisoryurl")
                     ?? TryGetStringCaseInsensitive(vulnerability, "advisoryUrl")
                     ?? string.Empty;
-                var fixedVersion = TryGetStringCaseInsensitive(vulnerability, "fixedversion")
-                    ?? TryGetStringCaseInsensitive(vulnerability, "fixedVersion")
-                    ?? string.Empty;
+                var fixedVersion = GetFixedVersion(vulnerability, pkg);
 
                 vulnerabilities.Add(new VulnerabilityInfo(
                     packageName,
@@ -378,6 +376,37 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
 
             packages.Add(new OutdatedPackageInfo(packageName, resolvedVersion, latestVersion, projectFilePath, projectName, isTransitive));
         }
+    }
+
+    private static string GetFixedVersion(JsonElement vulnerability, JsonElement package)
+    {
+        var fixedVersion = TryGetStringOrFirstArrayEntryCaseInsensitive(vulnerability, "fixedversion")
+            ?? TryGetStringOrFirstArrayEntryCaseInsensitive(vulnerability, "fixedVersion")
+            ?? TryGetStringOrFirstArrayEntryCaseInsensitive(vulnerability, "firstPatchedVersion")
+            ?? TryGetStringOrFirstArrayEntryCaseInsensitive(vulnerability, "patchedVersion")
+            ?? TryGetStringOrFirstArrayEntryCaseInsensitive(vulnerability, "patchedVersions")
+            ?? TryGetStringOrFirstArrayEntryCaseInsensitive(vulnerability, "recommendedVersion")
+            ?? TryGetStringCaseInsensitive(package, "latestVersion");
+
+        return fixedVersion ?? string.Empty;
+    }
+
+    private static string? TryGetStringOrFirstArrayEntryCaseInsensitive(JsonElement element, string name)
+    {
+        if (!TryGetPropertyCaseInsensitive(element, name, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Array => value.EnumerateArray()
+                .Where(entry => entry.ValueKind == JsonValueKind.String)
+                .Select(entry => entry.GetString())
+                .FirstOrDefault(entry => !string.IsNullOrWhiteSpace(entry)),
+            _ => null
+        };
     }
 
     private static void AddDeprecatedPackages(
