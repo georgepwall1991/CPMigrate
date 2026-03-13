@@ -81,16 +81,31 @@ jobs:
         shell: pwsh
         run: |
           $version = (Select-String -Path "CPMigrate/CPMigrate.csproj" -Pattern "<Version>(.+)</Version>").Matches[0].Groups[1].Value
+          $serverLog = Join-Path $env:RUNNER_TEMP "cpmigrate-http.log"
+          $serverError = Join-Path $env:RUNNER_TEMP "cpmigrate-http.err"
+          $server = Start-Process py `
+            -ArgumentList @("-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", (Join-Path $PWD "artifacts")) `
+            -RedirectStandardOutput $serverLog `
+            -RedirectStandardError $serverError `
+            -PassThru
+          Start-Sleep -Seconds 2
           $zipPath = (Resolve-Path "./artifacts/CPMigrate-portable-win-x64.zip").Path
-          $zipUri = ([System.Uri]$zipPath).AbsoluteUri
+          $zipUri = "http://127.0.0.1:8765/CPMigrate-portable-win-x64.zip"
           $zipSha = (Get-FileHash $zipPath -Algorithm SHA256).Hash
           $manifestRoot = Join-Path $PWD "artifacts/winget"
-          ./scripts/release/generate-winget-manifests.ps1 `
-            -Version $version `
-            -InstallerUrl $zipUri `
-            -InstallerSha256 $zipSha `
-            -OutputDirectory $manifestRoot
-          winget settings --enable LocalManifestFiles
-          winget install --manifest $manifestRoot --disable-interactivity --accept-package-agreements --accept-source-agreements
-          & "$env:LOCALAPPDATA\Microsoft\WinGet\Links\cpmigrate.exe" --help > $null
-          winget uninstall --id GeorgeWall.CPMigrate --disable-interactivity
+          try {
+            ./scripts/release/generate-winget-manifests.ps1 `
+              -Version $version `
+              -InstallerUrl $zipUri `
+              -InstallerSha256 $zipSha `
+              -OutputDirectory $manifestRoot
+            winget settings --enable LocalManifestFiles
+            winget install --manifest $manifestRoot --disable-interactivity --accept-package-agreements --accept-source-agreements
+            & "$env:LOCALAPPDATA\Microsoft\WinGet\Links\cpmigrate.exe" --help > $null
+            winget uninstall --id GeorgeWall.CPMigrate --disable-interactivity
+          }
+          finally {
+            if ($server -and -not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force
+            }
+          }
