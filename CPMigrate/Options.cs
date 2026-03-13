@@ -39,11 +39,12 @@ public static class ExitCodes
 public class Options
 {
     [Option('s', "solution",
-        HelpText = "Specifies the directory to search for .sln files. If this option is provided " +
-                   "the project file location option will be ignored.", Required = false, Default = ".")]
-    public string SolutionFileDir { get; set; } = ".";
+        HelpText = "Path to a .sln/.slnx file, or a directory containing one. When omitted, CPMigrate uses the current directory.",
+        Required = false)]
+    public string SolutionFileDir { get; set; } = string.Empty;
 
-    [Option('p', "project", HelpText = "Specifies the directory to search for project files (.csproj, .fsproj, .vbproj).")]
+    [Option('p', "project",
+        HelpText = "Path to a specific project file, or a directory containing one project (.csproj, .fsproj, .vbproj).")]
     public string ProjectFileDir { get; set; } = string.Empty;
 
     [Option('o', "output-dir", HelpText = "The props file output directory.", Default = ".")]
@@ -213,6 +214,52 @@ public class Options
         HelpText = "Include pre-release versions when updating packages.")]
     public bool IncludePrerelease { get; set; }
 
+    public bool HasExplicitSolutionPath => !string.IsNullOrWhiteSpace(SolutionFileDir);
+
+    public bool HasExplicitProjectPath => !string.IsNullOrWhiteSpace(ProjectFileDir);
+
+    public string GetDiscoveryTargetPath()
+    {
+        if (HasExplicitProjectPath)
+        {
+            return ProjectFileDir;
+        }
+
+        if (HasExplicitSolutionPath)
+        {
+            return SolutionFileDir;
+        }
+
+        return ".";
+    }
+
+    public string GetConfigSearchStartDirectory()
+    {
+        if (!string.IsNullOrWhiteSpace(BatchDir))
+        {
+            return ResolvePathToDirectory(BatchDir);
+        }
+
+        return ResolvePathToDirectory(GetDiscoveryTargetPath());
+    }
+
+    private static string ResolvePathToDirectory(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return ".";
+        }
+
+        var fullPath = Path.GetFullPath(path);
+        if (Directory.Exists(fullPath))
+        {
+            return fullPath;
+        }
+
+        var directory = Path.GetDirectoryName(fullPath);
+        return string.IsNullOrWhiteSpace(directory) ? "." : directory;
+    }
+
     [Usage(ApplicationAlias = "cpmigrate")]
     public static IEnumerable<Example> Examples =>
         new List<Example>()
@@ -317,12 +364,12 @@ public class Options
                 throw new ArgumentException($"Batch directory does not exist: {BatchDir}");
             }
 
-            if (!string.IsNullOrEmpty(SolutionFileDir) && SolutionFileDir != ".")
+            if (HasExplicitSolutionPath)
             {
                 throw new ArgumentException("--batch cannot be used with --solution.");
             }
 
-            if (!string.IsNullOrEmpty(ProjectFileDir))
+            if (HasExplicitProjectPath)
             {
                 throw new ArgumentException("--batch cannot be used with --project.");
             }
@@ -518,7 +565,7 @@ public class Options
             throw new ArgumentException("gitignore-dir must be specified when add-gitignore is enabled.");
         }
 
-        if (!string.IsNullOrEmpty(SolutionFileDir) && SolutionFileDir != "." && !string.IsNullOrWhiteSpace(ProjectFileDir))
+        if (HasExplicitSolutionPath && HasExplicitProjectPath)
         {
             throw new ArgumentException(
                 "Both --solution and --project were specified. Use only one: " +

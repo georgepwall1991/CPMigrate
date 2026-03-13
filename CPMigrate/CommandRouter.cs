@@ -22,14 +22,6 @@ internal static class CommandRouter
         IBackupManager backupManager,
         ILoggerFactory? loggerFactory = null)
     {
-        // Load and merge config if available
-        var startDir = DetermineStartDirectory(options);
-        var config = configService.LoadConfig(startDir);
-        if (config != null)
-        {
-            ConfigService.MergeConfig(options, config);
-        }
-
         var executionConsole = GetExecutionConsole(options, consoleService);
 
         // Handle Update command
@@ -196,29 +188,6 @@ internal static class CommandRouter
     }
 
     /// <summary>
-    /// Determines the starting directory from options.
-    /// </summary>
-    private static string DetermineStartDirectory(Options options)
-    {
-        if (!string.IsNullOrEmpty(options.BatchDir))
-        {
-            return options.BatchDir;
-        }
-
-        if (!string.IsNullOrEmpty(options.SolutionFileDir) && options.SolutionFileDir != ".")
-        {
-            return options.SolutionFileDir;
-        }
-
-        if (!string.IsNullOrEmpty(options.ProjectFileDir))
-        {
-            return options.ProjectFileDir;
-        }
-
-        return ".";
-    }
-
-    /// <summary>
     /// Executes the unify Directory.Build.props mode.
     /// </summary>
     public static async Task<int> RunUnifyPropsModeAsync(Options options, IConsoleService consoleService, ILoggerFactory? loggerFactory = null)
@@ -264,7 +233,7 @@ internal static class CommandRouter
             }
 
             // Load config if available
-            var startDir = DetermineStartDirectory(options);
+            var startDir = options.GetConfigSearchStartDirectory();
             var config = configService.LoadConfig(startDir);
             if (config != null)
             {

@@ -430,8 +430,7 @@ public class MigrationService
         }
 
         _logger.LogDebug("No cached scan results available, re-scanning projects for usage counts");
-        var (_, projectPaths) = _projectAnalyzer.DiscoverProjectsFromSolution(
-            !string.IsNullOrWhiteSpace(options.SolutionFileDir) ? options.SolutionFileDir : ".");
+        var (_, projectPaths) = DiscoverProjects(options);
 
         foreach (var path in projectPaths)
         {
@@ -559,18 +558,12 @@ public class MigrationService
 
     private (string BasePath, List<string> ProjectPaths) DiscoverProjects(Options options)
     {
-        if (!string.IsNullOrWhiteSpace(options.SolutionFileDir))
-        {
-            return _projectAnalyzer.DiscoverProjectsFromSolution(options.SolutionFileDir);
-        }
-
-        if (!string.IsNullOrWhiteSpace(options.ProjectFileDir))
+        if (options.HasExplicitProjectPath)
         {
             return _projectAnalyzer.DiscoverProjectFromPath(options.ProjectFileDir);
         }
 
-        _consoleService.Error("Either solution (-s) or project (-p) path must be specified.");
-        return (string.Empty, []);
+        return _projectAnalyzer.DiscoverProjectsFromSolution(options.GetDiscoveryTargetPath());
     }
 
     private async Task<List<BackupEntry>> ProcessProjectsWithProgressAsync(Options options, List<string> projectPaths,

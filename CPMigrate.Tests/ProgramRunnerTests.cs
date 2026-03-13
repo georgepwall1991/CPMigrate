@@ -1,9 +1,11 @@
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
+using System.Text.Json;
 
 namespace CPMigrate.Tests;
 
+[Collection("Sequential")]
 public class ProgramRunnerTests
 {
     [Fact]
@@ -140,7 +142,7 @@ public class ProgramRunnerTests
 
             // Assert
             exitCode.Should().Be(ExitCodes.NoProjectsFound);
-            // Internal verification: config should have been merged
+            fakeConsole.OutputMessages.Count(m => m.Contains("Loaded config from:")).Should().Be(1);
         }
         finally
         {
@@ -230,5 +232,116 @@ public class ProgramRunnerTests
             Directory.SetCurrentDirectory(oldDir);
             Directory.Delete(tempPath, true);
         }
+    }
+
+    [Fact]
+    public async Task MergeConfigWithCliArgsAsync_CliOutputOverridesConfigOutput()
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempPath);
+        File.WriteAllText(Path.Combine(tempPath, ".cpmigrate.json"), "{\"outputFormat\":1}");
+
+        var fakeConsole = new FakeConsoleService();
+        var stdout = new StringWriter();
+        var originalOut = Console.Out;
+
+        try
+        {
+            Console.SetOut(stdout);
+
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "-s", tempPath, "--output", "Terminal" },
+                fakeConsole);
+
+            exitCode.Should().Be(ExitCodes.NoProjectsFound);
+            stdout.ToString().Should().BeEmpty();
+            fakeConsole.OutputMessages.Count(m => m.Contains("Loaded config from:")).Should().Be(1);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            stdout.Dispose();
+            Directory.Delete(tempPath, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_ConfigDrivenJsonOutput_ProducesJsonOnlyStdout()
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempPath);
+        File.WriteAllText(Path.Combine(tempPath, ".cpmigrate.json"), "{\"outputFormat\":1}");
+
+        var fakeConsole = new FakeConsoleService();
+        var stdout = new StringWriter();
+        var originalOut = Console.Out;
+
+        try
+        {
+            Console.SetOut(stdout);
+
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "-s", tempPath, "--quiet" },
+                fakeConsole);
+
+            exitCode.Should().Be(ExitCodes.NoProjectsFound);
+            fakeConsole.OutputMessages.Should().NotContain(m => m.Contains("Loaded config from:"));
+
+            var payload = stdout.ToString();
+            payload.Should().NotBeNullOrWhiteSpace();
+            using var document = JsonDocument.Parse(payload);
+            document.RootElement.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.NoProjectsFound);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            stdout.Dispose();
+            Directory.Delete(tempPath, true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_JsonOutputFile_DoesNotWriteToStdout()
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempPath);
+        File.WriteAllText(Path.Combine(tempPath, ".cpmigrate.json"), "{\"outputFormat\":1}");
+
+        var outputFile = Path.Combine(tempPath, "result.json");
+        var fakeConsole = new FakeConsoleService();
+        var stdout = new StringWriter();
+        var originalOut = Console.Out;
+
+        try
+        {
+            Console.SetOut(stdout);
+
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "-s", tempPath, "--quiet", "--output-file", outputFile },
+                fakeConsole);
+
+            exitCode.Should().Be(ExitCodes.NoProjectsFound);
+            stdout.ToString().Should().BeEmpty();
+            fakeConsole.OutputMessages.Should().NotContain(m => m.Contains("Loaded config from:"));
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
+            document.RootElement.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.NoProjectsFound);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            stdout.Dispose();
+            Directory.Delete(tempPath, true);
+        }
+    }
+
+    [Fact]
+    public void Examples_ProjectExample_DoesNotCarryDefaultSolutionPath()
+    {
+        var projectExample = Options.Examples.Single(example => example.HelpText == "Convert only one project");
+        var sample = projectExample.Sample.Should().BeOfType<Options>().Subject;
+
+        sample.ProjectFileDir.Should().Be(Path.Combine("path", "to", "project.csproj"));
+        sample.SolutionFileDir.Should().BeEmpty();
     }
 }

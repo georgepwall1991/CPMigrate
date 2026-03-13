@@ -407,7 +407,8 @@ public class InteractiveService : IInteractiveService
         options.IncludeTransitive = transitive.StartsWith("Yes");
 
         // Merge existing props file if detected
-        var propsFilePath = Path.Combine(Path.GetFullPath(options.SolutionFileDir ?? "."), "Directory.Packages.props");
+        var propsRoot = options.HasExplicitSolutionPath ? options.SolutionFileDir : options.GetDiscoveryTargetPath();
+        var propsFilePath = Path.Combine(Path.GetFullPath(propsRoot), "Directory.Packages.props");
         if (File.Exists(propsFilePath))
         {
             var mergeChoice = _console.AskSelection(
@@ -495,9 +496,13 @@ public class InteractiveService : IInteractiveService
         {
             grid.AddRow("[white]Batch Directory[/]", $"[cyan1]{EscapeMarkup(options.BatchDir)}[/]");
         }
-        else if (!string.IsNullOrEmpty(options.SolutionFileDir))
+        else if (options.HasExplicitSolutionPath)
         {
             grid.AddRow("[white]Solution/Project[/]", $"[cyan1]{EscapeMarkup(options.SolutionFileDir)}[/]");
+        }
+        else if (options.HasExplicitProjectPath)
+        {
+            grid.AddRow("[white]Solution/Project[/]", $"[cyan1]{EscapeMarkup(options.ProjectFileDir)}[/]");
         }
     }
 
