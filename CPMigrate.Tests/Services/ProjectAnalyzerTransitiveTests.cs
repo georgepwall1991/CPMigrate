@@ -170,6 +170,70 @@ public class ProjectAnalyzerTransitiveTests
     }
 
     [Fact]
+    public void ParseVulnerabilitiesFromJson_PreservesLegacyFixedVersionFallbacks()
+    {
+        // Arrange
+        var json = """
+            {
+              "version": 1,
+              "projects": [
+                {
+                  "path": "/path/to/MyProject.csproj",
+                  "frameworks": [
+                    {
+                      "framework": "net8.0",
+                      "topLevelPackages": [
+                        {
+                          "id": "Patched.Array",
+                          "resolvedVersion": "1.0.0",
+                          "latestVersion": "1.0.9",
+                          "vulnerabilities": [
+                            { "severity": "High", "advisoryUrl": "GHSA-array", "patchedVersions": ["1.0.5", "1.0.6"] }
+                          ]
+                        },
+                        {
+                          "id": "Patched.First",
+                          "resolvedVersion": "2.0.0",
+                          "latestVersion": "2.0.9",
+                          "vulnerabilities": [
+                            { "severity": "High", "advisoryUrl": "GHSA-first", "firstPatchedVersion": "2.0.4" }
+                          ]
+                        },
+                        {
+                          "id": "Patched.Recommended",
+                          "resolvedVersion": "3.0.0",
+                          "latestVersion": "3.0.9",
+                          "vulnerabilities": [
+                            { "severity": "High", "advisoryUrl": "GHSA-recommended", "recommendedVersion": "3.0.7" }
+                          ]
+                        },
+                        {
+                          "id": "Patched.LatestFallback",
+                          "resolvedVersion": "4.0.0",
+                          "latestVersion": "4.0.8",
+                          "vulnerabilities": [
+                            { "severity": "High", "advisoryUrl": "GHSA-latest" }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+
+        // Act
+        var result = ProjectAnalyzer.ParseVulnerabilitiesFromJson(json, "MyProject.csproj");
+
+        // Assert
+        result.Should().Contain(v => v.Id == "GHSA-array" && v.FixedVersion == "1.0.5");
+        result.Should().Contain(v => v.Id == "GHSA-first" && v.FixedVersion == "2.0.4");
+        result.Should().Contain(v => v.Id == "GHSA-recommended" && v.FixedVersion == "3.0.7");
+        result.Should().Contain(v => v.Id == "GHSA-latest" && v.FixedVersion == "4.0.8");
+    }
+
+    [Fact]
     public void ParseOutdatedPackagesFromJson_ReturnsOutdatedPackages()
     {
         // Arrange
