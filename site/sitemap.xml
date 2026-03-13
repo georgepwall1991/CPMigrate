@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://georgepwall1991.github.io/CPMigrate/</loc></url>
+  <url><loc>https://georgepwall1991.github.io/CPMigrate/install/</loc></url>
+  <url><loc>https://georgepwall1991.github.io/CPMigrate/guides/migrate-directory-packages-props/</loc></url>
+  <url><loc>https://georgepwall1991.github.io/CPMigrate/compare/manual-cpm-migration/</loc></url>
+  <url><loc>https://georgepwall1991.github.io/CPMigrate/compare/ad-hoc-scripts/</loc></url>
+  <url><loc>https://georgepwall1991.github.io/CPMigrate/guides/monorepos/</loc></url>
+  <url><loc>https://georgepwall1991.github.io/CPMigrate/guides/safe-package-updates/</loc></url>
+  <url><loc>https://georgepwall1991.github.io/CPMigrate/guides/ci-cd/</loc></url>
+</urlset>

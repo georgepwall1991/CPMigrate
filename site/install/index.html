@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Install CPMigrate with NuGet, Homebrew, Winget, or Direct Release Packages</title>
+  <meta name="description" content="Install CPMigrate as a .NET global tool, through a Homebrew tap, with Winget on Windows, or from direct GitHub release packages and source builds." />
+  <link rel="canonical" href="https://georgepwall1991.github.io/CPMigrate/install/" />
+  <meta property="og:title" content="Install CPMigrate" />
+  <meta property="og:description" content="Install CPMigrate with NuGet, Homebrew, Winget, or direct release packages." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://georgepwall1991.github.io/CPMigrate/install/" />
+  <meta property="og:image" content="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/banner.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/CPMigrate/assets/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "TechArticle",
+      "headline": "Install CPMigrate with NuGet, Homebrew, Winget, or Direct Release Packages",
+      "url": "https://georgepwall1991.github.io/CPMigrate/install/"
+    }
+  </script>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/CPMigrate/"><span class="brand-mark"></span><span>CPMigrate</span></a>
+      <nav class="nav">
+        <a href="/CPMigrate/">Home</a>
+        <a href="/CPMigrate/guides/ci-cd/">CI/CD</a>
+        <a href="https://www.nuget.org/packages/CPMigrate/">NuGet</a>
+        <a href="https://github.com/georgepwall1991/CPMigrate/releases/latest">Latest release</a>
+      </nav>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="section">
+      <div class="eyebrow">Installation</div>
+      <h1>Install CPMigrate in the path that matches your team.</h1>
+      <p class="page-intro">NuGet remains the primary install path. Homebrew is the fastest route on macOS or Linux, Winget is the native Windows channel, and direct release packages are available for repo-pinned bootstrap flows.</p>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>.NET global tool</h2>
+        <p class="muted">Best default for most .NET app teams.</p>
+        <pre><code>dotnet tool install --global CPMigrate
+cpmigrate --help</code></pre>
+      </article>
+      <article class="panel">
+        <h2>Homebrew tap</h2>
+        <p class="muted">Fastest path on developer machines already using Homebrew.</p>
+        <pre><code>brew tap georgepwall1991/cpmigrate
+brew install cpmigrate</code></pre>
+      </article>
+      <article class="panel">
+        <h2>Winget</h2>
+        <p class="muted">Best Windows-native install path once the package is indexed by Winget.</p>
+        <pre><code>winget install GeorgeWall.CPMigrate</code></pre>
+        <p class="muted">Current submission: <a href="https://github.com/microsoft/winget-pkgs/pull/348486">winget-pkgs PR #348486</a></p>
+      </article>
+      <article class="panel">
+        <h2>Windows portable package</h2>
+        <p class="muted">Direct install from the GitHub Release page when NuGet is not the preferred entry point.</p>
+        <pre><code># Download CPMigrate-portable-win-x64.zip
+# Extract, then run:
+CPMigrate.exe --help</code></pre>
+      </article>
+      <article class="panel">
+        <h2>From source</h2>
+        <p class="muted">Good for contributors and teams validating changes locally.</p>
+        <pre><code>git clone https://github.com/georgepwall1991/CPMigrate.git
+cd CPMigrate
+dotnet build</code></pre>
+      </article>
+    </section>
+
+    <section class="callout">
+      <strong>Primary CTA:</strong> install CPMigrate, run <code>cpmigrate --analyze</code>, and inspect the output before deciding on migration or package updates.
+    </section>
+
+    <footer class="footer">
+      See the repo README for CLI examples and the CI guide for machine-readable usage patterns.
+    </footer>
+  </main>
+</body>
+</html>

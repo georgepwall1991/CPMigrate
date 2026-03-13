@@ -1,0 +1,41 @@
+name: Weekly Growth Report
+description: Review SEO, discoverability, and install-path performance for CPMigrate.
+title: "[Growth] Weekly scorecard YYYY-MM-DD"
+labels:
+  - growth
+body:
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Metrics
+      description: Include downloads, stars/watchers, docs visits, and install CTA activity.
+      placeholder: |
+        NuGet downloads:
+        GitHub stars:
+        GitHub watches:
+        Docs visits:
+        Install CTA clicks:
+    validations:
+      required: true
+  - type: textarea
+    id: queries
+    attributes:
+      label: Query and Landing Page Notes
+      description: Record query/page pairs that improved or regressed.
+      placeholder: |
+        Query:
+        Landing page:
+        Result:
+    validations:
+      required: true
+  - type: textarea
+    id: next_actions
+    attributes:
+      label: Next Actions
+      description: Capture the next 1-3 changes worth shipping.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
