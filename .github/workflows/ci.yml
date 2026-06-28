@@ -13,7 +13,6 @@ jobs:
   sonarcloud-analysis:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
-    if: env.SONAR_TOKEN != ''
 
     steps:
       - uses: actions/checkout@v5
@@ -52,6 +51,7 @@ jobs:
         run: dotnet restore
 
       - name: Begin SonarCloud analysis
+        if: env.SONAR_TOKEN != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -76,6 +76,7 @@ jobs:
             -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
       - name: End SonarCloud analysis
+        if: env.SONAR_TOKEN != ''
         run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 
   cross-platform-verification:
