@@ -6,10 +6,14 @@ on:
   pull_request:
     branches: [main, master]
 
+env:
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
 jobs:
   sonarcloud-analysis:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
+    if: env.SONAR_TOKEN != ''
 
     steps:
       - uses: actions/checkout@v5
@@ -50,7 +54,6 @@ jobs:
       - name: Begin SonarCloud analysis
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           dotnet sonarscanner begin \
             /k:"georgepwall1991_CPMigrate" \
@@ -73,8 +76,6 @@ jobs:
             -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
       - name: End SonarCloud analysis
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 
   cross-platform-verification:
