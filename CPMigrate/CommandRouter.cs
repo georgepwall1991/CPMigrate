@@ -564,18 +564,7 @@ internal static class CommandRouter
         var formatter = new JsonFormatter();
         var output = formatter.Format(result);
 
-        if (!string.IsNullOrEmpty(options.OutputFile))
-        {
-            await File.WriteAllTextAsync(options.OutputFile, output);
-            if (!options.Quiet)
-            {
-                consoleService.Dim($"JSON output written to: {options.OutputFile}");
-            }
-        }
-        else
-        {
-            Console.WriteLine(output);
-        }
+        await JsonOutputWriter.EmitAsync(output, options, consoleService);
     }
 
     private static bool ShouldProceedWithDestructiveAction(Options options, IConsoleService consoleService, string confirmationPrompt)
@@ -660,7 +649,7 @@ internal static class CommandRouter
                 GetOperationName(options),
                 ExitCodes.FileOperationError,
                 ex.Message);
-            if (options.Output != OutputFormat.Json)
+            if (options.Output != OutputFormat.Json && !options.Quiet)
             {
                 await Console.Error.WriteLineAsync("\nSuggestion: Check file permissions and ensure no files are locked by another process.");
             }
@@ -674,7 +663,7 @@ internal static class CommandRouter
                 GetOperationName(options),
                 ExitCodes.FileOperationError,
                 ex.Message);
-            if (options.Output != OutputFormat.Json)
+            if (options.Output != OutputFormat.Json && !options.Quiet)
             {
                 await Console.Error.WriteLineAsync("\nSuggestion: Run with elevated permissions or check file/folder access rights.");
             }
@@ -689,12 +678,12 @@ internal static class CommandRouter
                 ExitCodes.UnexpectedError,
                 ex.Message);
 #if DEBUG
-            if (options.Output != OutputFormat.Json)
+            if (options.Output != OutputFormat.Json && !options.Quiet)
             {
                 await Console.Error.WriteLineAsync(ex.StackTrace);
             }
 #endif
-            if (options.Output != OutputFormat.Json)
+            if (options.Output != OutputFormat.Json && !options.Quiet)
             {
                 await Console.Error.WriteLineAsync("\nSuggestion: Please report this issue at https://github.com/georgepwall1991/CPMigrate/issues");
             }
@@ -771,18 +760,7 @@ internal static class CommandRouter
 
         var output = formatter.Format(operationResult);
 
-        if (!string.IsNullOrEmpty(options.OutputFile))
-        {
-            await File.WriteAllTextAsync(options.OutputFile, output);
-            if (!options.Quiet)
-            {
-                consoleService.Dim($"JSON output written to: {options.OutputFile}");
-            }
-        }
-        else
-        {
-            Console.WriteLine(output);
-        }
+        await JsonOutputWriter.EmitAsync(output, options, consoleService);
     }
 
     private static async Task WriteJsonOutputForPackageUpdate(
@@ -826,18 +804,7 @@ internal static class CommandRouter
 
         var output = formatter.Format(operationResult);
 
-        if (!string.IsNullOrEmpty(options.OutputFile))
-        {
-            await File.WriteAllTextAsync(options.OutputFile, output);
-            if (!options.Quiet)
-            {
-                consoleService.Dim($"JSON output written to: {options.OutputFile}");
-            }
-        }
-        else
-        {
-            Console.WriteLine(output);
-        }
+        await JsonOutputWriter.EmitAsync(output, options, consoleService);
     }
 
     private static async Task WriteErrorJsonOutputIfRequested(
@@ -864,15 +831,7 @@ internal static class CommandRouter
 
         var output = formatter.Format(operationResult);
 
-        var outputFile = options.OutputFile;
-        if (!string.IsNullOrEmpty(outputFile))
-        {
-            await File.WriteAllTextAsync(outputFile, output);
-        }
-        else
-        {
-            Console.WriteLine(output);
-        }
+        await JsonOutputWriter.EmitAsync(output, options, null, announceFile: false);
     }
 
     private static string GetOperationName(Options options)

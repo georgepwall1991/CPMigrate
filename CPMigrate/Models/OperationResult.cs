@@ -44,12 +44,6 @@ public class OperationResult
     public OperationSummary Summary { get; init; } = new();
 
     /// <summary>
-    /// List of version conflicts detected and how they were resolved.
-    /// </summary>
-    [JsonPropertyName("conflicts")]
-    public List<ConflictInfo> Conflicts { get; init; } = new();
-
-    /// <summary>
     /// Analysis issues found (for analyze mode).
     /// </summary>
     [JsonPropertyName("analysisIssues")]
@@ -147,39 +141,6 @@ public class OperationSummary
 
     [JsonPropertyName("wasRolledBack")]
     public bool? WasRolledBack { get; init; }
-}
-
-/// <summary>
-/// Information about a version conflict and its resolution.
-/// </summary>
-public class ConflictInfo
-{
-    [JsonPropertyName("package")]
-    public string Package { get; init; } = string.Empty;
-
-    [JsonPropertyName("versions")]
-    public List<VersionUsage> Versions { get; init; } = new();
-
-    [JsonPropertyName("resolved")]
-    public string Resolved { get; init; } = string.Empty;
-
-    [JsonPropertyName("resolution")]
-    public string Resolution { get; init; } = string.Empty;
-
-    [JsonPropertyName("overridden")]
-    public bool Overridden { get; init; }
-}
-
-/// <summary>
-/// Information about version usage by projects.
-/// </summary>
-public class VersionUsage
-{
-    [JsonPropertyName("version")]
-    public string Version { get; init; } = string.Empty;
-
-    [JsonPropertyName("projects")]
-    public List<string> Projects { get; init; } = new();
 }
 
 /// <summary>

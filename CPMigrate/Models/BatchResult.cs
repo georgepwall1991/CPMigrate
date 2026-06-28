@@ -110,9 +110,6 @@ public class SolutionResult
     [JsonPropertyName("summary")]
     public OperationSummary? Summary { get; init; }
 
-    [JsonPropertyName("conflicts")]
-    public List<ConflictInfo>? Conflicts { get; init; }
-
     [JsonPropertyName("error")]
     public string? Error { get; init; }
 
