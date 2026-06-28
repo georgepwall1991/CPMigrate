@@ -94,4 +94,17 @@ public class MigrationValidatorTests
         var (outputPath, propsPath) = MigrationValidator.GetOutputPaths(options);
         outputPath.Should().Be("sln");
     }
+
+    [Fact]
+    public void GetOutputPaths_SolutionFile_ResolvesToParentDirectory()
+    {
+        // The README's primary quickstart is `cpmigrate -s ./MySolution.sln`. When -s points
+        // to a .sln file rather than a directory, the output Directory.Packages.props must be
+        // written into the directory containing the solution, not into a directory literally
+        // named "MySolution.sln" (which would collide with the existing file).
+        var options = new Options { OutputDir = ".", SolutionFileDir = "/repo/Contoso.sln" };
+        var (outputPath, propsPath) = MigrationValidator.GetOutputPaths(options);
+        outputPath.Should().Be("/repo");
+        propsPath.Should().Be("/repo/Directory.Packages.props");
+    }
 }

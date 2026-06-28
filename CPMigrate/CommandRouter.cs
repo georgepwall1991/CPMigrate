@@ -63,6 +63,13 @@ internal static class CommandRouter
     {
         var executionConsole = GetExecutionConsole(options, consoleService);
 
+        // In JSON mode, swap in SilentConsoleService so dependency-discovery notices
+        // ("Found project: …", banners) never leak into the JSON-only stdout contract.
+        if (!ReferenceEquals(executionConsole, services.ConsoleService))
+        {
+            services = services.WithConsole(executionConsole);
+        }
+
         // Handle Update command
         if (options.Update)
         {
@@ -216,11 +223,12 @@ internal static class CommandRouter
     /// </summary>
     public static async Task<int> RunUnifyPropsModeAsync(Options options, IConsoleService consoleService, ILoggerFactory? loggerFactory = null)
     {
+        var executionConsole = GetExecutionConsole(options, consoleService);
         var services = CreateApplicationServices(
-            consoleService,
+            executionConsole,
             new InteractiveService(consoleService),
-            new VersionResolver(consoleService),
-            new ConfigService(consoleService),
+            new VersionResolver(executionConsole),
+            new ConfigService(executionConsole),
             new BackupManager(),
             loggerFactory);
         return await RunUnifyPropsModeAsync(options, consoleService, services);
@@ -502,11 +510,12 @@ internal static class CommandRouter
         IBackupManager backupManager,
         ILoggerFactory? loggerFactory = null)
     {
+        var executionConsole = GetExecutionConsole(options, consoleService);
         var services = CreateApplicationServices(
-            consoleService,
+            executionConsole,
             new InteractiveService(consoleService),
             versionResolver,
-            new ConfigService(consoleService),
+            new ConfigService(executionConsole),
             backupManager,
             loggerFactory);
         return await RunBatchModeAsync(options, consoleService, versionResolver, backupManager, services);
@@ -597,11 +606,17 @@ internal static class CommandRouter
         IBackupManager backupManager,
         ILoggerFactory? loggerFactory = null)
     {
+        if (options is null)
+        {
+            return ExitCodes.UnexpectedError;
+        }
+
+        var executionConsole = GetExecutionConsole(options, consoleService);
         var services = CreateApplicationServices(
-            consoleService,
+            executionConsole,
             new InteractiveService(consoleService),
             versionResolver,
-            new ConfigService(consoleService),
+            new ConfigService(executionConsole),
             backupManager,
             loggerFactory);
         return await RunMigrationAsync(options, consoleService, versionResolver, backupManager, services);

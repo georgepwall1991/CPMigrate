@@ -33,6 +33,36 @@ internal sealed class ApplicationServices
     public IBackupManager BackupManager { get; }
     public IProjectAnalyzer ProjectAnalyzer { get; }
 
+    /// <summary>
+    /// Returns a new <see cref="ApplicationServices"/> wired with <paramref name="console"/> instead of the
+    /// current console, while preserving the logger factory. Used by <see cref="CommandRouter"/> to swap in
+    /// <see cref="SilentConsoleService"/> under <c>--output Json</c> so dependency-discovery notices
+    /// ("Found project: …") never leak into the JSON-only stdout contract.
+    /// </summary>
+    internal ApplicationServices WithConsole(IConsoleService console)
+    {
+        var solutionDiscovery = new SolutionDiscovery(console);
+        var projectFileScanner = new ProjectFileScanner(console, _loggerFactory?.CreateLogger<ProjectFileScanner>());
+        var packageQueryService = new DotNetPackageQueryService(console);
+        var projectAnalyzer = new ProjectAnalyzer(
+            console,
+            solutionDiscovery,
+            projectFileScanner,
+            packageQueryService,
+            _loggerFactory?.CreateLogger<ProjectAnalyzer>());
+        var interactiveService = new InteractiveService(console, solutionDiscovery: solutionDiscovery);
+        var configService = new ConfigService(console);
+
+        return new ApplicationServices(
+            console,
+            interactiveService,
+            VersionResolver,
+            configService,
+            BackupManager,
+            projectAnalyzer,
+            _loggerFactory);
+    }
+
     public static ApplicationServices Create(IConsoleService? customConsole = null, ILoggerFactory? loggerFactory = null)
     {
         var versionResolver = new VersionResolver(null);

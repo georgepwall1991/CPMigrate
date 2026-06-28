@@ -79,7 +79,8 @@ internal class MigrationDisplay
         _consoleService.Info("2. If you encounter issues, you can rollback using: cpmigrate --rollback");
         _consoleService.WriteLine();
 
-        if (_consoleService.AskConfirmation("Would you like to verify the migration now by running 'dotnet restore'?"))
+        if (ShouldOfferVerification(options) &&
+            _consoleService.AskConfirmation("Would you like to verify the migration now by running 'dotnet restore'?"))
         {
             _consoleService.WriteLine();
             var success = RunDotnetRestore(Path.GetDirectoryName(propsFilePath) ?? ".");
@@ -102,6 +103,30 @@ internal class MigrationDisplay
             _consoleService.Dim("💡 Tip: A backup was created. Use --rollback to undo if needed.");
             _consoleService.WriteLine();
         }
+    }
+
+    private static bool ShouldOfferVerification(Options options)
+    {
+        // Skip the interactive "Would you like to verify the migration now?" prompt under any
+        // non-interactive condition: --force (operator opted out of prompts), --quiet, or JSON
+        // output. Without this guard, the prompt throws "Cannot show selection prompt" when the
+        // CLI runs in a non-TTY shell (e.g. CI, scripts).
+        if (options.Force)
+        {
+            return false;
+        }
+
+        if (options.Output == OutputFormat.Json)
+        {
+            return false;
+        }
+
+        if (options.Quiet)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static bool RunDotnetRestore(string workingDirectory)

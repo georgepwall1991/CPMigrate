@@ -121,7 +121,19 @@ internal class MigrationValidator
         }
         else if (options.HasExplicitSolutionPath)
         {
-            outputPath = options.SolutionFileDir;
+            // SolutionFileDir may legitimately be a directory OR a .sln/.slnx file (per README
+            // quickstart: `cpmigrate -s ./MySolution.sln`). When it's a solution file path, write
+            // Directory.Packages.props into the directory containing the solution; otherwise
+            // Directory.CreateDirectory would collide with the existing solution file (FileOperationError).
+            if (IsSolutionFilePath(options.SolutionFileDir))
+            {
+                var parent = Path.GetDirectoryName(options.SolutionFileDir);
+                outputPath = string.IsNullOrWhiteSpace(parent) ? "." : parent;
+            }
+            else
+            {
+                outputPath = options.SolutionFileDir;
+            }
         }
         else if (options.HasExplicitProjectPath)
         {
@@ -135,5 +147,17 @@ internal class MigrationValidator
 
         var propsPath = Path.Combine(outputPath, "Directory.Packages.props");
         return (outputPath, propsPath);
+    }
+
+    private static bool IsSolutionFilePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var ext = Path.GetExtension(path);
+        return string.Equals(ext, ".sln", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".slnx", StringComparison.OrdinalIgnoreCase);
     }
 }
