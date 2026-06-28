@@ -6,6 +6,38 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-06-28
+
+### Fixed
+- **Strict JSON stdout contract**: under `--output Json --quiet`, `SolutionDiscovery` no longer emits `› Found project: …` notices (or banners) to stdout before the JSON document. CI parsers can now `json.load` the output directly, as documented in README. Applied via a new `ApplicationServices.WithConsole(...)` swap that re-wires `SolutionDiscovery`/`ProjectAnalyzer` to `SilentConsoleService` in JSON mode.
+- **`cpmigrate -s ./MySolution.sln`** (the README's primary quickstart): `MigrationValidator.GetOutputPaths` now resolves a `.sln`/`.slnx` file path to its containing directory, instead of trying to `Directory.CreateDirectory("MySolution.sln")` and crashing with `FileOperationError`.
+- **Post-migration guidance in non-TTY shells**: `MigrationDisplay.ShowPostMigrationGuidance` no longer crashes with "Cannot show selection prompt since the current terminal isn't interactive" under `--force`, `--quiet`, or `--output Json`. New `ShouldOfferVerification(options)` mirrors `ShouldProceedWithDestructiveAction`.
+
+### Changed
+- Extracted `JsonOutputWriter.EmitAsync` to centralize the four duplicated `WriteJsonOutput*` emit tails in `CommandRouter` (file-or-stdout, with optional "written to" notice under `--quiet`).
+- `Console.Error` suggestion/stack-trace writes in `CommandRouter` catch blocks now respect `--quiet`.
+- Split `SpectreConsoleService` (536 → 253 lines) into `SpectrePanelBuilder`, `SpectreTableBuilder`, and a shared `SpectrePalette`. The `IConsoleService` facade is unchanged; behavior preserved (all 31 Spectre tests still pass).
+- Replaced `InteractiveService`'s brittle `Contains()`/emoji-prefix action routing with a `WizardAction` enum + label→enum map. Fixed a latent bug where migration actions surfaced as "READY TO UNKNOWN" (the unused `ModeMigrate`/`ModeAnalyze`/`ModeBatch`/`ModeRollback`/`ModeBackups` consts never matched the action strings).
+- Extracted the ~190-line `PackageUpdateService.UpdatePackagesAsync` into a ~50-line orchestrator calling seven cohesive step methods (`DiscoverAndLoadCurrentVersionsAsync`, `QueryAllUpdatesAsync`, `FilterAvailableUpdates`, `BuildDryRunResult`, `CreateBackupAsync`, `ApplyUpdatesAsync`, `RestoreTestAndFinalizeAsync`).
+
+### Removed
+- Dead JSON-model fields: `ConflictInfo`, `VersionUsage`, and `Conflicts` properties from `OperationResult`/`SolutionResult` (declared in the schema but never populated — always serialized as empty).
+
+### Added
+- `JsonContractTests`: 2 integration tests capturing real stdout via `Console.SetOut` + `AnsiConsole.Create` and asserting pure JSON parses; would have failed on `3.4.0`.
+- `ListBackupsHandlerTests` (6 facts) and `RollbackHandlerTests` (7 facts) directly covering the previously-untested handlers from the 3.4.0 `Services/Migration/` split.
+- `MigrationValidatorTests.GetOutputPaths_SolutionFile_ResolvesToParentDirectory` regression test for the `.sln` path fix.
+
+### Documentation
+- `REFACTORING_STATUS.md` and `NEXT_STEPS.md` refreshed to reflect actual state: `Program.cs`/`Options.cs`/`MigrationService` split marked DONE; `.editorconfig` rule status corrected (CA1502/CA1505/CA1506 are already `warning`); this session's work recorded; "Re-enabling SonarCloud" checklist added.
+- `sonar-project.properties.reference` version 2.9.0 → 3.4.0.
+- All `release.yml` GitHub Actions bumped v4 → v5 to align with `ci.yml`/`distribution-smoke.yml`/`pages.yml`.
+- Redacted a leaked `SONAR_TOKEN` literal from `SONARCLOUD.md`; SonarCloud remains disabled in CI (`ci.yml:15` has `if: false`) pending `SONAR_TOKEN` rotation in repo secrets.
+
+### Internal
+- Test suite: 546 → 562 passing, 0 warnings, 0 errors.
+- Verified end-to-end with a throwaway multi-project .NET 10 solution exercising every command surface: analyze (terminal + JSON), migrate dry-run + apply, analyze-after-migration, unify-props dry-run + apply, `dotnet restore`/`build` after migration, update-packages dry-run (terminal + pure JSON), list-backups, rollback (with version-attr restoration check), prune-all, batch mode (`2/2 solutions processed successfully`), `--version`, `--help`.
+
 ## [3.4.0] - 2026-06-28
 
 ### Changed
