@@ -42,17 +42,7 @@ public class FixService : IFixService
     {
         var fixReport = new FixReport();
 
-        if (!report.HasIssues)
-        {
-            _console.Success("No issues to fix.");
-            return fixReport;
-        }
-
-        // Collect all issues from all analyzer results
-        var allIssues = report.Results
-            .SelectMany(r => r.Issues)
-            .ToList();
-
+        var allIssues = CollectIssues(report);
         if (allIssues.Count == 0)
         {
             _console.Success("No issues to fix.");
@@ -63,41 +53,60 @@ public class FixService : IFixService
 
         foreach (var issue in allIssues)
         {
-            var fixer = _fixers.FirstOrDefault(f => f.CanFix(issue));
-            if (fixer == null)
-            {
-                _console.Warning($"No fixer available for: {issue.PackageName}");
-                continue;
-            }
-
-            try
-            {
-                var result = fixer.Fix(issue, packageInfo, request);
-                fixReport.Results.Add(result);
-
-                if (result.Success && result.Changes.Count > 0)
-                {
-                    WriteFixResult(result, request.DryRun);
-                }
-                else if (!result.Success)
-                {
-                    _console.Error($"Failed to fix {issue.PackageName}: {result.Description}");
-                }
-            }
-            catch (Exception ex)
-            {
-                var failedResult = FixResult.Failed($"Exception: {ex.Message}");
-                fixReport.Results.Add(failedResult);
-                _console.Error($"Error fixing {issue.PackageName}: {ex.Message}");
-            }
+            fixReport.Results.Add(ApplyFixToIssue(issue, packageInfo, request));
         }
 
         WriteSummary(fixReport, request.DryRun);
         return fixReport;
     }
 
+    private static List<AnalysisIssue> CollectIssues(AnalysisReport report)
+    {
+        if (!report.HasIssues)
+        {
+            return new List<AnalysisIssue>();
+        }
+
+        return report.Results
+            .SelectMany(r => r.Issues)
+            .ToList();
+    }
+
+    private FixResult ApplyFixToIssue(AnalysisIssue issue, ProjectPackageInfo packageInfo, FixRequest request)
+    {
+        var fixer = _fixers.FirstOrDefault(f => f.CanFix(issue));
+        if (fixer == null)
+        {
+            _console.Warning($"No fixer available for: {issue.PackageName}");
+            return FixResult.NoFixNeeded($"No fixer available for: {issue.PackageName}");
+        }
+
+        try
+        {
+            var result = fixer.Fix(issue, packageInfo, request);
+            if (!result.Success)
+            {
+                _console.Error($"Failed to fix {issue.PackageName}: {result.Description}");
+                return result;
+            }
+
+            WriteFixResult(result, request.DryRun);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _console.Error($"Error fixing {issue.PackageName}: {ex.Message}");
+            return FixResult.Failed($"Exception: {ex.Message}");
+        }
+    }
+
     private void WriteFixResult(FixResult result, bool dryRun)
     {
+        if (result.Changes.Count == 0)
+        {
+            return;
+        }
+
         var prefix = dryRun ? "[DRY RUN] Would fix" : "Fixed";
         _console.Success($"{prefix}: {result.Description}");
 

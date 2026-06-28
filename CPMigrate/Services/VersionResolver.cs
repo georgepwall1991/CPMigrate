@@ -56,65 +56,61 @@ public class VersionResolver
 
         if (versionList.Count == 0)
         {
-            // Should not happen given caller context, but return something safe
             return "0.0.0";
         }
 
-        // If there's only one version, return it as-is (preserves floating versions like 1.0.*)
         if (versionList.Count == 1)
         {
             return versionList[0];
         }
 
-        // Parse versions using NuGetVersion, tracking original strings for fallback
-        var parsedVersions = new List<(NuGetVersion? Parsed, string Original)>();
+        var (parseable, unparseable) = PartitionVersions(versionList);
+        WarnAboutUnparseable(unparseable);
 
-        foreach (var v in versionList)
-        {
-            if (NuGetVersion.TryParse(v, out var nuVer))
-            {
-                parsedVersions.Add((nuVer, v));
-            }
-            else
-            {
-                // Log warning for invalid/floating version format but preserve original
-                _consoleService?.Warning($"Non-standard version format '{v}' - cannot compare, preserving as-is");
-                parsedVersions.Add((null, v));
-            }
-        }
-
-        // Separate parseable and unparseable versions
-        var parseableVersions = parsedVersions
-            .Where(p => p.Parsed != null)
-            .OrderBy(p => p.Parsed)
-            .ToList();
-
-        var unparseableVersions = parsedVersions
-            .Where(p => p.Parsed == null)
-            .Select(p => p.Original)
-            .ToList();
-
-        // If no versions could be parsed, return the first original version
-        if (parseableVersions.Count == 0)
+        if (parseable.Count == 0)
         {
             _consoleService?.Warning($"No valid versions to compare - using first version: {versionList[0]}");
             return versionList[0];
         }
 
-        // Warn about unparseable versions that won't be considered in comparison
-        if (unparseableVersions.Count > 0)
+        return SelectVersion(parseable, strategy);
+    }
+
+    private (List<NuGetVersion> Parseable, List<string> Unparseable) PartitionVersions(List<string> versions)
+    {
+        var parseable = new List<NuGetVersion>();
+        var unparseable = new List<string>();
+
+        foreach (var v in versions)
         {
-            _consoleService?.Warning($"Skipping {unparseableVersions.Count} non-standard version(s) in comparison: {string.Join(", ", unparseableVersions)}");
+            if (NuGetVersion.TryParse(v, out var nuVer))
+            {
+                parseable.Add(nuVer);
+            }
+            else
+            {
+                _consoleService?.Warning($"Non-standard version format '{v}' - cannot compare, preserving as-is");
+                unparseable.Add(v);
+            }
         }
 
-        var selectedVersion = strategy switch
-        {
-            ConflictStrategy.Highest => parseableVersions[parseableVersions.Count - 1],
-            ConflictStrategy.Lowest => parseableVersions[0],
-            ConflictStrategy.Fail => parseableVersions[parseableVersions.Count - 1], // Should be handled by caller logic
-            _ => parseableVersions[parseableVersions.Count - 1]
-        };
+        return (parseable, unparseable);
+    }
 
-        return selectedVersion.Parsed!.ToNormalizedString();
+    private void WarnAboutUnparseable(List<string> unparseable)
+    {
+        if (unparseable.Count > 0)
+        {
+            _consoleService?.Warning($"Skipping {unparseable.Count} non-standard version(s) in comparison: {string.Join(", ", unparseable)}");
+        }
+    }
+
+    private static string SelectVersion(List<NuGetVersion> parseable, ConflictStrategy strategy)
+    {
+        var ordered = parseable.OrderBy(v => v).ToList();
+        var selected = strategy == ConflictStrategy.Lowest
+            ? ordered[0]
+            : ordered[ordered.Count - 1];
+        return selected.ToNormalizedString();
     }
 }

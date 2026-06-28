@@ -42,17 +42,23 @@ public class MigrationService
         ILogger<MigrationService>? logger = null)
     {
         _consoleService = consoleService;
-        _versionResolver = versionResolver ?? new VersionResolver(_consoleService);
-        _projectAnalyzer = projectAnalyzer ?? new ProjectAnalyzer(_consoleService);
+        _versionResolver = versionResolver ?? new VersionResolver(consoleService);
+        _projectAnalyzer = projectAnalyzer ?? new ProjectAnalyzer(consoleService);
         _propsGenerator = propsGenerator ?? new PropsGenerator(_versionResolver);
         _backupManager = backupManager ?? new BackupManager();
-        _analysisService = analysisService ?? new AnalysisService(AnalyzerCatalog.CreateDefault(_consoleService));
-        _fixService = fixService ?? new FixService(_consoleService, FixerCatalog.CreateDefault(_versionResolver));
-        _validator = new MigrationValidator(_consoleService);
-        _display = new MigrationDisplay(_consoleService);
+        _analysisService = analysisService ?? CreateDefaultAnalysisService(consoleService);
+        _fixService = fixService ?? CreateDefaultFixService(consoleService, _versionResolver);
+        _validator = new MigrationValidator(consoleService);
+        _display = new MigrationDisplay(consoleService);
         _logger = logger ?? NullLogger<MigrationService>.Instance;
         _quietMode = quietMode;
     }
+
+    private static IAnalysisService CreateDefaultAnalysisService(IConsoleService console) =>
+        new AnalysisService(AnalyzerCatalog.CreateDefault(console));
+
+    private static IFixService CreateDefaultFixService(IConsoleService console, VersionResolver versionResolver) =>
+        new FixService(console, FixerCatalog.CreateDefault(versionResolver));
 
     /// <summary>
     /// Executes the CPM migration based on the provided options.
@@ -1251,70 +1257,96 @@ public class MigrationService
         List<OutdatedPackageInfo> allOutdatedPackages,
         List<DeprecatedPackageInfo> allDeprecatedPackages)
     {
-        var (references, success) = await _projectAnalyzer.ScanResolvedPackagesAsync(projectPath, options.IncludeTransitive);
-        var resolvedScanSucceeded = success;
-        if (!resolvedScanSucceeded && !options.IncludeTransitive)
-        {
-            // Fallback for environments where dotnet list package cannot run.
-            (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
-        }
-
+        var (references, success) = await ScanProjectReferencesAsync(options, projectPath);
         allReferences.AddRange(references);
-
-        // Cache scan results for later reuse (e.g., interactive conflict resolution)
-        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>(StringComparer.OrdinalIgnoreCase);
-        _cachedProjectScans[projectPath] = references;
-
-        // If transitive data was requested and resolved-package scan failed, keep the project marked as failed.
-        // XML fallback only provides direct PackageReference entries and cannot satisfy --transitive accuracy.
-        if (options.IncludeTransitive && !resolvedScanSucceeded)
-        {
-            success = false;
-        }
+        CacheScanResults(projectPath, references);
 
         if (options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated)
         {
-            var projectName = Path.GetFileName(projectPath);
-            if (task != null)
-            {
-                task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
-            }
-
-            if (options.AuditSecurity)
-            {
-                var (vulnerabilities, auditSuccess) = await _projectAnalyzer.ScanVulnerabilitiesAsync(projectPath);
-                if (auditSuccess)
-                {
-                    allVulnerabilities.AddRange(vulnerabilities);
-                }
-            }
-
-            if (options.AnalyzeOutdated)
-            {
-                var (outdated, outdatedSuccess) = await _projectAnalyzer.ScanOutdatedPackagesAsync(
-                    projectPath,
-                    options.IncludeTransitive,
-                    options.IncludePrerelease);
-                if (outdatedSuccess)
-                {
-                    allOutdatedPackages.AddRange(outdated);
-                }
-            }
-
-            if (options.AnalyzeDeprecated)
-            {
-                var (deprecated, deprecatedSuccess) = await _projectAnalyzer.ScanDeprecatedPackagesAsync(
-                    projectPath,
-                    options.IncludeTransitive,
-                    options.IncludePrerelease);
-                if (deprecatedSuccess)
-                {
-                    allDeprecatedPackages.AddRange(deprecated);
-                }
-            }
+            await RunDeepScansAsync(options, projectPath, task, allVulnerabilities, allOutdatedPackages, allDeprecatedPackages);
         }
 
         return success;
+    }
+
+    private async Task<(List<PackageReference> References, bool Success)> ScanProjectReferencesAsync(Options options, string projectPath)
+    {
+        var (references, success) = await _projectAnalyzer.ScanResolvedPackagesAsync(projectPath, options.IncludeTransitive);
+        if (!success && !options.IncludeTransitive)
+        {
+            (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
+        }
+
+        return (references, success);
+    }
+
+    private void CacheScanResults(string projectPath, List<PackageReference> references)
+    {
+        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>(StringComparer.OrdinalIgnoreCase);
+        _cachedProjectScans[projectPath] = references;
+    }
+
+    private async Task RunDeepScansAsync(
+        Options options,
+        string projectPath,
+        ProgressTask? task,
+        List<VulnerabilityInfo> allVulnerabilities,
+        List<OutdatedPackageInfo> allOutdatedPackages,
+        List<DeprecatedPackageInfo> allDeprecatedPackages)
+    {
+        var projectName = Path.GetFileName(projectPath);
+        if (task != null)
+        {
+            task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
+        }
+
+        if (options.AuditSecurity)
+        {
+            await ScanVulnerabilitiesAsync(projectPath, allVulnerabilities);
+        }
+
+        if (options.AnalyzeOutdated)
+        {
+            await ScanOutdatedPackagesAsync(options, projectPath, allOutdatedPackages);
+        }
+
+        if (options.AnalyzeDeprecated)
+        {
+            await ScanDeprecatedPackagesAsync(options, projectPath, allDeprecatedPackages);
+        }
+    }
+
+    private async Task ScanVulnerabilitiesAsync(string projectPath, List<VulnerabilityInfo> allVulnerabilities)
+    {
+        var (vulnerabilities, auditSuccess) = await _projectAnalyzer.ScanVulnerabilitiesAsync(projectPath);
+        if (auditSuccess)
+        {
+            allVulnerabilities.AddRange(vulnerabilities);
+        }
+    }
+
+    private async Task ScanOutdatedPackagesAsync(Options options, string projectPath, List<OutdatedPackageInfo> allOutdatedPackages)
+    {
+        var (outdated, outdatedSuccess) = await _projectAnalyzer.ScanOutdatedPackagesAsync(
+            projectPath,
+            options.IncludeTransitive,
+            options.IncludePrerelease);
+        if (outdatedSuccess)
+        {
+            allOutdatedPackages.AddRange(outdated);
+        }
+    }
+
+    private async Task ScanDeprecatedPackagesAsync(Options options, string projectPath, List<DeprecatedPackageInfo> allDeprecatedPackages)
+    {
+        var (deprecated, deprecatedSuccess) = await _projectAnalyzer.ScanDeprecatedPackagesAsync(
+            projectPath,
+            options.IncludeTransitive,
+            options.IncludePrerelease);
+        if (deprecatedSuccess)
+        {
+            allDeprecatedPackages.AddRange(deprecated);
+        }
     }
 
     private void ReportScanFailures(int scanFailures, int totalProjects)

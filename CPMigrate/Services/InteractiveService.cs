@@ -338,7 +338,26 @@ public class InteractiveService : IInteractiveService
 
     private void AskMigrationOptions(Options options)
     {
-        // Conflict strategy
+        AskConflictStrategy(options);
+        AskBackupOptions(options);
+        options.DryRun = AskYesNoSelection(
+            "Run as dry-run first?",
+            "Yes - preview changes without modifying files",
+            "No - make changes immediately",
+            yesFirst: true);
+        options.KeepAttributes = AskYesNoSelection(
+            "Keep version attributes in project files?",
+            "Yes - keep alongside CPM",
+            "No - remove them (recommended for clean CPM)");
+        options.IncludeTransitive = AskYesNoSelection(
+            "Pin transitive dependencies centrally?",
+            "Yes - pin all transitive packages (prevents version drift)",
+            "No (recommended for clean CPM)");
+        AskMergeExistingOption(options);
+    }
+
+    private void AskConflictStrategy(Options options)
+    {
         var conflictChoice = _console.AskSelection(
             "Conflict resolution strategy?",
             new[] { ConflictHighest, ConflictLowest, ConflictInteractive, ConflictFail });
@@ -346,7 +365,7 @@ public class InteractiveService : IInteractiveService
         if (conflictChoice == ConflictInteractive)
         {
             options.InteractiveConflicts = true;
-            options.ConflictStrategy = ConflictStrategy.Highest; // Default if interactive fails
+            options.ConflictStrategy = ConflictStrategy.Highest;
         }
         else
         {
@@ -357,71 +376,61 @@ public class InteractiveService : IInteractiveService
                 _ => ConflictStrategy.Highest
             };
         }
+    }
 
-        // Backup option
+    private void AskBackupOptions(Options options)
+    {
         var createBackup = _console.AskSelection(
             "Create backup before migration?",
             new[] { "Yes (recommended)", "No" });
 
         options.NoBackup = createBackup == "No";
 
-        if (!options.NoBackup)
+        if (options.NoBackup)
         {
-            var backupLoc = _console.AskSelection(
-                "Where should the backup directory be created?",
-                new[] { "Current directory (./.cpmigrate_backup)", "Choose a different directory" });
-
-            if (backupLoc == "Current directory (./.cpmigrate_backup)")
-            {
-                options.BackupDir = ".";
-            }
-            else
-            {
-                options.BackupDir = BrowseForPath(_workingDirectory ?? Directory.GetCurrentDirectory(), "Select backup parent directory") ?? ".";
-            }
-
-            var addGitignore = _console.AskSelection(
-                "Add backup directory to .gitignore?",
-                new[] { "Yes", "No" });
-
-            options.AddBackupToGitignore = addGitignore == "Yes";
-            if (options.AddBackupToGitignore)
-            {
-                options.GitignoreDir = ".";
-            }
+            return;
         }
 
-        // Dry run option
-        var dryRun = _console.AskSelection(
-            "Run as dry-run first?",
-            new[] { "Yes - preview changes without modifying files", "No - make changes immediately" });
+        var backupLoc = _console.AskSelection(
+            "Where should the backup directory be created?",
+            new[] { "Current directory (./.cpmigrate_backup)", "Choose a different directory" });
 
-        options.DryRun = dryRun.StartsWith("Yes");
+        options.BackupDir = backupLoc == "Current directory (./.cpmigrate_backup)"
+            ? "."
+            : BrowseForPath(_workingDirectory ?? Directory.GetCurrentDirectory(), "Select backup parent directory") ?? ".";
 
-        // Keep attributes option
-        var keepAttrs = _console.AskSelection(
-            "Keep version attributes in project files?",
-            new[] { "No - remove them (recommended for clean CPM)", "Yes - keep alongside CPM" });
+        options.AddBackupToGitignore = AskYesNoSelection(
+            "Add backup directory to .gitignore?",
+            "Yes",
+            "No",
+            yesFirst: true);
+        if (options.AddBackupToGitignore)
+        {
+            options.GitignoreDir = ".";
+        }
+    }
 
-        options.KeepAttributes = keepAttrs.StartsWith("Yes");
+    private bool AskYesNoSelection(string title, string yesOption, string noOption, bool yesFirst = false)
+    {
+        var choices = yesFirst ? new[] { yesOption, noOption } : new[] { noOption, yesOption };
+        var choice = _console.AskSelection(title, choices);
+        return choice == yesOption;
+    }
 
-        // Transitive pinning
-        var transitive = _console.AskSelection(
-            "Pin transitive dependencies centrally?",
-            new[] { "No (recommended for clean CPM)", "Yes - pin all transitive packages (prevents version drift)" });
-        options.IncludeTransitive = transitive.StartsWith("Yes");
-
-        // Merge existing props file if detected
+    private void AskMergeExistingOption(Options options)
+    {
         var propsRoot = options.HasExplicitSolutionPath ? options.SolutionFileDir : options.GetDiscoveryTargetPath();
         var propsFilePath = Path.Combine(Path.GetFullPath(propsRoot), "Directory.Packages.props");
-        if (File.Exists(propsFilePath))
+        if (!File.Exists(propsFilePath))
         {
-            var mergeChoice = _console.AskSelection(
-                "Directory.Packages.props already exists. How should CPMigrate proceed?",
-                new[] { "Fail (recommended)", "Merge into existing file" });
-
-            options.MergeExisting = mergeChoice.StartsWith("Merge");
+            return;
         }
+
+        var mergeChoice = _console.AskSelection(
+            "Directory.Packages.props already exists. How should CPMigrate proceed?",
+            new[] { "Fail (recommended)", "Merge into existing file" });
+
+        options.MergeExisting = mergeChoice.StartsWith("Merge");
     }
 
     private void AskUpdatePackagesOptions(Options options)

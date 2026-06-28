@@ -57,7 +57,7 @@ public class DotNetCliService : IDotNetCliService
         return await RunDotNetCommandAsync($"test \"{solutionOrProjectPath}\" --no-restore", Path.GetDirectoryName(solutionOrProjectPath) ?? ".");
     }
 
-    private static string BuildListPackageArguments(DotNetPackageListOptions options, string? targetArgument)
+    internal static string BuildListPackageArguments(DotNetPackageListOptions options, string? targetArgument)
     {
         var args = "list";
 
@@ -94,7 +94,7 @@ public class DotNetCliService : IDotNetCliService
         return args;
     }
 
-    private static string BuildPackageListArguments(DotNetPackageListOptions options, string? targetArgument)
+    internal static string BuildPackageListArguments(DotNetPackageListOptions options, string? targetArgument)
     {
         var args = "package list";
 
@@ -131,7 +131,7 @@ public class DotNetCliService : IDotNetCliService
         return args;
     }
 
-    private static bool ShouldTryPackageVerbFallback(string output)
+    internal static bool ShouldTryPackageVerbFallback(string output)
     {
         return output.Contains("Unrecognized command or argument 'list'", StringComparison.OrdinalIgnoreCase) ||
                output.Contains("Unrecognized command or argument 'package'", StringComparison.OrdinalIgnoreCase) ||
@@ -140,12 +140,12 @@ public class DotNetCliService : IDotNetCliService
                output.Contains("Unknown command 'package'", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string CombineOutput(string stdOut, string stdErr)
+    internal static string CombineOutput(string stdOut, string stdErr)
     {
         return string.IsNullOrEmpty(stdErr) ? stdOut : $"{stdOut}\n{stdErr}";
     }
 
-    private static (string? TargetArgument, string WorkingDirectory) ResolveProjectListTarget(string projectPathOrDirectory)
+    internal static (string? TargetArgument, string WorkingDirectory) ResolveProjectListTarget(string projectPathOrDirectory)
     {
         if (File.Exists(projectPathOrDirectory))
         {

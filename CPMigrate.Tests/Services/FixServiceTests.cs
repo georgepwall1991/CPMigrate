@@ -1,3 +1,4 @@
+using CPMigrate.Fixers;
 using CPMigrate.Models;
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
@@ -315,5 +316,88 @@ public class FixServiceTests
         fixReport.Should().NotBeNull();
         fixReport.Results.Should().BeEmpty();
         report.HasIssues.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ApplyFixes_FixerReturnsFailure_AddsFailedResult()
+    {
+        // Arrange
+        var issue = new AnalysisIssue("Pkg", "desc", new[] { "Project.csproj" }, AnalysisIssueCode.VersionInconsistency);
+        var report = new AnalysisReport(
+            ProjectsScanned: 1,
+            TotalPackageReferences: 1,
+            Results: new[] { new AnalyzerResult("Test", new[] { issue }) });
+        var console = new FakeConsoleService();
+        var failingFixer = new StubFixer(canFix: _ => true, fix: (_, _, _) => FixResult.Failed("failed"));
+        var fixService = new FixService(console, new[] { failingFixer });
+
+        // Act
+        var fixReport = fixService.ApplyFixes(report, new ProjectPackageInfo(Array.Empty<PackageReference>()), new FixRequest("props.props", ConflictStrategy.Highest, false));
+
+        // Assert
+        fixReport.Results.Should().ContainSingle(r => !r.Success);
+        console.ErrorMessages.Should().ContainMatch("*Failed to fix Pkg*");
+    }
+
+    [Fact]
+    public void ApplyFixes_FixerThrowsException_AddsFailedResultAndContinues()
+    {
+        // Arrange
+        var issue = new AnalysisIssue("Pkg", "desc", new[] { "Project.csproj" }, AnalysisIssueCode.VersionInconsistency);
+        var report = new AnalysisReport(
+            ProjectsScanned: 1,
+            TotalPackageReferences: 1,
+            Results: new[] { new AnalyzerResult("Test", new[] { issue }) });
+        var console = new FakeConsoleService();
+        var throwingFixer = new StubFixer(canFix: _ => true, fix: (_, _, _) => throw new InvalidOperationException("boom"));
+        var fixService = new FixService(console, new[] { throwingFixer });
+
+        // Act
+        var fixReport = fixService.ApplyFixes(report, new ProjectPackageInfo(Array.Empty<PackageReference>()), new FixRequest("props.props", ConflictStrategy.Highest, false));
+
+        // Assert
+        fixReport.Results.Should().ContainSingle(r => !r.Success);
+        console.ErrorMessages.Should().ContainMatch("*Error fixing Pkg*");
+    }
+
+    [Fact]
+    public void ApplyFixes_FixerSucceedsWithNoChanges_DoesNotWriteFixResult()
+    {
+        // Arrange
+        var issue = new AnalysisIssue("Pkg", "desc", new[] { "Project.csproj" }, AnalysisIssueCode.VersionInconsistency);
+        var report = new AnalysisReport(
+            ProjectsScanned: 1,
+            TotalPackageReferences: 1,
+            Results: new[] { new AnalyzerResult("Test", new[] { issue }) });
+        var console = new FakeConsoleService();
+        var noChangeFixer = new StubFixer(canFix: _ => true, fix: (_, _, _) => FixResult.Succeeded("already ok", Array.Empty<FileChange>()));
+        var fixService = new FixService(console, new[] { noChangeFixer });
+
+        // Act
+        fixService.ApplyFixes(report, new ProjectPackageInfo(Array.Empty<PackageReference>()), new FixRequest("props.props", ConflictStrategy.Highest, false));
+
+        // Assert
+        console.OutputMessages.Should().NotContainMatch("*Fixed*");
+    }
+
+    private sealed class StubFixer : IFixer
+    {
+        private readonly Func<AnalysisIssue, bool> _canFix;
+        private readonly Func<AnalysisIssue, ProjectPackageInfo, FixRequest, FixResult> _fix;
+
+        public StubFixer(Func<AnalysisIssue, bool> canFix, Func<AnalysisIssue, ProjectPackageInfo, FixRequest, FixResult> fix)
+        {
+            _canFix = canFix;
+            _fix = fix;
+        }
+
+        public string Name => "Stub";
+
+        public bool CanFix(AnalysisIssue issue) => _canFix(issue);
+
+        public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, Options options, bool dryRun) =>
+            Fix(issue, packageInfo, new FixRequest("", options.ConflictStrategy, dryRun));
+
+        public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, FixRequest request) => _fix(issue, packageInfo, request);
     }
 }

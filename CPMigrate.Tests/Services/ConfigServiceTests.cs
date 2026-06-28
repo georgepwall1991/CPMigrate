@@ -517,6 +517,73 @@ public class ConfigServiceTests : IDisposable
         options.MergeExisting.Should().BeTrue();
     }
 
+    [Fact]
+    public void MergeConfig_AllPropertiesFromConfig_WhenNoCliArgsProvided()
+    {
+        // Arrange
+        var options = new Options();
+        var config = new ConfigModel
+        {
+            ConflictStrategy = ConflictStrategy.Lowest,
+            Backup = false,
+            BackupDir = "config-backup",
+            AddGitignore = true,
+            KeepVersionAttributes = true,
+            MergeExisting = true,
+            OutputFormat = OutputFormat.Json,
+            Retention = new RetentionConfig { Enabled = true, MaxBackups = 42 }
+        };
+
+        // Act
+        ConfigService.MergeConfig(options, config, new HashSet<string>());
+
+        // Assert
+        options.ConflictStrategy.Should().Be(ConflictStrategy.Lowest);
+        options.NoBackup.Should().BeTrue();
+        options.BackupDir.Should().Be("config-backup");
+        options.AddBackupToGitignore.Should().BeTrue();
+        options.KeepAttributes.Should().BeTrue();
+        options.MergeExisting.Should().BeTrue();
+        options.Output.Should().Be(OutputFormat.Json);
+        options.Retention.Should().Be(42);
+    }
+
+    [Fact]
+    public void MergeConfig_AllCliArgsProvided_BlockAllConfigValues()
+    {
+        // Arrange
+        var options = new Options();
+        var config = new ConfigModel
+        {
+            ConflictStrategy = ConflictStrategy.Lowest,
+            Backup = false,
+            BackupDir = "config-backup",
+            AddGitignore = true,
+            KeepVersionAttributes = true,
+            MergeExisting = true,
+            OutputFormat = OutputFormat.Json,
+            Retention = new RetentionConfig { Enabled = true, MaxBackups = 42 }
+        };
+        var cliArgs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "conflict-strategy", "no-backup", "backup-dir", "add-gitignore",
+            "keep-attrs", "merge", "output", "retention"
+        };
+
+        // Act
+        ConfigService.MergeConfig(options, config, cliArgs);
+
+        // Assert
+        options.ConflictStrategy.Should().Be(ConflictStrategy.Highest); // default
+        options.NoBackup.Should().BeFalse(); // default
+        options.BackupDir.Should().Be("."); // default
+        options.AddBackupToGitignore.Should().BeFalse(); // default
+        options.KeepAttributes.Should().BeFalse(); // default
+        options.MergeExisting.Should().BeFalse(); // default
+        options.Output.Should().Be(OutputFormat.Terminal); // default
+        options.Retention.Should().Be(0); // default
+    }
+
     #endregion
 
     #region CreateSampleConfig Tests

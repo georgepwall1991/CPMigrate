@@ -130,46 +130,50 @@ public class ConfigService
     {
         cliArgsProvided ??= new HashSet<string>();
 
-        // Only apply config values if the CLI option wasn't explicitly provided
-
-        if (config.ConflictStrategy.HasValue && !cliArgsProvided.Contains("conflict-strategy"))
+        foreach (var rule in MergeRules)
         {
-            options.ConflictStrategy = config.ConflictStrategy.Value;
+            rule.TryApply(options, config, cliArgsProvided);
         }
+    }
 
-        if (config.Backup.HasValue && !cliArgsProvided.Contains("no-backup"))
-        {
-            options.NoBackup = !config.Backup.Value;
-        }
+    private static readonly List<ConfigMergeRule> MergeRules = new()
+    {
+        new(c => c.ConflictStrategy.HasValue, "conflict-strategy",
+            (o, c) => o.ConflictStrategy = c.ConflictStrategy.GetValueOrDefault()),
 
-        if (!string.IsNullOrEmpty(config.BackupDir) && !cliArgsProvided.Contains("backup-dir"))
-        {
-            options.BackupDir = config.BackupDir;
-        }
+        new(c => c.Backup.HasValue, "no-backup",
+            (o, c) => o.NoBackup = !c.Backup.GetValueOrDefault()),
 
-        if (config.AddGitignore.HasValue && !cliArgsProvided.Contains("add-gitignore"))
-        {
-            options.AddBackupToGitignore = config.AddGitignore.Value;
-        }
+        new(c => !string.IsNullOrEmpty(c.BackupDir), "backup-dir",
+            (o, c) => o.BackupDir = c.BackupDir ?? string.Empty),
 
-        if (config.KeepVersionAttributes.HasValue && !cliArgsProvided.Contains("keep-attrs"))
-        {
-            options.KeepAttributes = config.KeepVersionAttributes.Value;
-        }
+        new(c => c.AddGitignore.HasValue, "add-gitignore",
+            (o, c) => o.AddBackupToGitignore = c.AddGitignore.GetValueOrDefault()),
 
-        if (config.MergeExisting.HasValue && !cliArgsProvided.Contains("merge"))
-        {
-            options.MergeExisting = config.MergeExisting.Value;
-        }
+        new(c => c.KeepVersionAttributes.HasValue, "keep-attrs",
+            (o, c) => o.KeepAttributes = c.KeepVersionAttributes.GetValueOrDefault()),
 
-        if (config.OutputFormat.HasValue && !cliArgsProvided.Contains("output"))
-        {
-            options.Output = config.OutputFormat.Value;
-        }
+        new(c => c.MergeExisting.HasValue, "merge",
+            (o, c) => o.MergeExisting = c.MergeExisting.GetValueOrDefault()),
 
-        if (config.Retention != null && config.Retention.Enabled && !cliArgsProvided.Contains("retention"))
+        new(c => c.OutputFormat.HasValue, "output",
+            (o, c) => o.Output = c.OutputFormat.GetValueOrDefault()),
+
+        new(c => c.Retention is { Enabled: true }, "retention",
+            (o, c) => o.Retention = c.Retention?.MaxBackups ?? 0)
+    };
+
+    private sealed record ConfigMergeRule(
+        Func<ConfigModel, bool> HasValue,
+        string CliArg,
+        Action<Options, ConfigModel> Apply)
+    {
+        public void TryApply(Options options, ConfigModel config, HashSet<string> cliArgsProvided)
         {
-            options.Retention = config.Retention.MaxBackups;
+            if (HasValue(config) && !cliArgsProvided.Contains(CliArg))
+            {
+                Apply(options, config);
+            }
         }
     }
 

@@ -20,9 +20,8 @@ public class DependencyGraphService : IDependencyGraphService
     /// </summary>
     public List<string> IdentifyRedundantDirectReferences(string projectFilePath)
     {
-        List<string> redundant = [];
-        var projectDir = Path.GetDirectoryName(projectFilePath) ?? ".";
-        var assetsPath = Path.Combine(projectDir, "obj", "project.assets.json");
+        var redundant = new List<string>();
+        var assetsPath = GetAssetsPath(projectFilePath);
 
         if (!File.Exists(assetsPath))
         {
@@ -31,16 +30,8 @@ public class DependencyGraphService : IDependencyGraphService
 
         try
         {
-            var json = File.ReadAllText(assetsPath);
-            using var doc = JsonDocument.Parse(json);
-
-            var projectNode = doc.RootElement.GetProperty("project");
-            var frameworksNode = projectNode.GetProperty("frameworks");
-
-            foreach (var framework in frameworksNode.EnumerateObject())
-            {
-                AnalyzeFrameworkDependencies(doc, framework, redundant);
-            }
+            using var doc = ReadAssetsDocument(assetsPath);
+            AnalyzeAssetsDocument(doc, redundant);
         }
         catch (Exception ex)
         {
@@ -48,6 +39,29 @@ public class DependencyGraphService : IDependencyGraphService
         }
 
         return redundant.Distinct().ToList();
+    }
+
+    private static string GetAssetsPath(string projectFilePath)
+    {
+        var projectDir = Path.GetDirectoryName(projectFilePath) ?? ".";
+        return Path.Combine(projectDir, "obj", "project.assets.json");
+    }
+
+    private static JsonDocument ReadAssetsDocument(string assetsPath)
+    {
+        var json = File.ReadAllText(assetsPath);
+        return JsonDocument.Parse(json);
+    }
+
+    private void AnalyzeAssetsDocument(JsonDocument doc, List<string> redundant)
+    {
+        var projectNode = doc.RootElement.GetProperty("project");
+        var frameworksNode = projectNode.GetProperty("frameworks");
+
+        foreach (var framework in frameworksNode.EnumerateObject())
+        {
+            AnalyzeFrameworkDependencies(doc, framework, redundant);
+        }
     }
 
     private void AnalyzeFrameworkDependencies(JsonDocument doc, JsonProperty framework, List<string> redundant)

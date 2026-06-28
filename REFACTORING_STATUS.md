@@ -216,7 +216,7 @@ Implementation of SonarCloud integration and code quality improvements for CPMig
 ### Build Status: ✅ PASSING
 - **Warnings:** 0
 - **Errors:** 0
-- **Tests:** 94/94 passing
+- **Tests:** 546/546 passing
 - **Test Duration:** 267ms
 
 ### Dependencies

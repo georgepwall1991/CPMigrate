@@ -6,6 +6,23 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.3.3] - 2026-06-28
+
+### Fixed
+- Resolved high-severity vulnerabilities in transitive `System.Security.Cryptography.Xml` and related `System.*` packages by updating pins to `10.0.9` and adding explicit package references.
+- Disabled `GeneratePackageOnBuild` to prevent nupkg file locking during Release builds and remove redundant pack steps in CI.
+
+### Changed
+- Refactored high-complexity methods in `VersionResolver`, `FixService`, `ConfigService`, `DependencyGraphService`, `BuildPropsService`, `BatchService`, `MigrationService`, and `InteractiveService` into smaller, testable helpers.
+- Reduced cyclomatic complexity across the codebase while preserving all existing behavior.
+
+### Added
+- 25 new unit tests covering edge cases for version resolution, fix service error handling, config merging, dependency graph analysis, and previously untested CLI/process infrastructure.
+- Added test coverage for `DotNetCliService` argument builders and `ProcessRunner`.
+
+### Documentation
+- Updated test counts across README, NEXT_STEPS, REFACTORING_STATUS, and SESSION_SUMMARY to reflect the current 546 tests.
+
 ## [3.3.2] - 2026-03-13
 
 ### Changed

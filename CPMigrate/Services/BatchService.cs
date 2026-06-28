@@ -235,10 +235,8 @@ public class BatchService
     private async Task<List<SolutionResult>> RunParallelAsync(Options options, List<string> solutions)
     {
         var results = new ConcurrentBag<SolutionResult>();
-
-        // Use a CancellationTokenSource to support early termination when --batch-continue is false
         using var cts = new CancellationTokenSource();
-        var hasFailure = 0; // 0 = false, 1 = true; use Interlocked for thread-safe access
+        var hasFailure = 0;
 
         var parallelOptions = new ParallelOptions
         {
@@ -250,7 +248,6 @@ public class BatchService
         {
             await Parallel.ForEachAsync(solutions, parallelOptions, async (sln, ct) =>
             {
-                // Check if we should stop due to a previous failure
                 if (ct.IsCancellationRequested)
                 {
                     return;
@@ -264,51 +261,26 @@ public class BatchService
                     var solutionOptions = CloneOptionsForSolution(options, solutionDir, solutionName);
                     var migrationResult = await _migrationExecutor(solutionOptions);
 
-                    results.Add(new SolutionResult
-                    {
-                        Path = sln,
-                        Name = solutionName,
-                        Success = migrationResult.ExitCode == ExitCodes.Success,
-                        ExitCode = migrationResult.ExitCode,
-                        Summary = new OperationSummary
-                        {
-                            ProjectsProcessed = migrationResult.ProjectsProcessed,
-                            PackagesFound = migrationResult.PackagesCentralized,
-                            ConflictsResolved = migrationResult.ConflictsResolved
-                        },
-                        PropsFile = migrationResult.PropsFilePath
-                    });
+                    results.Add(CreateSolutionResult(sln, solutionName, migrationResult));
 
-                    // Check for failure and cancel if --batch-continue is not set
                     if (migrationResult.ExitCode != ExitCodes.Success && !options.BatchContinue)
                     {
-                        Interlocked.Exchange(ref hasFailure, 1);
-                        await cts.CancelAsync();
+                        SignalFailureAndCancel(cts, ref hasFailure);
                     }
                 }
                 catch (Exception ex)
                 {
-                    results.Add(new SolutionResult
-                    {
-                        Path = sln,
-                        Name = solutionName,
-                        Success = false,
-                        ExitCode = ExitCodes.UnexpectedError,
-                        Error = ex.Message
-                    });
+                    results.Add(CreateFailedResult(sln, solutionName, ex));
 
-                    // Cancel remaining operations if --batch-continue is not set
                     if (!options.BatchContinue)
                     {
-                        Interlocked.Exchange(ref hasFailure, 1);
-                        await cts.CancelAsync();
+                        SignalFailureAndCancel(cts, ref hasFailure);
                     }
                 }
             });
         }
         catch (OperationCanceledException)
         {
-            // Expected when we cancel due to failure with --batch-continue=false
             if (Interlocked.CompareExchange(ref hasFailure, 0, 0) == 1 && !options.BatchContinue)
             {
                 _consoleService.Warning("Stopping batch (use --batch-continue to continue on failure)");
@@ -316,6 +288,42 @@ public class BatchService
         }
 
         return results.OrderBy(r => r.Path).ToList();
+    }
+
+    private static SolutionResult CreateSolutionResult(string sln, string solutionName, MigrationResult migrationResult)
+    {
+        return new SolutionResult
+        {
+            Path = sln,
+            Name = solutionName,
+            Success = migrationResult.ExitCode == ExitCodes.Success,
+            ExitCode = migrationResult.ExitCode,
+            Summary = new OperationSummary
+            {
+                ProjectsProcessed = migrationResult.ProjectsProcessed,
+                PackagesFound = migrationResult.PackagesCentralized,
+                ConflictsResolved = migrationResult.ConflictsResolved
+            },
+            PropsFile = migrationResult.PropsFilePath
+        };
+    }
+
+    private static SolutionResult CreateFailedResult(string sln, string solutionName, Exception ex)
+    {
+        return new SolutionResult
+        {
+            Path = sln,
+            Name = solutionName,
+            Success = false,
+            ExitCode = ExitCodes.UnexpectedError,
+            Error = ex.Message
+        };
+    }
+
+    private static void SignalFailureAndCancel(CancellationTokenSource cts, ref int hasFailure)
+    {
+        Interlocked.Exchange(ref hasFailure, 1);
+        cts.Cancel();
     }
 
     private Options CloneOptionsForSolution(Options options, string solutionDir, string? solutionName = null)

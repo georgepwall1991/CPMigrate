@@ -645,7 +645,7 @@ Contributions are welcome. To get started:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Write tests for your changes
-4. Ensure all 487+ tests pass (`dotnet test`)
+4. Ensure all 546 tests pass (`dotnet test`)
 5. Open a Pull Request
 
 ---

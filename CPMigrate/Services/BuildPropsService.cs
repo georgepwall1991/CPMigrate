@@ -1,3 +1,4 @@
+using CPMigrate.Models;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
 
@@ -36,41 +37,9 @@ public class BuildPropsService
         _consoleService.Banner("Analyzing Project Properties...");
         var analysis = _analyzer.Analyze(projectPaths);
 
-        // Filter for properties that are present in at least the consensus threshold of projects with the SAME value
-        var threshold = Math.Ceiling(analysis.TotalProjects * ConsensusThresholdPercent);
-
-        // --- PROPERTIES ---
-        var propertyCandidates = analysis.PropertyOccurrences
-            .GroupBy(kv => kv.Value[0].Name)
-            .Select(g =>
-            {
-                var mostCommon = g.MaxBy(kv => kv.Value.Count);
-                return new
-                {
-                    Property = mostCommon!.Value[0],
-                    Count = mostCommon.Value.Count
-                };
-            })
-            .Where(x => x.Count >= threshold)
-            .OrderBy(x => x.Property.Name)
-            .ToList();
-
-        // --- ITEMS (Using, PackageReference) ---
-        // Key format: Type|Include|MetadataString
-        var itemCandidates = analysis.ItemOccurrences
-            .GroupBy(kv => $"{kv.Value[0].ItemType}|{kv.Value[0].Include}") // Group by Type+Include
-            .Select(g =>
-            {
-                var mostCommon = g.MaxBy(kv => kv.Value.Count); // Find specific metadata set with highest count
-                return new
-                {
-                    Item = mostCommon!.Value[0],
-                    Count = mostCommon.Value.Count
-                };
-            })
-            .Where(x => x.Count >= threshold)
-            .OrderBy(x => x.Item.ItemType).ThenBy(x => x.Item.Include)
-            .ToList();
+        var threshold = GetConsensusThreshold(analysis.TotalProjects);
+        var propertyCandidates = FindPropertyCandidates(analysis, threshold);
+        var itemCandidates = FindItemCandidates(analysis, threshold);
 
         if (propertyCandidates.Count == 0 && itemCandidates.Count == 0)
         {
@@ -78,28 +47,7 @@ public class BuildPropsService
             return ExitCodes.Success;
         }
 
-        if (propertyCandidates.Count > 0)
-        {
-            _consoleService.Info($"Found {propertyCandidates.Count} common properties (consensus > {ConsensusThresholdPercent:P0}):");
-            foreach (var candidate in propertyCandidates)
-            {
-                var percentage = (double)candidate.Count / analysis.TotalProjects * 100;
-                _consoleService.Dim($"  - {candidate.Property.Name} = {candidate.Property.Value} [green]({candidate.Count}/{analysis.TotalProjects}, {percentage:F0}%)[/]");
-            }
-        }
-
-        if (itemCandidates.Count > 0)
-        {
-            _consoleService.Info($"Found {itemCandidates.Count} common items (consensus > {ConsensusThresholdPercent:P0}):");
-            foreach (var candidate in itemCandidates)
-            {
-                var percentage = (double)candidate.Count / analysis.TotalProjects * 100;
-                var meta = candidate.Item.Metadata != null && candidate.Item.Metadata.Count > 0
-                    ? $" ({string.Join(", ", candidate.Item.Metadata.Select(m => $"{m.Key}={m.Value}"))})"
-                    : "";
-                _consoleService.Dim($"  - [{candidate.Item.ItemType}] {candidate.Item.Include}{meta} [green]({candidate.Count}/{analysis.TotalProjects}, {percentage:F0}%)[/]");
-            }
-        }
+        DisplayCandidates(propertyCandidates, itemCandidates, analysis.TotalProjects);
 
         if (options.DryRun)
         {
@@ -124,6 +72,67 @@ public class BuildPropsService
         _consoleService.Success($"Successfully unified {propertyCandidates.Count} properties and {itemCandidates.Count} items.");
         return ExitCodes.Success;
     }
+
+    private static double GetConsensusThreshold(int totalProjects) =>
+        Math.Ceiling(totalProjects * ConsensusThresholdPercent);
+
+    private static List<PropertyCandidate> FindPropertyCandidates(PropertyAnalysisResult analysis, double threshold)
+    {
+        return analysis.PropertyOccurrences
+            .GroupBy(kv => kv.Value[0].Name)
+            .Select(g =>
+            {
+                var mostCommon = g.MaxBy(kv => kv.Value.Count);
+                return new PropertyCandidate(mostCommon!.Value[0], mostCommon.Value.Count);
+            })
+            .Where(x => x.Count >= threshold)
+            .OrderBy(x => x.Property.Name)
+            .ToList();
+    }
+
+    private static List<ItemCandidate> FindItemCandidates(PropertyAnalysisResult analysis, double threshold)
+    {
+        return analysis.ItemOccurrences
+            .GroupBy(kv => $"{kv.Value[0].ItemType}|{kv.Value[0].Include}")
+            .Select(g =>
+            {
+                var mostCommon = g.MaxBy(kv => kv.Value.Count);
+                return new ItemCandidate(mostCommon!.Value[0], mostCommon.Value.Count);
+            })
+            .Where(x => x.Count >= threshold)
+            .OrderBy(x => x.Item.ItemType).ThenBy(x => x.Item.Include)
+            .ToList();
+    }
+
+    private void DisplayCandidates(List<PropertyCandidate> propertyCandidates, List<ItemCandidate> itemCandidates, int totalProjects)
+    {
+        if (propertyCandidates.Count > 0)
+        {
+            _consoleService.Info($"Found {propertyCandidates.Count} common properties (consensus > {ConsensusThresholdPercent:P0}):");
+            foreach (var candidate in propertyCandidates)
+            {
+                var percentage = (double)candidate.Count / totalProjects * 100;
+                _consoleService.Dim($"  - {candidate.Property.Name} = {candidate.Property.Value} [green]({candidate.Count}/{totalProjects}, {percentage:F0}%)[/]");
+            }
+        }
+
+        if (itemCandidates.Count > 0)
+        {
+            _consoleService.Info($"Found {itemCandidates.Count} common items (consensus > {ConsensusThresholdPercent:P0}):");
+            foreach (var candidate in itemCandidates)
+            {
+                var percentage = (double)candidate.Count / totalProjects * 100;
+                var meta = candidate.Item.Metadata != null && candidate.Item.Metadata.Count > 0
+                    ? $" ({string.Join(", ", candidate.Item.Metadata.Select(m => $"{m.Key}={m.Value}"))})"
+                    : "";
+                _consoleService.Dim($"  - [{candidate.Item.ItemType}] {candidate.Item.Include}{meta} [green]({candidate.Count}/{totalProjects}, {percentage:F0}%)[/]");
+            }
+        }
+    }
+
+    private sealed record PropertyCandidate(CPMigrate.Models.ProjectProperty Property, int Count);
+
+    private sealed record ItemCandidate(CPMigrate.Models.ProjectItem Item, int Count);
 
     private async Task CreateOrUpdateBuildProps(string path,
         List<CPMigrate.Models.ProjectProperty> properties,

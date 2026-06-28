@@ -95,6 +95,38 @@ public class VersionResolverTests
     }
 
     [Fact]
+    public void ResolveVersion_EmptyVersions_ReturnsFallback()
+    {
+        var result = _resolver.ResolveVersion(Array.Empty<string>(), ConflictStrategy.Highest);
+
+        result.Should().Be("0.0.0");
+    }
+
+    [Fact]
+    public void ResolveVersion_SingleVersion_ReturnsItAsIs()
+    {
+        var result = _resolver.ResolveVersion(new[] { "1.0.0-*" }, ConflictStrategy.Highest);
+
+        result.Should().Be("1.0.0-*");
+    }
+
+    [Fact]
+    public void ResolveVersion_AllUnparseable_ReturnsFirstOriginal()
+    {
+        var result = _resolver.ResolveVersion(new[] { "1.0.0-*", "2.0.0-*" }, ConflictStrategy.Highest);
+
+        result.Should().Be("1.0.0-*");
+    }
+
+    [Fact]
+    public void ResolveVersion_MixedParseableAndUnparseable_SkipsUnparseable()
+    {
+        var result = _resolver.ResolveVersion(new[] { "1.0.0-*", "2.0.0", "3.0.0" }, ConflictStrategy.Highest);
+
+        result.Should().Be("3.0.0");
+    }
+
+    [Fact]
     public void DetectConflicts_CaseInsensitivePackageNames_MergesCorrectly()
     {
         // Packages with different casing should be treated as the same package
