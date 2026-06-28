@@ -10,15 +10,26 @@ namespace CPMigrate.Services;
 /// </summary>
 public class InteractiveService : IInteractiveService
 {
+    private enum WizardAction
+    {
+        FastTrackMigrate,
+        MigrateCleanPath,
+        MigrateReviewConflicts,
+        Analyze,
+        SecurityAudit,
+        CustomMigration,
+        UpdatePackages,
+        UnifyProps,
+        Batch,
+        Rollback,
+        ManageBackups,
+        Exit,
+    }
+
     private readonly IConsoleService _console;
     private readonly EnvironmentAnalyzer _environmentAnalyzer;
     private readonly ISolutionDiscovery _solutionDiscovery;
 
-    private const string ModeMigrate = "🚀 Migrate to Central Package Management";
-    private const string ModeAnalyze = "🔍 Analyze packages for issues";
-    private const string ModeBatch = "📦 Batch migrate multiple solutions";
-    private const string ModeRollback = "↩️  Rollback a previous migration";
-    private const string ModeBackups = "💾 Manage backups (List/Prune)";
     private const string ModeUpdatePackages = "📡 Update NuGet packages to latest versions";
     private const string ModeUnifyProps = "🏗  Unify Directory.Build.props (Clean Architecture)";
 
@@ -60,7 +71,7 @@ public class InteractiveService : IInteractiveService
 
             // Step 1: Intelligent Quick Actions
             var action = AskQuickAction(context);
-            if (action == "Exit")
+            if (action == WizardAction.Exit)
             {
                 return null;
             }
@@ -121,51 +132,68 @@ public class InteractiveService : IInteractiveService
         }
     }
 
-    private string AskQuickAction(EnvironmentContext ctx)
+    private WizardAction AskQuickAction(EnvironmentContext ctx)
     {
         var migrationActions = new List<string>();
         var maintenanceActions = new List<string>();
         var systemActions = new List<string>();
+        var labelToAction = new Dictionary<string, WizardAction>(StringComparer.Ordinal);
+
+        void AddAction(List<string> bucket, string label, WizardAction action)
+        {
+            bucket.Add(label);
+            labelToAction[label] = action;
+        }
 
         // 1. Migration Actions
         if (!ctx.IsCpm && ctx.ProjectCount > 0)
         {
-            var label = ctx.ConflictCount > 0
-                ? $"🚀 Fast-Track Migration (Auto-resolve {ctx.ConflictCount} conflicts)"
-                : "⚡️ Migrate to Central Package Management (Clean Path)";
-            migrationActions.Add(label);
-
             if (ctx.ConflictCount > 0)
             {
-                migrationActions.Add("🛠  Migrate & Review Conflicts Individually");
+                AddAction(migrationActions,
+                    $"🚀 Fast-Track Migration (Auto-resolve {ctx.ConflictCount} conflicts)",
+                    WizardAction.FastTrackMigrate);
+                AddAction(migrationActions,
+                    "🛠  Migrate & Review Conflicts Individually",
+                    WizardAction.MigrateReviewConflicts);
+            }
+            else
+            {
+                AddAction(migrationActions,
+                    "⚡️ Migrate to Central Package Management (Clean Path)",
+                    WizardAction.MigrateCleanPath);
             }
         }
         else if (ctx.IsCpm)
         {
-            migrationActions.Add("🔍 Analyze current CPM setup for issues");
-            migrationActions.Add("🛡  Security Audit (Scan for vulnerabilities)");
+            AddAction(migrationActions,
+                "🔍 Analyze current CPM setup for issues",
+                WizardAction.Analyze);
+            AddAction(migrationActions,
+                "🛡  Security Audit (Scan for vulnerabilities)",
+                WizardAction.SecurityAudit);
         }
 
-        migrationActions.Add("⚙️  Custom Migration (Manual Setup)");
+        AddAction(migrationActions, "⚙️  Custom Migration (Manual Setup)", WizardAction.CustomMigration);
 
         // 2. Maintenance Actions
         if (ctx.IsCpm)
         {
-            maintenanceActions.Add(ModeUpdatePackages);
+            AddAction(maintenanceActions, ModeUpdatePackages, WizardAction.UpdatePackages);
         }
 
-        maintenanceActions.Add(ModeUnifyProps);
-        maintenanceActions.Add("📦 Batch migrate multiple solutions");
+        AddAction(maintenanceActions, ModeUnifyProps, WizardAction.UnifyProps);
+        AddAction(maintenanceActions, "📦 Batch migrate multiple solutions", WizardAction.Batch);
 
         if (ctx.Backups.Count > 0)
         {
-            maintenanceActions.Add("↩️  Rollback to a previous state");
+            AddAction(maintenanceActions, "↩️  Rollback to a previous state", WizardAction.Rollback);
         }
 
-        maintenanceActions.Add("💾 Manage Backups");
+        AddAction(maintenanceActions, "💾 Manage Backups", WizardAction.ManageBackups);
 
         // 3. System
-        systemActions.Add("Exit");
+        AddAction(systemActions, "Exit", WizardAction.Exit);
 
         // Build groups dictionary (all collections always have at least one item)
         var groups = new Dictionary<string, IEnumerable<string>>
@@ -175,7 +203,10 @@ public class InteractiveService : IInteractiveService
             ["SYSTEM"] = systemActions
         };
 
-        return _console.AskGroupedSelection("What's the mission?", groups);
+        var selection = _console.AskGroupedSelection("What's the mission?", groups);
+        return labelToAction.TryGetValue(selection, out var action)
+            ? action
+            : WizardAction.CustomMigration;
     }
 
     private string? AskSolutionPath()
@@ -237,21 +268,10 @@ public class InteractiveService : IInteractiveService
                 return Path.GetFullPath(path, _workingDirectory ?? Directory.GetCurrentDirectory());
             }
 
-            if (selection.StartsWith("🎯 Use current"))
-            {
-                return rootPath;
-            }
-
             if (selection == "⬅️  Go up to parent directory")
             {
                 rootPath = parent!.FullName;
                 continue;
-            }
-
-            if (selection.StartsWith("🟦 Solution:") || selection.StartsWith("📗 Project:"))
-            {
-                // For a specific file, we usually want the directory it's in
-                return rootPath;
             }
 
             if (selection.StartsWith("📁 "))
@@ -261,7 +281,9 @@ public class InteractiveService : IInteractiveService
                 continue;
             }
 
-            return null;
+            // Remaining choices ("🎯 Use current directory", "🟦 Solution:", "📗 Project:")
+            // all resolve to the current rootPath being browsed.
+            return rootPath;
         }
     }
 
@@ -457,12 +479,12 @@ public class InteractiveService : IInteractiveService
         options.BackupDir = BrowseForPath(_workingDirectory ?? Directory.GetCurrentDirectory(), "Select the directory containing .cpmigrate_backup") ?? ".";
     }
 
-    private void ShowSummary(Options options, string mode)
+    private void ShowSummary(Options options, WizardAction action)
     {
         _console.WriteLine();
 
-        var modeLabel = GetModeLabel(mode, options);
-        var grid = CreateSummaryGrid(options, mode);
+        var modeLabel = GetModeLabel(action, options);
+        var grid = CreateSummaryGrid(options, action);
 
         var panel = new Panel(grid)
         {
@@ -476,30 +498,30 @@ public class InteractiveService : IInteractiveService
         _console.WriteLine();
     }
 
-    private static string GetModeLabel(string mode, Options options)
+    private static string GetModeLabel(WizardAction action, Options options)
     {
-        return mode switch
+        return action switch
         {
-            ModeMigrate => "MIGRATE",
-            ModeAnalyze => "ANALYZE",
-            ModeBatch => "BATCH MIGRATE",
-            ModeRollback => "ROLLBACK",
-            ModeBackups when options.PruneAll => "PRUNE ALL",
-            ModeBackups when options.PruneBackups => "PRUNE",
-            _ when options.UpdatePackages => "UPDATE PACKAGES",
-            _ when mode.Contains("Unify") || options.UnifyProps => "UNIFY PROPS",
+            WizardAction.FastTrackMigrate or WizardAction.MigrateCleanPath or WizardAction.MigrateReviewConflicts or WizardAction.CustomMigration => "MIGRATE",
+            WizardAction.Analyze or WizardAction.SecurityAudit => "ANALYZE",
+            WizardAction.Batch => "BATCH MIGRATE",
+            WizardAction.Rollback => "ROLLBACK",
+            WizardAction.ManageBackups when options.PruneAll => "PRUNE ALL",
+            WizardAction.ManageBackups when options.PruneBackups => "PRUNE",
+            WizardAction.UpdatePackages => "UPDATE PACKAGES",
+            WizardAction.UnifyProps => "UNIFY PROPS",
             _ => "UNKNOWN"
         };
     }
 
-    private static Grid CreateSummaryGrid(Options options, string mode)
+    private static Grid CreateSummaryGrid(Options options, WizardAction action)
     {
         var grid = new Grid();
         grid.AddColumn();
         grid.AddColumn();
 
         AddPathRow(grid, options);
-        AddModeSpecificRows(grid, options, mode);
+        AddModeSpecificRows(grid, options, action);
 
         return grid;
     }
@@ -520,31 +542,33 @@ public class InteractiveService : IInteractiveService
         }
     }
 
-    private static void AddModeSpecificRows(Grid grid, Options options, string mode)
+    private static void AddModeSpecificRows(Grid grid, Options options, WizardAction action)
     {
-        if (mode == ModeMigrate || mode == ModeBatch)
+        switch (action)
         {
-            AddMigrationRows(grid, options);
-        }
-        else if (mode == ModeAnalyze || mode.Contains("Analyze"))
-        {
-            AddAnalyzeRows(grid, options);
-        }
-        else if (mode == ModeRollback)
-        {
-            AddRollbackRows(grid, options);
-        }
-        else if (mode == ModeBackups)
-        {
-            AddBackupRows(grid, options);
-        }
-        else if (options.UpdatePackages)
-        {
-            AddUpdatePackagesRows(grid, options);
-        }
-        else if (options.UnifyProps)
-        {
-            AddUnifyPropsRows(grid);
+            case WizardAction.FastTrackMigrate:
+            case WizardAction.MigrateCleanPath:
+            case WizardAction.MigrateReviewConflicts:
+            case WizardAction.CustomMigration:
+            case WizardAction.Batch:
+                AddMigrationRows(grid, options);
+                break;
+            case WizardAction.Analyze:
+            case WizardAction.SecurityAudit:
+                AddAnalyzeRows(grid, options);
+                break;
+            case WizardAction.Rollback:
+                AddRollbackRows(grid, options);
+                break;
+            case WizardAction.ManageBackups:
+                AddBackupRows(grid, options);
+                break;
+            case WizardAction.UpdatePackages:
+                AddUpdatePackagesRows(grid, options);
+                break;
+            case WizardAction.UnifyProps:
+                AddUnifyPropsRows(grid);
+                break;
         }
     }
 
@@ -625,63 +649,64 @@ public class InteractiveService : IInteractiveService
     /// Configures options based on the selected action and determines if solution path discovery is needed.
     /// </summary>
     private (bool NeedsPath, bool EarlyReturn) ConfigureActionOptions(
-        string action,
+        WizardAction action,
         EnvironmentContext context,
         Options options)
     {
-        // Fast-track migration with intelligent defaults
-        if (action.StartsWith("🚀 Fast-Track") || action.StartsWith("⚡️ Migrate"))
+        switch (action)
         {
-            options.SolutionFileDir = context.Solutions.FirstOrDefault() ?? context.Directory;
-            options.OutputDir = options.SolutionFileDir;
-            options.ConflictStrategy = ConflictStrategy.Highest;
-            options.BackupDir = ".";
+            // Fast-track migrations: pre-configure sensible defaults, no path prompt
+            case WizardAction.FastTrackMigrate:
+            case WizardAction.MigrateCleanPath:
+            case WizardAction.MigrateReviewConflicts:
+                options.SolutionFileDir = context.Solutions.FirstOrDefault() ?? context.Directory;
+                options.OutputDir = options.SolutionFileDir;
+                options.ConflictStrategy = ConflictStrategy.Highest;
+                options.BackupDir = ".";
 
-            if (action.Contains("Review Conflicts"))
-            {
-                options.InteractiveConflicts = true;
-            }
+                if (action == WizardAction.MigrateReviewConflicts)
+                {
+                    options.InteractiveConflicts = true;
+                }
 
-            _console.WriteLine();
-            _console.WriteMissionStatus(0);
-            return (false, false);
-        }
+                _console.WriteLine();
+                _console.WriteMissionStatus(0);
+                return (false, false);
 
-        // Map actions to option flags
-        if (action.Contains("Analyze"))
-        {
-            options.Analyze = true;
-        }
-        else if (action.Contains("Security Audit"))
-        {
-            options.Analyze = true;
-            options.AuditSecurity = true;
-            options.IncludeTransitive = true;
-        }
-        else if (action.Contains("Rollback"))
-        {
-            options.Rollback = true;
-        }
-        else if (action.Contains("Batch"))
-        {
-            AskBatchOptions(options);
-            return (false, true); // Early return
-        }
-        else if (action.Contains("Manage Backups"))
-        {
-            AskBackupManagementOptions(options);
-            return (false, true); // Early return
-        }
-        else if (action.Contains("Update NuGet packages"))
-        {
-            options.UpdatePackages = true;
-        }
-        else if (action.Contains("Unify Directory.Build.props"))
-        {
-            options.UnifyProps = true;
-        }
+            case WizardAction.Analyze:
+                options.Analyze = true;
+                return (true, false);
 
-        return (true, false); // Needs path discovery
+            case WizardAction.SecurityAudit:
+                options.Analyze = true;
+                options.AuditSecurity = true;
+                options.IncludeTransitive = true;
+                return (true, false);
+
+            case WizardAction.Rollback:
+                options.Rollback = true;
+                return (true, false);
+
+            case WizardAction.Batch:
+                AskBatchOptions(options);
+                return (false, true);
+
+            case WizardAction.ManageBackups:
+                AskBackupManagementOptions(options);
+                return (false, true);
+
+            case WizardAction.UpdatePackages:
+                options.UpdatePackages = true;
+                return (true, false);
+
+            case WizardAction.UnifyProps:
+                options.UnifyProps = true;
+                return (true, false);
+
+            // CustomMigration and any unknown selection: needs path discovery
+            default:
+                return (true, false);
+        }
     }
 
     private static string EscapeMarkup(string text) => Markup.Escape(text);
