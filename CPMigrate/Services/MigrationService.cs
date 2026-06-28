@@ -18,10 +18,12 @@ public class MigrationService
     private readonly PropsGenerator _propsGenerator;
     private readonly IBackupManager _backupManager;
     private readonly IConsoleService _consoleService;
-    private readonly IAnalysisService _analysisService;
-    private readonly IFixService _fixService;
     private readonly MigrationValidator _validator;
     private readonly MigrationDisplay _display;
+    private readonly BackupCoordinator _backupCoordinator;
+    private readonly RollbackHandler _rollbackHandler;
+    private readonly ListBackupsHandler _listBackupsHandler;
+    private readonly AnalysisHandler _analysisHandler;
     private readonly ILogger<MigrationService> _logger;
     private readonly bool _quietMode;
 
@@ -46,10 +48,20 @@ public class MigrationService
         _projectAnalyzer = projectAnalyzer ?? new ProjectAnalyzer(consoleService);
         _propsGenerator = propsGenerator ?? new PropsGenerator(_versionResolver);
         _backupManager = backupManager ?? new BackupManager();
-        _analysisService = analysisService ?? CreateDefaultAnalysisService(consoleService);
-        _fixService = fixService ?? CreateDefaultFixService(consoleService, _versionResolver);
+        var resolvedAnalysisService = analysisService ?? CreateDefaultAnalysisService(consoleService);
+        var resolvedFixService = fixService ?? CreateDefaultFixService(consoleService, _versionResolver);
         _validator = new MigrationValidator(consoleService);
         _display = new MigrationDisplay(consoleService);
+        _backupCoordinator = new BackupCoordinator(_backupManager, consoleService, quietMode);
+        _rollbackHandler = new RollbackHandler(consoleService, quietMode);
+        _listBackupsHandler = new ListBackupsHandler(_backupManager, consoleService, quietMode);
+        _analysisHandler = new AnalysisHandler(
+            _projectAnalyzer,
+            resolvedAnalysisService,
+            resolvedFixService,
+            consoleService,
+            quietMode,
+            DiscoverProjectsWithSpinnerAsync);
         _logger = logger ?? NullLogger<MigrationService>.Instance;
         _quietMode = quietMode;
     }
@@ -79,17 +91,17 @@ public class MigrationService
 
         if (options.Rollback)
         {
-            return await ExecuteRollbackAsync(options);
+            return await _rollbackHandler.ExecuteAsync(options);
         }
 
         if (options.ListBackups)
         {
-            return await ExecuteListBackupsAsync(options);
+            return await _listBackupsHandler.ExecuteAsync(options);
         }
 
         if (options.Analyze)
         {
-            return await ExecuteAnalysisAsync(options);
+            return await _analysisHandler.ExecuteAsync(options);
         }
 
         return await ExecuteMigrationAsync(options);
@@ -319,39 +331,8 @@ public class MigrationService
     /// <summary>
     /// Sets up the backup directory if needed.
     /// </summary>
-    private string? SetupBackupDirectory(Options options)
-    {
-        if (options.DryRun)
-        {
-            if (!options.NoBackup && !_quietMode)
-            {
-                var potentialBackupPath = Path.Combine(
-                    Path.GetFullPath(string.IsNullOrEmpty(options.BackupDir) ? "." : options.BackupDir),
-                    ".cpmigrate_backup");
-                _consoleService.DryRun($"Would create backup directory: {potentialBackupPath}");
-            }
-
-            if (!_quietMode)
-            {
-                _consoleService.WriteLine();
-            }
-
-            return null;
-        }
-
-        var backupPath = BackupManager.CreateBackupDirectory(options);
-        if (!string.IsNullOrEmpty(backupPath) && !_quietMode)
-        {
-            _consoleService.WriteMarkup($"[dim]:file_folder: Backup directory: {Markup.Escape(backupPath)}[/]\n");
-        }
-
-        if (!_quietMode)
-        {
-            _consoleService.WriteLine();
-        }
-
-        return backupPath;
-    }
+    private string? SetupBackupDirectory(Options options) =>
+        _backupCoordinator.SetupBackupDirectory(MigrationRequest.FromOptions(options));
 
     /// <summary>
     /// Handles version conflicts and returns an error result if strategy is Fail.
@@ -527,38 +508,20 @@ public class MigrationService
         string? backupPath,
         string propsFilePath,
         bool propsFileExisted,
-        string? backupTimestamp)
-    {
-        if (options.DryRun || options.NoBackup || backupEntries.Count == 0 || string.IsNullOrEmpty(backupPath))
-        {
-            return;
-        }
-
-        var manifestTimestamp = backupTimestamp ?? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-        var manifest = new BackupManifest
-        {
-            Timestamp = manifestTimestamp,
-            PropsFilePath = propsFilePath,
-            PropsFileExisted = propsFileExisted,
-            Backups = backupEntries
-        };
-        await BackupManager.WriteManifestAsync(backupPath, manifest);
-    }
+        string? backupTimestamp) =>
+        await _backupCoordinator.WriteManifestAsync(
+            MigrationRequest.FromOptions(options),
+            backupEntries,
+            backupPath,
+            propsFilePath,
+            propsFileExisted,
+            backupTimestamp);
 
     /// <summary>
     /// Manages .gitignore for the backup directory.
     /// </summary>
-    private async Task ManageGitIgnoreAsync(Options options, string? backupPath)
-    {
-        if (!options.DryRun)
-        {
-            await BackupManager.ManageGitIgnore(options, backupPath);
-        }
-        else if (options.AddBackupToGitignore && !options.NoBackup && !_quietMode)
-        {
-            _consoleService.DryRun("Would add backup directory to .gitignore");
-        }
-    }
+    private async Task ManageGitIgnoreAsync(Options options, string? backupPath) =>
+        await _backupCoordinator.ManageGitIgnoreAsync(MigrationRequest.FromOptions(options), backupPath);
 
 
     private (string BasePath, List<string> ProjectPaths) DiscoverProjects(Options options)
@@ -705,707 +668,6 @@ public class MigrationService
     }
 
     /// <summary>
-    /// Executes rollback to restore project files from backup.
-    /// </summary>
-    /// <param name="options">Options containing backup directory path.</param>
-    /// <returns>Migration result with exit code.</returns>
-    private async Task<MigrationResult> ExecuteRollbackAsync(Options options)
-    {
-        if (!_quietMode)
-        {
-            _consoleService.Banner("ROLLBACK MODE - Restoring from backup");
-            _consoleService.WriteLine();
-        }
-
-        var backupPath = BackupManager.GetBackupDirectoryPath(options);
-        var validationError = ValidateRollbackPrerequisites(backupPath);
-        if (validationError != null)
-        {
-            return validationError;
-        }
-
-        var manifest = await BackupManager.ReadManifestAsync(backupPath);
-        if (manifest == null || manifest.Backups.Count == 0)
-        {
-            return HandleEmptyOrMissingManifest(manifest);
-        }
-
-        if (!ShowPreviewAndConfirm(options, manifest))
-        {
-            _consoleService.Info("Rollback cancelled.");
-            return new MigrationResult { ExitCode = ExitCodes.Success };
-        }
-
-        _consoleService.WriteLine();
-
-        var (restoredCount, failedCount) = await RestoreFilesWithProgress(backupPath, manifest);
-        if (!_quietMode)
-        {
-            _consoleService.WriteLine();
-        }
-
-        HandlePostRestoreCleanup(backupPath, manifest, failedCount);
-        ShowRollbackSummary(restoredCount, failedCount);
-
-        return new MigrationResult
-        {
-            ProjectsProcessed = restoredCount,
-            ExitCode = failedCount == 0 ? ExitCodes.Success : ExitCodes.FileOperationError
-        };
-    }
-
-    private MigrationResult? ValidateRollbackPrerequisites(string backupPath)
-    {
-        if (!Directory.Exists(backupPath))
-        {
-            _consoleService.Error($"No backup directory found at: {backupPath}");
-            _consoleService.WriteMarkup("[dim]Run a migration first to create backups.[/]\n");
-            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
-        }
-
-        return null;
-    }
-
-    private MigrationResult HandleEmptyOrMissingManifest(BackupManifest? manifest)
-    {
-        if (manifest == null)
-        {
-            _consoleService.Error("No backup manifest found or manifest is corrupted.");
-            _consoleService.WriteMarkup("[dim]Cannot determine which files to restore.[/]\n");
-            return new MigrationResult { ExitCode = ExitCodes.FileOperationError };
-        }
-
-        _consoleService.Warning("No backup entries found in manifest - nothing to restore.");
-        _consoleService.Dim("The backup manifest exists but contains no files. This may indicate:");
-        _consoleService.Dim("  - A previous rollback already completed");
-        _consoleService.Dim("  - The migration was run with --no-backup");
-        return new MigrationResult { ExitCode = ExitCodes.Success };
-    }
-
-    private bool ShowPreviewAndConfirm(Options options, BackupManifest manifest)
-    {
-        if (options.Force)
-        {
-            return true;
-        }
-
-        if (_quietMode)
-        {
-            // In strict JSON mode we never auto-confirm destructive operations.
-            if (options.Output == OutputFormat.Json)
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        var filesToRestore = manifest.Backups.Select(b => b.OriginalPath).ToList();
-        _consoleService.WriteRollbackPreview(filesToRestore, manifest.PropsFilePath);
-        return _consoleService.AskConfirmation("Proceed with rollback?");
-    }
-
-    private async Task<(int RestoredCount, int FailedCount)> RestoreFilesWithProgress(
-        string backupPath,
-        BackupManifest manifest)
-    {
-        var restoredCount = 0;
-        var failedCount = 0;
-
-        if (_quietMode)
-        {
-            foreach (var entry in manifest.Backups)
-            {
-                var fileName = Path.GetFileName(entry.OriginalPath);
-                if (TryRestoreFile(backupPath, entry, fileName))
-                {
-                    restoredCount++;
-                }
-                else
-                {
-                    failedCount++;
-                }
-            }
-
-            return (restoredCount, failedCount);
-        }
-
-        await AnsiConsole.Progress()
-            .AutoRefresh(true)
-            .AutoClear(false)
-            .HideCompleted(false)
-            .Columns(
-                new TaskDescriptionColumn(),
-                new ProgressBarColumn(),
-                new PercentageColumn(),
-                new SpinnerColumn())
-            .StartAsync(async ctx =>
-            {
-                var task = ctx.AddTask("[cyan]Restoring files[/]", maxValue: manifest.Backups.Count);
-
-                foreach (var entry in manifest.Backups)
-                {
-                    var fileName = Path.GetFileName(entry.OriginalPath);
-                    task.Description = $"[cyan]Restoring[/] [white]{Markup.Escape(fileName)}[/]";
-
-                    if (TryRestoreFile(backupPath, entry, fileName))
-                    {
-                        restoredCount++;
-                    }
-                    else
-                    {
-                        failedCount++;
-                    }
-
-                    task.Increment(1);
-                    await Task.Delay(50);
-                }
-
-                task.Description = "[green]Restore complete[/]";
-            });
-
-        return (restoredCount, failedCount);
-    }
-
-    private bool TryRestoreFile(string backupPath, BackupEntry entry, string fileName)
-    {
-        try
-        {
-            BackupManager.RestoreFile(backupPath, entry);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _consoleService.Error($"Failed to restore {fileName}: {ex.Message}");
-            return false;
-        }
-    }
-
-    private void HandlePostRestoreCleanup(string backupPath, BackupManifest manifest, int failedCount)
-    {
-        if (failedCount == 0)
-        {
-            HandleSuccessfulRestore(backupPath, manifest);
-        }
-        else
-        {
-            HandleFailedRestore(manifest);
-        }
-    }
-
-    private void HandleSuccessfulRestore(string backupPath, BackupManifest manifest)
-    {
-        DeletePropsFileIfNeeded(manifest.PropsFilePath, manifest.PropsFileExisted);
-        CleanupBackupFiles(backupPath, manifest);
-    }
-
-    private void DeletePropsFileIfNeeded(string propsFilePath, bool propsFileExisted)
-    {
-        if (string.IsNullOrEmpty(propsFilePath))
-        {
-            return;
-        }
-
-        if (!propsFileExisted && File.Exists(propsFilePath))
-        {
-            TryDeletePropsFile(propsFilePath);
-        }
-        else if (propsFileExisted)
-        {
-            _consoleService.Dim("Preserved existing Directory.Packages.props.");
-        }
-    }
-
-    private void TryDeletePropsFile(string propsFilePath)
-    {
-        try
-        {
-            File.Delete(propsFilePath);
-            _consoleService.Success($"Deleted: {propsFilePath}");
-        }
-        catch (Exception ex)
-        {
-            _consoleService.Warning($"Could not delete props file: {ex.Message}");
-        }
-    }
-
-    private void CleanupBackupFiles(string backupPath, BackupManifest manifest)
-    {
-        if (string.IsNullOrEmpty(backupPath))
-        {
-            return;
-        }
-
-        var cleanupErrors = BackupManager.CleanupBackups(backupPath, manifest);
-
-        if (cleanupErrors.Count == 0)
-        {
-            _consoleService.Dim("Cleaned up backup files.");
-        }
-        else
-        {
-            ShowCleanupErrors(cleanupErrors);
-        }
-    }
-
-    private void ShowCleanupErrors(List<string> cleanupErrors)
-    {
-        _consoleService.Warning($"Cleanup completed with {cleanupErrors.Count} error(s):");
-        foreach (var error in cleanupErrors)
-        {
-            _consoleService.Dim($"  - {error}");
-        }
-    }
-
-    private void HandleFailedRestore(BackupManifest manifest)
-    {
-        _consoleService.Warning(manifest.PropsFileExisted
-            ? "Existing props file retained due to restore failures."
-            : "Props file NOT deleted due to restore failures.");
-        _consoleService.Dim("Backup files retained for manual recovery.");
-    }
-
-    private void ShowRollbackSummary(int restoredCount, int failedCount)
-    {
-        if (_quietMode)
-        {
-            return;
-        }
-
-        _consoleService.WriteLine();
-
-        if (failedCount == 0)
-        {
-            _consoleService.Success($"Rollback complete! Restored {restoredCount} file(s).");
-        }
-        else
-        {
-            _consoleService.Warning($"Rollback completed with errors. Restored: {restoredCount}, Failed: {failedCount}");
-            _consoleService.Dim("Manual intervention may be required. Check backup directory for original files.");
-        }
-    }
-
-    /// <summary>
-    /// Lists all available backups with timestamps and file counts.
-    /// </summary>
-    /// <param name="options">Options containing backup directory path.</param>
-    /// <returns>Migration result with exit code.</returns>
-    private async Task<MigrationResult> ExecuteListBackupsAsync(Options options)
-    {
-        if (!_quietMode)
-        {
-            _consoleService.Banner("BACKUP HISTORY");
-            _consoleService.WriteLine();
-        }
-
-        var backupPath = Path.GetFullPath(options.BackupDir);
-
-        if (!Directory.Exists(backupPath))
-        {
-            _consoleService.Warning($"Backup directory not found: {backupPath}");
-            return new MigrationResult { ExitCode = ExitCodes.Success };
-        }
-
-        var backups = _backupManager.GetBackupHistory(backupPath);
-
-        if (backups.Count == 0)
-        {
-            _consoleService.Info("No backups found.");
-            return new MigrationResult { ExitCode = ExitCodes.Success };
-        }
-
-        // Display backup table
-        var table = new Table()
-            .Border(TableBorder.Rounded)
-            .AddColumn(new TableColumn("[cyan]#[/]").Centered())
-            .AddColumn(new TableColumn("[cyan]Timestamp[/]"))
-            .AddColumn(new TableColumn("[cyan]Date/Time[/]"))
-            .AddColumn(new TableColumn("[cyan]Files[/]").RightAligned())
-            .AddColumn(new TableColumn("[cyan]Size[/]").RightAligned());
-
-        var (totalSize, totalFiles) = PopulateBackupTable(table, backups);
-
-        AnsiConsole.Write(table);
-        if (!_quietMode)
-        {
-            _consoleService.WriteLine();
-        }
-
-        _consoleService.Info($"Total: {backups.Count} backup set(s), {totalFiles} file(s), {FormatFileSize(totalSize)}");
-        _consoleService.Dim($"Backup directory: {backupPath}");
-
-        return new MigrationResult { ExitCode = ExitCodes.Success };
-    }
-
-    private static (long TotalSize, int TotalFiles) PopulateBackupTable(Table table, List<BackupSetInfo> backups)
-    {
-        var index = 1;
-        long totalSize = 0;
-        int totalFiles = 0;
-
-        foreach (var backup in backups)
-        {
-            var displayTime = ParseBackupTimestamp(backup.Timestamp);
-            var backupSize = CalculateBackupSize(backup.Files);
-            totalSize += backupSize;
-            totalFiles += backup.Files.Count;
-
-            AddBackupTableRow(table, index, backup, displayTime, backupSize);
-            index++;
-        }
-
-        return (totalSize, totalFiles);
-    }
-
-    private static string ParseBackupTimestamp(string timestamp)
-    {
-        if (DateTime.TryParseExact(timestamp, "yyyyMMdd_HHmmss",
-            CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
-        {
-            return dt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-        }
-
-        if (DateTime.TryParse(timestamp, CultureInfo.InvariantCulture, DateTimeStyles.None, out dt))
-        {
-            return dt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-        }
-
-        return timestamp;
-    }
-
-    private static long CalculateBackupSize(List<string> files)
-    {
-        return files.Sum(f =>
-        {
-            try
-            {
-                return File.Exists(f) ? new FileInfo(f).Length : 0;
-            }
-            catch
-            {
-                return 0;
-            }
-        });
-    }
-
-    private static void AddBackupTableRow(Table table, int index, BackupSetInfo backup,
-        string displayTime, long backupSize)
-    {
-        table.AddRow(
-            $"[cyan]{index}[/]",
-            $"[dim]{backup.Timestamp}[/]",
-            $"[white]{displayTime}[/]",
-            $"[yellow]{backup.Files.Count}[/]",
-            $"[green]{FormatFileSize(backupSize)}[/]"
-        );
-    }
-
-    private static string FormatFileSize(long bytes)
-    {
-        if (bytes < 1024)
-        {
-            return $"{bytes} B";
-        }
-
-        if (bytes < 1024 * 1024)
-        {
-            return $"{bytes / 1024.0:F1} KB";
-        }
-
-        if (bytes < 1024 * 1024 * 1024)
-        {
-            return $"{bytes / (1024.0 * 1024):F1} MB";
-        }
-
-        return $"{bytes / (1024.0 * 1024 * 1024):F1} GB";
-    }
-
-    /// <summary>
-    /// Executes package analysis without modifying files.
-    /// </summary>
-    /// <param name="options">Options containing project/solution path.</param>
-    /// <returns>Migration result with exit code based on issues found.</returns>
-    private async Task<MigrationResult> ExecuteAnalysisAsync(Options options)
-    {
-        if (!_quietMode)
-        {
-            _consoleService.Banner("ANALYZE MODE - Scanning for package issues");
-            _consoleService.WriteLine();
-        }
-
-        var (_, projectPaths) = await DiscoverProjectsWithSpinnerAsync(options);
-        if (projectPaths.Count == 0)
-        {
-            _consoleService.Error("No projects found to analyze.");
-            return new MigrationResult { ExitCode = ExitCodes.NoProjectsFound };
-        }
-
-        var (packageInfo, scanFailures) = await PerformAnalysisScanAsync(options, projectPaths);
-
-        if (!_quietMode)
-        {
-            _consoleService.WriteLine();
-        }
-        ReportScanFailures(scanFailures, projectPaths.Count);
-
-        // Filter out bad data if high failure rate? 
-        // Current logic keeps going even with failures, which is fine.
-
-        if (!_quietMode)
-        {
-            _consoleService.WriteAnalysisHeader(packageInfo.ProjectCount, packageInfo.TotalReferences, packageInfo.VulnerabilityCount);
-        }
-
-        var report = _analysisService.Analyze(packageInfo);
-
-        if (!_quietMode)
-        {
-            foreach (var result in report.Results)
-            {
-                _consoleService.WriteAnalyzerResult(result);
-            }
-        }
-
-        if (!_quietMode)
-        {
-            _consoleService.WriteAnalysisSummary(report);
-        }
-
-        return await ApplyAnalysisFixesIfNeededAsync(options, report, packageInfo);
-    }
-
-    private async Task<(ProjectPackageInfo PackageInfo, int ScanFailures)> PerformAnalysisScanAsync(
-        Options options,
-        List<string> projectPaths)
-    {
-        var allReferences = new List<PackageReference>();
-        var allVulnerabilities = new List<VulnerabilityInfo>();
-        var allOutdatedPackages = new List<OutdatedPackageInfo>();
-        var allDeprecatedPackages = new List<DeprecatedPackageInfo>();
-        var scanFailures = 0;
-
-        if (_quietMode)
-        {
-            foreach (var projectPath in projectPaths)
-            {
-                var success = await ScanSingleProjectForAnalysisAsync(
-                    options,
-                    projectPath,
-                    null,
-                    allReferences,
-                    allVulnerabilities,
-                    allOutdatedPackages,
-                    allDeprecatedPackages);
-
-                if (!success)
-                {
-                    scanFailures++;
-                }
-            }
-        }
-        else
-        {
-            await AnsiConsole.Progress()
-                .AutoRefresh(true)
-                .AutoClear(false)
-                .HideCompleted(false)
-                .Columns(
-                    new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
-                    new PercentageColumn(),
-                    new SpinnerColumn())
-                .StartAsync(async ctx =>
-                {
-                    var task = ctx.AddTask("[cyan]Scanning packages[/]", maxValue: projectPaths.Count);
-
-                    foreach (var projectPath in projectPaths)
-                    {
-                        var projectName = Path.GetFileName(projectPath);
-                        task.Description = $"[cyan]Scanning[/] [white]{Markup.Escape(projectName)}[/]";
-
-                        var success = await ScanSingleProjectForAnalysisAsync(
-                            options,
-                            projectPath,
-                            task,
-                            allReferences,
-                            allVulnerabilities,
-                            allOutdatedPackages,
-                            allDeprecatedPackages);
-
-                        if (!success)
-                        {
-                            scanFailures++;
-                        }
-
-                        task.Increment(1);
-                        await Task.Delay(30);
-                    }
-
-                    task.Description = "[green]Scan complete[/]";
-                });
-        }
-
-        return (new ProjectPackageInfo(allReferences, allVulnerabilities, allOutdatedPackages, allDeprecatedPackages), scanFailures);
-    }
-
-    private async Task<bool> ScanSingleProjectForAnalysisAsync(
-        Options options,
-        string projectPath,
-        ProgressTask? task,
-        List<PackageReference> allReferences,
-        List<VulnerabilityInfo> allVulnerabilities,
-        List<OutdatedPackageInfo> allOutdatedPackages,
-        List<DeprecatedPackageInfo> allDeprecatedPackages)
-    {
-        var (references, success) = await ScanProjectReferencesAsync(options, projectPath);
-        allReferences.AddRange(references);
-        CacheScanResults(projectPath, references);
-
-        if (options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated)
-        {
-            await RunDeepScansAsync(options, projectPath, task, allVulnerabilities, allOutdatedPackages, allDeprecatedPackages);
-        }
-
-        return success;
-    }
-
-    private async Task<(List<PackageReference> References, bool Success)> ScanProjectReferencesAsync(Options options, string projectPath)
-    {
-        var (references, success) = await _projectAnalyzer.ScanResolvedPackagesAsync(projectPath, options.IncludeTransitive);
-        if (!success && !options.IncludeTransitive)
-        {
-            (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
-        }
-
-        return (references, success);
-    }
-
-    private void CacheScanResults(string projectPath, List<PackageReference> references)
-    {
-        _cachedProjectScans ??= new Dictionary<string, List<PackageReference>>(StringComparer.OrdinalIgnoreCase);
-        _cachedProjectScans[projectPath] = references;
-    }
-
-    private async Task RunDeepScansAsync(
-        Options options,
-        string projectPath,
-        ProgressTask? task,
-        List<VulnerabilityInfo> allVulnerabilities,
-        List<OutdatedPackageInfo> allOutdatedPackages,
-        List<DeprecatedPackageInfo> allDeprecatedPackages)
-    {
-        var projectName = Path.GetFileName(projectPath);
-        if (task != null)
-        {
-            task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
-        }
-
-        if (options.AuditSecurity)
-        {
-            await ScanVulnerabilitiesAsync(projectPath, allVulnerabilities);
-        }
-
-        if (options.AnalyzeOutdated)
-        {
-            await ScanOutdatedPackagesAsync(options, projectPath, allOutdatedPackages);
-        }
-
-        if (options.AnalyzeDeprecated)
-        {
-            await ScanDeprecatedPackagesAsync(options, projectPath, allDeprecatedPackages);
-        }
-    }
-
-    private async Task ScanVulnerabilitiesAsync(string projectPath, List<VulnerabilityInfo> allVulnerabilities)
-    {
-        var (vulnerabilities, auditSuccess) = await _projectAnalyzer.ScanVulnerabilitiesAsync(projectPath);
-        if (auditSuccess)
-        {
-            allVulnerabilities.AddRange(vulnerabilities);
-        }
-    }
-
-    private async Task ScanOutdatedPackagesAsync(Options options, string projectPath, List<OutdatedPackageInfo> allOutdatedPackages)
-    {
-        var (outdated, outdatedSuccess) = await _projectAnalyzer.ScanOutdatedPackagesAsync(
-            projectPath,
-            options.IncludeTransitive,
-            options.IncludePrerelease);
-        if (outdatedSuccess)
-        {
-            allOutdatedPackages.AddRange(outdated);
-        }
-    }
-
-    private async Task ScanDeprecatedPackagesAsync(Options options, string projectPath, List<DeprecatedPackageInfo> allDeprecatedPackages)
-    {
-        var (deprecated, deprecatedSuccess) = await _projectAnalyzer.ScanDeprecatedPackagesAsync(
-            projectPath,
-            options.IncludeTransitive,
-            options.IncludePrerelease);
-        if (deprecatedSuccess)
-        {
-            allDeprecatedPackages.AddRange(deprecated);
-        }
-    }
-
-    private void ReportScanFailures(int scanFailures, int totalProjects)
-    {
-        if (scanFailures > 0)
-        {
-            var failureRate = (double)scanFailures / totalProjects * 100;
-            _consoleService.Warning($"{scanFailures} of {totalProjects} projects ({failureRate:F0}%) failed to scan.");
-            if (failureRate > 50)
-            {
-                _consoleService.Warning("High failure rate detected - analysis results may be incomplete.");
-            }
-        }
-    }
-
-    private async Task<MigrationResult> ApplyAnalysisFixesIfNeededAsync(
-        Options options,
-        AnalysisReport report,
-        ProjectPackageInfo packageInfo)
-    {
-        FixReport? fixReport = null;
-
-        if ((options.Fix || options.FixDryRun) && report.HasIssues)
-        {
-            if (!_quietMode)
-            {
-                _consoleService.WriteLine();
-                _consoleService.Banner(options.FixDryRun ? "FIX DRY RUN - Showing proposed changes" : "APPLYING FIXES");
-                _consoleService.WriteLine();
-            }
-
-            fixReport = _fixService.ApplyFixes(report, packageInfo, options, options.FixDryRun);
-
-            if (fixReport.HasChanges && !options.FixDryRun)
-            {
-                return new MigrationResult
-                {
-                    ProjectsProcessed = packageInfo.ProjectCount,
-                    PackagesCentralized = packageInfo.TotalReferences,
-                    AnalysisReport = report,
-                    FixReport = fixReport,
-                    ExitCode = fixReport.GetFailedFixes().Count > 0
-                        ? ExitCodes.AnalysisIssuesFound
-                        : ExitCodes.Success
-                };
-            }
-        }
-
-        return await Task.FromResult(new MigrationResult
-        {
-            ProjectsProcessed = packageInfo.ProjectCount,
-            PackagesCentralized = packageInfo.TotalReferences,
-            AnalysisReport = report,
-            FixReport = fixReport,
-            ExitCode = report.HasIssues ? ExitCodes.AnalysisIssuesFound : ExitCodes.Success
-        });
-    }
-
-    /// <summary>
     /// Creates a backup of the existing Directory.Packages.props file if needed.
     /// </summary>
     private BackupEntry? CreatePropsBackup(
@@ -1413,21 +675,13 @@ public class MigrationService
         bool propsFileExists,
         string propsPath,
         string? backupPath,
-        string? backupTimestamp)
-    {
-        if (!propsFileExists || !options.MergeExisting || options.DryRun || options.NoBackup || string.IsNullOrEmpty(backupPath))
-        {
-            return null;
-        }
-
-        var propsBackupEntry = _backupManager.CreateBackupForProject(options, propsPath, backupPath, backupTimestamp);
-        if (propsBackupEntry != null && !_quietMode)
-        {
-            _consoleService.Dim("Backed up existing Directory.Packages.props.");
-        }
-
-        return propsBackupEntry;
-    }
+        string? backupTimestamp) =>
+        _backupCoordinator.CreatePropsBackup(
+            MigrationRequest.FromOptions(options),
+            propsFileExists,
+            propsPath,
+            backupPath,
+            backupTimestamp);
 
     /// <summary>
     /// Handles version conflicts and offers rollback if migration has already modified files.
@@ -1455,7 +709,7 @@ public class MigrationService
             {
                 if (ShouldProceedWithAutomaticRollback(options, "Would you like to rollback changes using the created backup?"))
                 {
-                    await ExecuteRollbackAsync(CreateRollbackOptions(options, backupPath));
+                    await _rollbackHandler.ExecuteAsync(CreateRollbackOptions(options, backupPath));
                 }
             }
             else
@@ -1500,7 +754,7 @@ public class MigrationService
             _consoleService.Warning("Project files may have been partially modified.");
             if (ShouldProceedWithAutomaticRollback(options, "Would you like to attempt an automatic rollback to the last backup?"))
             {
-                await ExecuteRollbackAsync(CreateRollbackOptions(options, backupPath));
+                await _rollbackHandler.ExecuteAsync(CreateRollbackOptions(options, backupPath));
             }
         }
     }

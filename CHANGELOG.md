@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-06-28
+
+### Changed
+- Split `MigrationService` command flows into dedicated `RollbackHandler`, `ListBackupsHandler`, and `AnalysisHandler` classes under `Services/Migration/`, reducing the orchestrator from 1,631 to 885 lines (-46%) while preserving the public `MigrationService` constructor signature.
+- Wired the previously-built-but-unused `BackupCoordinator` into `MigrationService`, removing four duplicated inline backup methods (`SetupBackupDirectory`, `WriteBackupManifestAsync`, `ManageGitIgnoreAsync`, `CreatePropsBackup`) that mirrored the coordinator's logic.
+- `MigrationService.ExecuteAsync` is now a thin command router delegating to mode-specific handlers.
+
+### Internal
+- Command handler extraction enables independent unit testing of rollback, list-backups, and analyze flows.
+- All 546 existing tests continue to pass without modification.
+
 ## [3.3.3] - 2026-06-28
 
 ### Fixed
