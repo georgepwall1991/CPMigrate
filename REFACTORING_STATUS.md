@@ -92,15 +92,12 @@ Implementation of SonarCloud integration and code quality improvements for CPMig
   - Class coupling: 51 types → ~10 types (80% reduction)
 - **Impact:** CRITICAL complexity resolved, now highly maintainable
 
-#### ❌ MigrationService.cs (1,214 lines)
-- **Status:** TODO
-- **Plan:** Split into 5 classes
-  1. MigrationOrchestrator (~120 lines)
-  2. MigrationValidator (~180 lines)
-  3. MigrationExecutor (~400 lines)
-  4. RollbackCoordinator (~200 lines)
-  5. AnalysisCoordinator (~150 lines)
-- **Complexity:** Cyclomatic complexity 32+ in ExecuteMigrationAsync
+#### ✅ MigrationService.cs (was 1,214 lines → now ~885 lines)
+- **Status:** COMPLETE (commit `acb8141` "refactor: split MigrationService command flows into dedicated handlers")
+- **Changes:**
+  - `ExecuteAsync` is now a thin router delegating to focused handlers under `Services/Migration/`: `AnalysisHandler`, `RollbackHandler`, `ListBackupsHandler`, `BackupCoordinator`, `MigrationRuntime`, `MigrationValidator`, `MigrationDisplay`, `MigrationProgressReporter`.
+  - Direct unit tests added for `ListBackupsHandler` (6 facts) and `RollbackHandler` (7 facts). `AnalysisHandler` remains transitively covered via the analyze flow (heavy collaborator mocking makes direct unit coverage low-value).
+- **Remaining residue:** `ProcessProjectsWithProgressAsync` (MigrationService.cs:537) duplicates the per-project loop body for quiet vs progress paths; `BuildPackageUsageCounts` could collapse to a LINQ `GroupBy`. Small, optional.
 
 #### ✅ InteractiveService.cs (Was 616 lines → Now 538 lines)
 - **Status:** PARTIALLY COMPLETE
@@ -137,9 +134,8 @@ Implementation of SonarCloud integration and code quality improvements for CPMig
 - **Status:** TODO
 - **Plan:** Extract parsing methods, use LINQ
 
-#### ❌ Options.cs (15 levels)
-- **Status:** TODO
-- **Plan:** Split validation into focused methods
+#### ✅ Options.cs (was 15 levels → now ~3)
+- **Status:** COMPLETE — `Validate()` is decomposed into 9 focused `ValidateXOptions()` helpers; deepest nesting ~3. No longer a hotspot.
 
 #### ❌ Program.cs (13 levels)
 - **Status:** TODO
@@ -223,48 +219,58 @@ Implementation of SonarCloud integration and code quality improvements for CPMig
 - **Vulnerabilities:** 0 (all NU1903 resolved)
 - **Microsoft.Build:** 17.14.28 (CVE-2025-55247, CVE-2025-26646 patched)
 
-### Code Quality Rules (Temporarily Adjusted for Refactoring)
-- **CA1031** (General exception catch): Suggestion
-- **CA1502** (Cyclomatic complexity): Disabled during refactoring
-- **CA1505** (Maintainability index): Disabled during refactoring
-- **CA1506** (Class coupling): Disabled during refactoring
-- **IDE0005** (Unnecessary usings): Suggestion
+### Code Quality Rules (Current State)
+- **CA1502** (Cyclomatic complexity): `warning` (threshold cyclomatic_complexity=10) — already enforcing
+- **CA1505** (Maintainability index): `warning` (threshold maintainability_index=20) — already enforcing
+- **CA1506** (Class coupling): `warning` (threshold class_coupling=50) — already enforcing
+- **CA1031** (General exception catch): `suggestion` (promote to `warning` after remaining catch-all handlers are narrowed)
+- **IDE0005** (Unnecessary usings): `suggestion` (promote to `warning` after a cleanup pass)
+- **CA2007 / IDE0010 / CS1591**: `none` (intentional — async-await context, generated switch arms, no full XML docs)
 
-**Note:** Quality rules will be re-enabled to warning after Phase 3 refactoring is complete.
+**Note:** With `TreatWarningsAsErrors=true`, promoting any rule to `warning` becomes a hard build break; do this only after verifying zero violations.
 
 ---
 
 ## Progress Summary
 
-**Completed:** 13/14 tasks (93%)
+**Completed:** Phase 1 + Phase 2 + most of Phase 3
 - ✅ Phase 1: Foundation & Configuration (4/4 tasks)
-- ✅ Phase 2: SonarCloud Integration (2/2 tasks)
-- 🔄 Phase 3: Code Quality Fixes (3/5 tasks)
-  - ✅ Fix extreme nesting issues (BuildPropsService)
-  - ✅ Simplify high complexity methods (Program.cs - MAJOR WIN)
-  - ✅ Refactor InteractiveService.cs (partial - EnvironmentAnalyzer extracted)
-  - 🚧 Refactor MigrationService.cs (helper classes created, integration pending)
-  - ❌ Refactor SpectreConsoleService.cs
-- ⏳ Phase 4: Verification & Documentation (0/1 task)
+- 🟡 Phase 2: SonarCloud Integration — workflow wired, but analysis currently **disabled** at `ci.yml:15` (`if: false`) because `SONAR_TOKEN` auth fails. Fix the token in repo secrets, then remove `if: false`. See `SONARCLOUD.md`.
+- 🔄 Phase 3: Code Quality Fixes (in progress)
+  - ✅ Fix extreme nesting issues (BuildPropsService, Options.cs)
+  - ✅ Simplify high complexity methods (Program.cs — now 81 lines)
+  - ✅ Refactor InteractiveService.cs (partial — EnvironmentAnalyzer extracted; Ask*/dispatch cleanup still TODO)
+  - ✅ Refactor MigrationService.cs (split into focused handlers under `Services/Migration/`)
+  - ✅ Refactor PackageUpdateService.UpdatePackagesAsync (extracted 7 step methods; ~190-line method → ~50-line orchestrator)
+  - ✅ Centralize CommandRouter JSON output (extracted `JsonOutputWriter`; 4 duplicated emit tails → 1)
+  - ✅ Remove dead JSON model fields (`ConflictInfo`, `VersionUsage`, `*.Conflicts`)
+  - ✅ Direct unit tests for `ListBackupsHandler` + `RollbackHandler`
+  - ❌ Refactor SpectreConsoleService.cs (split into TableBuilder/PanelBuilder)
+  - ❌ Replace InteractiveService brittle `Contains()`/string-prefix action routing with enum dispatch
+  - ❌ PropsGenerator.cs / ProjectAnalyzer.cs deep-nesting cleanup (lower priority)
+- ⏳ Phase 4: Verification & Documentation (pending — SonarCloud re-enable is the gate)
 
-**Files Refactored:** 6/44
-- ✅ BuildPropsService.cs (nesting reduced 7+ → 3 levels)
-- ✅ Program.cs (388 → 81 lines, complexity 54 → 5)
-- ✅ InteractiveService.cs (616 → 538 lines)
-- ✅ MigrationValidator.cs (NEW - 127 lines, extracted validation)
-- ✅ MigrationDisplay.cs (NEW - 101 lines, extracted display logic)
-- ✅ EnvironmentAnalyzer.cs (NEW - 147 lines, extracted environment analysis)
+**Files Refactored:** Program.cs, Options.cs, BuildPropsService.cs, MigrationService.cs (+ 8 new handlers under `Services/Migration/`), InteractiveService.cs (partial), PackageUpdateService.cs, CommandRouter.cs (JSON cluster extracted to `JsonOutputWriter`), OperationResult.cs / BatchResult.cs (dead fields removed).
 
-**Supporting Classes Created:** 4
-- ➕ CommandRouter.cs (345 lines) - Command execution routing
-- ➕ CliArgumentParser.cs (77 lines) - CLI argument parsing
-- ➕ MigrationValidator.cs (127 lines) - Migration validation
-- ➕ MigrationDisplay.cs (101 lines) - User guidance display
-- ➕ EnvironmentAnalyzer.cs (147 lines) - Environment scanning
+**Files Remaining (lower priority):**
+- SpectreConsoleService.cs (536 lines — split into TableBuilder/PanelBuilder)
+- InteractiveService.cs Ask* dispatch (688 lines — enum-based action routing)
+- PropsGenerator.cs (17 levels of nesting) and ProjectAnalyzer.cs (16 levels)
+- Analyzer/Fixer base-class extraction for shared scaffolding (9 analyzers, 4 fixers)
 
-**Files Remaining:** 38
+---
 
-**Note:** Many analyzer/fixer files reviewed and found to be already well-structured with LINQ patterns.
+## SonarCloud state (IMPORTANT)
+
+SonarCloud analysis is **disabled** in CI (`ci.yml:15` has `if: false`). The `SONAR_TOKEN`
+repository secret is rejected by SonarCloud ("Authentication with the server has failed"),
+which was blocking the `pack` job on every main push. To re-enable:
+
+1. Regenerate the SonarCloud token at https://sonarcloud.io/account/security/
+2. Update the `SONAR_TOKEN` GitHub repository secret (Settings → Secrets and variables → Actions)
+3. Remove `if: false` from `.github/workflows/ci.yml` (line 15)
+4. Optionally restore the `pack` job's dependency on `sonarcloud-analysis` if you want pack to gate on it
+5. `sonar-project.properties.reference` tracks the project version — keep it in sync with `CPMigrate.csproj` (currently 3.4.0)
 
 ---
 

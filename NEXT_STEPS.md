@@ -54,46 +54,25 @@ https://sonarcloud.io/project/overview?id=georgepwall1991_CPMigrate
 
 ## Phase 3: Code Refactoring (Remaining Work)
 
-### Critical Files to Refactor (Highest Impact)
+### Status update (June 2026)
 
-The .editorconfig will now catch complexity issues. Three files have critical complexity:
+The three "critical" files called out below are **no longer the priority** — they have been substantially refactored:
 
-#### 1. Program.cs (CRITICAL)
-- **Complexity:** Cyclomatic 54 (target: <26)
-- **Maintainability:** Index 2 (target: >20)
-- **Class Coupling:** 51 types (target: <41)
+- **Program.cs** — DONE. 388 → 81 lines; routing moved to `CommandRouter`, parsing to `CliArgumentParser`.
+- **MigrationService.cs** — DONE. Split into `AnalysisHandler`, `RollbackHandler`, `ListBackupsHandler`, `BackupCoordinator`, `MigrationRuntime`, `MigrationValidator`, `MigrationDisplay`, `MigrationProgressReporter` under `Services/Migration/`. `ExecuteAsync` is now a thin router. Direct unit tests added for `ListBackupsHandler` and `RollbackHandler`.
+- **InteractiveService.cs** — PARTIAL. `EnvironmentAnalyzer` extracted; menu `Ask*` methods and `ConfigureActionOptions` brittle `Contains()`-based action routing (688 lines, still growing) remain.
 
-**Recommended Approach:**
-```bash
-# Extract these methods from Main:
-- ConfigureDependencyInjection()
-- RouteCommand(Options options)
-- ExecuteMigrateCommand(Options options)
-- ExecuteAnalyzeCommand(Options options)
-- ExecuteFixCommand(Options options)
-- ExecuteRollbackCommand(Options options)
-- ExecuteBatchCommand(Options options)
-- ExecuteUnifyPropsCommand(Options options)
-```
+### Highest-impact remaining refactors
 
-#### 2. MigrationService.cs (HIGH PRIORITY)
-- **Lines:** 1,214
-- **Complexity:** 32 in ExecuteMigrationAsync
+1. **`SpectreConsoleService.cs` (536 lines)** — split into `TableBuilder` (`WriteConflictsTable`/`WriteSummaryTable`/`WriteAnalyzerResult`/`WriteRollbackPreview`) and `PanelBuilder` (`Banner`/`WritePropsPreview`/`WriteStatusDashboard`). `WriteSummaryTable` (65 lines, inline `Grid`/`Panel` construction) is the worst single method.
+2. **`InteractiveService` dispatch cleanup** — replace `BrowseForPath` emoji-prefix `selection.StartsWith(...)` branches and `ConfigureActionOptions` `action.Contains(...)` branches with enum-keyed dispatch. Fragile and prone to growth.
+3. **`CommandRouter.RouteCommand` dispatch (was 8-way if/else, ~83 lines)** — replace with a `Dictionary`/handler strategy lookup to prevent re-growth now that the class has absorbed JSON output + routing.
+4. **`MigrationService.ProcessProjectsWithProgressAsync` + `BuildPackageUsageCounts`** — small residue; collapse quiet/progress loop duplication and use LINQ `GroupBy` for usage counts.
+5. **PropsGenerator.cs (17 levels) / ProjectAnalyzer.cs (16 levels)** — deep-nesting cleanup; lower priority than the above.
 
-**Recommended Approach:**
-- Split into 5 files (see REFACTORING_STATUS.md)
-- Start by extracting validation logic
-- Then extract rollback and analysis coordinators
-- Finally split core migration logic
+### Documentation readiness
 
-#### 3. InteractiveService.cs (HIGH PRIORITY)
-- **Lines:** 554
-- **Complexity:** Multiple nested conditionals
-
-**Recommended Approach:**
-- Extract menu building logic → InteractiveMenuBuilder
-- Extract environment scanning → EnvironmentAnalyzer
-- Keep coordination logic in InteractiveCoordinator
+`REFACTORING_STATUS.md` and this file are kept in sync with actual state. The most recent pass also removed dead `ConflictInfo`/`VersionUsage` JSON-model fields, centralized JSON output through `JsonOutputWriter`, protected `--quiet` for the catch-block `Console.Error` suggestion writes, bumped `sonar-project.properties.reference` to 3.4.0, aligned all GitHub Actions to v5, and redacted a leaked `SONAR_TOKEN` literal from `SONARCLOUD.md`.
 
 ---
 

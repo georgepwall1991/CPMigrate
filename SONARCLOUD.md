@@ -64,8 +64,8 @@ To run SonarCloud analysis locally:
 # 1. Install scanner (if not already installed)
 dotnet tool install --global dotnet-sonarscanner
 
-# 2. Set your token
-export SONAR_TOKEN="b0ca3ff0f146c0597bd85c66e7a04897275cf68d"
+# 2. Set your token (generate from https://sonarcloud.io/account/security/)
+export SONAR_TOKEN="$SONAR_TOKEN"
 
 # 3. Begin analysis
 # The scanner doesn't auto-read sonar-project.properties, so we pass key explicitly
