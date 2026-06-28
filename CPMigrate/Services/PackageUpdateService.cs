@@ -44,31 +44,86 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
     /// <inheritdoc />
     public async Task<PackageUpdateResult> UpdatePackagesAsync(PackageUpdateRequest request)
     {
-        // Step 1: Discover solution
+        var load = await DiscoverAndLoadCurrentVersionsAsync(request);
+        if (load.EarlyResult != null)
+        {
+            return load.EarlyResult;
+        }
+
+        _consoleService.Info($"Checking {load.CurrentVersions.Count} packages for updates...");
+        var (updates, transitiveFound) = await QueryAllUpdatesAsync(load.CurrentVersions, load.ProjectPaths, request);
+
+        var availableUpdates = FilterAvailableUpdates(updates);
+        if (availableUpdates.Count == 0)
+        {
+            _consoleService.Success("Everything up to date!");
+            return BuildNoUpdatesResult(load.CurrentVersions.Count, transitiveFound);
+        }
+
+        ShowUpdatesTable(availableUpdates);
+
+        var acceptedUpdates = RunMajorVersionWizard(availableUpdates, request);
+        var updatesToApply = acceptedUpdates.Where(u => u.Accepted).ToList();
+        if (updatesToApply.Count == 0)
+        {
+            _consoleService.Info("No updates selected.");
+            return new PackageUpdateResult
+            {
+                ExitCode = ExitCodes.Success,
+                PackagesChecked = load.CurrentVersions.Count,
+                PackagesSkipped = load.CurrentVersions.Count,
+                TransitivePackagesFound = transitiveFound,
+                Updates = acceptedUpdates
+            };
+        }
+
+        if (request.DryRun)
+        {
+            return BuildDryRunResult(load.CurrentVersions.Count, transitiveFound, updatesToApply, acceptedUpdates);
+        }
+
+        var backup = await CreateBackupAsync(request, load.PropsPath);
+        if (backup.EarlyResult != null)
+        {
+            return backup.EarlyResult;
+        }
+
+        await ApplyUpdatesAsync(load.PropsPath, load.CurrentVersions, updatesToApply);
+
+        return await RestoreTestAndFinalizeAsync(
+            load.BasePath, backup.Path, backup.Manifest,
+            load.CurrentVersions.Count, acceptedUpdates, updatesToApply, transitiveFound);
+    }
+
+    private async Task<UpdateLoadContext> DiscoverAndLoadCurrentVersionsAsync(PackageUpdateRequest request)
+    {
         var solutionDir = Path.GetFullPath(request.SolutionPath);
         var (basePath, projectPaths) = await _projectAnalyzer.DiscoverProjectsFromSolutionAsync(solutionDir);
 
-        // Step 2: Find Directory.Packages.props
         var propsPath = FindPropsFile(basePath);
         if (propsPath == null)
         {
             _consoleService.Error("Directory.Packages.props not found. CPM is not enabled. Run 'cpmigrate' first.");
-            return new PackageUpdateResult { ExitCode = ExitCodes.ValidationError };
+            return UpdateLoadContext.FromEarly(new PackageUpdateResult { ExitCode = ExitCodes.ValidationError });
         }
 
-        // Step 3: Read current package versions
         var currentVersions = PropsGenerator.ReadExistingPackageVersions(propsPath, out _);
         if (currentVersions.Count == 0)
         {
             _consoleService.Info("No packages found in Directory.Packages.props.");
-            return new PackageUpdateResult { ExitCode = ExitCodes.Success };
+            return UpdateLoadContext.FromEarly(new PackageUpdateResult { ExitCode = ExitCodes.Success });
         }
 
-        // Step 4: Query NuGet for latest versions
-        _consoleService.Info($"Checking {currentVersions.Count} packages for updates...");
+        return new UpdateLoadContext(basePath, projectPaths, propsPath, currentVersions);
+    }
+
+    private async Task<(List<PackageUpdateEntry> Updates, int TransitiveFound)> QueryAllUpdatesAsync(
+        Dictionary<string, HashSet<string>> currentVersions,
+        List<string> projectPaths,
+        PackageUpdateRequest request)
+    {
         var updates = await QueryNuGetForUpdatesAsync(currentVersions, request.IncludePrerelease);
 
-        // Step 4b: If --transitive, scan transitive deps
         var transitiveFound = 0;
         if (request.IncludeTransitive)
         {
@@ -78,8 +133,12 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             updates.AddRange(transitive);
         }
 
-        // Step 5: Build update list — use semantic version comparison, not string equality
-        var availableUpdates = updates
+        return (updates, transitiveFound);
+    }
+
+    private static List<PackageUpdateEntry> FilterAvailableUpdates(List<PackageUpdateEntry> updates)
+    {
+        return updates
             .Where(u =>
             {
                 var current = NuGetVersion.TryParse(u.CurrentVersion, out var c) ? c : null;
@@ -87,60 +146,42 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 return current != null && latest != null && latest > current;
             })
             .ToList();
+    }
 
-        if (availableUpdates.Count == 0)
+    private static PackageUpdateResult BuildNoUpdatesResult(int packagesChecked, int transitiveFound)
+    {
+        return new PackageUpdateResult
         {
-            _consoleService.Success("Everything up to date!");
-            return new PackageUpdateResult
-            {
-                ExitCode = ExitCodes.Success,
-                PackagesChecked = currentVersions.Count,
-                PackagesSkipped = currentVersions.Count,
-                TransitivePackagesFound = transitiveFound
-            };
-        }
+            ExitCode = ExitCodes.Success,
+            PackagesChecked = packagesChecked,
+            PackagesSkipped = packagesChecked,
+            TransitivePackagesFound = transitiveFound
+        };
+    }
 
-        // Show available updates table
-        ShowUpdatesTable(availableUpdates);
-
-        // Step 6: Interactive wizard for major bumps
-        var acceptedUpdates = RunMajorVersionWizard(availableUpdates, request);
-
-        var updatesToApply = acceptedUpdates.Where(u => u.Accepted).ToList();
-        if (updatesToApply.Count == 0)
+    private PackageUpdateResult BuildDryRunResult(
+        int packagesChecked, int transitiveFound,
+        List<PackageUpdateEntry> updatesToApply, List<PackageUpdateEntry> acceptedUpdates)
+    {
+        var directDryRun = updatesToApply.Where(u => !u.IsTransitive).ToList();
+        var transitiveDryRun = updatesToApply.Where(u => u.IsTransitive).ToList();
+        _consoleService.DryRun($"Would update {directDryRun.Count} direct package(s)" +
+            (transitiveDryRun.Count > 0 ? $" and pin {transitiveDryRun.Count} transitive package(s)." : "."));
+        ShowDryRunSummary(updatesToApply);
+        return new PackageUpdateResult
         {
-            _consoleService.Info("No updates selected.");
-            return new PackageUpdateResult
-            {
-                ExitCode = ExitCodes.Success,
-                PackagesChecked = currentVersions.Count,
-                PackagesSkipped = currentVersions.Count,
-                TransitivePackagesFound = transitiveFound,
-                Updates = acceptedUpdates
-            };
-        }
+            ExitCode = ExitCodes.Success,
+            PackagesChecked = packagesChecked,
+            PackagesUpdated = directDryRun.Count,
+            PackagesSkipped = packagesChecked - directDryRun.Count,
+            TransitivePackagesFound = transitiveFound,
+            TransitivePackagesUpdated = transitiveDryRun.Count,
+            Updates = acceptedUpdates
+        };
+    }
 
-        // Step 7: Dry-run check
-        if (request.DryRun)
-        {
-            var directDryRun = updatesToApply.Where(u => !u.IsTransitive).ToList();
-            var transitiveDryRun = updatesToApply.Where(u => u.IsTransitive).ToList();
-            _consoleService.DryRun($"Would update {directDryRun.Count} direct package(s)" +
-                (transitiveDryRun.Count > 0 ? $" and pin {transitiveDryRun.Count} transitive package(s)." : "."));
-            ShowDryRunSummary(updatesToApply);
-            return new PackageUpdateResult
-            {
-                ExitCode = ExitCodes.Success,
-                PackagesChecked = currentVersions.Count,
-                PackagesUpdated = directDryRun.Count,
-                PackagesSkipped = currentVersions.Count - directDryRun.Count,
-                TransitivePackagesFound = transitiveFound,
-                TransitivePackagesUpdated = transitiveDryRun.Count,
-                Updates = acceptedUpdates
-            };
-        }
-
-        // Step 8: Backup
+    private async Task<UpdateBackupContext> CreateBackupAsync(PackageUpdateRequest request, string propsPath)
+    {
         string backupPath;
         try
         {
@@ -149,12 +190,11 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         catch (IOException ex)
         {
             _consoleService.Error($"Failed to create backup directory: {ex.Message}");
-            return new PackageUpdateResult { ExitCode = ExitCodes.FileOperationError };
+            return UpdateBackupContext.FromEarly(new PackageUpdateResult { ExitCode = ExitCodes.FileOperationError });
         }
 
         var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-        var backupEntry = _backupManager.CreateBackupForProject(request.Backup, propsPath, backupPath, timestamp);
-
+        var backupEntry = _backupManager.CreateBackupForProject(request.Backup, propsPath, timestamp);
         var manifest = new BackupManifest
         {
             Timestamp = timestamp,
@@ -164,7 +204,14 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         };
         await BackupManager.WriteManifestAsync(backupPath, manifest);
 
-        // Step 9: Apply updates
+        return new UpdateBackupContext(backupPath, manifest);
+    }
+
+    private async Task ApplyUpdatesAsync(
+        string propsPath,
+        Dictionary<string, HashSet<string>> currentVersions,
+        List<PackageUpdateEntry> updatesToApply)
+    {
         var directCount = updatesToApply.Count(u => !u.IsTransitive);
         var transitiveCount = updatesToApply.Count(u => u.IsTransitive);
         var applyMsg = $"Applying {directCount} direct update(s)";
@@ -173,12 +220,18 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             applyMsg += $" and pinning {transitiveCount} transitive package(s)";
         }
         _consoleService.Info(applyMsg + "...");
+
         var newVersions = BuildUpdatedVersionDictionary(currentVersions, updatesToApply);
         var (content, _, _, _) = _propsGenerator.MergeExisting(propsPath, newVersions);
         await FileHelper.WriteAtomicAsync(propsPath, content);
         _consoleService.Success("Versions updated in Directory.Packages.props.");
+    }
 
-        // Step 10: Restore + Test
+    private async Task<PackageUpdateResult> RestoreTestAndFinalizeAsync(
+        string basePath, string backupPath, BackupManifest manifest,
+        int packagesChecked, List<PackageUpdateEntry> acceptedUpdates,
+        List<PackageUpdateEntry> updatesToApply, int transitiveFound)
+    {
         var solutionPath = FindSolutionFile(basePath);
         var targetPath = solutionPath ?? basePath;
 
@@ -188,21 +241,19 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         {
             _consoleService.Error("dotnet restore failed. Rolling back...");
             _consoleService.Dim(restoreOutput);
-            return await RollbackAndReturn(backupPath, manifest, currentVersions.Count, acceptedUpdates, transitiveFound);
+            return await RollbackAndReturn(backupPath, manifest, packagesChecked, acceptedUpdates, transitiveFound);
         }
 
         _consoleService.Info("Running dotnet test...");
         var (testOutput, testSuccess) = await _dotNetCli.RunTestAsync(targetPath);
 
-        // Step 11: Handle result
         if (!testSuccess)
         {
             _consoleService.Error("Tests failed! Rolling back...");
             _consoleService.Dim(testOutput);
-            return await RollbackAndReturn(backupPath, manifest, currentVersions.Count, acceptedUpdates, transitiveFound);
+            return await RollbackAndReturn(backupPath, manifest, packagesChecked, acceptedUpdates, transitiveFound);
         }
 
-        // Step 12: Success
         var directApplied = updatesToApply.Where(u => !u.IsTransitive).ToList();
         var transitiveApplied = updatesToApply.Where(u => u.IsTransitive).ToList();
         var successMsg = $"All tests passed! Updated {directApplied.Count} package(s)";
@@ -216,9 +267,9 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         return new PackageUpdateResult
         {
             ExitCode = ExitCodes.Success,
-            PackagesChecked = currentVersions.Count,
+            PackagesChecked = packagesChecked,
             PackagesUpdated = directApplied.Count,
-            PackagesSkipped = currentVersions.Count - directApplied.Count,
+            PackagesSkipped = packagesChecked - directApplied.Count,
             TransitivePackagesFound = transitiveFound,
             TransitivePackagesUpdated = transitiveApplied.Count,
             TestsPassed = true,
@@ -253,7 +304,6 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
         foreach (var (packageName, versions) in currentVersions)
         {
-            // Resolve to highest version when multiple exist (version conflicts)
             var currentVersion = ResolveCurrentVersion(versions);
             if (currentVersion == null)
             {
@@ -276,7 +326,6 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             return versions.First();
         }
 
-        // When multiple versions exist (conflicts), pick the highest
         return versions
             .Select(v => NuGetVersion.TryParse(v, out var parsed) ? parsed : null)
             .Where(v => v != null)
@@ -315,7 +364,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 currentVersion,
                 latestVersion.ToNormalizedString(),
                 isMajor,
-                !isMajor); // Auto-accept minor/patch, defer major to wizard
+                !isMajor);
         }
         finally
         {
@@ -368,19 +417,16 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         {
             if (!update.IsMajorUpdate)
             {
-                // Auto-accept minor/patch
                 result.Add(update with { Accepted = true });
                 continue;
             }
 
             if (nonInteractive)
             {
-                // Keep CI / JSON mode deterministic: skip major bumps unless explicitly run interactively.
                 result.Add(update with { Accepted = false });
                 continue;
             }
 
-            // Prompt for major version bump
             var choices = new[]
             {
                 $"Accept major update to {update.LatestVersion}",
@@ -413,10 +459,8 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         Dictionary<string, HashSet<string>> currentVersions,
         List<PackageUpdateEntry> updatesToApply)
     {
-        // Start with current versions
         var result = new Dictionary<string, HashSet<string>>(currentVersions, StringComparer.OrdinalIgnoreCase);
 
-        // Override with accepted updates
         foreach (var update in updatesToApply)
         {
             result[update.PackageName] = [update.LatestVersion];
@@ -437,7 +481,6 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
     {
         _consoleService.Info("Scanning transitive dependencies...");
 
-        // Scan all projects
         var allTransitive = new List<PackageReference>();
         var anySuccess = false;
 
@@ -468,7 +511,6 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             return ([], 0);
         }
 
-        // Deduplicate: group by package name (case-insensitive), pick highest resolved version
         var deduplicated = allTransitive
             .GroupBy(r => r.PackageName, StringComparer.OrdinalIgnoreCase)
             .Select(g =>
@@ -486,7 +528,6 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
         var totalFound = deduplicated.Count;
 
-        // Exclude packages already managed as direct dependencies
         var transitiveOnly = deduplicated
             .Where(r => !currentVersions.ContainsKey(r.PackageName))
             .ToList();
@@ -499,7 +540,6 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
         _consoleService.Info($"Found {transitiveOnly.Count} transitive dependencies to check...");
 
-        // Query NuGet for latest versions
         using var semaphore = new SemaphoreSlim(8);
         var tasks = transitiveOnly.Select(r =>
             QuerySingleTransitivePackageAsync(r.PackageName, r.Version, includePrerelease, semaphore));
@@ -540,7 +580,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 currentVersion,
                 latestVersion.ToNormalizedString(),
                 isMajor,
-                !isMajor, // Auto-accept minor/patch, defer major to wizard
+                !isMajor,
                 IsTransitive: true);
         }
         finally
@@ -590,4 +630,24 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             Updates = updates
         };
     }
+}
+
+internal sealed record UpdateLoadContext(
+    string BasePath,
+    List<string> ProjectPaths,
+    string PropsPath,
+    Dictionary<string, HashSet<string>> CurrentVersions)
+{
+    public PackageUpdateResult? EarlyResult { get; private init; }
+
+    public static UpdateLoadContext FromEarly(PackageUpdateResult result) =>
+        new(string.Empty, new(), string.Empty, new()) { EarlyResult = result };
+}
+
+internal sealed record UpdateBackupContext(string Path, BackupManifest Manifest)
+{
+    public PackageUpdateResult? EarlyResult { get; private init; }
+
+    public static UpdateBackupContext FromEarly(PackageUpdateResult result) =>
+        new(string.Empty, null!) { EarlyResult = result };
 }
