@@ -1,5 +1,6 @@
 using CPMigrate.Models;
 using Spectre.Console;
+using Ink = CPMigrate.Services.SpectrePalette.Ink;
 
 namespace CPMigrate.Services;
 
@@ -7,46 +8,52 @@ public class SpectreConsoleService : IConsoleService
 {
     private readonly VersionResolver _versionResolver;
     private readonly IAnsiConsole _console;
+    private readonly SpectreTheme _theme;
 
     public SpectreConsoleService(VersionResolver versionResolver, IAnsiConsole? console = null)
     {
         _versionResolver = versionResolver;
         _console = console ?? AnsiConsole.Console;
+        _theme = SpectreTheme.For(_console);
     }
+
+    private GlyphSet Glyphs => _theme.Glyphs;
+
+    public bool IsInteractive => _console.Profile.Capabilities.Interactive;
 
     public void Info(string message)
     {
-        _console.MarkupLine($"[grey39]›[/] [dim]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[{Ink.Dim}]{Glyphs.Info}[/] [dim]{EscapeMarkup(message)}[/]");
     }
 
     public void Success(string message)
     {
-        _console.MarkupLine($"[springgreen1]✔[/] [white]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[{Ink.Success}]{Glyphs.Success}[/] [{Ink.Text}]{EscapeMarkup(message)}[/]");
     }
 
     public void Warning(string message)
     {
-        _console.MarkupLine($"[orange1]![/] [yellow]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[{Ink.Warning}]{Glyphs.Warning}[/] [yellow]{EscapeMarkup(message)}[/]");
     }
 
     public void Error(string message)
     {
-        _console.MarkupLine($"[red1]✖[/] [red]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[{Ink.Error}]{Glyphs.Error}[/] [red]{EscapeMarkup(message)}[/]");
     }
 
     public void Highlight(string message)
     {
-        _console.MarkupLine($"[deeppink1]» {EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[{Ink.Primary}]{Glyphs.Highlight} {EscapeMarkup(message)}[/]");
     }
 
     public void Dim(string message)
     {
-        _console.MarkupLine($"[grey39]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"[{Ink.Dim}]{EscapeMarkup(message)}[/]");
     }
 
     public void DryRun(string message)
     {
-        _console.MarkupLine($"  [cyan1]○[/] [blue]SIMULATION[/] [grey]{EscapeMarkup(message)}[/]");
+        _console.MarkupLine($"  [{Ink.Secondary}]{Glyphs.Pending}[/] [blue]SIMULATION[/] [{Ink.Muted}]{EscapeMarkup(message)}[/]");
     }
 
     public void WriteHeader()
@@ -58,9 +65,9 @@ public class SpectreConsoleService : IConsoleService
             .LeftJustified()
             .Color(SpectrePalette.CyberColors.Primary));
 
-        var rule = new Rule("[cyan1]CENTRAL PACKAGE MANAGEMENT MIGRATION TOOL[/]")
+        var rule = new Rule($"[{Ink.Secondary}]CENTRAL PACKAGE MANAGEMENT MIGRATION TOOL[/]")
         {
-            Style = Style.Parse("grey39"),
+            Style = Style.Parse(Ink.Dim),
         };
         _console.Write(rule);
 
@@ -68,9 +75,13 @@ public class SpectreConsoleService : IConsoleService
         var runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription;
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "Unknown";
 
+        var separator = $" [deepskyblue1]{Glyphs.Bullet}[/] ";
         var grid = new Grid();
         grid.AddColumn(new GridColumn().RightAligned());
-        grid.AddRow($"[grey39]v{version}[/] [deepskyblue1]•[/] [grey39]{runtime}[/] [deepskyblue1]•[/] [grey39]{os}[/]");
+        grid.AddRow(string.Join(separator,
+            $"[bold {Ink.Secondary}]v{version}[/]",
+            $"[{Ink.Dim}]{EscapeMarkup(runtime)}[/]",
+            $"[{Ink.Dim}]{EscapeMarkup(os)}[/]"));
 
         _console.Write(grid);
         _console.WriteLine();
@@ -83,13 +94,13 @@ public class SpectreConsoleService : IConsoleService
 
     public void Separator()
     {
-        _console.Write(new Rule { Style = Style.Parse("grey39") });
+        _console.Write(new Rule { Style = Style.Parse(Ink.Dim) });
     }
 
     public void WriteConflictsTable(Dictionary<string, HashSet<string>> packageVersions,
         List<string> conflicts, ConflictStrategy strategy)
     {
-        var table = SpectreTableBuilder.BuildConflictsTable(packageVersions, conflicts, strategy, _versionResolver);
+        var table = SpectreTableBuilder.BuildConflictsTable(_theme, packageVersions, conflicts, strategy, _versionResolver);
         _console.WriteLine();
         _console.Write(table);
         _console.WriteLine();
@@ -100,10 +111,10 @@ public class SpectreConsoleService : IConsoleService
     {
         _console.WriteLine();
         _console.Write(SpectrePanelBuilder.BuildSummaryRule(wasDryRun));
-        _console.Write(SpectrePanelBuilder.BuildSummaryPanel(projectCount, packageCount, conflictCount, propsFilePath, backupPath, wasDryRun));
+        _console.Write(SpectrePanelBuilder.BuildSummaryPanel(_theme, projectCount, packageCount, conflictCount, propsFilePath, backupPath, wasDryRun));
         if (wasDryRun)
         {
-            _console.MarkupLine(SpectrePanelBuilder.DryRunHint);
+            _console.MarkupLine(SpectrePanelBuilder.BuildDryRunHint(_theme));
         }
     }
 
@@ -131,19 +142,19 @@ public class SpectreConsoleService : IConsoleService
 
     public void WriteMissionStatus(int step)
     {
-        _console.Write(SpectrePanelBuilder.BuildMissionStatusPanel(step));
+        _console.Write(SpectrePanelBuilder.BuildMissionStatusPanel(_theme, step));
         _console.WriteLine();
     }
 
     public void WriteRiskScore(int conflictCount, int projectCount)
     {
-        _console.Write(SpectrePanelBuilder.BuildRiskScorePanel(conflictCount, projectCount));
+        _console.Write(SpectrePanelBuilder.BuildRiskScorePanel(_theme, conflictCount, projectCount));
     }
 
     public string AskSelection(string title, IEnumerable<string> choices)
     {
         var prompt = new SelectionPrompt<string>()
-                .Title($"[deeppink1]{EscapeMarkup(title)}[/]")
+                .Title($"[{Ink.Primary}]{EscapeMarkup(title)}[/]")
                 .PageSize(10)
                 .MoreChoicesText("[grey](Move up and down to reveal more choices)[/]")
                 .HighlightStyle(new Style(SpectrePalette.CyberColors.Secondary))
@@ -155,7 +166,7 @@ public class SpectreConsoleService : IConsoleService
     public string AskGroupedSelection(string title, Dictionary<string, IEnumerable<string>> groups)
     {
         var prompt = new SelectionPrompt<string>()
-                .Title($"[deeppink1]{EscapeMarkup(title)}[/]")
+                .Title($"[{Ink.Primary}]{EscapeMarkup(title)}[/]")
                 .PageSize(15)
                 .MoreChoicesText("[grey](Move up and down to reveal more choices)[/]")
                 .HighlightStyle(new Style(SpectrePalette.CyberColors.Secondary));
@@ -178,7 +189,7 @@ public class SpectreConsoleService : IConsoleService
     {
         var selection = _console.Prompt(
             new SelectionPrompt<string>()
-                .Title($"[deeppink1]{EscapeMarkup(message)}[/]")
+                .Title($"[{Ink.Primary}]{EscapeMarkup(message)}[/]")
                 .AddChoices("Yes", "No")
                 .HighlightStyle(new Style(SpectrePalette.CyberColors.Secondary)));
 
@@ -187,7 +198,7 @@ public class SpectreConsoleService : IConsoleService
 
     public string AskText(string prompt, string defaultValue = "")
     {
-        var textPrompt = new TextPrompt<string>($"[deeppink1]{EscapeMarkup(prompt)}[/]")
+        var textPrompt = new TextPrompt<string>($"[{Ink.Primary}]{EscapeMarkup(prompt)}[/]")
             .PromptStyle(new Style(SpectrePalette.CyberColors.Secondary));
 
         if (!string.IsNullOrEmpty(defaultValue))
@@ -200,7 +211,7 @@ public class SpectreConsoleService : IConsoleService
 
     public int AskInt(string prompt, int defaultValue)
     {
-        var intPrompt = new TextPrompt<int>($"[deeppink1]{EscapeMarkup(prompt)}[/]")
+        var intPrompt = new TextPrompt<int>($"[{Ink.Primary}]{EscapeMarkup(prompt)}[/]")
             .PromptStyle(new Style(SpectrePalette.CyberColors.Secondary))
             .DefaultValue(defaultValue);
 
@@ -210,13 +221,13 @@ public class SpectreConsoleService : IConsoleService
     public void WriteRollbackPreview(IEnumerable<string> filesToRestore, string? propsFilePath)
     {
         _console.WriteLine();
-        _console.Write(SpectreTableBuilder.BuildRollbackPreviewTable(filesToRestore, propsFilePath));
+        _console.Write(SpectreTableBuilder.BuildRollbackPreviewTable(_theme, filesToRestore, propsFilePath));
         _console.WriteLine();
     }
 
     public void WriteAnalysisHeader(int projectCount, int packageCount, int vulnerabilityCount)
     {
-        _console.Write(SpectrePanelBuilder.BuildAnalysisHeaderPanel(projectCount, packageCount, vulnerabilityCount));
+        _console.Write(SpectrePanelBuilder.BuildAnalysisHeaderPanel(_theme, projectCount, packageCount, vulnerabilityCount));
         _console.WriteLine();
     }
 
@@ -224,12 +235,12 @@ public class SpectreConsoleService : IConsoleService
     {
         if (result.HasIssues)
         {
-            _console.Write(SpectreTableBuilder.BuildAnalyzerResultTable(result));
+            _console.Write(SpectreTableBuilder.BuildAnalyzerResultTable(_theme, result));
             _console.WriteLine();
         }
         else
         {
-            _console.MarkupLine($"[springgreen1]✔[/] [white]{EscapeMarkup(result.AnalyzerName)}[/] [grey39]- No issues[/]");
+            _console.MarkupLine($"[{Ink.Success}]{Glyphs.Success}[/] [{Ink.Text}]{EscapeMarkup(result.AnalyzerName)}[/] [{Ink.Dim}]- No issues[/]");
         }
     }
 
@@ -237,14 +248,15 @@ public class SpectreConsoleService : IConsoleService
     {
         _console.WriteLine();
 
-        if (report.HasIssues)
+        if (!report.HasIssues)
         {
-            _console.Write(new Rule($"[yellow]ANALYSIS COMPLETE: {report.TotalIssues} ISSUES[/]") { Style = Style.Parse("yellow") });
+            _console.Write(new Rule($"[{Ink.Success}]ANALYSIS COMPLETE: NO ISSUES[/]") { Style = Style.Parse(Ink.Success) });
+            return;
         }
-        else
-        {
-            _console.Write(new Rule("[springgreen1]ANALYSIS COMPLETE: NO ISSUES[/]") { Style = Style.Parse("springgreen1") });
-        }
+
+        _console.Write(new Rule($"[{Ink.Accent}]ANALYSIS COMPLETE: {report.TotalIssues} ISSUES[/]") { Style = Style.Parse(Ink.Accent) });
+        _console.WriteLine();
+        _console.Write(SpectreTableBuilder.BuildAnalysisBreakdownTable(_theme, report));
     }
 
     private static string EscapeMarkup(string text)

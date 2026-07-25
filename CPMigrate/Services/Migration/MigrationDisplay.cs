@@ -79,7 +79,7 @@ internal class MigrationDisplay
         _consoleService.Info("2. If you encounter issues, you can rollback using: cpmigrate --rollback");
         _consoleService.WriteLine();
 
-        if (ShouldOfferVerification(options) &&
+        if (ShouldOfferVerification(options, _consoleService) &&
             _consoleService.AskConfirmation("Would you like to verify the migration now by running 'dotnet restore'?"))
         {
             _consoleService.WriteLine();
@@ -105,7 +105,7 @@ internal class MigrationDisplay
         }
     }
 
-    private static bool ShouldOfferVerification(Options options)
+    private static bool ShouldOfferVerification(Options options, IConsoleService console)
     {
         // Skip the interactive "Would you like to verify the migration now?" prompt under any
         // non-interactive condition: --force (operator opted out of prompts), --quiet, or JSON
@@ -126,7 +126,16 @@ internal class MigrationDisplay
             return false;
         }
 
-        return true;
+        // A dry run changed nothing on disk, so there is nothing for `dotnet restore` to verify.
+        if (options.DryRun)
+        {
+            return false;
+        }
+
+        // The flag checks above only cover the non-TTY cases the operator opted into. A plain
+        // `cpmigrate migrate` with stdout redirected (CI logs, `| tee`) has none of them set and
+        // still cannot service a prompt, so ask the console itself.
+        return console.IsInteractive;
     }
 
     private static bool RunDotnetRestore(string workingDirectory)

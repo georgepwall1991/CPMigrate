@@ -270,7 +270,7 @@ which was blocking the `pack` job on every main push. To re-enable:
 2. Update the `SONAR_TOKEN` GitHub repository secret (Settings → Secrets and variables → Actions)
 3. Remove `if: false` from `.github/workflows/ci.yml` (line 15)
 4. Optionally restore the `pack` job's dependency on `sonarcloud-analysis` if you want pack to gate on it
-5. `sonar-project.properties.reference` tracks the project version — keep it in sync with `CPMigrate.csproj` (currently 3.4.0)
+5. `sonar-project.properties.reference` tracks the project version — keep it in sync with `CPMigrate.csproj` (currently 3.5.0)
 
 ---
 

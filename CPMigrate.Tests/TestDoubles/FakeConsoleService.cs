@@ -5,6 +5,7 @@ namespace CPMigrate.Tests.TestDoubles;
 
 public class FakeConsoleService : IConsoleService
 {
+    public bool IsInteractive { get; set; } = true;
     public bool ConfirmationResponse { get; set; } = true;
     public Queue<string> TextResponses { get; set; } = new();
     public Queue<string> SelectionResponses { get; set; } = new();

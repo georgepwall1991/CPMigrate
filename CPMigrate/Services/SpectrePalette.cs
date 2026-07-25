@@ -19,7 +19,36 @@ internal static class SpectrePalette
         public static readonly Color Accent = Color.Yellow1;
     }
 
+    /// <summary>
+    /// The same palette expressed as markup names, so renderers interpolating into
+    /// markup strings never hard-code a colour literal that can drift from
+    /// <see cref="CyberColors"/>.
+    /// </summary>
+    public static class Ink
+    {
+        public const string Primary = "deeppink1";
+        public const string Secondary = "cyan1";
+        public const string Success = "springgreen1";
+        public const string Warning = "orange1";
+        public const string Error = "red1";
+        public const string Dim = "grey39";
+        public const string Accent = "yellow1";
+        public const string Text = "white";
+        public const string Muted = "grey";
+    }
+
     public static string Escape(string text) => Markup.Escape(text);
+
+    /// <summary>
+    /// Renders a horizontal bar meter as markup — filled cells in <paramref name="color"/>,
+    /// the remainder dimmed. <paramref name="fraction"/> is clamped to 0..1.
+    /// </summary>
+    public static string Meter(double fraction, string color, GlyphSet glyphs, int width = 14)
+    {
+        var filled = (int)Math.Round(Math.Clamp(fraction, 0, 1) * width);
+        return $"[{color}]{new string(glyphs.MeterFilled[0], filled)}[/]" +
+               $"[{Ink.Dim}]{new string(glyphs.MeterEmpty[0], width - filled)}[/]";
+    }
 
     /// <summary>
     /// Wraps a renderable in a rounded panel with a colored border and optional header.

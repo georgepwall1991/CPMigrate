@@ -13,6 +13,9 @@ public sealed class SilentConsoleService : IConsoleService
     {
     }
 
+    /// <summary>Never interactive — this implementation exists to keep the stream machine-readable.</summary>
+    public bool IsInteractive => false;
+
     public void Info(string message)
     {
     }

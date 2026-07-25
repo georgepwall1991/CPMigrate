@@ -106,6 +106,16 @@ internal sealed class RollbackHandler
 
         var filesToRestore = manifest.Backups.Select(b => b.OriginalPath).ToList();
         _consoleService.WriteRollbackPreview(filesToRestore, manifest.PropsFilePath);
+
+        // A redirected stdout (CI, `| tee`) cannot service the prompt and Spectre would throw.
+        // Decline rather than roll back files the operator never got to confirm.
+        if (!_consoleService.IsInteractive)
+        {
+            _consoleService.Warning("Cannot prompt for confirmation on a non-interactive terminal.");
+            _consoleService.Dim("Re-run with --force to roll back without confirmation.");
+            return false;
+        }
+
         return _consoleService.AskConfirmation("Proceed with rollback?");
     }
 

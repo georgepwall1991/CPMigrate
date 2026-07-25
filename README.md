@@ -268,6 +268,22 @@ cpmigrate --analyze --transitive --audit
 cpmigrate --analyze --outdated --deprecated
 ```
 
+Every run ends with a scoreboard tallying each analyzer's findings, so a long scroll of
+individual tables resolves into one scannable summary:
+
+```text
+────────────────────────── ANALYSIS COMPLETE: 2 ISSUES ──────────────────────────
+
+╭─────────────────────────────────────────┬────────┬────────────╮
+│ ANALYZER                                │ ISSUES │ SHARE      │
+├─────────────────────────────────────────┼────────┼────────────┤
+│ ! Version Inconsistencies               │      2 │ ██████████ │
+│ ✔ Duplicate Packages (Casing)           │      0 │ ░░░░░░░░░░ │
+│ ✔ Transitive Conflicts                  │      0 │ ░░░░░░░░░░ │
+│ ✔ Security Vulnerabilities              │      0 │ ░░░░░░░░░░ │
+╰─────────────────────────────────────────┴────────┴────────────╯
+```
+
 ---
 
 ### Auto-Fix
@@ -555,6 +571,29 @@ cpmigrate --rollback --backup-dir . --output Json --quiet > rollback.json
 cpmigrate --update-packages --dry-run --output Json --quiet > update-packages.json
 ```
 
+### Non-Interactive Terminals
+
+CPMigrate detects when stdout is redirected — a CI runner, a pipe, `> log.txt` — and never
+attempts a prompt it cannot service:
+
+- Post-migration verification (`dotnet restore`) is skipped rather than prompted for. It is also
+  skipped after `--dry-run`, since nothing was written to verify.
+- `--rollback` declines instead of prompting, and tells you to re-run with `--force` to roll back
+  unattended.
+- Unicode status glyphs (`✔ ✖ ➜ █`) fall back to ASCII equivalents when the terminal reports no
+  Unicode support, so build logs stay readable instead of filling with replacement characters.
+
+### No Sub-Commands
+
+CPMigrate is flag-driven. There is no `cpmigrate analyze` verb — the analysis command is
+`cpmigrate --analyze`. A leading bare word is rejected rather than ignored, because a discarded
+verb would otherwise fall through to the default action and start a real migration:
+
+```text
+✖ Unrecognized argument 'analyze'. CPMigrate takes flags, not sub-commands.
+› Did you mean: cpmigrate --analyze -s ./MySolution.sln
+```
+
 ### GitHub Actions Example
 
 ```yaml
@@ -624,6 +663,50 @@ CPMigrate supports privacy-first telemetry that is **disabled by default**.
 
 ## Gallery
 
+### Migration Pipeline
+
+The pipeline renders as a connected stepper — completed stages and the rails behind them light up,
+so progress is legible at a glance:
+
+```text
+ ✔ DISCOVERY  ───  ✔ ANALYSIS  ───  ▶ BACKUP  ───  ○ MIGRATION  ───  ○ VERIFICATION
+```
+
+### Risk Assessment
+
+Before anything is written, CPMigrate scores the migration and shows the reasoning:
+
+```text
+┌─ ASSESSMENT ──────────────────────────────────────────────────────────┐
+│ Migration Risk: ████████░░░░░░ HIGH (58/100)                          │
+│ Impact Area:    12 projects • 7 conflicting package(s)                │
+│ Assessment:     Significant version conflicts. Review recommended.    │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+```text
+┌─ ASSESSMENT ──────────────────────────────────┐
+│ Migration Risk: ░░░░░░░░░░░░░░ LOW (0/100)    │
+│ Impact Area:    12 projects                   │
+│ Assessment:     Clean migration path.         │
+└───────────────────────────────────────────────┘
+```
+
+### Conflict Resolution
+
+Version conflict tables bold the winning version and dim the ones being dropped, so the resolution
+reads without comparing strings:
+
+```text
+               VERSION CONFLICTS
+╭─────────────────┬────────────────┬──────────╮
+│ PACKAGE         │ VERSIONS       │ RESOLVED │
+├─────────────────┼────────────────┼──────────┤
+│ Newtonsoft.Json │ 13.0.3, 13.0.1 │ ➜ 13.0.3 │
+│ Serilog         │ 3.1.1, 3.0.0   │ ➜ 3.1.1  │
+╰─────────────────┴────────────────┴──────────╯
+```
+
 ### Mission Control Dashboard
 ![CPMigrate Interactive](./docs/images/cpmigrate-interactive.gif)
 *The interactive wizard assessing migration risk and guiding you through each step.*
@@ -645,7 +728,7 @@ Contributions are welcome. To get started:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Write tests for your changes
-4. Ensure all 546 tests pass (`dotnet test`)
+4. Ensure all 571 tests pass (`dotnet test`)
 5. Open a Pull Request
 
 ---
