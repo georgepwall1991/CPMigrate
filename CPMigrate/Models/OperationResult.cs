@@ -141,6 +141,18 @@ public class OperationSummary
 
     [JsonPropertyName("wasRolledBack")]
     public bool? WasRolledBack { get; init; }
+
+    /// <summary>Accepted updates that did not survive verification and were left at their old version.</summary>
+    [JsonPropertyName("packagesHeldBack")]
+    public int? PackagesHeldBack { get; init; }
+
+    /// <summary>Restore+test cycles executed during the run.</summary>
+    [JsonPropertyName("verificationRuns")]
+    public int? VerificationRuns { get; init; }
+
+    /// <summary>Whether bisection stopped early on its run budget.</summary>
+    [JsonPropertyName("bisectBudgetExhausted")]
+    public bool? BisectBudgetExhausted { get; init; }
 }
 
 /// <summary>
@@ -219,6 +231,12 @@ public class PackageUpdateInfo
 
     [JsonPropertyName("transitive")]
     public bool Transitive { get; init; }
+
+    /// <summary>
+    /// Whether this update was excluded because it broke verification and was left at its old version.
+    /// </summary>
+    [JsonPropertyName("heldBack")]
+    public bool HeldBack { get; init; }
 }
 
 /// <summary>

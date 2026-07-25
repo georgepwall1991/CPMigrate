@@ -202,8 +202,58 @@ public class JsonFormatterTests
         var json = formatter.Format(result);
 
         // Assert
-        json.Should().Contain("\"outputSchemaVersion\": \"1.0.0\"");
+        json.Should().Contain($"\"outputSchemaVersion\": \"{OutputMetadata.SchemaVersion}\"");
         json.Should().Contain("\"version\": \"");
         json.Should().NotContain("\"version\": \"2.9.0\"");
+    }
+
+    [Fact]
+    public void OperationResult_BisectFields_AreEmittedForConsumers()
+    {
+        var formatter = new JsonFormatter();
+        var result = new OperationResult
+        {
+            Operation = "update-packages",
+            ExitCode = ExitCodes.Success,
+            Summary = new OperationSummary
+            {
+                PackagesUpdated = 3,
+                PackagesHeldBack = 1,
+                VerificationRuns = 7,
+                BisectBudgetExhausted = false
+            },
+            PackageUpdates =
+            [
+                new PackageUpdateInfo { Package = "Serilog", HeldBack = true },
+                new PackageUpdateInfo { Package = "Polly", HeldBack = false }
+            ]
+        };
+
+        var json = formatter.Format(result);
+
+        json.Should().Contain("\"packagesHeldBack\": 1");
+        json.Should().Contain("\"verificationRuns\": 7");
+        json.Should().Contain("\"bisectBudgetExhausted\": false");
+        json.Should().Contain("\"heldBack\": true");
+        json.Should().Contain("\"heldBack\": false");
+    }
+
+    [Fact]
+    public void OperationResult_NonBisectRun_LeavesBisectSummaryFieldsNull()
+    {
+        var formatter = new JsonFormatter();
+        var result = new OperationResult
+        {
+            Operation = "update-packages",
+            Summary = new OperationSummary { PackagesUpdated = 2 }
+        };
+
+        var json = formatter.Format(result);
+
+        // Additive contract: the formatter drops nulls, so a non-bisect run emits no bisect keys at all
+        // and consumers written against schema 1.0.0 see a byte-identical shape.
+        json.Should().NotContain("packagesHeldBack");
+        json.Should().NotContain("verificationRuns");
+        json.Should().NotContain("bisectBudgetExhausted");
     }
 }

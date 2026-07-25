@@ -1,5 +1,6 @@
 using CPMigrate.Services;
 using CPMigrate.Services.Migration;
+using CPMigrate.Services.Update;
 
 namespace CPMigrate.Models;
 
@@ -120,7 +121,11 @@ public sealed record PackageUpdateRequest(
     bool IncludeTransitive,
     bool DryRun,
     BackupSettings Backup,
-    CommandOutput Output)
+    CommandOutput Output,
+    bool Bisect = false,
+    int BisectBudget = BisectSearchStrategy.DefaultBudget,
+    string? BisectTestFilter = null,
+    IReadOnlyList<string>? OnlyPackages = null)
 {
     public static PackageUpdateRequest FromOptions(Options options) =>
         new(
@@ -129,7 +134,11 @@ public sealed record PackageUpdateRequest(
             IncludeTransitive: options.IncludeTransitive,
             DryRun: options.DryRun,
             Backup: BackupSettings.FromOptions(options),
-            Output: CommandOutput.FromOptions(options));
+            Output: CommandOutput.FromOptions(options),
+            Bisect: options.Bisect,
+            BisectBudget: options.EffectiveBisectBudget,
+            BisectTestFilter: options.BisectTestFilter,
+            OnlyPackages: options.ParseOnlyPackages());
 }
 
 public sealed record BatchRequest(

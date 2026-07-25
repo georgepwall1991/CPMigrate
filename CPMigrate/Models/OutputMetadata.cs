@@ -10,7 +10,12 @@ public static class OutputMetadata
     /// <summary>
     /// Schema version for JSON contract negotiation.
     /// </summary>
-    public const string SchemaVersion = "1.0.0";
+    /// <remarks>
+    /// 1.1.0 additively introduced the bisect fields: <c>summary.packagesHeldBack</c>,
+    /// <c>summary.verificationRuns</c>, <c>summary.bisectBudgetExhausted</c>, and
+    /// <c>packageUpdates[].heldBack</c>. No existing field changed meaning.
+    /// </remarks>
+    public const string SchemaVersion = "1.1.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

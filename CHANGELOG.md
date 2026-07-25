@@ -6,7 +6,24 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-07-25
+
+### Added
+- **`--bisect`: keep the updates that work instead of discarding all of them.** `--update-packages` was all-or-nothing — one bad package in a set of 38 reverted the other 37 and reported nothing about which one was at fault, leaving the user to bisect by hand. `--bisect` runs delta debugging over the accepted update set and applies the largest subset that still restores and tests clean, naming the packages it held back.
+  - The whole set is verified first, so a healthy run costs exactly one verification and pays no bisection overhead. Only a failure triggers the split.
+  - Each probe is verified against the set already banked as good, not in isolation, so failures that need two packages together (a library plus its own updated dependency) are still resolved. A plain binary search assumes one independent culprit and gets these wrong.
+  - `--bisect-budget <n>` (default 16) caps the restore+test cycles. Expect roughly `2·log₂(n)` runs for a single culprit. When the budget runs out, whatever is unresolved is held back and the banked-good set is still applied, so an interrupted search delivers partial progress rather than nothing.
+  - `--bisect-test-filter <expr>` passes a `dotnet test --filter` expression to each probe, to search against a fast subset of the suite.
+  - When nothing at all can be kept, CPMigrate verifies the zero-update baseline before blaming the packages, so an already-red test suite is reported as such instead of being attributed to the updates.
+- **`--only <ids>`** restricts `--update-packages` to a comma-separated set of package IDs — the natural follow-up to a bisect run that named its culprits.
+- JSON contract additions (`outputSchemaVersion` 1.1.0, all additive): `summary.packagesHeldBack`, `summary.verificationRuns`, `summary.bisectBudgetExhausted`, and `packageUpdates[].heldBack`. The summary fields appear on every `--update-packages` payload (including `--dry-run`, where they read `0`/`0`/`false`) and on no other operation. They are populated for non-bisecting runs too: a plain rollback now reports the whole set as held back. No existing field changes meaning.
+
+### Changed
+- The update pipeline was decomposed behind two seams: `IUpdateTransaction` (write any subset over a pristine in-memory baseline; revert exactly) and `IVerificationRunner` (restore+test, memoized by subset identity so a repeated subset never re-runs the suite). The existing all-or-nothing behaviour is now `AllOrNothingSearchStrategy` over the same seams and is unchanged. Reverting no longer depends on the on-disk backup manifest, so it works under `--no-backup` too.
+- `IDotNetCliService.RunTestAsync` takes an optional `testFilter`. Existing callers are unaffected.
+
 ### Fixed
+- **`--update-packages` crashed before it could back anything up.** `PackageUpdateService` called `CreateBackupForProject(settings, propsPath, timestamp)` against a `(settings, filePath, backupPath, timestampOverride)` signature, so the timestamp was bound to `backupPath` and the backup was written to a relative directory named after the timestamp — throwing `IOException` for any run with backups enabled, which is the default. The existing tests missed it because they mocked the `Options` overload while production called the `BackupSettings` one, so the mock never matched, returned null, and left rollback silently restoring nothing.
 - **Every remaining prompt is now guarded against a non-interactive terminal.** 3.5.0 added `IConsoleService.IsInteractive` but only wired it into two call sites; the other seven still threw Spectre's "Cannot show selection prompt" when stdout was redirected. The fallback is chosen per site rather than applied uniformly, because the safe answer is not the same everywhere:
   - **Declines the action** (a write nobody confirmed): `BuildPropsService` `--unify-props`, and `CommandRouter`'s backup deletion/pruning. Both point at `--force` for unattended runs.
   - **Declines and redirects**: `UpdateService` self-update suggests `dotnet tool update --global CPMigrate` instead of prompting.

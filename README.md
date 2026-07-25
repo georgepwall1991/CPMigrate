@@ -36,7 +36,7 @@ Learn more in the search-focused docs hub: `https://georgepwall1991.github.io/CP
 - **Migrates** any .NET solution to CPM by generating `Directory.Packages.props` and cleaning `.csproj` files
 - **Analyzes** dependency health: version inconsistencies, duplicates, redundant references, transitive conflicts, framework alignment, and security vulnerabilities
 - **Auto-fixes** detected issues with a single command
-- **Updates** NuGet packages to latest versions, runs `dotnet test`, and rolls back automatically on failure
+- **Updates** NuGet packages to latest versions, runs `dotnet test`, and rolls back automatically on failure — or with `--bisect`, keeps the largest subset that stays green and names the packages that broke
 - **Unifies** repeated project properties into `Directory.Build.props`
 - **Batch processes** monorepos with dozens of solutions in parallel
 - Supports `.sln` and the new `.slnx` format (Visual Studio 17.10+)
@@ -70,6 +70,7 @@ Learn more in the search-focused docs hub: `https://georgepwall1991.github.io/CP
   - [Dependency Analysis](#dependency-analysis)
   - [Auto-Fix](#auto-fix)
   - [Package Updates with Test Verification](#package-updates-with-test-verification)
+  - [Bisecting Updates](#bisecting-updates-v36)
   - [Directory.Build.props Unification](#directorybuildprops-unification)
   - [Batch Processing](#batch-processing)
   - [Backup & Rollback](#backup--rollback)
@@ -369,6 +370,50 @@ Per-project scan failures are logged and skipped gracefully. If all scans fail, 
 > Requires CPM to be enabled. If `Directory.Packages.props` doesn't exist, run `cpmigrate` first to migrate.
 > Transitive scanning requires `dotnet restore` to have been run beforehand.
 
+#### Bisecting Updates (v3.6)
+
+**New in v3.6.** Step 11 above is all-or-nothing: one bad package in a set of 38 reverts the other 37 and tells you nothing about which one broke. `--bisect` instead applies the **largest subset that keeps tests green** and names the packages it held back.
+
+```bash
+# Keep what works, hold back what doesn't
+cpmigrate --update-packages --bisect
+
+# Bound the search, and probe against a fast slice of the suite
+cpmigrate --update-packages --bisect --bisect-budget 24 --bisect-test-filter "Category=Unit"
+
+# Follow up on the packages it named
+cpmigrate --update-packages --only Serilog,AutoMapper
+```
+
+```text
+✔ 38 updates applied → tests FAILED
+  38 update(s) failed together — narrowing...
+  Holding back Serilog 3.1.1 → 4.2.0 (tests failed).
+
+────────────────────────────── BISECT RESULT ──────────────────────────────
+
+  HELD    Serilog: 3.1.1 → 4.2.0 (left at 3.1.1)
+  HELD    AutoMapper: 12.0.1 → 14.0.0 (left at 12.0.1)
+  APPLIED Polly: 8.4.1 → 8.6.4
+  …
+
+Kept 36/38 update(s) with tests green (9 verification run(s)).
+  Investigate with: cpmigrate --update-packages --only AutoMapper,Serilog
+```
+
+**How the search works:**
+
+- The **whole set is verified first**, so a healthy update run costs exactly one verification and pays no bisection overhead. Only a failure triggers the split.
+- On failure the set is halved. A half that verifies clean is **banked** and becomes part of the baseline every later probe builds on; a half that fails is split again until it is a single package, which is then held back.
+- Probing against the banked-good set — rather than testing each package in isolation — is what lets it resolve failures that need **two packages together** (a library plus its own updated dependency). A plain binary search assumes one independent culprit and gets these wrong.
+- If nothing at all can be kept, CPMigrate verifies the **zero-update baseline** before blaming the packages, so an already-red test suite is reported as such.
+
+**Cost.** Expect roughly `2·log₂(n)` restore+test cycles for a single culprit — about 9–12 runs for a 40-package set. `--bisect-budget` (default 16) caps it. When the budget runs out, whatever is still unresolved is held back and the banked-good set is **still applied**, so an interrupted search delivers partial progress rather than nothing.
+
+**Exit codes.** `0` when the tree ends green and at least one update was applied — check `summary.packagesHeldBack` in `--output Json` to see whether it was a clean sweep or a partial one. `7` (test failure) when nothing could be applied.
+
+> `--bisect` cannot be combined with `--dry-run`: the search has to observe real test runs.
+
 ---
 
 ### Directory.Build.props Unification
@@ -490,6 +535,10 @@ The config file is discovered by walking up from the selected solution/project p
 | `--update-packages` | `false` | Update all packages to latest, run tests, rollback on failure |
 | `--transitive` | `false` | Also scan and pin transitive dependencies (v3.1) |
 | `--include-prerelease` | `false` | Include pre-release versions when updating |
+| `--bisect` | `false` | On failure, keep the largest subset that stays green instead of reverting everything (v3.6) |
+| `--bisect-budget` | `16` | Max restore+test cycles a bisection may spend (v3.6) |
+| `--bisect-test-filter` | | `dotnet test --filter` expression used for each bisection probe (v3.6) |
+| `--only` | | Comma-separated package IDs to restrict the update to (v3.6) |
 
 ### Modernization
 
@@ -547,7 +596,7 @@ The config file is discovered by walking up from the selected solution/project p
 | `4` | NoProjectsFound | No `.csproj` / `.fsproj` / `.vbproj` files discovered |
 | `5` | AnalysisIssuesFound | Analysis detected issues (useful for CI gates) |
 | `6` | UnexpectedError | Unhandled exception |
-| `7` | TestFailure | Tests failed after package update (rollback performed) |
+| `7` | TestFailure | Tests failed after package update (rollback performed). With `--bisect`, returned only when *no* update could be kept |
 
 ---
 

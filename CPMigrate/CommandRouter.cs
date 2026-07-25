@@ -812,7 +812,10 @@ internal static class CommandRouter
                 TransitivePackagesFound = result.TransitivePackagesFound,
                 TransitivePackagesUpdated = result.TransitivePackagesUpdated,
                 TestsPassed = result.TestsPassed,
-                WasRolledBack = result.WasRolledBack
+                WasRolledBack = result.WasRolledBack,
+                PackagesHeldBack = result.PackagesHeldBack,
+                VerificationRuns = result.VerificationRuns,
+                BisectBudgetExhausted = result.BisectBudgetExhausted
             },
             PackageUpdates = result.Updates.Select(update => new PackageUpdateInfo
             {
@@ -821,7 +824,8 @@ internal static class CommandRouter
                 LatestVersion = update.LatestVersion,
                 IsMajorUpdate = update.IsMajorUpdate,
                 Accepted = update.Accepted,
-                Transitive = update.IsTransitive
+                Transitive = update.IsTransitive,
+                HeldBack = update.HeldBack
             }).ToList(),
             DryRun = options.DryRun,
             Timestamp = DateTime.UtcNow.ToString("o")

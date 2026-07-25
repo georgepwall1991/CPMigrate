@@ -21,7 +21,9 @@ public class PackageUpdateResult
     public int PackagesUpdated { get; init; }
 
     /// <summary>
-    /// Number of packages skipped (user chose to skip or already up to date).
+    /// Number of packages checked but not updated: already up to date, declined in the major-version
+    /// wizard, excluded by <c>--only</c>, or held back after failing verification. When the distinction
+    /// matters, <see cref="PackagesHeldBack"/> counts the last group on its own.
     /// </summary>
     public int PackagesSkipped { get; init; }
 
@@ -49,6 +51,22 @@ public class PackageUpdateResult
     /// Number of transitive dependencies that were pinned/updated.
     /// </summary>
     public int TransitivePackagesUpdated { get; init; }
+
+    /// <summary>
+    /// Number of accepted updates that did not survive verification. Under <c>--bisect</c> these are the
+    /// culprits the search isolated; without it, a failure holds back the whole set.
+    /// </summary>
+    public int PackagesHeldBack { get; init; }
+
+    /// <summary>
+    /// Number of restore+test cycles executed. Zero when verification never ran (dry-run, no updates).
+    /// </summary>
+    public int VerificationRuns { get; init; }
+
+    /// <summary>
+    /// Whether bisection stopped early because it exhausted <c>--bisect-budget</c>.
+    /// </summary>
+    public bool BisectBudgetExhausted { get; init; }
 }
 
 /// <summary>
@@ -60,10 +78,15 @@ public class PackageUpdateResult
 /// <param name="IsMajorUpdate">Whether this update crosses a major version boundary.</param>
 /// <param name="Accepted">Whether the user accepted this update in the wizard.</param>
 /// <param name="IsTransitive">Whether this is a transitive (indirect) dependency.</param>
+/// <param name="HeldBack">
+/// Whether this accepted update was excluded because keeping it broke verification. Under <c>--bisect</c>
+/// this marks the isolated culprits; without it, every accepted update is marked when the run rolls back.
+/// </param>
 public record PackageUpdateEntry(
     string PackageName,
     string CurrentVersion,
     string LatestVersion,
     bool IsMajorUpdate,
     bool Accepted,
-    bool IsTransitive = false);
+    bool IsTransitive = false,
+    bool HeldBack = false);
