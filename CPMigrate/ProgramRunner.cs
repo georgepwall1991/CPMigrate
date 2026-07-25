@@ -1,8 +1,8 @@
+using System.Diagnostics;
 using CommandLine;
 using CPMigrate.Models;
 using CPMigrate.Services;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
 
 namespace CPMigrate;
 
@@ -22,6 +22,11 @@ public static class ProgramRunner
         if (args.Length == 0)
         {
             return await CommandRouter.RouteCommand(new Options { Interactive = true }, bootstrapServices);
+        }
+
+        if (CliVerbGuard.RejectsLeadingVerb(args, bootstrapServices.ConsoleService))
+        {
+            return ExitCodes.ValidationError;
         }
 
         // Parse command-line arguments

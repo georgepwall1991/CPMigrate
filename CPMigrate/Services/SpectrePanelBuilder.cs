@@ -11,7 +11,7 @@ internal static class SpectrePanelBuilder
 {
     public static Panel BuildBannerPanel(string message)
     {
-        return new Panel(new Markup($"[bold white]{SpectrePalette.Escape(message)}[/]"))
+        return new Panel(new Markup($"[bold {SpectrePalette.Ink.Text}]{SpectrePalette.Escape(message)}[/]"))
         {
             Border = BoxBorder.Rounded,
             BorderStyle = new Style(SpectrePalette.CyberColors.Primary),
@@ -23,7 +23,7 @@ internal static class SpectrePanelBuilder
     {
         var panel = new Panel(new Text(content))
         {
-            Header = new PanelHeader("[cyan1]Directory.Packages.props[/]"),
+            Header = new PanelHeader($"[{SpectrePalette.Ink.Secondary}]Directory.Packages.props[/]"),
             Border = BoxBorder.Rounded,
             BorderStyle = new Style(SpectrePalette.CyberColors.Dim),
             Padding = new Padding(1),
@@ -31,82 +31,82 @@ internal static class SpectrePanelBuilder
         return panel;
     }
 
+    /// <summary>The label/colour set that distinguishes a dry-run summary from an applied one.</summary>
+    private readonly record struct SummaryStyle(
+        Color Border, string Header, string ProjectsLabel, string PackagesLabel, string CountInk, string OutputInk)
+    {
+        public static SummaryStyle DryRun => new(
+            SpectrePalette.CyberColors.Secondary,
+            $"[{SpectrePalette.Ink.Secondary}]DRY RUN COMPLETE[/]",
+            "Projects Scanned",
+            "Packages Found",
+            SpectrePalette.Ink.Secondary,
+            SpectrePalette.Ink.Dim);
+
+        public static SummaryStyle Applied => new(
+            SpectrePalette.CyberColors.Success,
+            $"[{SpectrePalette.Ink.Success}]SUCCESS[/]",
+            "Projects Processed",
+            "Packages Centralized",
+            SpectrePalette.Ink.Success,
+            SpectrePalette.Ink.Secondary);
+    }
+
     /// <summary>
-    /// Builds the migration-summary panel. The dry-run and success variants share a two-column
-    /// grid; only the rule label, border color, header, and a few rows differ.
+    /// Builds the migration-summary panel. The dry-run and applied variants share a two-column
+    /// grid; only the border colour, header, and a few labels differ.
     /// </summary>
     public static Panel BuildSummaryPanel(
+        SpectreTheme theme,
         int projectCount, int packageCount, int conflictCount,
         string propsFilePath, string? backupPath, bool wasDryRun)
     {
+        var style = wasDryRun ? SummaryStyle.DryRun : SummaryStyle.Applied;
+        var bullet = $"[{style.CountInk}]{theme.Glyphs.Bullet}[/]";
+
         var grid = new Grid();
-        grid.AddColumn();
-        grid.AddColumn();
+        grid.AddColumn(new GridColumn().NoWrap());
+        grid.AddColumn(new GridColumn().Padding(2, 0, 0, 0));
 
-        Color borderColor;
-        string headerMarkup;
-        string projectsLabel;
-        string packagesLabel;
-        string projectsColor;
-        string packagesColor;
-        string outputLabel;
-        string outputColor;
-
-        if (wasDryRun)
-        {
-            borderColor = SpectrePalette.CyberColors.Secondary;
-            headerMarkup = "[cyan1]DRY RUN COMPLETE[/]";
-            projectsLabel = "Projects Scanned";
-            packagesLabel = "Packages Found";
-            projectsColor = "cyan1";
-            packagesColor = "cyan1";
-            outputLabel = "Output File";
-            outputColor = "grey39";
-        }
-        else
-        {
-            borderColor = SpectrePalette.CyberColors.Success;
-            headerMarkup = "[springgreen1]SUCCESS[/]";
-            projectsLabel = "Projects Processed";
-            packagesLabel = "Packages Centralized";
-            projectsColor = "springgreen1";
-            packagesColor = "springgreen1";
-            outputLabel = "Output File";
-            outputColor = "cyan1";
-        }
-
-        grid.AddRow($"[white]{projectsLabel}[/]", $"[{projectsColor}]{projectCount}[/]");
-        grid.AddRow($"[white]{packagesLabel}[/]", $"[{packagesColor}]{packageCount}[/]");
+        grid.AddRow($"{bullet} [{SpectrePalette.Ink.Text}]{style.ProjectsLabel}[/]", $"[bold {style.CountInk}]{projectCount}[/]");
+        grid.AddRow($"{bullet} [{SpectrePalette.Ink.Text}]{style.PackagesLabel}[/]", $"[bold {style.CountInk}]{packageCount}[/]");
 
         if (conflictCount > 0)
         {
-            grid.AddRow("[white]Conflicts[/]", $"[yellow]{conflictCount}[/]");
+            grid.AddRow(
+                $"[{SpectrePalette.Ink.Accent}]{theme.Glyphs.Warning}[/] [{SpectrePalette.Ink.Text}]Conflicts[/]",
+                $"[bold {SpectrePalette.Ink.Accent}]{conflictCount}[/] [{SpectrePalette.Ink.Dim}]resolved[/]");
         }
 
-        grid.AddRow($"[white]{outputLabel}[/]", $"[{outputColor}]{SpectrePalette.Escape(propsFilePath)}[/]");
+        grid.AddRow(
+            $"{bullet} [{SpectrePalette.Ink.Text}]Output File[/]",
+            $"[{style.OutputInk}]{SpectrePalette.Escape(propsFilePath)}[/]");
 
         if (!wasDryRun && !string.IsNullOrEmpty(backupPath))
         {
-            grid.AddRow("[white]Backup Location[/]", $"[grey39]{SpectrePalette.Escape(backupPath)}[/]");
+            grid.AddRow(
+                $"{bullet} [{SpectrePalette.Ink.Text}]Backup Location[/]",
+                $"[{SpectrePalette.Ink.Dim}]{SpectrePalette.Escape(backupPath)}[/]");
         }
 
         return new Panel(grid)
         {
             Border = BoxBorder.Rounded,
-            BorderStyle = new Style(borderColor),
+            BorderStyle = new Style(style.Border),
             Padding = new Padding(1, 1),
-            Header = new PanelHeader(headerMarkup, Justify.Center),
+            Header = new PanelHeader(style.Header, Justify.Center),
         };
     }
 
     /// <summary>The accompanying rule line shown just before the summary panel.</summary>
     public static Rule BuildSummaryRule(bool wasDryRun) =>
         wasDryRun
-            ? new Rule("[cyan1]SIMULATION RESULTS[/]") { Style = Style.Parse("cyan1") }
-            : new Rule("[springgreen1]MIGRATION RESULTS[/]") { Style = Style.Parse("springgreen1") };
+            ? new Rule($"[{SpectrePalette.Ink.Secondary}]SIMULATION RESULTS[/]") { Style = Style.Parse(SpectrePalette.Ink.Secondary) }
+            : new Rule($"[{SpectrePalette.Ink.Success}]MIGRATION RESULTS[/]") { Style = Style.Parse(SpectrePalette.Ink.Success) };
 
     /// <summary>The trailing hint shown after a dry-run summary.</summary>
-    public const string DryRunHint = "\n[cyan1]ℹ[/] Run without [white]--dry-run[/] to apply changes";
+    public static string BuildDryRunHint(SpectreTheme theme) =>
+        $"\n[{SpectrePalette.Ink.Secondary}]{theme.Glyphs.Info}[/] Run without [{SpectrePalette.Ink.Text}]--dry-run[/] to apply changes";
 
     public static Panel BuildStatusDashboardPanel(
         string directory, List<string> solutions, List<BackupSetInfo> backups,
@@ -116,36 +116,47 @@ internal static class SpectrePanelBuilder
         grid.AddColumn(new GridColumn().NoWrap());
         grid.AddColumn(new GridColumn().Padding(2, 0, 0, 0));
 
-        grid.AddRow("[grey39]Directory[/]", $"[white]{SpectrePalette.Escape(directory)}[/]");
-        grid.AddRow("[grey39]Solutions[/]", GetSolutionStatus(solutions.Count));
-        grid.AddRow("[grey39]Using CPM[/]", GetCpmStatus(directory));
-        grid.AddRow("[grey39]Git Status[/]", GetGitStatus(isGitRepo, hasUnstaged));
-        grid.AddRow("[grey39]Backups[/]", GetBackupStatus(backups.Count));
+        grid.AddRow(Label("Directory"), $"[{SpectrePalette.Ink.Text}]{SpectrePalette.Escape(directory)}[/]");
+        grid.AddRow(Label("Solutions"), GetSolutionStatus(solutions.Count));
+        grid.AddRow(Label("Using CPM"), GetCpmStatus(directory));
+        grid.AddRow(Label("Git Status"), GetGitStatus(isGitRepo, hasUnstaged));
+        grid.AddRow(Label("Backups"), GetBackupStatus(backups.Count));
 
         if (targetFrameworks.Count > 0)
         {
             var tfmList = string.Join(", ", targetFrameworks.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} ({kv.Value})"));
-            grid.AddRow("[grey39]Frameworks[/]", $"[yellow1]{SpectrePalette.Escape(tfmList)}[/]");
+            grid.AddRow(Label("Frameworks"), $"[{SpectrePalette.Ink.Accent}]{SpectrePalette.Escape(tfmList)}[/]");
         }
 
         return new Panel(grid)
         {
-            Header = new PanelHeader("[deeppink1] REPOSITORY CONTEXT [/]"),
+            Header = new PanelHeader($"[{SpectrePalette.Ink.Primary}] REPOSITORY CONTEXT [/]"),
             Border = BoxBorder.Rounded,
             BorderStyle = new Style(SpectrePalette.CyberColors.Dim),
             Padding = new Padding(1, 0),
         };
+
+        static string Label(string text) => $"[{SpectrePalette.Ink.Dim}]{text}[/]";
     }
 
-    public static Panel BuildAnalysisHeaderPanel(int projectCount, int packageCount, int vulnerabilityCount)
+    public static Panel BuildAnalysisHeaderPanel(SpectreTheme theme, int projectCount, int packageCount, int vulnerabilityCount)
     {
         var grid = new Grid();
-        grid.AddColumn();
-        grid.AddRow($"[white]Scanning [cyan1]{projectCount}[/] project(s)[/]");
-        grid.AddRow($"[white]Found [cyan1]{packageCount}[/] package reference(s)[/]");
+        grid.AddColumn(new GridColumn().NoWrap());
+        grid.AddColumn(new GridColumn().Padding(2, 0, 0, 0));
+
+        grid.AddRow(
+            $"[{SpectrePalette.Ink.Secondary}]{theme.Glyphs.Bullet}[/] [{SpectrePalette.Ink.Text}]Scanning[/]",
+            $"[bold {SpectrePalette.Ink.Secondary}]{projectCount}[/] [{SpectrePalette.Ink.Dim}]project(s)[/]");
+        grid.AddRow(
+            $"[{SpectrePalette.Ink.Secondary}]{theme.Glyphs.Bullet}[/] [{SpectrePalette.Ink.Text}]Found[/]",
+            $"[bold {SpectrePalette.Ink.Secondary}]{packageCount}[/] [{SpectrePalette.Ink.Dim}]package reference(s)[/]");
+
         if (vulnerabilityCount > 0)
         {
-            grid.AddRow($"[white]Security Audit:[/] [red]{vulnerabilityCount} vulnerabilities found[/]");
+            grid.AddRow(
+                $"[{SpectrePalette.Ink.Error}]{theme.Glyphs.Error}[/] [{SpectrePalette.Ink.Text}]Security Audit[/]",
+                $"[bold {SpectrePalette.Ink.Error}]{vulnerabilityCount}[/] [{SpectrePalette.Ink.Error}]vulnerabilities found[/]");
         }
 
         return new Panel(grid)
@@ -153,100 +164,125 @@ internal static class SpectrePanelBuilder
             Border = BoxBorder.Rounded,
             BorderStyle = new Style(SpectrePalette.CyberColors.Primary),
             Padding = new Padding(1, 1),
-            Header = new PanelHeader("[deeppink1]ANALYSIS MODE[/]", Justify.Center),
+            Header = new PanelHeader($"[{SpectrePalette.Ink.Primary}]ANALYSIS MODE[/]", Justify.Center),
         };
     }
 
-    public static Panel BuildMissionStatusPanel(int step)
+    private static readonly string[] MissionSteps =
+        ["DISCOVERY", "ANALYSIS", "BACKUP", "MIGRATION", "VERIFICATION"];
+
+    /// <summary>
+    /// Renders the pipeline as a connected stepper — completed steps and the rails
+    /// behind them light up, the active step is called out, later steps stay dim.
+    /// </summary>
+    public static Panel BuildMissionStatusPanel(SpectreTheme theme, int step)
     {
-        var steps = new[] { "DISCOVERY", "ANALYSIS", "BACKUP", "MIGRATION", "VERIFICATION" };
         var grid = new Grid();
-        for (int i = 0; i < steps.Length; i++)
+        var cells = new List<string>();
+
+        for (int i = 0; i < MissionSteps.Length; i++)
         {
-            grid.AddColumn(new GridColumn().Centered());
+            if (i > 0)
+            {
+                // The rail into a step is "done" only once that step has been reached.
+                var railInk = i <= step ? SpectrePalette.Ink.Success : SpectrePalette.Ink.Dim;
+                grid.AddColumn(new GridColumn().Centered().NoWrap());
+                cells.Add($"[{railInk}]───[/]");
+            }
+
+            grid.AddColumn(new GridColumn().Centered().NoWrap());
+            cells.Add(RenderStep(theme, MissionSteps[i], i, step));
         }
 
-        var row = new List<string>();
-        for (int i = 0; i < steps.Length; i++)
-        {
-            if (i < step)
-            {
-                row.Add($"[springgreen1]✔ {steps[i]}[/]");
-            }
-            else if (i == step)
-            {
-                row.Add($"[deeppink1]▶ {steps[i]}[/]");
-            }
-            else
-            {
-                row.Add($"[grey39]○ {steps[i]}[/]");
-            }
-        }
-        grid.AddRow(row.ToArray());
-
+        grid.AddRow(cells.ToArray());
         return new Panel(grid) { Border = BoxBorder.None };
     }
 
-    public static Panel BuildRiskScorePanel(int conflictCount, int projectCount)
+    private static string RenderStep(SpectreTheme theme, string name, int index, int currentStep)
     {
-        string level, colorMarkup, desc;
-        Color color;
-        if (conflictCount == 0)
+        if (index < currentStep)
         {
-            (level, colorMarkup, color, desc) =
-                ("LOW", "springgreen1", SpectrePalette.CyberColors.Success, "Clean migration path.");
+            return $"[{SpectrePalette.Ink.Success}]{theme.Glyphs.Success} {name}[/]";
         }
-        else if (conflictCount < 5)
+
+        if (index == currentStep)
         {
-            (level, colorMarkup, color, desc) =
-                ("MEDIUM", "yellow1", SpectrePalette.CyberColors.Accent, "Minor version divergence detected.");
+            return $"[bold {SpectrePalette.Ink.Primary}]{theme.Glyphs.Current} {name}[/]";
         }
-        else
+
+        return $"[{SpectrePalette.Ink.Dim}]{theme.Glyphs.Pending} {name}[/]";
+    }
+
+    /// <summary>The risk band a conflict count falls into, with its presentation.</summary>
+    private readonly record struct RiskBand(string Level, string Ink, Color Border, string Description)
+    {
+        public static RiskBand For(int conflictCount) => conflictCount switch
         {
-            (level, colorMarkup, color, desc) =
-                ("HIGH", "red1", SpectrePalette.CyberColors.Error, "Significant version conflicts. Review recommended.");
-        }
+            0 => new("LOW", SpectrePalette.Ink.Success, SpectrePalette.CyberColors.Success,
+                "Clean migration path."),
+            < 5 => new("MEDIUM", SpectrePalette.Ink.Accent, SpectrePalette.CyberColors.Accent,
+                "Minor version divergence detected."),
+            _ => new("HIGH", SpectrePalette.Ink.Error, SpectrePalette.CyberColors.Error,
+                "Significant version conflicts. Review recommended."),
+        };
+    }
+
+    public static Panel BuildRiskScorePanel(SpectreTheme theme, int conflictCount, int projectCount)
+    {
+        var band = RiskBand.For(conflictCount);
+
+        // Conflicts per project, saturating at one-per-project — enough signal for a meter
+        // without pretending to be a calibrated score.
+        var fraction = projectCount > 0 ? Math.Min(1d, (double)conflictCount / projectCount) : 0d;
+        var score = (int)Math.Round(fraction * 100);
 
         var table = new Table().Border(TableBorder.None).HideHeaders();
         table.AddColumn("Label");
         table.AddColumn("Value");
 
-        table.AddRow("[grey39]Migration Risk:[/]", $"[{colorMarkup} bold]{level}[/]");
-        table.AddRow("[grey39]Impact Area:[/]", $"[white]{projectCount} projects[/]");
-        table.AddRow("[grey39]Assessment:[/]", $"[grey]{desc}[/]");
+        table.AddRow(
+            $"[{SpectrePalette.Ink.Dim}]Migration Risk:[/]",
+            $"{SpectrePalette.Meter(fraction, band.Ink, theme.Glyphs)} [bold {band.Ink}]{band.Level}[/] [{SpectrePalette.Ink.Dim}]({score}/100)[/]");
+        table.AddRow(
+            $"[{SpectrePalette.Ink.Dim}]Impact Area:[/]",
+            $"[{SpectrePalette.Ink.Text}]{projectCount} projects[/]" +
+            (conflictCount > 0 ? $" [{SpectrePalette.Ink.Dim}]{theme.Glyphs.Bullet} {conflictCount} conflicting package(s)[/]" : string.Empty));
+        table.AddRow(
+            $"[{SpectrePalette.Ink.Dim}]Assessment:[/]",
+            $"[{SpectrePalette.Ink.Muted}]{band.Description}[/]");
 
         return new Panel(table)
         {
-            Header = new PanelHeader("[grey] ASSESSMENT [/]"),
+            Header = new PanelHeader($"[{SpectrePalette.Ink.Muted}] ASSESSMENT [/]"),
             Padding = new Padding(1, 0),
-            BorderStyle = new Style(color),
+            BorderStyle = new Style(band.Border),
         };
     }
 
     private static string GetSolutionStatus(int count) =>
         count > 0
-            ? $"[springgreen1]{count} solution(s) detected[/]"
-            : "[orange1]No solutions found here[/]";
+            ? $"[{SpectrePalette.Ink.Success}]{count} solution(s) detected[/]"
+            : $"[{SpectrePalette.Ink.Warning}]No solutions found here[/]";
 
     private static string GetCpmStatus(string directory) =>
         File.Exists(Path.Combine(directory, "Directory.Packages.props"))
-            ? "[deeppink1]YES[/] [grey](Directory.Packages.props detected)[/]"
-            : "[grey39]NO[/]";
+            ? $"[{SpectrePalette.Ink.Primary}]YES[/] [{SpectrePalette.Ink.Muted}](Directory.Packages.props detected)[/]"
+            : $"[{SpectrePalette.Ink.Dim}]NO[/]";
 
     private static string GetGitStatus(bool isGitRepo, bool hasUnstaged)
     {
         if (!isGitRepo)
         {
-            return "[grey39]Not a Git Repo[/]";
+            return $"[{SpectrePalette.Ink.Dim}]Not a Git Repo[/]";
         }
 
         return hasUnstaged
-            ? "[orange1]Dirty[/] [grey](Unstaged changes detected)[/]"
-            : "[springgreen1]Clean[/]";
+            ? $"[{SpectrePalette.Ink.Warning}]Dirty[/] [{SpectrePalette.Ink.Muted}](Unstaged changes detected)[/]"
+            : $"[{SpectrePalette.Ink.Success}]Clean[/]";
     }
 
     private static string GetBackupStatus(int count) =>
         count > 0
-            ? $"[cyan1]{count} backup set(s) available[/]"
-            : "[grey39]None[/]";
+            ? $"[{SpectrePalette.Ink.Secondary}]{count} backup set(s) available[/]"
+            : $"[{SpectrePalette.Ink.Dim}]None[/]";
 }

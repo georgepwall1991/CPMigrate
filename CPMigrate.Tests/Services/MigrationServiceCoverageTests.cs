@@ -21,11 +21,13 @@ public class MigrationServiceCoverageTests
     public MigrationServiceCoverageTests()
     {
         _mockConsole = new Mock<IConsoleService>();
+        // These tests drive the prompt-bearing paths, so the console must look like a TTY.
+        _mockConsole.SetupGet(c => c.IsInteractive).Returns(true);
         _mockAnalyzer = new Mock<IProjectAnalyzer>();
         _mockAnalysis = new Mock<IAnalysisService>();
         _mockFix = new Mock<IFixService>();
         _backupManager = new BackupManager();
-        
+
         _service = new MigrationService(
             _mockConsole.Object,
             _mockAnalyzer.Object,
@@ -84,7 +86,7 @@ public class MigrationServiceCoverageTests
         File.WriteAllText(Path.Combine(tempDir, "P2.csproj"), "<Project />");
 
         var options = new Options { Analyze = true, SolutionFileDir = tempDir };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { Path.Combine(tempDir, "P1.csproj"), Path.Combine(tempDir, "P2.csproj") }));
 
@@ -188,13 +190,13 @@ public class MigrationServiceCoverageTests
         File.WriteAllText(Path.Combine(tempDir, "P1.csproj"), "<Project />");
 
         var options = new Options { Analyze = true, AuditSecurity = true, SolutionFileDir = tempDir };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { Path.Combine(tempDir, "P1.csproj") }));
 
         _mockAnalyzer.Setup(a => a.ScanProjectPackages(It.IsAny<string>()))
             .Returns((new List<PackageReference>(), true));
-            
+
         _mockAnalyzer.Setup(a => a.ScanVulnerabilitiesAsync(It.IsAny<string>()))
             .ReturnsAsync((new List<VulnerabilityInfo> { new VulnerabilityInfo("Pkg", "High", "CVE-123", "1.0", "2.0", "P1") }, true));
 
@@ -222,7 +224,7 @@ public class MigrationServiceCoverageTests
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempDir);
         var options = new Options { SolutionFileDir = tempDir };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string>()));
 
@@ -257,7 +259,7 @@ public class MigrationServiceCoverageTests
 </Project>");
 
         var options = new Options { SolutionFileDir = tempDir, ConflictStrategy = ConflictStrategy.Fail };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -289,7 +291,7 @@ public class MigrationServiceCoverageTests
         File.WriteAllText(projectPath, "<Project />");
 
         var options = new Options { SolutionFileDir = tempDir, IncludeTransitive = true };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -350,16 +352,16 @@ public class MigrationServiceCoverageTests
         File.WriteAllText(Path.Combine(tempDir, "P1.csproj"), "<Project />");
 
         var options = new Options { Analyze = true, Fix = true, SolutionFileDir = tempDir };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { Path.Combine(tempDir, "P1.csproj") }));
 
         _mockAnalyzer.Setup(a => a.ScanProjectPackages(It.IsAny<string>()))
             .Returns((new List<PackageReference>(), true));
 
-        var report = new AnalysisReport(1, 0, new List<AnalyzerResult> 
-        { 
-            new AnalyzerResult("Test", new List<AnalysisIssue> { new AnalysisIssue("Pkg", "Issue", new List<string> { "P1" }) }) 
+        var report = new AnalysisReport(1, 0, new List<AnalyzerResult>
+        {
+            new AnalyzerResult("Test", new List<AnalysisIssue> { new AnalysisIssue("Pkg", "Issue", new List<string> { "P1" }) })
         });
         _mockAnalysis.Setup(a => a.Analyze(It.IsAny<ProjectPackageInfo>()))
             .Returns(report);
@@ -382,6 +384,49 @@ public class MigrationServiceCoverageTests
     }
 
     [Fact]
+    public async Task ExecuteRollbackAsync_NonInteractiveConsole_DeclinesInsteadOfPrompting()
+    {
+        // A redirected stdout (CI, `| tee`) cannot service a selection prompt. The rollback must
+        // decline rather than let Spectre throw "Cannot show selection prompt", and must not
+        // touch the file it never got confirmation to restore.
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var projectDir = Path.Combine(tempDir, "Project");
+        var backupDir = Path.Combine(tempDir, ".cpmigrate_backup");
+        Directory.CreateDirectory(projectDir);
+        Directory.CreateDirectory(backupDir);
+
+        var projectPath = Path.Combine(projectDir, "P1.csproj");
+        File.WriteAllText(projectPath, "current content");
+
+        var backupFileName = "P1.csproj.backup_123";
+        File.WriteAllText(Path.Combine(backupDir, backupFileName), "original content");
+
+        await BackupManager.WriteManifestAsync(backupDir, new BackupManifest
+        {
+            Backups = new List<BackupEntry>
+            {
+                new BackupEntry { OriginalPath = projectPath, BackupFileName = backupFileName }
+            },
+            PropsFilePath = Path.Combine(projectDir, "Directory.Packages.props"),
+            PropsFileExisted = false
+        });
+
+        _mockConsole.SetupGet(c => c.IsInteractive).Returns(false);
+
+        try
+        {
+            await _service.ExecuteAsync(new Options { Rollback = true, BackupDir = tempDir });
+
+            _mockConsole.Verify(c => c.AskConfirmation(It.IsAny<string>()), Times.Never);
+            File.ReadAllText(projectPath).Should().Be("current content");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public async Task ExecuteRollbackAsync_Success_RestoresFiles()
     {
         // Arrange
@@ -393,16 +438,16 @@ public class MigrationServiceCoverageTests
 
         var projectPath = Path.Combine(projectDir, "P1.csproj");
         File.WriteAllText(projectPath, "corrupted content");
-        
+
         var backupFileName = "P1.csproj.backup_123";
         var backupFilePath = Path.Combine(backupDir, backupFileName);
         File.WriteAllText(backupFilePath, "original content");
 
         var manifest = new BackupManifest
         {
-            Backups = new List<BackupEntry> 
-            { 
-                new BackupEntry { OriginalPath = projectPath, BackupFileName = backupFileName } 
+            Backups = new List<BackupEntry>
+            {
+                new BackupEntry { OriginalPath = projectPath, BackupFileName = backupFileName }
             },
             PropsFilePath = Path.Combine(projectDir, "Directory.Packages.props"),
             PropsFileExisted = false
@@ -410,7 +455,7 @@ public class MigrationServiceCoverageTests
         await BackupManager.WriteManifestAsync(backupDir, manifest);
 
         var options = new Options { Rollback = true, BackupDir = tempDir };
-        
+
         _mockConsole.Setup(c => c.AskConfirmation(It.IsAny<string>())).Returns(true);
 
         try
@@ -443,7 +488,7 @@ public class MigrationServiceCoverageTests
 </Project>");
 
         var options = new Options { SolutionFileDir = tempDir };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -486,7 +531,7 @@ public class MigrationServiceCoverageTests
 </Project>");
 
         var options = new Options { SolutionFileDir = tempDir, MergeExisting = true };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -522,7 +567,7 @@ public class MigrationServiceCoverageTests
 </Project>");
 
         var options = new Options { SolutionFileDir = tempDir, ConflictStrategy = ConflictStrategy.Highest };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -557,7 +602,7 @@ public class MigrationServiceCoverageTests
         File.WriteAllText(projectPath, originalContent);
 
         var options = new Options { SolutionFileDir = tempDir, DryRun = true };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -591,7 +636,7 @@ public class MigrationServiceCoverageTests
 </Project>");
 
         var options = new Options { SolutionFileDir = tempDir, NoBackup = true };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -625,7 +670,7 @@ public class MigrationServiceCoverageTests
 </Project>");
 
         var options = new Options { SolutionFileDir = tempDir, InteractiveConflicts = true };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -775,7 +820,7 @@ public class MigrationServiceCoverageTests
 </Project>");
 
         var options = new Options { SolutionFileDir = tempDir };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -814,7 +859,7 @@ public class MigrationServiceCoverageTests
 </Project>");
 
         var options = new Options { SolutionFileDir = tempDir, AddBackupToGitignore = true, GitignoreDir = tempDir };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -842,11 +887,11 @@ public class MigrationServiceCoverageTests
         Directory.CreateDirectory(tempDir);
         var backupDir = Path.Combine(tempDir, ".cpmigrate_backup");
         Directory.CreateDirectory(backupDir);
-        
-        var manifest = new BackupManifest 
-        { 
-            Backups = new List<BackupEntry> { new BackupEntry { OriginalPath = "P1.csproj", BackupFileName = "P1.csproj.bak" } }, 
-            PropsFilePath = Path.Combine(tempDir, "Directory.Packages.props") 
+
+        var manifest = new BackupManifest
+        {
+            Backups = new List<BackupEntry> { new BackupEntry { OriginalPath = "P1.csproj", BackupFileName = "P1.csproj.bak" } },
+            PropsFilePath = Path.Combine(tempDir, "Directory.Packages.props")
         };
         await BackupManager.WriteManifestAsync(backupDir, manifest);
 
@@ -890,7 +935,7 @@ public class MigrationServiceCoverageTests
 </Project>");
 
         var options = new Options { SolutionFileDir = tempDir };
-        
+
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
@@ -918,7 +963,7 @@ public class MigrationServiceCoverageTests
         var propsPath = Path.Combine(tempDir, "Directory.Packages.props");
         // Malformed XML that will cause ProjectRootElement to fail
         File.WriteAllText(propsPath, "<Project> <Untouched </Project>");
-        
+
         var options = new Options { SolutionFileDir = tempDir, MergeExisting = true };
 
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))

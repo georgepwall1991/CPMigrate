@@ -65,7 +65,10 @@ public class MigrationValidatorTests
         }
         finally
         {
-            if (Directory.Exists(temp)) Directory.Delete(temp);
+            if (Directory.Exists(temp))
+            {
+                Directory.Delete(temp);
+            }
         }
     }
 
@@ -102,9 +105,14 @@ public class MigrationValidatorTests
         // to a .sln file rather than a directory, the output Directory.Packages.props must be
         // written into the directory containing the solution, not into a directory literally
         // named "MySolution.sln" (which would collide with the existing file).
-        var options = new Options { OutputDir = ".", SolutionFileDir = "/repo/Contoso.sln" };
+        // Build the paths with Path.Combine so the expectation uses the host's directory
+        // separator — Path.GetDirectoryName normalizes to '\' on Windows.
+        var repoDir = Path.Combine(Path.GetPathRoot(Path.GetTempPath()) ?? "/", "repo");
+        var solutionFile = Path.Combine(repoDir, "Contoso.sln");
+
+        var options = new Options { OutputDir = ".", SolutionFileDir = solutionFile };
         var (outputPath, propsPath) = MigrationValidator.GetOutputPaths(options);
-        outputPath.Should().Be("/repo");
-        propsPath.Should().Be("/repo/Directory.Packages.props");
+        outputPath.Should().Be(repoDir);
+        propsPath.Should().Be(Path.Combine(repoDir, "Directory.Packages.props"));
     }
 }

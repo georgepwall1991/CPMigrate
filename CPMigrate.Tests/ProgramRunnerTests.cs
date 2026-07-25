@@ -1,7 +1,7 @@
+using System.Text.Json;
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
-using System.Text.Json;
 
 namespace CPMigrate.Tests;
 
@@ -15,7 +15,7 @@ public class ProgramRunnerTests
         var fakeConsole = new FakeConsoleService();
         // Setup responses to exit interactive mode immediately
         fakeConsole.SelectionResponses = new Queue<string>(new[] { "Exit" });
-        
+
         // Act
         var exitCode = await ProgramRunner.RunAsync(Array.Empty<string>(), fakeConsole);
 
@@ -23,12 +23,52 @@ public class ProgramRunnerTests
         exitCode.Should().Be(ExitCodes.Success);
     }
 
+    [Theory]
+    [InlineData("analyze")]
+    [InlineData("audit")]
+    [InlineData("update")]
+    public async Task RunAsync_LeadingVerb_IsRejectedInsteadOfRunningAMigration(string verb)
+    {
+        // CPMigrate has no sub-commands, so CommandLineParser used to discard the bare word and
+        // fall through to the default action — a real, file-rewriting migration. A read-only
+        // intent must never silently become a write.
+        var fakeConsole = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(new[] { verb, "-s", "." }, fakeConsole);
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        fakeConsole.ErrorMessages.Should().ContainSingle(m => m.Contains($"'{verb}'"));
+    }
+
+    [Fact]
+    public async Task RunAsync_LeadingVerb_SuggestsTheEquivalentFlag()
+    {
+        var fakeConsole = new FakeConsoleService();
+
+        await ProgramRunner.RunAsync(new[] { "analyze", "-s", "." }, fakeConsole);
+
+        fakeConsole.OutputMessages.Should().Contain(m => m.Contains("--analyze"));
+    }
+
+    [Fact]
+    public async Task RunAsync_AmbiguousVerb_SuggestsBothCandidates()
+    {
+        // "update" could mean --update (update CPMigrate itself) or --update-packages (update the
+        // solution's NuGet references). Offer both rather than guessing which one was meant.
+        var fakeConsole = new FakeConsoleService();
+
+        await ProgramRunner.RunAsync(new[] { "update" }, fakeConsole);
+
+        fakeConsole.OutputMessages.Should().Contain(m => m.Contains("--update-packages"));
+        fakeConsole.OutputMessages.Should().Contain(m => m.EndsWith("--update"));
+    }
+
     [Fact]
     public async Task RunAsync_HelpArg_ReturnsSuccess()
     {
         // Arrange
         var fakeConsole = new FakeConsoleService();
-        
+
         // Act
         var exitCode = await ProgramRunner.RunAsync(new[] { "--help" }, fakeConsole);
 
@@ -36,7 +76,7 @@ public class ProgramRunnerTests
         // Parser.Default.ParseArguments returns 0 for help usually, but let's check what ExitCodes.ValidationError is
         // Actually help doesn't map to MapResult second param usually if it's handled by Parser
         // But CommandLineParser might exit or return 0.
-        exitCode.Should().Be(0); 
+        exitCode.Should().Be(0);
     }
 
     [Fact]
@@ -44,7 +84,7 @@ public class ProgramRunnerTests
     {
         // Arrange
         var fakeConsole = new FakeConsoleService();
-        
+
         // Act
         var exitCode = await ProgramRunner.RunAsync(new[] { "--invalid-arg" }, fakeConsole);
 
@@ -59,7 +99,7 @@ public class ProgramRunnerTests
         var fakeConsole = new FakeConsoleService();
         // Use a non-existent path to get an error we can recognize
         var args = new[] { "-s", "non_existent_folder" };
-        
+
         // Act
         var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
 
@@ -75,12 +115,12 @@ public class ProgramRunnerTests
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempDir);
         File.WriteAllText(Path.Combine(tempDir, "Test.sln"), "");
-        
+
         try
         {
             var fakeConsole = new FakeConsoleService();
             var args = new[] { "--batch", tempDir, "-o", "output" };
-            
+
             // Act
             var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
 
@@ -105,7 +145,7 @@ public class ProgramRunnerTests
             var fakeConsole = new FakeConsoleService();
             // Point to a directory that exists but has no projects
             var args = new[] { "-p", tempPath };
-            
+
             // Act
             var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
 
@@ -131,10 +171,10 @@ public class ProgramRunnerTests
         Directory.CreateDirectory(tempPath);
         var configPath = Path.Combine(tempPath, ".cpmigrate.json");
         File.WriteAllText(configPath, "{\"backup\": false}");
-        
+
         var fakeConsole = new FakeConsoleService();
         var args = new[] { "-s", tempPath };
-        
+
         try
         {
             // Act
@@ -159,12 +199,12 @@ public class ProgramRunnerTests
         var oldDir = Directory.GetCurrentDirectory();
         Directory.SetCurrentDirectory(tempPath);
 
-        try 
+        try
         {
             var fakeConsole = new FakeConsoleService();
             // Use an option that doesn't imply a directory, like -d (dry run)
             var args = new[] { "-d" };
-            
+
             // Act
             var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
 
@@ -184,11 +224,11 @@ public class ProgramRunnerTests
         // Arrange
         var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempPath);
-        
+
         var fakeConsole = new FakeConsoleService();
         // Set solution dir to "." explicitly, but pass an actual directory to RunAsync
-        var args = new[] { "-s", tempPath }; 
-        
+        var args = new[] { "-s", tempPath };
+
         // Act
         var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
 
@@ -220,7 +260,7 @@ public class ProgramRunnerTests
         {
             var fakeConsole = new FakeConsoleService();
             var args = new[] { "-s", "" }; // Empty string should fallback to "."
-            
+
             // Act
             var exitCode = await ProgramRunner.RunAsync(args, fakeConsole);
 

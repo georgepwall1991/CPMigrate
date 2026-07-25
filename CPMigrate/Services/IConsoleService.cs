@@ -4,6 +4,12 @@ namespace CPMigrate.Services;
 
 public interface IConsoleService
 {
+    /// <summary>
+    /// True when the underlying terminal can service prompts. Callers must check this before
+    /// invoking any Ask* member; Spectre throws when a prompt is shown on a redirected stream.
+    /// </summary>
+    bool IsInteractive { get; }
+
     void Info(string message);
     void Success(string message);
     void Warning(string message);

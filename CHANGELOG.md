@@ -6,6 +6,32 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-07-25
+
+### Fixed
+- **`cpmigrate analyze -s .` silently ran a migration.** CPMigrate is flag-driven and has no sub-commands, so `CommandLineParser` discarded the leading bare word and fell through to the default action — rewriting `.csproj` files for a read-only intent. A new `CliVerbGuard` rejects a leading positional argument and suggests the equivalent flag (`analyze` → `--analyze`, `fix` → `--fix`, …). Genuinely ambiguous words offer both candidates: bare `update` suggests `--update-packages` *and* `--update` (self-update), rather than guessing.
+- **Post-migration prompt still crashed on a redirected stdout.** `ShouldOfferVerification` only covered the flags an operator opts into (`--force`, `--quiet`, `--output Json`); a plain `cpmigrate` with stdout piped to a file or `tee` has none of them set and still threw "Cannot show selection prompt". It now also consults the new `IConsoleService.IsInteractive`, and skips verification after `--dry-run` (nothing was written to verify).
+- **`--rollback` on a non-interactive terminal** now declines with a "re-run with `--force`" hint instead of throwing from the confirmation prompt.
+- Bumped the `System.*` 10.0.9 servicing pins to 10.0.10, clearing the five `NU1903` advisories against `System.Security.Cryptography.Xml` that were failing the build under `TreatWarningsAsErrors`.
+- `MigrationValidatorTests.GetOutputPaths_SolutionFile_ResolvesToParentDirectory` hard-coded POSIX separators and failed on Windows; it now builds its expectations with `Path.Combine`.
+
+### Added
+- `SpectreTheme` / `GlyphSet`: status icons (`✔ ✖ › » ○ ▶ ➜ █ ░`) now degrade to ASCII equivalents when the target console reports no Unicode support, instead of emitting replacement characters into legacy Windows consoles and CI logs.
+- Per-analyzer scoreboard after `--analyze`: each analyzer's issue count and a relative-share meter, so a long scroll of individual tables ends with one scannable summary.
+- `IConsoleService.IsInteractive`, so callers can guard prompts without reaching for `AnsiConsole`.
+
+### Changed
+- The migration pipeline indicator renders as a connected stepper — completed steps and the rails behind them light up — rather than five disconnected labels.
+- The risk assessment panel shows a bar meter and a 0–100 score alongside the LOW/MEDIUM/HIGH band.
+- Version conflict tables now bold the winning version and dim the ones being dropped, so the resolution is readable without comparing strings.
+- Colour literals (`deeppink1`, `springgreen1`, …) scattered across the three Spectre renderers were replaced with `SpectrePalette.Ink` tokens, giving the palette a single source of truth.
+
+### Documentation
+- README gained a **No Sub-Commands** and a **Non-Interactive Terminals** section under CI/CD Integration, documenting the verb guard, the prompt-skipping guarantees, and the ASCII glyph fallback.
+- README Gallery now leads with real captured terminal output for the pipeline stepper, risk assessment, and conflict resolution, alongside the existing GIFs.
+- The Dependency Analysis section documents the new per-analyzer scoreboard.
+- Note: `docs/images/*.gif` still show the pre-3.5.0 styling; regenerating them needs `asciinema` + `agg` (see `scripts/generate-docs-media.sh`).
+
 ## [3.4.1] - 2026-06-28
 
 ### Fixed

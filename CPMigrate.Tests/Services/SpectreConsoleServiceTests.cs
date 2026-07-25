@@ -275,9 +275,9 @@ public class SpectreConsoleServiceTests
     [Fact]
     public void WriteAnalysisSummary_HasIssues_WritesYellowRule()
     {
-        var report = new AnalysisReport(1, 1, new List<AnalyzerResult> 
-            { 
-                new AnalyzerResult("R", new List<AnalysisIssue> { new AnalysisIssue("P", "D", new List<string>()) }) 
+        var report = new AnalysisReport(1, 1, new List<AnalyzerResult>
+            {
+                new AnalyzerResult("R", new List<AnalysisIssue> { new AnalysisIssue("P", "D", new List<string>()) })
             });
         _service.WriteAnalysisSummary(report);
         _console.Output.Should().Contain("ANALYSIS COMPLETE");
@@ -296,6 +296,63 @@ public class SpectreConsoleServiceTests
     {
         _service.WriteMarkup("[blue]Blue Text[/]");
         _console.Output.Should().Contain("Blue Text");
+    }
+
+    [Fact]
+    public void WriteAnalysisSummary_HasIssues_WritesPerAnalyzerBreakdown()
+    {
+        var report = new AnalysisReport(1, 1, new List<AnalyzerResult>
+        {
+            new AnalyzerResult("Noisy", new List<AnalysisIssue>
+            {
+                new AnalysisIssue("P1", "D1", new List<string>()),
+                new AnalysisIssue("P2", "D2", new List<string>())
+            }),
+            new AnalyzerResult("Quiet", new List<AnalysisIssue>())
+        });
+
+        _service.WriteAnalysisSummary(report);
+
+        _console.Output.Should().Contain("ANALYZER");
+        _console.Output.Should().Contain("Noisy");
+        _console.Output.Should().Contain("Quiet");
+    }
+
+    [Fact]
+    public void WriteAnalysisSummary_NoIssues_OmitsBreakdown()
+    {
+        var report = new AnalysisReport(1, 1, new List<AnalyzerResult>
+        {
+            new AnalyzerResult("Quiet", new List<AnalysisIssue>())
+        });
+
+        _service.WriteAnalysisSummary(report);
+
+        _console.Output.Should().Contain("NO ISSUES");
+        _console.Output.Should().NotContain("ANALYZER");
+    }
+
+    [Fact]
+    public void StatusGlyphs_FallBackToAscii_WhenConsoleLacksUnicode()
+    {
+        var ascii = new TestConsole().Interactive();
+        ascii.Profile.Capabilities.Unicode = false;
+        var service = new SpectreConsoleService(_versionResolver, ascii);
+
+        service.Success("Perfect");
+        service.Error("Broken");
+
+        ascii.Output.Should().NotContain("✔");
+        ascii.Output.Should().NotContain("✖");
+        ascii.Output.Should().Contain("Perfect");
+        ascii.Output.Should().Contain("Broken");
+    }
+
+    [Fact]
+    public void WriteRiskScore_RendersMeterAndScore()
+    {
+        _service.WriteRiskScore(10, 10);
+        _console.Output.Should().Contain("100/100");
     }
 
     [Fact]
