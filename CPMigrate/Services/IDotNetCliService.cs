@@ -23,5 +23,10 @@ public interface IDotNetCliService
     /// <summary>
     /// Execute 'dotnet test' command.
     /// </summary>
-    Task<(string Output, bool Success)> RunTestAsync(string solutionOrProjectPath);
+    /// <param name="solutionOrProjectPath">Solution or project to test.</param>
+    /// <param name="testFilter">
+    /// Optional <c>--filter</c> expression. Used by bisection to narrow each probe to a fast subset of the
+    /// suite; a null or blank value runs the whole suite.
+    /// </param>
+    Task<(string Output, bool Success)> RunTestAsync(string solutionOrProjectPath, string? testFilter = null);
 }

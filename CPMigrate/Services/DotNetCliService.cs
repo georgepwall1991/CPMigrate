@@ -52,9 +52,24 @@ public class DotNetCliService : IDotNetCliService
         return await RunDotNetCommandAsync($"restore \"{solutionOrProjectPath}\"", Path.GetDirectoryName(solutionOrProjectPath) ?? ".");
     }
 
-    public async Task<(string Output, bool Success)> RunTestAsync(string solutionOrProjectPath)
+    public async Task<(string Output, bool Success)> RunTestAsync(string solutionOrProjectPath, string? testFilter = null)
     {
-        return await RunDotNetCommandAsync($"test \"{solutionOrProjectPath}\" --no-restore", Path.GetDirectoryName(solutionOrProjectPath) ?? ".");
+        return await RunDotNetCommandAsync(
+            BuildTestArguments(solutionOrProjectPath, testFilter),
+            Path.GetDirectoryName(solutionOrProjectPath) ?? ".");
+    }
+
+    internal static string BuildTestArguments(string solutionOrProjectPath, string? testFilter)
+    {
+        var args = $"test \"{solutionOrProjectPath}\" --no-restore";
+
+        if (!string.IsNullOrWhiteSpace(testFilter))
+        {
+            // Escape embedded quotes so a filter expression cannot break out of the argument.
+            args += $" --filter \"{testFilter.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+        }
+
+        return args;
     }
 
     internal static string BuildListPackageArguments(DotNetPackageListOptions options, string? targetArgument)

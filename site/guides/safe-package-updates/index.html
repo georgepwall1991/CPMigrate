@@ -29,7 +29,8 @@
       <p class="page-intro">CPMigrate treats package updates as a workflow, not just a version bump. You can preview changes, include transitive dependencies, run tests after applying them, and roll back automatically if verification fails.</p>
       <pre><code>cpmigrate --update-packages --dry-run
 cpmigrate --update-packages --transitive
-cpmigrate --update-packages --include-prerelease</code></pre>
+cpmigrate --update-packages --include-prerelease
+cpmigrate --update-packages --bisect</code></pre>
       <div class="grid">
         <article class="card">
           <h3>Preview first</h3>
@@ -42,6 +43,10 @@ cpmigrate --update-packages --include-prerelease</code></pre>
         <article class="card">
           <h3>Roll back automatically</h3>
           <p>If tests fail, CPMigrate restores the previous state instead of leaving half-applied changes behind.</p>
+        </article>
+        <article class="card">
+          <h3>Or keep what works</h3>
+          <p><code>--bisect</code> narrows a failing update set down to the packages actually at fault, applies everything else, and names the ones it held back — so one bad dependency no longer costs you the whole batch.</p>
         </article>
       </div>
     </section>

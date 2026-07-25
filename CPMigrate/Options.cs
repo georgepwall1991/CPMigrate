@@ -1,6 +1,7 @@
 using CommandLine;
 using CommandLine.Text;
 using CPMigrate.Services;
+using CPMigrate.Services.Update;
 
 namespace CPMigrate;
 
@@ -213,6 +214,53 @@ public class Options
     [Option("include-prerelease", Default = false,
         HelpText = "Include pre-release versions when updating packages.")]
     public bool IncludePrerelease { get; set; }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v3.6 Options - Bisecting Updates
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Option("bisect", Default = false,
+        HelpText = "On test failure, bisect the update set and keep the largest subset that stays green " +
+                   "instead of rolling everything back.")]
+    public bool Bisect { get; set; }
+
+    // Nullable rather than defaulted: it keeps "the user asked for a budget" distinguishable from "nobody
+    // said", which the validation below relies on, and stops the value being echoed into every --help example.
+    [Option("bisect-budget",
+        HelpText = "Maximum restore+test cycles a bisection may spend before holding back what is left. " +
+                   "Defaults to 16.")]
+    public int? BisectBudget { get; set; }
+
+    /// <summary>
+    /// The bisect run budget to use, falling back to the strategy default when unspecified.
+    /// </summary>
+    public int EffectiveBisectBudget => BisectBudget ?? BisectSearchStrategy.DefaultBudget;
+
+    [Option("bisect-test-filter",
+        HelpText = "dotnet test --filter expression used for each bisection probe, to narrow the search to a " +
+                   "fast subset of the suite.")]
+    public string? BisectTestFilter { get; set; }
+
+    [Option("only",
+        HelpText = "Comma-separated package IDs to restrict --update-packages to.")]
+    public string? Only { get; set; }
+
+    /// <summary>
+    /// Splits <see cref="Only"/> into package IDs, or returns null when the whole set is in play.
+    /// </summary>
+    public IReadOnlyList<string>? ParseOnlyPackages()
+    {
+        if (string.IsNullOrWhiteSpace(Only))
+        {
+            return null;
+        }
+
+        var names = Only
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+        return names.Count > 0 ? names : null;
+    }
 
     public bool HasExplicitSolutionPath => !string.IsNullOrWhiteSpace(SolutionFileDir);
 
@@ -516,6 +564,8 @@ public class Options
             throw new ArgumentException("--include-prerelease requires --update-packages.");
         }
 
+        ValidateBisectOptions();
+
         if (!UpdatePackages)
         {
             return false;
@@ -541,7 +591,45 @@ public class Options
             throw new ArgumentException("--update-packages cannot be used with --unify-props.");
         }
 
+        if (Bisect && DryRun)
+        {
+            throw new ArgumentException(
+                "--bisect cannot be used with --dry-run. Bisection has to run tests against real changes.");
+        }
+
         return true;
+    }
+
+    /// <summary>
+    /// Validates the bisect option family. Runs before the --update-packages early return so a stray
+    /// --bisect on an unrelated command is rejected rather than silently ignored.
+    /// </summary>
+    private void ValidateBisectOptions()
+    {
+        if (Bisect && !UpdatePackages)
+        {
+            throw new ArgumentException("--bisect requires --update-packages.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(BisectTestFilter) && !Bisect)
+        {
+            throw new ArgumentException("--bisect-test-filter requires --bisect.");
+        }
+
+        if (BisectBudget.HasValue && !Bisect)
+        {
+            throw new ArgumentException("--bisect-budget requires --bisect.");
+        }
+
+        if (Bisect && EffectiveBisectBudget < 1)
+        {
+            throw new ArgumentException("--bisect-budget must be at least 1.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(Only) && !UpdatePackages)
+        {
+            throw new ArgumentException("--only requires --update-packages.");
+        }
     }
 
     /// <summary>
