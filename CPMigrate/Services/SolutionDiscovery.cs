@@ -123,7 +123,7 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
         }
 
         var selected = PromptForSolutionSelection(slnFiles);
-        return File.Exists(selected) ? selected : null;
+        return selected != null && File.Exists(selected) ? selected : null;
     }
 
     private async Task<bool> DiscoverProjectsInSolutionAsync(string solutionFullPath, string basePath, List<string> projectPaths)
@@ -159,9 +159,24 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
         return true;
     }
 
-    private string PromptForSolutionSelection(string[] slnFiles)
+    private string? PromptForSolutionSelection(string[] slnFiles)
     {
         var choices = slnFiles.Select(f => Path.GetFileName(f) ?? f).ToList();
+
+        // Which solution to migrate is not a guessable default — picking one arbitrarily could
+        // rewrite the wrong projects. On a terminal that cannot prompt, name the candidates and
+        // make the caller disambiguate with -s instead.
+        if (!_consoleService.IsInteractive)
+        {
+            _consoleService.Error($"Found {slnFiles.Length} solution files and cannot prompt on a non-interactive terminal.");
+            foreach (var choice in choices)
+            {
+                _consoleService.Dim($"  • {choice}");
+            }
+            _consoleService.Info("Pass the one you want explicitly, e.g. -s ./MySolution.sln");
+            return null;
+        }
+
         var selection = _consoleService.AskSelection(
             "Multiple solution files found. Which one would you like to use?",
             choices);

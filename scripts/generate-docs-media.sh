@@ -16,6 +16,14 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOCS_IMAGES_DIR="$PROJECT_ROOT/docs/images"
 TEMP_DIR="/tmp/cpmigrate-docs"
 
+# The demo and analyze recordings target the sample solution, not the repo itself. CPMigrate
+# adopted CPM for its own dependencies, so a dry run against $PROJECT_ROOT now records nothing
+# but "already migrated to CPM", and an analysis of it finds no issues — neither of which shows
+# the tool doing anything. examples/small-solution has real version conflicts across two
+# projects, so the recordings capture the conflict table, the risk assessment, and the
+# per-analyzer scoreboard.
+DEMO_TARGET="$PROJECT_ROOT/examples/small-solution"
+
 # Colors for output
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -130,7 +138,7 @@ generate_demo() {
         --cols 80 \
         --rows 24 \
         --overwrite \
-        --command "dotnet run --configuration Release --project $PROJECT_ROOT/CPMigrate --framework net10.0 --no-build -- --dry-run --solution $PROJECT_ROOT"
+        --command "dotnet run --configuration Release --project $PROJECT_ROOT/CPMigrate --framework net10.0 --no-build -- --dry-run --solution $DEMO_TARGET"
 
     echo -e "${CYAN}[>] Converting demo to GIF...${NC}"
 
@@ -162,7 +170,7 @@ generate_analyze() {
         --cols 80 \
         --rows 24 \
         --overwrite \
-        --command "dotnet run --configuration Release --project $PROJECT_ROOT/CPMigrate --framework net10.0 --no-build -- --analyze --solution $PROJECT_ROOT"
+        --command "dotnet run --configuration Release --project $PROJECT_ROOT/CPMigrate --framework net10.0 --no-build -- --analyze --solution $DEMO_TARGET"
 
     echo -e "${CYAN}[>] Converting analyze to GIF...${NC}"
 
@@ -190,9 +198,14 @@ generate_interactive() {
     local GIF_FILE="$DOCS_IMAGES_DIR/cpmigrate-interactive.gif"
     local EXPECT_SCRIPT="$TEMP_DIR/interactive.exp"
 
-    # Create expect script for simulating user input through the wizard
-    # Since this project already has Directory.Packages.props, it will show
-    # the "Analyze current CPM setup" option first.
+    # Create expect script for simulating user input through the wizard.
+    # Since this project already has Directory.Packages.props, the wizard leads with
+    # "Analyze current CPM setup".
+    #
+    # Every `expect` below must match a real prompt title from InteractiveService in the order
+    # the wizard asks them — AskAnalyzeOptions alone asks five. A stale or missing entry does
+    # not fail loudly: expect times out, asciinema stops recording mid-wizard, and the GIF
+    # silently trails off partway through. Re-check this sequence whenever the wizard changes.
     cat > "$EXPECT_SCRIPT" << 'EXPECT_EOF'
 #!/usr/bin/expect -f
 set timeout 60
@@ -214,6 +227,23 @@ expect "Select a solution"
 send "\r"
 sleep 1.5
 
+# AskAnalyzeOptions - accept the default (first choice) for each
+expect "Include transitive dependencies in analysis?"
+send "\r"
+sleep 1
+
+expect "Include vulnerability auditing?"
+send "\r"
+sleep 1
+
+expect "Include outdated package checks?"
+send "\r"
+sleep 1
+
+expect "Include deprecated package checks?"
+send "\r"
+sleep 1
+
 # Fix choice - Enter for "No - just report"
 expect "Would you like to automatically fix issues?"
 send "\r"
@@ -226,7 +256,16 @@ sleep 2
 expect "Proceed?"
 send "\r"
 
-# Wait for analysis to complete
+# The wizard loops back to the menu after each run, so it ends on "Return to main menu?".
+# Without answering it the run never reaches eof: expect exits on timeout but asciinema keeps
+# waiting on the open pty, and the recording hangs instead of finishing. Arrow down to "No"
+# (Yes is the default) and confirm, so the process exits and the pty closes.
+expect "Return to main menu?"
+send "\033\[B"
+sleep 0.5
+send "\r"
+
+# Wait for the process to exit
 expect {
     eof { }
     timeout { }

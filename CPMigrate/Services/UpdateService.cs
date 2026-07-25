@@ -86,6 +86,16 @@ public sealed class UpdateService : IUpdateService, IDisposable
         }
 
         _consoleService.Info($"Found new version: v{latestVersion}");
+
+        // Replacing the running tool without consent is not something to infer from a redirected
+        // stream; point at the unattended command instead.
+        if (!_consoleService.IsInteractive)
+        {
+            _consoleService.Info("Cannot prompt on a non-interactive terminal. To update unattended, run:");
+            _consoleService.Dim("  dotnet tool update --global CPMigrate");
+            return false;
+        }
+
         if (!_consoleService.AskConfirmation("Do you want to update now?"))
         {
             return false;

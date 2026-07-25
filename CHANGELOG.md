@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Fixed
+- **Every remaining prompt is now guarded against a non-interactive terminal.** 3.5.0 added `IConsoleService.IsInteractive` but only wired it into two call sites; the other seven still threw Spectre's "Cannot show selection prompt" when stdout was redirected. The fallback is chosen per site rather than applied uniformly, because the safe answer is not the same everywhere:
+  - **Declines the action** (a write nobody confirmed): `BuildPropsService` `--unify-props`, and `CommandRouter`'s backup deletion/pruning. Both point at `--force` for unattended runs.
+  - **Declines and redirects**: `UpdateService` self-update suggests `dotnet tool update --global CPMigrate` instead of prompting.
+  - **Fails loudly**: `SolutionDiscovery` with multiple `.sln` files lists the candidates and asks for an explicit `-s`, since guessing could migrate the wrong projects.
+  - **Falls back to the deterministic answer**: `--interactive-conflicts` resolves via the configured `--conflict-strategy` (the same resolution the run would use without the flag) and says so once; `PackageUpdateService` skips major-version updates, matching its existing `--quiet`/`--output Json` behaviour.
+  - **Proceeds**: the automatic rollback offered *after* a failed migration, where declining would leave the tree half-migrated. This matches the existing `--quiet` behaviour.
+
 ## [3.5.0] - 2026-07-25
 
 ### Fixed

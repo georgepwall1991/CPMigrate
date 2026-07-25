@@ -411,7 +411,10 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
     private List<PackageUpdateEntry> RunMajorVersionWizard(List<PackageUpdateEntry> updates, PackageUpdateRequest request)
     {
         var result = new List<PackageUpdateEntry>();
-        var nonInteractive = request.Output.IsNonInteractive;
+        // A redirected stdout cannot service the major-version prompt either, so it counts as
+        // non-interactive alongside --quiet and --output Json: major updates are skipped, not
+        // silently accepted.
+        var nonInteractive = request.Output.IsNonInteractive || !_consoleService.IsInteractive;
 
         foreach (var update in updates)
         {

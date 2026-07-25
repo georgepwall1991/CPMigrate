@@ -593,6 +593,16 @@ internal static class CommandRouter
             return true;
         }
 
+        // Backup deletion and pruning are unrecoverable. Neither --force nor --quiet was passed,
+        // so nothing here signals intent to run unattended — decline rather than delete on a
+        // terminal that cannot ask.
+        if (!consoleService.IsInteractive)
+        {
+            consoleService.Warning("Cannot prompt for confirmation on a non-interactive terminal.");
+            consoleService.Info("Re-run with --force to proceed without confirmation.");
+            return false;
+        }
+
         return consoleService.AskConfirmation(confirmationPrompt);
     }
 
