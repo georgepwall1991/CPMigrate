@@ -1,10 +1,10 @@
+using System.Text.Json;
 using CPMigrate;
 using CPMigrate.Models;
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
 using Moq;
-using System.Text.Json;
 
 namespace CPMigrate.Tests;
 
@@ -525,6 +525,26 @@ EndProject
     }
 
     [Fact]
+    public async Task RunPruneModeAsync_PruneAll_NonInteractiveTerminal_DeclinesAndKeepsBackups()
+    {
+        // Deleting every backup is unrecoverable and neither --force nor --quiet was passed, so
+        // a terminal that cannot ask must decline rather than delete.
+        var options = new Options { PruneAll = true, SolutionFileDir = _testDirectory, Quiet = false };
+        var backupPath = BackupManager.GetBackupDirectoryPath(options);
+        Directory.CreateDirectory(backupPath);
+        var backupFile = Path.Combine(backupPath, "test.backup_20240101_120000");
+        File.WriteAllText(backupFile, "test content");
+
+        _console.IsInteractive = false;
+
+        var result = await CommandRouter.RunPruneModeAsync(options, _console, _backupManager);
+
+        result.Should().Be(ExitCodes.Success);
+        File.Exists(backupFile).Should().BeTrue("the deletion was never confirmed");
+        _console.OutputMessages.Should().Contain(m => m.Contains("--force"));
+    }
+
+    [Fact]
     public async Task RunPruneModeAsync_PruneBackups_Confirmed()
     {
         // Arrange
@@ -546,13 +566,13 @@ EndProject
     [Fact]
     public async Task WriteJsonOutputForMigration_Rollback_HitsBranch()
     {
-         // Arrange
-         var options = new Options { Rollback = true, Output = OutputFormat.Json, SolutionFileDir = _testDirectory };
-         
-         // Act
-         await CommandRouter.RunMigrationAsync(options, _console, _versionResolver, _backupManager);
-         
-         // Assert - branch hit
+        // Arrange
+        var options = new Options { Rollback = true, Output = OutputFormat.Json, SolutionFileDir = _testDirectory };
+
+        // Act
+        await CommandRouter.RunMigrationAsync(options, _console, _versionResolver, _backupManager);
+
+        // Assert - branch hit
     }
 
     [Fact]
@@ -562,16 +582,16 @@ EndProject
         var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupDir);
         var options = new Options { PruneAll = true, BackupDir = _testDirectory, Quiet = true };
-        
+
         var failureResult = new PruneResult(); // Success is read-only derived property
         // PruneResult.Success => Errors.Count == 0 (Line 84 in BackupModels.cs).
         // So I just need to add errors.
         failureResult.Errors.Add("Failed to delete file X");
-        
+
         var mockBackup = new Mock<IBackupManager>();
         mockBackup.Setup(m => m.GetBackupHistory(It.IsAny<string>()))
             .Returns(new List<BackupSetInfo> { new BackupSetInfo { Timestamp = "20240101" } });
-        
+
         mockBackup.Setup(m => m.PruneAllBackups(It.IsAny<string>()))
             .Returns(failureResult);
 
@@ -590,14 +610,14 @@ EndProject
         var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupDir);
         var options = new Options { PruneBackups = true, Retention = 0, BackupDir = _testDirectory, Quiet = true };
-        
+
         var failureResult = new PruneResult();
         failureResult.Errors.Add("Failed to prune backup Y");
 
         var mockBackup = new Mock<IBackupManager>();
         mockBackup.Setup(m => m.GetBackupHistory(It.IsAny<string>()))
             .Returns(new List<BackupSetInfo> { new BackupSetInfo { Timestamp = "20240101" } });
-            
+
         mockBackup.Setup(m => m.PruneBackups(It.IsAny<string>(), It.IsAny<int>()))
             .Returns(failureResult);
 
@@ -615,8 +635,8 @@ EndProject
         // Arrange
         var projectPath = CreateTestProject("Test.csproj", @"<Project Sdk=""Microsoft.NET.Sdk""><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>");
         var solutionPath = CreateTestSolution("Test.sln", projectPath);
-        var options = new Options 
-        { 
+        var options = new Options
+        {
             SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
             NoBackup = false,
             DryRun = false,
@@ -624,7 +644,7 @@ EndProject
         };
 
         var mockBackup = new Mock<IBackupManager>();
-        
+
         // Mock CreateBackupForProject to throw UnauthorizedAccessException
         mockBackup.Setup(m => m.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Throws(new UnauthorizedAccessException("Access denied to backup"));

@@ -380,6 +380,17 @@ public class MigrationService
         Dictionary<string, HashSet<string>> packages,
         List<string> conflicts)
     {
+        // --interactive-conflicts on a terminal that cannot prompt would throw on the first
+        // package. Fall back to the configured --conflict-strategy — the same deterministic
+        // resolution the run would have used without the flag — and say so once, rather than
+        // failing a migration that has a perfectly good automatic answer.
+        if (!_consoleService.IsInteractive)
+        {
+            _consoleService.Warning(
+                $"--interactive-conflicts needs a prompt-capable terminal; resolving {conflicts.Count} conflict(s) with --conflict-strategy {options.ConflictStrategy} instead.");
+            return;
+        }
+
         _consoleService.WriteLine();
         _consoleService.Banner("INTERACTIVE CONFLICT RESOLUTION");
         _consoleService.WriteLine();
@@ -773,6 +784,15 @@ public class MigrationService
 
         if (_quietMode)
         {
+            return true;
+        }
+
+        // This prompt only fires after a migration has already failed, so the choice is between
+        // restoring the backup and leaving the tree half-migrated. Unlike the other confirmations,
+        // the safe answer here is yes — matching the --quiet behaviour directly above.
+        if (!_consoleService.IsInteractive)
+        {
+            _consoleService.Warning("Migration failed; rolling back automatically (no prompt available on this terminal).");
             return true;
         }
 

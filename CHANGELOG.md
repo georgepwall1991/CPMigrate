@@ -6,6 +6,22 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Fixed
+- **Every remaining prompt is now guarded against a non-interactive terminal.** 3.5.0 added `IConsoleService.IsInteractive` but only wired it into two call sites; the other seven still threw Spectre's "Cannot show selection prompt" when stdout was redirected. The fallback is chosen per site rather than applied uniformly, because the safe answer is not the same everywhere:
+  - **Declines the action** (a write nobody confirmed): `BuildPropsService` `--unify-props`, and `CommandRouter`'s backup deletion/pruning. Both point at `--force` for unattended runs.
+  - **Declines and redirects**: `UpdateService` self-update suggests `dotnet tool update --global CPMigrate` instead of prompting.
+  - **Fails loudly**: `SolutionDiscovery` with multiple `.sln` files lists the candidates and asks for an explicit `-s`, since guessing could migrate the wrong projects.
+  - **Falls back to the deterministic answer**: `--interactive-conflicts` resolves via the configured `--conflict-strategy` (the same resolution the run would use without the flag) and says so once; `PackageUpdateService` skips major-version updates, matching its existing `--quiet`/`--output Json` behaviour.
+  - **Proceeds**: the automatic rollback offered *after* a failed migration, where declining would leave the tree half-migrated. This matches the existing `--quiet` behaviour.
+
+### Documentation
+- Regenerated `cpmigrate-demo.gif` and `cpmigrate-analyze.gif` against 3.5.0, so they show the current styling and the new per-analyzer scoreboard.
+- Fixed three ways `scripts/generate-docs-media.sh` had gone stale:
+  - It recorded against the repo root. CPMigrate adopted CPM for its own dependencies, so the demo captured nothing but "already migrated to CPM" and the analysis found no issues. Both recordings now target `examples/small-solution`, which has real version conflicts.
+  - Its `expect` script predated the wizard's current question sequence (`AskAnalyzeOptions` alone asks five questions), so recordings trailed off partway through — silently, since a missed `expect` only times out.
+  - It never answered the wizard's closing "Return to main menu?", so the process never exited and `asciinema` hung on the open pty. The expect timeout was also raised from 60s to 180s, since the full analysis exceeds it and expiry kills the wizard mid-scan.
+- Known gap: `cpmigrate-interactive.gif` still shows pre-3.5.0 styling. The wizard's analysis stalls when driven through a recorded pty in WSL, so it needs regenerating on a machine where that completes.
+
 ## [3.5.0] - 2026-07-25
 
 ### Fixed

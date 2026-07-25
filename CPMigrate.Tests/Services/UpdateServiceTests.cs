@@ -19,6 +19,8 @@ public class UpdateServiceTests
     public UpdateServiceTests()
     {
         _consoleMock = new Mock<IConsoleService>();
+        // The self-update flow prompts, so the console must look like a TTY for these tests.
+        _consoleMock.SetupGet(c => c.IsInteractive).Returns(true);
         _httpHandlerMock = new Mock<HttpMessageHandler>();
         _processRunnerMock = new Mock<IProcessRunner>();
         _httpClient = new HttpClient(_httpHandlerMock.Object);
@@ -32,7 +34,7 @@ public class UpdateServiceTests
         // Current version is likely 2.8.0 or 2.9.0 based on csproj
         // We simulate a response with a higher version
         var responseContent = @"{ ""versions"": [ ""1.0.0"", ""100.0.0"" ] }";
-        
+
         SetupHttpResponse(responseContent);
 
         // Act
@@ -63,7 +65,7 @@ public class UpdateServiceTests
         // Arrange
         var responseContent = @"{ ""versions"": [ ""100.0.0"" ] }";
         SetupHttpResponse(responseContent);
-        
+
         _consoleMock.Setup(c => c.AskConfirmation(It.IsAny<string>()))
             .Returns(true);
 
@@ -80,12 +82,28 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public async Task PerformUpdateAsync_NonInteractiveTerminal_DeclinesAndSuggestsTheUnattendedCommand()
+    {
+        // Replacing the running tool without consent should not be inferred from a redirected
+        // stream; the caller is pointed at `dotnet tool update` instead of being prompted.
+        SetupHttpResponse(@"{ ""versions"": [ ""100.0.0"" ] }");
+        _consoleMock.SetupGet(c => c.IsInteractive).Returns(false);
+
+        var result = await _updateService.PerformUpdateAsync();
+
+        Assert.False(result);
+        _consoleMock.Verify(c => c.AskConfirmation(It.IsAny<string>()), Times.Never);
+        _processRunnerMock.Verify(p => p.Run(It.IsAny<ProcessStartInfo>()), Times.Never);
+        _consoleMock.Verify(c => c.Dim(It.Is<string>(s => s.Contains("dotnet tool update"))), Times.Once);
+    }
+
+    [Fact]
     public async Task PerformUpdateAsync_DoesNotUpdate_WhenUserRejects()
     {
         // Arrange
         var responseContent = @"{ ""versions"": [ ""100.0.0"" ] }";
         SetupHttpResponse(responseContent);
-        
+
         _consoleMock.Setup(c => c.AskConfirmation(It.IsAny<string>()))
             .Returns(false);
 
@@ -103,7 +121,7 @@ public class UpdateServiceTests
         // Arrange
         var responseContent = @"{ ""versions"": [ ""100.0.0"" ] }";
         SetupHttpResponse(responseContent);
-        
+
         _consoleMock.Setup(c => c.AskConfirmation(It.IsAny<string>()))
             .Returns(true);
 

@@ -56,9 +56,21 @@ public class BuildPropsService
             return ExitCodes.Success;
         }
 
-        if (!options.Force && !_consoleService.AskConfirmation("Do you want to move these to Directory.Build.props?"))
+        if (!options.Force)
         {
-            return ExitCodes.Success;
+            // Rewriting every matching project file is a write the operator has not confirmed.
+            // On a non-prompting terminal, report what would happen and stop.
+            if (!_consoleService.IsInteractive)
+            {
+                _consoleService.Warning("Cannot prompt for confirmation on a non-interactive terminal.");
+                _consoleService.Info("Re-run with --force to unify these, or --dry-run to preview them.");
+                return ExitCodes.Success;
+            }
+
+            if (!_consoleService.AskConfirmation("Do you want to move these to Directory.Build.props?"))
+            {
+                return ExitCodes.Success;
+            }
         }
 
         var propsList = propertyCandidates.Select(c => c.Property).ToList();
