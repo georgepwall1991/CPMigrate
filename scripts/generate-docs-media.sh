@@ -208,7 +208,10 @@ generate_interactive() {
     # silently trails off partway through. Re-check this sequence whenever the wizard changes.
     cat > "$EXPECT_SCRIPT" << 'EXPECT_EOF'
 #!/usr/bin/expect -f
-set timeout 60
+# The final expect waits on the wizard's full analysis of this repo, which takes well over the
+# 60s default on a cold machine. When it expires, expect exits and kills the spawned process
+# mid-scan, leaving a half-recorded cast and a hung asciinema.
+set timeout 180
 set project_root [lindex $argv 0]
 
 # Spawn cpmigrate in interactive mode
