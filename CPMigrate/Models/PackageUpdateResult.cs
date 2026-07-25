@@ -21,7 +21,9 @@ public class PackageUpdateResult
     public int PackagesUpdated { get; init; }
 
     /// <summary>
-    /// Number of packages skipped (user chose to skip or already up to date).
+    /// Number of packages checked but not updated: already up to date, declined in the major-version
+    /// wizard, excluded by <c>--only</c>, or held back after failing verification. When the distinction
+    /// matters, <see cref="PackagesHeldBack"/> counts the last group on its own.
     /// </summary>
     public int PackagesSkipped { get; init; }
 

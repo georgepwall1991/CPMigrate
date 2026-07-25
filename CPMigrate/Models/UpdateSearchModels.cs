@@ -38,13 +38,18 @@ public sealed record VerificationResult(VerificationOutcome Outcome, string Outp
 /// <param name="BudgetExhausted">Whether the search stopped early because it hit the run budget.</param>
 /// <param name="BaselineBroken">Whether verification failed even with zero updates applied.</param>
 /// <param name="FailureOutput">CLI output from the most recent failing verification, if any.</param>
+/// <param name="FailureOutcome">
+/// How the most recent failing verification failed, so callers can say "restore failed" rather than
+/// "tests failed" when tests never ran. Null when nothing failed.
+/// </param>
 public sealed record UpdateSearchResult(
     IReadOnlyList<PackageUpdateEntry> Applied,
     IReadOnlyList<PackageUpdateEntry> HeldBack,
     int VerificationRuns,
     bool BudgetExhausted = false,
     bool BaselineBroken = false,
-    string? FailureOutput = null)
+    string? FailureOutput = null,
+    VerificationOutcome? FailureOutcome = null)
 {
     /// <summary>Whether any update survived the search.</summary>
     public bool AnyApplied => Applied.Count > 0;

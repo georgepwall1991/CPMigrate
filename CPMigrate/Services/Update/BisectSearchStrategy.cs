@@ -56,6 +56,7 @@ public sealed class BisectSearchStrategy : IUpdateSearchStrategy
         pending.Enqueue([.. candidates]);
 
         string? lastFailure = null;
+        VerificationOutcome? lastOutcome = null;
         var budgetExhausted = false;
 
         while (pending.Count > 0)
@@ -79,6 +80,7 @@ public sealed class BisectSearchStrategy : IUpdateSearchStrategy
             }
 
             lastFailure = verification.Output;
+            lastOutcome = verification.Outcome;
 
             if (chunk.Count == 1)
             {
@@ -109,7 +111,8 @@ public sealed class BisectSearchStrategy : IUpdateSearchStrategy
             runner.RunCount,
             budgetExhausted,
             baselineBroken,
-            lastFailure);
+            lastFailure,
+            lastOutcome);
     }
 
     /// <summary>

@@ -166,6 +166,7 @@ public class AllOrNothingSearchStrategyTests
         result.HeldBack.Should().HaveCount(2);
         result.HeldBack.Should().OnlyContain(u => u.HeldBack);
         result.FailureOutput.Should().Be("scripted failure");
+        result.FailureOutcome.Should().Be(VerificationOutcome.TestsFailed);
         transaction.RevertCount.Should().Be(1);
         // One run only: the whole point of the non-bisect path is that it never probes subsets.
         result.VerificationRuns.Should().Be(1);

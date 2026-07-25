@@ -26,6 +26,7 @@ public sealed class AllOrNothingSearchStrategy : IUpdateSearchStrategy
             [],
             candidates.Select(c => c with { HeldBack = true }).ToList(),
             runner.RunCount,
-            FailureOutput: verification.Output);
+            FailureOutput: verification.Output,
+            FailureOutcome: verification.Outcome);
     }
 }

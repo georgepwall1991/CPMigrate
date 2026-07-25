@@ -339,7 +339,11 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
         if (!request.Bisect)
         {
-            _consoleService.Error("Tests failed! Rolled back to previous versions.");
+            // Say which step actually failed: when restore falls over, the tests never ran at all.
+            var cause = search.FailureOutcome == VerificationOutcome.RestoreFailed
+                ? "dotnet restore failed!"
+                : "Tests failed!";
+            _consoleService.Error($"{cause} Rolled back to previous versions.");
             _consoleService.Dim(search.FailureOutput ?? string.Empty);
             return;
         }

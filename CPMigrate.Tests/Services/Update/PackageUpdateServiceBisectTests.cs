@@ -139,6 +139,23 @@ public class PackageUpdateServiceBisectTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatePackagesAsync_RestoreFails_SaysRestoreNotTests()
+    {
+        // Tests never ran, so reporting "Tests failed" would send the user hunting in the wrong place.
+        WriteProps(("Alpha", "1.0.0"));
+        WriteSolution();
+        SetLatest("Alpha", "1.1.0");
+        _cli.Setup(c => c.RunRestoreAsync(It.IsAny<string>())).ReturnsAsync(("NU1605 downgrade", false));
+
+        var result = await _sut.UpdatePackagesAsync(CreateOptions());
+
+        result.ExitCode.Should().Be(ExitCodes.TestFailure);
+        _console.ErrorMessages.Should().Contain(m => m.Contains("dotnet restore failed"));
+        _console.ErrorMessages.Should().NotContain(m => m.Contains("Tests failed"));
+        _cli.Verify(c => c.RunTestAsync(It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+    }
+
+    [Fact]
     public async Task UpdatePackagesAsync_BisectTestFilter_IsForwardedToDotNetTest()
     {
         WriteProps(("Alpha", "1.0.0"));
