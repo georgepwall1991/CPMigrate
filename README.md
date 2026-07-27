@@ -1,9 +1,9 @@
 # CPMigrate — NuGet Central Package Management Migration Tool for .NET Teams
 
 <div align="center">
-  <img src="./docs/images/logo.png" alt="CPMigrate Logo — .NET NuGet Central Package Management CLI Tool" width="128" />
+  <img src="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/logo.png" alt="CPMigrate Logo — .NET NuGet Central Package Management CLI Tool" width="128" />
   <br/>
-  <img src="./docs/images/banner.png" alt="CPMigrate Banner — Migrate, Analyze, and Update NuGet Packages" width="100%" />
+  <img src="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/banner.png" alt="CPMigrate Banner — Migrate, Analyze, and Update NuGet Packages" width="100%" />
 </div>
 
 <div align="center">
@@ -13,58 +13,145 @@
 [![NuGet](https://img.shields.io/nuget/v/CPMigrate.svg?style=flat-square&logo=nuget)](https://www.nuget.org/packages/CPMigrate/)
 [![Downloads](https://img.shields.io/nuget/dt/CPMigrate.svg?style=flat-square&color=blue)](https://www.nuget.org/packages/CPMigrate/)
 
-**Migrate .NET solutions to NuGet Central Package Management | Analyze dependency health | Update packages safely with rollback**
+**Migrate .NET solutions to NuGet Central Package Management (CPM) · Analyze dependency health · Update packages safely with rollback**
 
 </div>
 
-![CPMigrate Interactive Wizard](./docs/images/cpmigrate-interactive.gif)
+**CPMigrate** is a .NET global tool that migrates solutions to [`Directory.Packages.props`](https://learn.microsoft.com/nuget/consume-packages/central-package-management), analyzes NuGet dependency health, auto-fixes common package issues, and updates packages with test verification and rollback.
+
+Docs hub: [georgepwall1991.github.io/CPMigrate](https://georgepwall1991.github.io/CPMigrate/)
 
 ---
 
-## Why CPMigrate?
+## The problem
 
-Managing NuGet dependencies across large .NET solutions is painful. Version drift, duplicated references, transitive conflicts, and security vulnerabilities accumulate silently until they break your build or compromise your supply chain.
+Managing NuGet dependencies across large .NET solutions is painful. Version drift, duplicated references, transitive conflicts, and security vulnerabilities accumulate silently until they break your build or compromise your supply chain. Hand-editing every `.csproj` into Central Package Management is slow and easy to get wrong; ad-hoc scripts rarely include dry-run, fixers, or test-backed rollback.
 
-**CPMigrate** is a .NET dependency analysis CLI and Central Package Management migration tool for teams adopting [`Directory.Packages.props`](https://learn.microsoft.com/nuget/consume-packages/central-package-management). It helps you migrate existing solutions, analyze dependency health, auto-fix common package issues, and update packages with rollback protection when tests fail.
+## What it catches
 
-**Canonical value proposition:** Migrate .NET solutions to NuGet Central Package Management, analyze dependency health, and update packages safely with rollback.
+- **Version inconsistencies** — same package at different versions across projects
+- **Duplicate / redundant PackageReferences** — casing duplicates and repeated refs in one project
+- **Transitive conflicts** — divergent transitive dependency graphs (optional pin + update)
+- **Framework misalignment** — projects on different `TargetFramework` values
+- **Security vulnerabilities** — known CVEs via `--audit` (direct and transitive)
+- **Outdated / deprecated packages** — inventory checks with `--outdated` / `--deprecated`
+- **Scattered versions** — still living in `.csproj` files instead of `Directory.Packages.props`
 
-Learn more in the search-focused docs hub: `https://georgepwall1991.github.io/CPMigrate/`
+## Install
 
-### What it does
+Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
-- **Migrates** any .NET solution to CPM by generating `Directory.Packages.props` and cleaning `.csproj` files
-- **Analyzes** dependency health: version inconsistencies, duplicates, redundant references, transitive conflicts, framework alignment, and security vulnerabilities
-- **Auto-fixes** detected issues with a single command
-- **Updates** NuGet packages to latest versions, runs `dotnet test`, and rolls back automatically on failure — or with `--bisect`, keeps the largest subset that stays green and names the packages that broke
-- **Unifies** repeated project properties into `Directory.Build.props`
-- **Batch processes** monorepos with dozens of solutions in parallel
-- Supports `.sln` and the new `.slnx` format (Visual Studio 17.10+)
+```bash
+dotnet tool install --global CPMigrate --version 3.6.1
+```
 
-### Who this is for
+```bash
+# update
+dotnet tool update --global CPMigrate
+# or
+cpmigrate --update
+```
 
-- .NET solution owners migrating to `Directory.Packages.props`
-- App teams modernizing NuGet package management without hand-editing every project file
-- Monorepo and multi-solution teams trying to standardize dependency policy
-- CI/CD maintainers who need machine-readable dependency analysis and safe update workflows
+**Other install paths**
+
+- Docs hub: https://georgepwall1991.github.io/CPMigrate/install/
+- Homebrew: `brew tap georgepwall1991/cpmigrate && brew install cpmigrate`
+- Winget: `winget install GeorgeWall.CPMigrate` (after the manifest is indexed)
+- Windows portable: `CPMigrate-portable-win-x64.zip` from [GitHub Releases](https://github.com/georgepwall1991/CPMigrate/releases)
+- From source: `git clone https://github.com/georgepwall1991/CPMigrate.git && dotnet build`
+
+> NuGet indexing may take a few minutes after a new release. If the version is missing: `dotnet nuget locals http-cache --clear`
+
+## See it work
+
+Product-flow diagrams from real CLI output (not stock screenshots). Absolute URLs so NuGet.org and GitHub both render them.
+
+### Dependency analysis scoreboard
+
+![CPMigrate dependency analysis scoreboard — version inconsistencies and health share meters](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/flow-analyze-scoreboard.svg)
+
+### CPM migration before / after
+
+![CPMigrate Central Package Management migration — Directory.Packages.props before and after](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/flow-cpm-migration.svg)
+
+### Safe package updates with --bisect
+
+![CPMigrate package update bisect — keep the largest green update subset with rollback](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/flow-update-bisect.svg)
+
+Terminal recordings (also absolute HTTPS for NuGet PackageReadmeFile):
+
+![CPMigrate Interactive Wizard Mission Control dashboard](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-interactive.gif)
+
+## 30-second path
+
+```bash
+# 1) Scan for issues (CI-safe exit codes)
+cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analysis.json
+
+# 2) Preview migration to Directory.Packages.props
+cpmigrate -s ./MySolution.sln --dry-run
+
+# 3) Migrate to Central Package Management (CPM)
+cpmigrate -s ./MySolution.sln
+
+# 4) Safely update packages with rollback protection
+cpmigrate --update-packages --dry-run
+
+# 5) Keep the largest green subset when something breaks tests
+cpmigrate --update-packages --bisect
+```
+
+Interactive first run: `cpmigrate` launches Mission Control (wizard). Single project: `cpmigrate --project ./src/Api/Api.csproj --dry-run`.
+
+## Feature snapshot
+
+| Surface | What you get |
+|---------|----------------|
+| **CPM migration** | Generate `Directory.Packages.props`, clean Version attributes from projects, conflict strategies |
+| **Dependency analysis** | 7 built-in analyzers + scoreboard; JSON for CI |
+| **Auto-fix** | Version, casing, redundant refs, transitive pin |
+| **Package updates** | Latest versions + `dotnet test` + automatic rollback |
+| **`--bisect`** | Largest green update subset; names held-back packages |
+| **`Directory.Build.props`** | Unify repeated properties across projects |
+| **Batch / monorepo** | Sequential or parallel multi-solution runs |
+| **Backup & rollback** | On-disk backups for migration and update paths |
+| **`.sln` + `.slnx`** | Classic solutions and Visual Studio 17.10+ `.slnx` |
 
 ### Why use CPMigrate instead of doing it by hand?
 
 | Approach | What you get | Where it breaks down |
 |----------|--------------|----------------------|
-| **Manual CPM migration** | Full control over `Directory.Packages.props` and project edits | Slow, easy to miss references, hard to repeat across many solutions |
-| **Ad hoc scripts** | Team-specific automation for one repository shape | Brittle logic, poor reuse, weak docs, and little rollback or analysis support |
-| **Raw `dotnet package list`** | Useful package inventory and vulnerability data | No migration, no fixers, no rollback, no central props generation |
-| **CPMigrate** | Migration, dependency analysis, auto-fix, safe package updates, batch processing, and CI-friendly JSON | Purpose-built for this exact modernization path |
+| **Manual CPM migration** | Full control over `Directory.Packages.props` | Slow, easy to miss references, hard to repeat |
+| **Ad hoc scripts** | Team-specific automation | Brittle, weak rollback and analysis |
+| **Raw `dotnet package list`** | Inventory and vulnerability data | No migration, fixers, or central props generation |
+| **CPMigrate** | Migration, analysis, auto-fix, safe updates, batch, CI JSON | Purpose-built for this path |
+
+### Who this is for
+
+- .NET solution owners migrating to `Directory.Packages.props`
+- App teams modernizing NuGet package management without hand-editing every project
+- Monorepo and multi-solution teams standardizing dependency policy
+- CI/CD maintainers who need machine-readable dependency analysis and safe update workflows
+
+## Compatibility
+
+- **.NET SDK:** 8.0+ (tool targets `net10.0` with `LatestMajor` roll-forward)
+- **Project types:** `.csproj` / `.fsproj` / `.vbproj`
+- **Solutions:** `.sln` and `.slnx`
+- **CPM:** generates and consumes standard NuGet Central Package Management files
 
 ---
 
 ## Table of Contents
 
-- [Installation](#installation)
+- [The problem](#the-problem)
+- [What it catches](#what-it-catches)
+- [Install](#install)
+- [See it work](#see-it-work)
+- [30-second path](#30-second-path)
+- [Feature snapshot](#feature-snapshot)
+- [Compatibility](#compatibility)
 - [Quick Start](#quick-start)
-- [60-Second Quickstart](#60-second-quickstart)
-- [Who This Is For](#who-this-is-for)
 - [Features](#features)
   - [CPM Migration](#cpm-migration)
   - [Dependency Analysis](#dependency-analysis)
@@ -85,49 +172,6 @@ Learn more in the search-focused docs hub: `https://georgepwall1991.github.io/CP
 - [Gallery](#gallery)
 - [Contributing](#contributing)
 - [License](#license)
-
----
-
-## Installation
-
-### .NET Global Tool (Recommended)
-
-Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
-
-```bash
-dotnet tool install --global CPMigrate
-```
-
-**Update to the latest version:**
-
-```bash
-cpmigrate --update
-```
-
-Or via the .NET CLI:
-
-```bash
-dotnet tool update --global CPMigrate
-```
-
-### Other Install Paths
-
-- Docs hub: `https://georgepwall1991.github.io/CPMigrate/install/`
-- Homebrew for macOS/Linux: `brew tap georgepwall1991/cpmigrate && brew install cpmigrate`
-- Winget for Windows: `winget install GeorgeWall.CPMigrate` after the Winget manifest is indexed
-- Windows portable release package: download `CPMigrate-portable-win-x64.zip` from GitHub Releases and run `CPMigrate.exe`
-- Source build: clone the repo and run `dotnet build`
-
-> **Note:** NuGet indexing may take up to 15 minutes after a new release. Clear your HTTP cache if updates aren't found immediately:
-> `dotnet nuget locals http-cache --clear`
-
-### From Source
-
-```bash
-git clone https://github.com/georgepwall1991/CPMigrate.git
-cd CPMigrate
-dotnet build
-```
 
 ---
 
@@ -186,24 +230,6 @@ cpmigrate -s ./MySolution.sln --dry-run --output Json --quiet > migration-previe
 
 Use the dedicated CI guide for GitHub Actions snippets and machine-readable workflows:
 `https://georgepwall1991.github.io/CPMigrate/guides/ci-cd/`
-
----
-
-## 60-Second Quickstart
-
-```bash
-# 1) Scan for issues (CI-safe exit codes)
-cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analysis.json
-
-# 2) Preview migration
-cpmigrate -s ./MySolution.sln --dry-run
-
-# 3) Migrate to CPM
-cpmigrate -s ./MySolution.sln
-
-# 4) Safely update packages with rollback protection
-cpmigrate --update-packages --dry-run
-```
 
 ---
 
@@ -757,15 +783,15 @@ reads without comparing strings:
 ```
 
 ### Mission Control Dashboard
-![CPMigrate Interactive](./docs/images/cpmigrate-interactive.gif)
+![CPMigrate Interactive Mission Control wizard for Central Package Management](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-interactive.gif)
 *The interactive wizard assessing migration risk and guiding you through each step.*
 
 ### Risk Analysis & Dry Run
-![CPMigrate Demo](./docs/images/cpmigrate-demo.gif)
+![CPMigrate Demo dry-run migration preview](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-demo.gif)
 *Previewing changes safely before committing.*
 
 ### Security & Package Analysis
-![CPMigrate Analyze](./docs/images/cpmigrate-analyze.gif)
+![CPMigrate Analyze dependency and vulnerability scan](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-analyze.gif)
 *Scanning for vulnerabilities and redundant dependencies.*
 
 ---

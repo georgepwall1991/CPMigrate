@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="420" viewBox="0 0 920 420" role="img" aria-labelledby="title desc">
+  <title id="title">CPMigrate Central Package Management migration before and after</title>
+  <desc id="desc">Before: PackageReference versions scattered in each csproj. After: Directory.Packages.props centralizes versions and projects reference packages without Version attributes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="920" height="420" rx="12" fill="url(#bg)"/>
+  <rect x="16" y="16" width="888" height="388" rx="10" fill="#0b1220" stroke="#334155" stroke-width="1"/>
+  <rect x="16" y="16" width="888" height="44" rx="10" fill="#1e293b"/>
+  <rect x="16" y="50" width="888" height="10" fill="#1e293b"/>
+  <circle cx="44" cy="38" r="6" fill="#f87171"/>
+  <circle cx="66" cy="38" r="6" fill="#fbbf24"/>
+  <circle cx="88" cy="38" r="6" fill="#4ade80"/>
+  <text x="120" y="43" fill="#e2e8f0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="600">CPM migration — Directory.Packages.props centralization</text>
+
+  <!-- BEFORE -->
+  <rect x="28" y="72" width="400" height="300" rx="8" fill="#1a1520" stroke="#7f1d1d" stroke-width="1"/>
+  <text x="44" y="100" fill="#f87171" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="700">BEFORE — versions in every project</text>
+  <text x="44" y="132" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Api.csproj</text>
+  <text x="44" y="154" fill="#f8fafc" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">&lt;PackageReference Include="Serilog"</text>
+  <text x="60" y="174" fill="#fbbf24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Version="3.0.0" /&gt;</text>
+  <text x="44" y="206" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Worker.csproj</text>
+  <text x="44" y="228" fill="#f8fafc" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">&lt;PackageReference Include="Serilog"</text>
+  <text x="60" y="248" fill="#f87171" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Version="3.1.1" /&gt;</text>
+  <text x="44" y="288" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Version drift · duplicated refs ·</text>
+  <text x="44" y="308" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">no single source of truth</text>
+  <text x="44" y="340" fill="#f87171" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">! Version Inconsistencies: 2</text>
+
+  <!-- ARROW -->
+  <text x="445" y="230" fill="#38bdf8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="28" font-weight="700">→</text>
+
+  <!-- AFTER -->
+  <rect x="492" y="72" width="400" height="300" rx="8" fill="#0f1f17" stroke="#14532d" stroke-width="1"/>
+  <text x="508" y="100" fill="#4ade80" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="700">AFTER — cpmigrate -s ./MySolution.sln</text>
+  <text x="508" y="132" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Directory.Packages.props</text>
+  <text x="508" y="154" fill="#f8fafc" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">&lt;PackageVersion Include="Serilog"</text>
+  <text x="524" y="174" fill="#4ade80" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Version="3.1.1" /&gt;</text>
+  <text x="508" y="206" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Api.csproj / Worker.csproj</text>
+  <text x="508" y="228" fill="#f8fafc" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">&lt;PackageReference Include="Serilog" /&gt;</text>
+  <text x="508" y="248" fill="#64748b" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">(no Version attribute)</text>
+  <text x="508" y="288" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Conflict strategy Highest (default)</text>
+  <text x="508" y="308" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">projects cleaned · versions centralized</text>
+  <text x="508" y="340" fill="#4ade80" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">✔ Central Package Management enabled</text>
+
+  <text x="36" y="398" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Product-flow diagram from documented CPM migration path · examples/small-solution shape</text>
+</svg>
