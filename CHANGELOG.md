@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.6.1] - 2026-07-27
+
+### Documentation
+- **NuGet/GitHub discoverability:** keyword-rich `Title`, `Description`, and `PackageTags` for Central Package Management / `Directory.Packages.props` search (CPM, CentralPackageManagement, migrator, vulnerability, Directory.Build.props, bisect, and related high-intent terms).
+- README conversion funnel above the fold: problem → what it catches → install (exact `3.6.1`) → product-flow visuals → 30-second path → feature snapshot → compatibility; deep CLI reference preserved below.
+- Three product-flow SVGs under `assets/` (analysis scoreboard, CPM before/after, update+bisect loop) plus absolute `https://raw.githubusercontent.com/...` image URLs so NuGet.org PackageReadmeFile renders images reliably.
+- Durable `DiscoverabilityMetadataTests` and `scripts/verify-packages.sh` gate package metadata, README funnel, HTTPS image refs, and packed assets.
+
+### Changed
+- Package version **3.6.1** (docs/discoverability only — no CLI behavior or diagnostic severity changes).
+
 ## [3.6.0] - 2026-07-25
 
 ### Added

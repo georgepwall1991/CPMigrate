@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="420" viewBox="0 0 920 420" role="img" aria-labelledby="title desc">
+  <title id="title">CPMigrate package update with bisect and rollback</title>
+  <desc id="desc">Product loop: update packages, tests fail, --bisect keeps the largest green subset and names held-back packages for follow-up with --only.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="920" height="420" rx="12" fill="url(#bg)"/>
+  <rect x="16" y="16" width="888" height="388" rx="10" fill="#0b1220" stroke="#334155" stroke-width="1"/>
+  <rect x="16" y="16" width="888" height="44" rx="10" fill="#1e293b"/>
+  <rect x="16" y="50" width="888" height="10" fill="#1e293b"/>
+  <circle cx="44" cy="38" r="6" fill="#f87171"/>
+  <circle cx="66" cy="38" r="6" fill="#fbbf24"/>
+  <circle cx="88" cy="38" r="6" fill="#4ade80"/>
+  <text x="120" y="43" fill="#e2e8f0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="600">cpmigrate --update-packages --bisect — keep what stays green</text>
+
+  <!-- steps -->
+  <rect x="28" y="78" width="200" height="72" rx="8" fill="#1a2332" stroke="#334155"/>
+  <text x="44" y="108" fill="#38bdf8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">1 · APPLY</text>
+  <text x="44" y="130" fill="#e2e8f0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">38 updates → props</text>
+
+  <text x="238" y="118" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20">→</text>
+
+  <rect x="260" y="78" width="200" height="72" rx="8" fill="#1a2332" stroke="#334155"/>
+  <text x="276" y="108" fill="#fbbf24" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">2 · VERIFY</text>
+  <text x="276" y="130" fill="#e2e8f0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">dotnet restore + test</text>
+
+  <text x="470" y="118" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20">→</text>
+
+  <rect x="492" y="78" width="200" height="72" rx="8" fill="#2a1515" stroke="#7f1d1d"/>
+  <text x="508" y="108" fill="#f87171" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">3 · FAIL</text>
+  <text x="508" y="130" fill="#e2e8f0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">whole set red</text>
+
+  <text x="702" y="118" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20">→</text>
+
+  <rect x="724" y="78" width="164" height="72" rx="8" fill="#0f1f17" stroke="#14532d"/>
+  <text x="740" y="108" fill="#4ade80" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">4 · BISECT</text>
+  <text x="740" y="130" fill="#e2e8f0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">largest green</text>
+
+  <!-- result panel -->
+  <rect x="28" y="172" width="864" height="196" rx="8" fill="#15202b" stroke="#334155"/>
+  <text x="44" y="202" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">BISECT RESULT</text>
+  <text x="44" y="232" fill="#f87171" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">HELD    Serilog: 3.1.1 → 4.2.0 (left at 3.1.1)</text>
+  <text x="44" y="256" fill="#f87171" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">HELD    AutoMapper: 12.0.1 → 14.0.0 (left at 12.0.1)</text>
+  <text x="44" y="280" fill="#4ade80" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">APPLIED Polly: 8.4.1 → 8.6.4</text>
+  <text x="44" y="304" fill="#4ade80" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">… Kept 36/38 update(s) with tests green (9 verification run(s)).</text>
+  <text x="44" y="336" fill="#38bdf8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Follow-up: cpmigrate --update-packages --only AutoMapper,Serilog</text>
+
+  <text x="36" y="398" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Source: README --bisect result · product loop analyzer + tool + CI verification path</text>
+</svg>
