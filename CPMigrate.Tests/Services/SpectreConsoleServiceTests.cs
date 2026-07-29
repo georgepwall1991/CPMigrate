@@ -11,6 +11,10 @@ using Xunit;
 
 namespace CPMigrate.Tests.Services;
 
+// Console-rendering assertions are sensitive to the ambient Spectre console: the contract
+// tests replace AnsiConsole.Console wholesale, and an interleaved run here saw every
+// assertion in this class fail at once. Sharing the sequential collection removes the race.
+[Collection("Sequential")]
 public class SpectreConsoleServiceTests
 {
     private readonly TestConsole _console;

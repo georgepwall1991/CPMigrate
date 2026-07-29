@@ -527,6 +527,41 @@ public class Options
         };
 
     /// <summary>
+    /// Produces the options for one solution inside a <c>--batch</c> run.
+    ///
+    /// Copies everything and overrides only what must differ per solution. The direction matters:
+    /// this used to be an explicit allow-list, so every option added afterwards was silently
+    /// dropped — a batch run ignored <c>--audit</c>, <c>--outdated</c>, <c>--deprecated</c>, and
+    /// <c>--transitive</c>, meaning a monorepo security scan reported no vulnerabilities because it
+    /// never looked for any. Copy-then-override fails safe: a new option propagates unless someone
+    /// deliberately excludes it.
+    /// </summary>
+    /// <param name="solutionDir">Directory of the solution being processed.</param>
+    /// <param name="backupDirName">Per-solution backup directory name, so parallel runs cannot collide.</param>
+    internal Options CloneForBatchSolution(string solutionDir, string backupDirName)
+    {
+        var clone = (Options)MemberwiseClone();
+
+        clone.SolutionFileDir = solutionDir;
+        clone.OutputDir = solutionDir;
+        clone.GitignoreDir = solutionDir;
+        clone.BackupDir = Path.Combine(solutionDir, backupDirName);
+
+        // Batch operates per solution, so a project filter from the outer invocation cannot apply.
+        clone.ProjectFileDir = string.Empty;
+
+        // Individual solution output would drown the batch summary.
+        clone.Quiet = true;
+
+        // Modes the batch driver owns and must not delegate to a solution run.
+        clone.BatchDir = string.Empty;
+        clone.Rollback = false;
+        clone.Interactive = false;
+
+        return clone;
+    }
+
+    /// <summary>
     /// Validates the command-line options for logical consistency.
     /// Throws ArgumentException if validation fails.
     /// </summary>
