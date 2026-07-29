@@ -14,7 +14,19 @@ public enum AnalysisIssueCode
     RedundantDirectReference,
     FrameworkAlignment,
     OutdatedPackage,
-    DeprecatedPackage
+    DeprecatedPackage,
+
+    /// <summary>A Directory.Packages.props exists without ManagePackageVersionsCentrally enabled.</summary>
+    CpmNotEnabled,
+
+    /// <summary>A project pins a version inline while central package management is in force.</summary>
+    InlineVersionUnderCpm,
+
+    /// <summary>A referenced package has no version, inline or central — restore will fail.</summary>
+    MissingPackageVersion,
+
+    /// <summary>A central PackageVersion entry no project references.</summary>
+    OrphanedPackageVersion
 }
 
 /// <summary>

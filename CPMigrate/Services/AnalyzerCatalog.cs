@@ -20,7 +20,10 @@ internal static class AnalyzerCatalog
             new OutdatedPackageAnalyzer(),
             new DeprecatedPackageAnalyzer(),
             new LiftingAnalyzer(dependencyGraphService),
-            new FrameworkAlignmentAnalyzer(projectFileScanner)
+            new FrameworkAlignmentAnalyzer(projectFileScanner),
+            // Gated on data, not a flag, like the other analyzers: it reports nothing unless the
+            // solution actually has a Directory.Packages.props to drift from.
+            new CpmDriftAnalyzer()
         ];
     }
 }
