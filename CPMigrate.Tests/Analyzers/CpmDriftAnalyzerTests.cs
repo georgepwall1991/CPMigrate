@@ -139,6 +139,79 @@ public class CpmDriftAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_ProjectContributingNoReferences_IsStillInspected()
+    {
+        // The fallback scanner skips PackageReference items with no version, so a *correctly*
+        // centralized project contributes nothing to References. Deriving the project list from
+        // references would therefore skip exactly the projects this analyzer exists to check.
+        WriteProps("<PackageVersion Include=\"Serilog\" Version=\"4.3.0\" />");
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Missing.Entirely\" />");
+
+        var packageInfo = new ProjectPackageInfo(
+            Array.Empty<PackageReference>(),
+            BasePath: _root,
+            ScannedProjects: new[] { project }
+        );
+
+        var result = _analyzer.Analyze(packageInfo);
+
+        result
+            .Issues.Should()
+            .Contain(i =>
+                i.IssueCode == AnalysisIssueCode.MissingPackageVersion
+                && i.PackageName == "Missing.Entirely"
+            );
+    }
+
+    [Fact]
+    public void Analyze_GlobalPackageReference_IsNeverReportedAsOrphaned()
+    {
+        // A GlobalPackageReference applies to every project implicitly, so no project-level
+        // PackageReference names it — which would make every one of them look unused.
+        WriteProps("<GlobalPackageReference Include=\"SonarAnalyzer.CSharp\" Version=\"10.0.0\" />");
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Serilog\" Version=\"4.3.0\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result
+            .Issues.Should()
+            .NotContain(i => i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion);
+    }
+
+    [Fact]
+    public void Analyze_CpmEnabledInDirectoryBuildProps_IsNotReportedAsDisabled()
+    {
+        // MSBuild resolves the property through imports, and Directory.Build.props is the other
+        // conventional home for it. Reporting on the props file alone is a High-severity false
+        // positive on a perfectly well configured repository.
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Newtonsoft.Json" Version="13.0.1" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        File.WriteAllText(
+            Path.Combine(_root, "Directory.Build.props"),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().NotContain(i => i.IssueCode == AnalysisIssueCode.CpmNotEnabled);
+    }
+
+    [Fact]
     public void Analyze_GlobalPackageReference_CountsAsACentralVersion()
     {
         // GlobalPackageReference supplies a version centrally too, so a project referencing such a

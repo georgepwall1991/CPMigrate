@@ -58,9 +58,28 @@ public record ProjectPackageInfo(
     IReadOnlyList<VulnerabilityInfo>? Vulnerabilities = null,
     IReadOnlyList<OutdatedPackageInfo>? OutdatedPackages = null,
     IReadOnlyList<DeprecatedPackageInfo>? DeprecatedPackages = null,
-    string? BasePath = null
+    string? BasePath = null,
+    IReadOnlyList<string>? ScannedProjects = null
 )
 {
+    /// <summary>
+    /// Every project the scan covered, whether or not it contributed a package reference.
+    ///
+    /// Deriving this from <see cref="References"/> silently loses projects: the fallback scanner
+    /// skips <c>PackageReference</c> items with no version, so a *correctly* centralized project can
+    /// contribute nothing at all. Any analyzer that needs to look at projects rather than at
+    /// packages has to start here.
+    /// </summary>
+    public IReadOnlyList<string> GetProjectsScanned()
+    {
+        return ScannedProjects
+            ?? References
+                .Select(reference => reference.ProjectPath)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+    }
+
     /// <summary>
     /// The stable identifier for a project: its path relative to the scan root, with forward
     /// slashes so the value is identical on every platform.

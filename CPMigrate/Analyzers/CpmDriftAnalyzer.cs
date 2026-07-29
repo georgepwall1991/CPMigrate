@@ -14,8 +14,9 @@ namespace CPMigrate.Analyzers;
 /// something breaks at runtime. A missing <c>PackageVersion</c> is louder, failing restore, but by
 /// then it is already committed.
 ///
-/// This analyzer runs only under <c>--check</c>, because outside a centrally-managed solution every
-/// finding it produces would be noise.
+/// Gated on data rather than a flag, like the other analyzers: it reports nothing unless the solution
+/// actually has a <c>Directory.Packages.props</c>, so a pre-migration repository sees no findings from
+/// it at all.
 /// </summary>
 public class CpmDriftAnalyzer : IAnalyzer
 {
@@ -39,7 +40,7 @@ public class CpmDriftAnalyzer : IAnalyzer
 
         if (propsPath is null)
         {
-            // Not a centrally-managed solution: --check has nothing to verify, and reporting
+            // Not a centrally-managed solution: there is nothing to drift from, and reporting
             // "no props file" as a finding would fire on every pre-migration repository.
             return new AnalyzerResult(Name, issues);
         }
@@ -61,12 +62,18 @@ public class CpmDriftAnalyzer : IAnalyzer
             return new AnalyzerResult(Name, issues);
         }
 
-        AddCpmNotEnabledIssue(issues, props);
+        AddCpmNotEnabledIssue(issues, props, packageInfo.BasePath);
 
         var central = ReadCentralVersions(props);
-        var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var projectPath in DistinctProjectPaths(packageInfo))
+        // A GlobalPackageReference applies to every project by definition, so it is never orphaned —
+        // seeding it here keeps the orphan check from reporting all of them.
+        var referenced = new HashSet<string>(
+            central.Where(entry => entry.Value.IsGlobal).Select(entry => entry.Key),
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        foreach (var projectPath in packageInfo.GetProjectsScanned())
         {
             InspectProject(issues, packageInfo, projectPath, central, referenced);
         }
@@ -81,17 +88,38 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// leaves every <c>PackageVersion</c> entry inert — the file looks authoritative and does
     /// nothing.
     /// </summary>
-    private static void AddCpmNotEnabledIssue(List<AnalysisIssue> issues, XDocument props)
+    private static void AddCpmNotEnabledIssue(
+        List<AnalysisIssue> issues,
+        XDocument props,
+        string? basePath
+    )
     {
-        var enabled = props
-            .Descendants()
-            .Where(e => e.Name.LocalName == "ManagePackageVersionsCentrally")
-            .Select(e => e.Value.Trim())
-            .LastOrDefault();
+        var enabled = ReadCpmEnablement(props);
 
         if (string.Equals(enabled, "true", StringComparison.OrdinalIgnoreCase))
         {
             return;
+        }
+
+        if (enabled is null)
+        {
+            // MSBuild resolves the property through imports, and Directory.Build.props is the other
+            // conventional home for it. Absence from both is still not proof — a custom import could
+            // set it — but reporting on the props file alone produces a High-severity false positive
+            // on repositories that are perfectly well configured.
+            var buildProps = basePath is null
+                ? null
+                : ReadProps(Path.Combine(basePath, "Directory.Build.props"));
+
+            if (buildProps is not null && ReadCpmEnablement(buildProps) is { } inherited)
+            {
+                if (string.Equals(inherited, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                enabled = inherited;
+            }
         }
 
         issues.Add(
@@ -110,13 +138,25 @@ public class CpmDriftAnalyzer : IAnalyzer
     }
 
     /// <summary>
+    /// Last-wins value of <c>ManagePackageVersionsCentrally</c> in a document, or null when absent.
+    /// </summary>
+    private static string? ReadCpmEnablement(XDocument document)
+    {
+        return document
+            .Descendants()
+            .Where(e => e.Name.LocalName == "ManagePackageVersionsCentrally")
+            .Select(e => e.Value.Trim())
+            .LastOrDefault();
+    }
+
+    /// <summary>
     /// Checks one project for references that bypass or contradict the central file.
     /// </summary>
     private static void InspectProject(
         List<AnalysisIssue> issues,
         ProjectPackageInfo packageInfo,
         string projectPath,
-        IReadOnlyDictionary<string, string?> central,
+        IReadOnlyDictionary<string, CentralEntry> central,
         HashSet<string> referenced
     )
     {
@@ -145,10 +185,10 @@ public class CpmDriftAnalyzer : IAnalyzer
                 issues.Add(
                     new AnalysisIssue(
                         packageName,
-                        central.TryGetValue(packageName, out var centralVersion)
-                        && centralVersion is not null
+                        central.TryGetValue(packageName, out var centralEntry)
+                        && centralEntry.Version is not null
                             ? $"Declares Version=\"{inlineVersion}\" inline, overriding the central "
-                                + $"{centralVersion}. Remove the attribute so the central version applies."
+                                + $"{centralEntry.Version}. Remove the attribute so the central version applies."
                             : $"Declares Version=\"{inlineVersion}\" inline instead of centrally. "
                                 + $"Move it to {PropsFileName}.",
                         new[] { projectId },
@@ -184,12 +224,12 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// </summary>
     private static void AddOrphanedVersionIssues(
         List<AnalysisIssue> issues,
-        IReadOnlyDictionary<string, string?> central,
+        IReadOnlyDictionary<string, CentralEntry> central,
         HashSet<string> referenced
     )
     {
         foreach (
-            var (packageName, version) in central.OrderBy(
+            var (packageName, entry) in central.OrderBy(
                 e => e.Key,
                 StringComparer.OrdinalIgnoreCase
             )
@@ -203,7 +243,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             issues.Add(
                 new AnalysisIssue(
                     packageName,
-                    $"Pinned at {version ?? "an unspecified version"} in {PropsFileName} but "
+                    $"Pinned at {entry.Version ?? "an unspecified version"} in {PropsFileName} but "
                         + "referenced by no project. Remove it, or the pin outlives what it was for.",
                     Array.Empty<string>(),
                     AnalysisIssueCode.OrphanedPackageVersion,
@@ -218,23 +258,22 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// Central versions by package ID. <c>GlobalPackageReference</c> counts: it supplies a version
     /// centrally too, so a project referencing such a package is not missing anything.
     /// </summary>
-    private static Dictionary<string, string?> ReadCentralVersions(XDocument props)
+    private static Dictionary<string, CentralEntry> ReadCentralVersions(XDocument props)
     {
-        var versions = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var versions = new Dictionary<string, CentralEntry>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var element in props.Descendants())
         {
-            var isCentralEntry =
-                element.Name.LocalName.Equals(
-                    PackageVersionItem,
-                    StringComparison.OrdinalIgnoreCase
-                )
-                || element.Name.LocalName.Equals(
-                    GlobalPackageReferenceItem,
-                    StringComparison.OrdinalIgnoreCase
-                );
+            var isPackageVersion = element.Name.LocalName.Equals(
+                PackageVersionItem,
+                StringComparison.OrdinalIgnoreCase
+            );
+            var isGlobal = element.Name.LocalName.Equals(
+                GlobalPackageReferenceItem,
+                StringComparison.OrdinalIgnoreCase
+            );
 
-            if (!isCentralEntry)
+            if (!isPackageVersion && !isGlobal)
             {
                 continue;
             }
@@ -243,12 +282,18 @@ public class CpmDriftAnalyzer : IAnalyzer
                 element.Attribute("Include")?.Value ?? element.Attribute("Update")?.Value;
             if (!string.IsNullOrWhiteSpace(packageName))
             {
-                versions[packageName] = ReadVersion(element);
+                versions[packageName] = new CentralEntry(ReadVersion(element), isGlobal);
             }
         }
 
         return versions;
     }
+
+    /// <summary>
+    /// A central version entry, and whether it came from <c>GlobalPackageReference</c> — which
+    /// applies to every project implicitly, so it is never orphaned.
+    /// </summary>
+    private readonly record struct CentralEntry(string? Version, bool IsGlobal);
 
     private static bool IsPackageReference(XElement element)
     {
@@ -279,14 +324,6 @@ public class CpmDriftAnalyzer : IAnalyzer
             ?.Value;
 
         return string.IsNullOrWhiteSpace(child) ? null : child.Trim();
-    }
-
-    private static IEnumerable<string> DistinctProjectPaths(ProjectPackageInfo packageInfo)
-    {
-        return packageInfo
-            .References.Select(reference => reference.ProjectPath)
-            .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
     private static string? ResolvePropsPath(string? basePath)

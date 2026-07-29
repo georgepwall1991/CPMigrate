@@ -8,6 +8,9 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [3.12.0] - 2026-07-30
 
+### Changed
+- `ProjectPackageInfo` now carries the list of projects the scan covered. Deriving it from the package references silently loses projects: the fallback scanner skips `PackageReference` items with no version, so a **correctly centralized** project contributes nothing — which would have made the new drift rules skip exactly the projects they exist to check.
+
 ### Added
 - **Four rules that catch a solution drifting back off central package management.** Migrating is a one-off event; *staying* migrated is not. Someone adds a package the way they always have — `<PackageReference Include="X" Version="1.0.0" />` — and the solution is quietly half-centralized again. NuGet says nothing, because an inline version simply wins, so nothing surfaces until two projects disagree and something breaks at runtime.
   - **`InlineVersionUnderCpm`** (Moderate) — a project pins a version inline while central management is in force, overriding the central value. Recognises both the attribute and the `<Version>` child-element form, and does not fire on an empty `Version=""`, which overrides nothing.
@@ -15,6 +18,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - **`OrphanedPackageVersion`** (Low) — a central pin nothing references. Harmless to restore, but stale pins accumulate, and once nothing uses a package its pin is indistinguishable from a deliberate one.
   - **`CpmNotEnabled`** (High) — a `Directory.Packages.props` without `ManagePackageVersionsCentrally`, so every entry in it is inert. The file looks authoritative and does nothing.
   - `GlobalPackageReference` counts as a central version, so a project referencing an analyzer package supplied that way is not reported as missing one.
+  - `CpmNotEnabled` also honours `Directory.Build.props`, the other conventional home for the property. Reporting on the props file alone was a High-severity false positive on repositories that set it there — MSBuild resolves the property through imports, so its absence from one file proves nothing.
   - Like the other analyzers, these are gated on **data rather than a flag**: they report nothing unless the solution actually has a `Directory.Packages.props` to drift from, so a pre-migration repository sees no change. They flow through every existing surface — terminal, JSON, SARIF, Markdown, `--fail-on`, and baselines.
 
 ## [3.11.0] - 2026-07-30

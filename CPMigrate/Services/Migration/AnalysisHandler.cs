@@ -224,7 +224,8 @@ internal sealed class AnalysisHandler
                 allVulnerabilities,
                 allOutdatedPackages,
                 allDeprecatedPackages,
-                basePath
+                basePath,
+                projectPaths
             ),
             scanFailures,
             deepScanFailures
