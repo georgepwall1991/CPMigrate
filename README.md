@@ -709,21 +709,38 @@ levels as `Critical`/`High` → `error`, `Moderate` → `warning`, `Low`/`Info` 
     fi
 ```
 
-Or upload SARIF and let code scanning annotate the diff. `--analyze` exits `5` when it finds
-issues, so `continue-on-error` keeps the upload step reachable:
+Or upload SARIF and let code scanning annotate the diff. Capture the exit code rather than using
+`continue-on-error`: that would swallow **every** failure, including exit `8`
+([IncompleteAnalysis](#exit-codes)) — leaving the job green on exactly the unexamined-dependency
+case the upload is meant to catch. Exit `5` is expected here, because code scanning is the gate:
 
 ```yaml
 - name: Install CPMigrate
   run: dotnet tool install --global CPMigrate
 
 - name: Analyze dependencies
-  continue-on-error: true
-  run: cpmigrate --analyze --audit --outdated --deprecated --output Sarif --output-file cpmigrate.sarif --quiet
+  id: analyze
+  run: |
+    set +e
+    cpmigrate --analyze --audit --outdated --deprecated \
+      --output Sarif --output-file cpmigrate.sarif --quiet
+    echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
 - name: Upload SARIF
+  if: always() && hashFiles('cpmigrate.sarif') != ''
   uses: github/codeql-action/upload-sarif@v3
   with:
     sarif_file: cpmigrate.sarif
+
+- name: Require a completed scan
+  run: |
+    code="${{ steps.analyze.outputs.exit_code }}"
+    # 0 = clean. 5 = issues found, already annotated on the diff by code scanning.
+    # Anything else (8 = incomplete scan, 1/2/6 = errors) means the results cannot be trusted.
+    case "$code" in
+      0|5) ;;
+      *) echo "::error::cpmigrate exited $code - the analysis did not complete"; exit 1 ;;
+    esac
 ```
 
 ### JSON Output

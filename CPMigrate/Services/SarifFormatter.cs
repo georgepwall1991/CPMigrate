@@ -435,6 +435,37 @@ public static class SarifFormatter
             .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
     }
 
+    /// <summary>
+    /// Follows a symlinked project to the file it points at, so the annotation lands on the blob a
+    /// consumer can actually display rather than on the link.
+    ///
+    /// Deliberately conservative: if the target sits outside <paramref name="rootDirectory"/> the
+    /// link path is kept, because a path outside the checkout is worse than an in-repository
+    /// symlink — the consumer can at least locate the latter.
+    /// </summary>
+    private static string ResolveRealPath(string fullPath, string rootDirectory)
+    {
+        try
+        {
+            var target = File.ResolveLinkTarget(fullPath, returnFinalTarget: true);
+            if (target is null)
+            {
+                return fullPath;
+            }
+
+            var resolved = Path.GetFullPath(target.FullName);
+            var relative = Path.GetRelativePath(rootDirectory, resolved);
+            var escapesRoot =
+                relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative);
+
+            return escapesRoot ? fullPath : resolved;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return fullPath;
+        }
+    }
+
     private static string ToDirectoryUri(string directory)
     {
         var withSeparator = directory.EndsWith(Path.DirectorySeparatorChar)
@@ -450,7 +481,7 @@ public static class SarifFormatter
     /// </summary>
     private static string ToRelativeUri(string rootDirectory, string path)
     {
-        var fullPath = Path.GetFullPath(path);
+        var fullPath = ResolveRealPath(Path.GetFullPath(path), rootDirectory);
         var relative = Path.GetRelativePath(rootDirectory, fullPath);
 
         if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
@@ -621,11 +652,13 @@ internal sealed class ProjectPathIndex
                 continue;
             }
 
-            Add(index._byName, reference.ProjectName, reference.ProjectPath);
+            var projectPath = reference.ProjectPath;
+
+            Add(index._byName, reference.ProjectName, projectPath);
             Add(
                 index._byNameAndPackage,
                 PackageKey(reference.ProjectName, reference.PackageName),
-                reference.ProjectPath
+                projectPath
             );
         }
 

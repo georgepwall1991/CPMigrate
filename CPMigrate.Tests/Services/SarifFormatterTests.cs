@@ -703,6 +703,90 @@ public class SarifFormatterTests : IDisposable
     }
 
     [Fact]
+    public void Format_SymlinkedProjectInsideTheRoot_ReportsTheRealFile()
+    {
+        // A repository that links a shared project into another directory should annotate the real
+        // file, since that is the blob a code-scanning consumer can display.
+        var realProject = CreateProject("src/Shared/Shared.csproj", "Newtonsoft.Json", "13.0.1");
+        var linkDirectory = Path.Combine(_root, "apps");
+        Directory.CreateDirectory(linkDirectory);
+        var linkPath = Path.Combine(linkDirectory, "Linked.csproj");
+
+        try
+        {
+            File.CreateSymbolicLink(linkPath, realProject);
+        }
+        catch (Exception ex)
+            when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            // Creating symlinks needs privileges on some platforms; nothing to assert there.
+            return;
+        }
+
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Newtonsoft.Json", "13.0.1", linkPath, "Linked.csproj") }
+        );
+
+        var uri = FormatToDocument(packageInfo, "Linked.csproj")
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0]
+            .GetProperty("locations")[0]
+            .GetProperty("physicalLocation")
+            .GetProperty("artifactLocation")
+            .GetProperty("uri")
+            .GetString();
+
+        uri.Should().Be("src/Shared/Shared.csproj");
+    }
+
+    [Fact]
+    public void Format_SymlinkPointingOutsideTheRoot_KeepsTheInRepositoryPath()
+    {
+        // Following the link here would produce a path outside the checkout, which is strictly
+        // worse than the in-repository symlink path a consumer can at least locate.
+        var outside = Path.Combine(Path.GetTempPath(), $"CPMigrateOutside_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(outside);
+        var target = Path.Combine(outside, "External.csproj");
+        File.WriteAllText(target, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+        var linkPath = Path.Combine(_root, "Linked.csproj");
+
+        try
+        {
+            File.CreateSymbolicLink(linkPath, target);
+        }
+        catch (Exception ex)
+            when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return;
+        }
+
+        try
+        {
+            var packageInfo = new ProjectPackageInfo(
+                new[]
+                {
+                    new PackageReference("Newtonsoft.Json", "13.0.1", linkPath, "Linked.csproj"),
+                }
+            );
+
+            var uri = FormatToDocument(packageInfo, "Linked.csproj")
+                .RootElement.GetProperty("runs")[0]
+                .GetProperty("results")[0]
+                .GetProperty("locations")[0]
+                .GetProperty("physicalLocation")
+                .GetProperty("artifactLocation")
+                .GetProperty("uri")
+                .GetString();
+
+            uri.Should().Be("Linked.csproj");
+        }
+        finally
+        {
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Format_CaseVariantPackageIds_StillResolveToEveryDeclaringProject()
     {
         // NuGet package IDs are case-insensitive — that is exactly why DuplicatePackageCasing is a

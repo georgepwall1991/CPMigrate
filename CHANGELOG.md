@@ -35,6 +35,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **`--output Sarif` is rejected with `--fix`.** The report describes the projects as they were *before* the fixes were written, so uploading it would annotate findings that no longer exist. `--fix-dry-run` changes nothing and is still allowed.
 - **Findings no longer annotate unrelated projects that share a file name.** Analyzer findings carry project *names*, so in a solution with both `src/App/App.csproj` and `tests/App/App.csproj` a finding against one was reported on both. Locations now resolve through the project that actually declared the package, falling back to every candidate only for findings that are not about a single package.
 
+- **Symlinked projects annotate the real file.** A project referenced through a symlink was reported at the link path, which a code-scanning consumer cannot display. The link is now followed — unless its target lies outside the scan root, where the in-repository link path is the more useful of the two.
+
 ### Repository
 - `.gitignore` now covers `cpmigrate.log` / `cpmigrate*.log`. CPMigrate writes its own `--verbose` log into the working directory, so running the tool inside its own repo left a machine-specific log staged for commit.
 
