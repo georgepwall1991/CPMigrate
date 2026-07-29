@@ -13,7 +13,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - **Regenerate baselines**: the fingerprint scheme is now `v2`. A `v1` baseline is rejected with an explicit instruction rather than silently matching nothing — run `cpmigrate --analyze --write-baseline` again.
   - **JSON schema 1.3.0**: `analysisIssues[].affectedProjects` holds relative paths instead of file names. This is the only field whose meaning has changed across any schema revision.
   - Terminal output and finding descriptions show the same relative paths, which also disambiguates them for a human reader.
+- The `FrameworkAlignment` analyzer was the last finding source still emitting bare file names, which would have left those findings with no SARIF locations at all once resolution became exact.
 - `VulnerabilityInfo` carries the project path alongside the name, since it was the one finding source that could not be traced back to a file.
+
+### Fixed
+- The "is this path inside the scan root" check tested the string prefix `..`, so a project under a directory legitimately named `..generated` was treated as outside the root and fell back to its bare file name — recreating the collision this change exists to prevent. It now tests the first path *segment*, and the same check is shared with SARIF's URI and symlink handling, which had the identical bug.
 
 ### Removed
 - The package-matching heuristic SARIF used to guess between same-named projects, and the fallback that annotated *every* candidate when the guess had nothing to go on. Resolution is now an exact lookup, so both are unnecessary.

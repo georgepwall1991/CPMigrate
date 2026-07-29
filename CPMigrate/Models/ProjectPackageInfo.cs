@@ -84,12 +84,35 @@ public record ProjectPackageInfo(
         }
 
         var relative = Path.GetRelativePath(BasePath, Path.GetFullPath(projectPath));
-        if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+        if (EscapesRoot(relative))
         {
             return Path.GetFileName(projectPath);
         }
 
         return relative.Replace(Path.DirectorySeparatorChar, '/').Replace('\\', '/');
+    }
+
+    /// <summary>
+    /// True when a relative path leaves the directory it was computed against.
+    ///
+    /// Tests the first <em>segment</em> rather than the string prefix: a directory can legitimately
+    /// be named <c>..generated</c>, and treating that as an escape would discard the directory and
+    /// recreate exactly the file-name collisions this identifier exists to prevent.
+    /// </summary>
+    /// <param name="relativePath">A path produced by <see cref="Path.GetRelativePath"/>.</param>
+    public static bool EscapesRoot(string relativePath)
+    {
+        if (string.IsNullOrEmpty(relativePath) || Path.IsPathRooted(relativePath))
+        {
+            return Path.IsPathRooted(relativePath);
+        }
+
+        var firstSegment = relativePath.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, '/'],
+            2
+        )[0];
+
+        return firstSegment == "..";
     }
 
     /// <summary>

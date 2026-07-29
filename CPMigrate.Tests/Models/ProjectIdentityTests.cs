@@ -58,6 +58,35 @@ public class ProjectIdentityTests
     }
 
     [Fact]
+    public void ProjectId_DirectoryNamedWithLeadingDots_IsStillTreatedAsInsideTheRoot()
+    {
+        // A prefix check on ".." matches a directory legitimately named "..generated", and the
+        // fallback would then discard the directory — recreating the very collision this identifier
+        // exists to prevent.
+        var root = Path.Combine(Path.GetTempPath(), "repo");
+        var info = new ProjectPackageInfo(Array.Empty<PackageReference>(), BasePath: root);
+
+        var id = info.ProjectId(Path.Combine(root, "..generated", "App.csproj"));
+
+        id.Should().Be("..generated/App.csproj");
+    }
+
+    [Theory]
+    [InlineData("src/Api/Api.csproj", false)]
+    [InlineData("..generated/App.csproj", false)]
+    [InlineData("..", true)]
+    [InlineData("../sibling/App.csproj", true)]
+    public void EscapesRoot_TestsTheFirstSegmentRatherThanTheStringPrefix(
+        string relativePath,
+        bool expected
+    )
+    {
+        var normalized = relativePath.Replace('/', Path.DirectorySeparatorChar);
+
+        ProjectPackageInfo.EscapesRoot(normalized).Should().Be(expected);
+    }
+
+    [Fact]
     public void ProjectId_WithoutAScanRoot_FallsBackToTheFileName()
     {
         var info = new ProjectPackageInfo(Array.Empty<PackageReference>());

@@ -450,10 +450,7 @@ public static class SarifFormatter
 
             var resolved = Path.GetFullPath(target.FullName);
             var relative = Path.GetRelativePath(rootDirectory, resolved);
-            var escapesRoot =
-                relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative);
-
-            return escapesRoot ? fullPath : resolved;
+            return ProjectPackageInfo.EscapesRoot(relative) ? fullPath : resolved;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -479,7 +476,7 @@ public static class SarifFormatter
         var fullPath = ResolveRealPath(Path.GetFullPath(path), rootDirectory);
         var relative = Path.GetRelativePath(rootDirectory, fullPath);
 
-        if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+        if (ProjectPackageInfo.EscapesRoot(relative))
         {
             return new Uri(fullPath).AbsoluteUri;
         }
