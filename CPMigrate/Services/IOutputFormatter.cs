@@ -29,5 +29,25 @@ public enum OutputFormat
     Terminal,
 
     /// <summary>JSON output for CI/CD integration.</summary>
-    Json
+    Json,
+
+    /// <summary>SARIF 2.1.0 output for GitHub code scanning and other static-analysis consumers.</summary>
+    Sarif,
+}
+
+/// <summary>
+/// Helpers for reasoning about output formats.
+/// </summary>
+public static class OutputFormatExtensions
+{
+    /// <summary>
+    /// Returns true when the format produces a machine-readable document on stdout. Those formats
+    /// must never be polluted by banners, progress bars, or prompts, so callers use this to decide
+    /// whether to silence the console rather than testing for one specific format.
+    /// </summary>
+    /// <param name="format">The configured output format.</param>
+    public static bool IsMachineReadable(this OutputFormat format)
+    {
+        return format is OutputFormat.Json or OutputFormat.Sarif;
+    }
 }

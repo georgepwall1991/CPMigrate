@@ -96,7 +96,7 @@ internal sealed class RollbackHandler
 
         if (_quietMode)
         {
-            if (options.Output == OutputFormat.Json)
+            if (options.Output.IsMachineReadable())
             {
                 return false;
             }

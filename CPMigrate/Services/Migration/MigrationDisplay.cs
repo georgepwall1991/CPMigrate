@@ -116,7 +116,7 @@ internal class MigrationDisplay
             return false;
         }
 
-        if (options.Output == OutputFormat.Json)
+        if (options.Output.IsMachineReadable())
         {
             return false;
         }

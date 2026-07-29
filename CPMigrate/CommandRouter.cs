@@ -19,7 +19,8 @@ internal static class CommandRouter
             services.VersionResolver,
             services.ConfigService,
             services.BackupManager,
-            services);
+            services
+        );
     }
 
     /// <summary>
@@ -32,7 +33,8 @@ internal static class CommandRouter
         VersionResolver versionResolver,
         ConfigService configService,
         IBackupManager backupManager,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null
+    )
     {
         var services = CreateApplicationServices(
             consoleService,
@@ -40,7 +42,8 @@ internal static class CommandRouter
             versionResolver,
             configService,
             backupManager,
-            loggerFactory);
+            loggerFactory
+        );
 
         return await RouteCommand(
             options,
@@ -49,7 +52,8 @@ internal static class CommandRouter
             versionResolver,
             configService,
             backupManager,
-            services);
+            services
+        );
     }
 
     private static async Task<int> RouteCommand(
@@ -59,7 +63,8 @@ internal static class CommandRouter
         VersionResolver versionResolver,
         ConfigService configService,
         IBackupManager backupManager,
-        ApplicationServices services)
+        ApplicationServices services
+    )
     {
         var executionConsole = GetExecutionConsole(options, consoleService);
 
@@ -68,6 +73,19 @@ internal static class CommandRouter
         if (!ReferenceEquals(executionConsole, services.ConsoleService))
         {
             services = services.WithConsole(executionConsole);
+        }
+
+        // The modes below are dispatched before per-command validation, so the output-format
+        // contract has to be checked here. Otherwise `--update --output Sarif` would run a real
+        // self-update and emit no SARIF, and the promised "stdout is always a SARIF log" is broken.
+        try
+        {
+            options.ValidateSarifOptions();
+        }
+        catch (ArgumentException ex)
+        {
+            consoleService.Error(ex.Message);
+            return ExitCodes.ValidationError;
         }
 
         // Handle Update command
@@ -85,7 +103,13 @@ internal static class CommandRouter
         // Route to appropriate command handler
         if (options.Interactive)
         {
-            return await RunInteractiveModeAsync(consoleService, interactiveService, versionResolver, configService, backupManager);
+            return await RunInteractiveModeAsync(
+                consoleService,
+                interactiveService,
+                versionResolver,
+                configService,
+                backupManager
+            );
         }
 
         if (options.PruneBackups || options.PruneAll)
@@ -95,7 +119,13 @@ internal static class CommandRouter
 
         if (!string.IsNullOrEmpty(options.BatchDir))
         {
-            return await RunBatchModeAsync(options, executionConsole, versionResolver, backupManager, services);
+            return await RunBatchModeAsync(
+                options,
+                executionConsole,
+                versionResolver,
+                backupManager,
+                services
+            );
         }
 
         if (options.UnifyProps)
@@ -105,7 +135,7 @@ internal static class CommandRouter
 
         // Check for updates in background for standard commands (if not quiet)
         Task? updateCheckTask = null;
-        if (!options.Quiet && !options.Output.Equals(OutputFormat.Json))
+        if (!options.Quiet && !options.Output.IsMachineReadable())
         {
             updateCheckTask = Task.Run(async () =>
             {
@@ -119,7 +149,13 @@ internal static class CommandRouter
             });
         }
 
-        var result = await RunMigrationAsync(options, executionConsole, versionResolver, backupManager, services);
+        var result = await RunMigrationAsync(
+            options,
+            executionConsole,
+            versionResolver,
+            backupManager,
+            services
+        );
 
         // Show update notification after main work completes to avoid interleaved output
         if (updateCheckTask != null)
@@ -130,7 +166,9 @@ internal static class CommandRouter
                 if (latestVersion != null)
                 {
                     consoleService.WriteLine();
-                    consoleService.Warning($"A new version of CPMigrate is available: v{latestVersion}");
+                    consoleService.Warning(
+                        $"A new version of CPMigrate is available: v{latestVersion}"
+                    );
                     consoleService.Dim("Run 'cpmigrate --update' to upgrade.");
                     consoleService.WriteLine();
                 }
@@ -144,20 +182,26 @@ internal static class CommandRouter
         return result;
     }
 
-    private static IConsoleService GetExecutionConsole(Options options, IConsoleService consoleService)
+    private static IConsoleService GetExecutionConsole(
+        Options options,
+        IConsoleService consoleService
+    )
     {
-        return options.Output == OutputFormat.Json ? SilentConsoleService.Instance : consoleService;
+        return options.Output.IsMachineReadable() ? SilentConsoleService.Instance : consoleService;
     }
 
     private static bool ShouldSuppressHeadersAndBanners(Options options)
     {
-        return options.Quiet || options.Output == OutputFormat.Json;
+        return options.Quiet || options.Output.IsMachineReadable();
     }
 
     /// <summary>
     /// Executes the self-update mode.
     /// </summary>
-    private static async Task<int> RunUpdateModeAsync(IConsoleService consoleService, ApplicationServices services)
+    private static async Task<int> RunUpdateModeAsync(
+        IConsoleService consoleService,
+        ApplicationServices services
+    )
     {
         try
         {
@@ -178,7 +222,8 @@ internal static class CommandRouter
     private static async Task<int> RunUpdatePackagesModeAsync(
         Options options,
         IConsoleService consoleService,
-        ApplicationServices services)
+        ApplicationServices services
+    )
     {
         if (!ValidateOptions(options, consoleService, out var validationError))
         {
@@ -186,7 +231,8 @@ internal static class CommandRouter
                 options,
                 "update-packages",
                 ExitCodes.ValidationError,
-                validationError ?? "Validation failed.");
+                validationError ?? "Validation failed."
+            );
             return ExitCodes.ValidationError;
         }
 
@@ -200,20 +246,32 @@ internal static class CommandRouter
         try
         {
             using var updateService = services.CreatePackageUpdateService();
-            var result = await updateService.UpdatePackagesAsync(PackageUpdateRequest.FromOptions(options));
+            var result = await updateService.UpdatePackagesAsync(
+                PackageUpdateRequest.FromOptions(options)
+            );
             await WriteJsonOutputForPackageUpdate(options, result, consoleService);
             return result.ExitCode;
         }
         catch (IOException ex)
         {
             consoleService.Error($"\nFile operation error: {ex.Message}");
-            await WriteErrorJsonOutputIfRequested(options, "update-packages", ExitCodes.FileOperationError, ex.Message);
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                "update-packages",
+                ExitCodes.FileOperationError,
+                ex.Message
+            );
             return ExitCodes.FileOperationError;
         }
         catch (Exception ex)
         {
             consoleService.Error($"\nUnexpected error: {ex.Message}");
-            await WriteErrorJsonOutputIfRequested(options, "update-packages", ExitCodes.UnexpectedError, ex.Message);
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                "update-packages",
+                ExitCodes.UnexpectedError,
+                ex.Message
+            );
             return ExitCodes.UnexpectedError;
         }
     }
@@ -221,7 +279,11 @@ internal static class CommandRouter
     /// <summary>
     /// Executes the unify Directory.Build.props mode.
     /// </summary>
-    public static async Task<int> RunUnifyPropsModeAsync(Options options, IConsoleService consoleService, ILoggerFactory? loggerFactory = null)
+    public static async Task<int> RunUnifyPropsModeAsync(
+        Options options,
+        IConsoleService consoleService,
+        ILoggerFactory? loggerFactory = null
+    )
     {
         var executionConsole = GetExecutionConsole(options, consoleService);
         var services = CreateApplicationServices(
@@ -230,11 +292,16 @@ internal static class CommandRouter
             new VersionResolver(executionConsole),
             new ConfigService(executionConsole),
             new BackupManager(),
-            loggerFactory);
+            loggerFactory
+        );
         return await RunUnifyPropsModeAsync(options, consoleService, services);
     }
 
-    private static async Task<int> RunUnifyPropsModeAsync(Options options, IConsoleService consoleService, ApplicationServices services)
+    private static async Task<int> RunUnifyPropsModeAsync(
+        Options options,
+        IConsoleService consoleService,
+        ApplicationServices services
+    )
     {
         try
         {
@@ -261,7 +328,8 @@ internal static class CommandRouter
         IInteractiveService interactiveService,
         VersionResolver versionResolver,
         ConfigService configService,
-        IBackupManager backupManager)
+        IBackupManager backupManager
+    )
     {
         consoleService.WriteHeader();
 
@@ -282,7 +350,12 @@ internal static class CommandRouter
                 ConfigService.MergeConfig(options, config);
             }
 
-            var result = await ExecuteInteractiveCommand(options, consoleService, versionResolver, backupManager);
+            var result = await ExecuteInteractiveCommand(
+                options,
+                consoleService,
+                versionResolver,
+                backupManager
+            );
 
             // Show result and prompt to continue
             consoleService.WriteLine();
@@ -302,14 +375,16 @@ internal static class CommandRouter
         Options options,
         IConsoleService consoleService,
         VersionResolver versionResolver,
-        IBackupManager backupManager)
+        IBackupManager backupManager
+    )
     {
         var services = CreateApplicationServices(
             consoleService,
             new InteractiveService(consoleService),
             versionResolver,
             new ConfigService(consoleService),
-            backupManager);
+            backupManager
+        );
 
         if (options.UpdatePackages)
         {
@@ -333,7 +408,13 @@ internal static class CommandRouter
             return await RunPruneModeAsync(options, consoleService, backupManager);
         }
 
-        return await RunMigrationAsync(options, consoleService, versionResolver, backupManager, services);
+        return await RunMigrationAsync(
+            options,
+            consoleService,
+            versionResolver,
+            backupManager,
+            services
+        );
     }
 
     /// <summary>
@@ -342,7 +423,8 @@ internal static class CommandRouter
     public static async Task<int> RunPruneModeAsync(
         Options options,
         IConsoleService consoleService,
-        IBackupManager backupManager)
+        IBackupManager backupManager
+    )
     {
         if (!ValidateOptions(options, consoleService, out var validationError))
         {
@@ -350,7 +432,8 @@ internal static class CommandRouter
                 options,
                 options.PruneAll ? "prune-all-backups" : "prune-backups",
                 ExitCodes.ValidationError,
-                validationError ?? "Validation failed.");
+                validationError ?? "Validation failed."
+            );
             return ExitCodes.ValidationError;
         }
 
@@ -377,7 +460,11 @@ internal static class CommandRouter
     /// <summary>
     /// Validates options and shows error if validation fails.
     /// </summary>
-    private static bool ValidateOptions(Options options, IConsoleService consoleService, out string? validationError)
+    private static bool ValidateOptions(
+        Options options,
+        IConsoleService consoleService,
+        out string? validationError
+    )
     {
         validationError = null;
         try
@@ -400,7 +487,8 @@ internal static class CommandRouter
         Options options,
         IConsoleService consoleService,
         IBackupManager backupManager,
-        string backupPath)
+        string backupPath
+    )
     {
         if (!ShouldSuppressHeadersAndBanners(options))
         {
@@ -417,9 +505,15 @@ internal static class CommandRouter
 
         consoleService.Warning($"This will delete ALL {history.Count} backup set(s).");
 
-        if (!ShouldProceedWithDestructiveAction(options, consoleService, "Are you sure you want to delete ALL backups?"))
+        if (
+            !ShouldProceedWithDestructiveAction(
+                options,
+                consoleService,
+                "Are you sure you want to delete ALL backups?"
+            )
+        )
         {
-            if (options.Output == OutputFormat.Json)
+            if (options.Output.IsMachineReadable())
             {
                 return Task.FromResult(ExitCodes.ValidationError);
             }
@@ -429,7 +523,9 @@ internal static class CommandRouter
         }
 
         var result = backupManager.PruneAllBackups(backupPath);
-        consoleService.Success($"Deleted {result.BackupsRemoved} backup set(s), {result.FilesRemoved} file(s), freed {result.BytesFreedFormatted}.");
+        consoleService.Success(
+            $"Deleted {result.BackupsRemoved} backup set(s), {result.FilesRemoved} file(s), freed {result.BytesFreedFormatted}."
+        );
 
         if (result.Errors.Count > 0)
         {
@@ -449,7 +545,8 @@ internal static class CommandRouter
         Options options,
         IConsoleService consoleService,
         IBackupManager backupManager,
-        string backupPath)
+        string backupPath
+    )
     {
         if (!ShouldSuppressHeadersAndBanners(options))
         {
@@ -468,7 +565,9 @@ internal static class CommandRouter
 
         if (history.Count <= options.Retention)
         {
-            consoleService.Info($"All backups are within retention period (keeping {options.Retention}). Nothing to prune.");
+            consoleService.Info(
+                $"All backups are within retention period (keeping {options.Retention}). Nothing to prune."
+            );
             return Task.FromResult(ExitCodes.Success);
         }
 
@@ -477,7 +576,7 @@ internal static class CommandRouter
 
         if (!ShouldProceedWithDestructiveAction(options, consoleService, "Proceed with pruning?"))
         {
-            if (options.Output == OutputFormat.Json)
+            if (options.Output.IsMachineReadable())
             {
                 return Task.FromResult(ExitCodes.ValidationError);
             }
@@ -487,7 +586,9 @@ internal static class CommandRouter
         }
 
         var result = backupManager.PruneBackups(backupPath, options.Retention);
-        consoleService.Success($"Deleted {result.BackupsRemoved} backup set(s), {result.FilesRemoved} file(s), freed {result.BytesFreedFormatted}.");
+        consoleService.Success(
+            $"Deleted {result.BackupsRemoved} backup set(s), {result.FilesRemoved} file(s), freed {result.BytesFreedFormatted}."
+        );
 
         if (result.Errors.Count > 0)
         {
@@ -508,7 +609,8 @@ internal static class CommandRouter
         IConsoleService consoleService,
         VersionResolver versionResolver,
         IBackupManager backupManager,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null
+    )
     {
         var executionConsole = GetExecutionConsole(options, consoleService);
         var services = CreateApplicationServices(
@@ -517,8 +619,15 @@ internal static class CommandRouter
             versionResolver,
             new ConfigService(executionConsole),
             backupManager,
-            loggerFactory);
-        return await RunBatchModeAsync(options, consoleService, versionResolver, backupManager, services);
+            loggerFactory
+        );
+        return await RunBatchModeAsync(
+            options,
+            consoleService,
+            versionResolver,
+            backupManager,
+            services
+        );
     }
 
     private static async Task<int> RunBatchModeAsync(
@@ -526,7 +635,8 @@ internal static class CommandRouter
         IConsoleService consoleService,
         VersionResolver versionResolver,
         IBackupManager backupManager,
-        ApplicationServices services)
+        ApplicationServices services
+    )
     {
         _ = versionResolver;
         _ = backupManager;
@@ -536,7 +646,8 @@ internal static class CommandRouter
                 options,
                 options.Analyze ? "batch-analyze" : "batch-migrate",
                 ExitCodes.ValidationError,
-                validationError ?? "Validation failed.");
+                validationError ?? "Validation failed."
+            );
             return ExitCodes.ValidationError;
         }
 
@@ -546,11 +657,16 @@ internal static class CommandRouter
         }
 
         // Create batch service with a migration executor function
-        var batchService = new BatchService(consoleService, async solutionOptions =>
-        {
-            var migrationService = services.CreateMigrationService(solutionOptions.Quiet || solutionOptions.Output == OutputFormat.Json);
-            return await migrationService.ExecuteAsync(solutionOptions);
-        });
+        var batchService = new BatchService(
+            consoleService,
+            async solutionOptions =>
+            {
+                var migrationService = services.CreateMigrationService(
+                    solutionOptions.Quiet || solutionOptions.Output.IsMachineReadable()
+                );
+                return await migrationService.ExecuteAsync(solutionOptions);
+            }
+        );
 
         var result = await batchService.RunBatchAsync(options);
 
@@ -563,7 +679,11 @@ internal static class CommandRouter
     /// <summary>
     /// Writes JSON output for batch results if requested.
     /// </summary>
-    private static async Task WriteJsonOutputIfRequested(Options options, BatchResult result, IConsoleService consoleService)
+    private static async Task WriteJsonOutputIfRequested(
+        Options options,
+        BatchResult result,
+        IConsoleService consoleService
+    )
     {
         if (options.Output != OutputFormat.Json)
         {
@@ -576,14 +696,18 @@ internal static class CommandRouter
         await JsonOutputWriter.EmitAsync(output, options, consoleService);
     }
 
-    private static bool ShouldProceedWithDestructiveAction(Options options, IConsoleService consoleService, string confirmationPrompt)
+    private static bool ShouldProceedWithDestructiveAction(
+        Options options,
+        IConsoleService consoleService,
+        string confirmationPrompt
+    )
     {
         if (options.Force)
         {
             return true;
         }
 
-        if (options.Output == OutputFormat.Json)
+        if (options.Output.IsMachineReadable())
         {
             return false;
         }
@@ -614,7 +738,8 @@ internal static class CommandRouter
         IConsoleService consoleService,
         VersionResolver versionResolver,
         IBackupManager backupManager,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null
+    )
     {
         if (options is null)
         {
@@ -628,8 +753,15 @@ internal static class CommandRouter
             versionResolver,
             new ConfigService(executionConsole),
             backupManager,
-            loggerFactory);
-        return await RunMigrationAsync(options, consoleService, versionResolver, backupManager, services);
+            loggerFactory
+        );
+        return await RunMigrationAsync(
+            options,
+            consoleService,
+            versionResolver,
+            backupManager,
+            services
+        );
     }
 
     private static async Task<int> RunMigrationAsync(
@@ -637,7 +769,8 @@ internal static class CommandRouter
         IConsoleService consoleService,
         VersionResolver versionResolver,
         IBackupManager backupManager,
-        ApplicationServices services)
+        ApplicationServices services
+    )
     {
         _ = versionResolver;
         _ = backupManager;
@@ -654,11 +787,14 @@ internal static class CommandRouter
                     options,
                     GetOperationName(options),
                     ExitCodes.ValidationError,
-                    validationError ?? "Validation failed.");
+                    validationError ?? "Validation failed."
+                );
                 return ExitCodes.ValidationError;
             }
 
-            var migrationService = services.CreateMigrationService(options.Quiet || options.Output == OutputFormat.Json);
+            var migrationService = services.CreateMigrationService(
+                options.Quiet || options.Output.IsMachineReadable()
+            );
             var result = await migrationService.ExecuteAsync(options);
 
             // Handle JSON output
@@ -673,10 +809,13 @@ internal static class CommandRouter
                 options,
                 GetOperationName(options),
                 ExitCodes.FileOperationError,
-                ex.Message);
-            if (options.Output != OutputFormat.Json && !options.Quiet)
+                ex.Message
+            );
+            if (!options.Output.IsMachineReadable() && !options.Quiet)
             {
-                await Console.Error.WriteLineAsync("\nSuggestion: Check file permissions and ensure no files are locked by another process.");
+                await Console.Error.WriteLineAsync(
+                    "\nSuggestion: Check file permissions and ensure no files are locked by another process."
+                );
             }
             return ExitCodes.FileOperationError;
         }
@@ -687,10 +826,13 @@ internal static class CommandRouter
                 options,
                 GetOperationName(options),
                 ExitCodes.FileOperationError,
-                ex.Message);
-            if (options.Output != OutputFormat.Json && !options.Quiet)
+                ex.Message
+            );
+            if (!options.Output.IsMachineReadable() && !options.Quiet)
             {
-                await Console.Error.WriteLineAsync("\nSuggestion: Run with elevated permissions or check file/folder access rights.");
+                await Console.Error.WriteLineAsync(
+                    "\nSuggestion: Run with elevated permissions or check file/folder access rights."
+                );
             }
             return ExitCodes.FileOperationError;
         }
@@ -701,29 +843,101 @@ internal static class CommandRouter
                 options,
                 GetOperationName(options),
                 ExitCodes.UnexpectedError,
-                ex.Message);
+                ex.Message
+            );
 #if DEBUG
-            if (options.Output != OutputFormat.Json && !options.Quiet)
+            if (!options.Output.IsMachineReadable() && !options.Quiet)
             {
                 await Console.Error.WriteLineAsync(ex.StackTrace);
             }
 #endif
-            if (options.Output != OutputFormat.Json && !options.Quiet)
+            if (!options.Output.IsMachineReadable() && !options.Quiet)
             {
-                await Console.Error.WriteLineAsync("\nSuggestion: Please report this issue at https://github.com/georgepwall1991/CPMigrate/issues");
+                await Console.Error.WriteLineAsync(
+                    "\nSuggestion: Please report this issue at https://github.com/georgepwall1991/CPMigrate/issues"
+                );
             }
             return ExitCodes.UnexpectedError;
         }
     }
 
     /// <summary>
-    /// Writes JSON output for migration results if requested.
+    /// Writes machine-readable output for migration results if requested. SARIF carries only
+    /// analyzer findings, so it is emitted from a separate path rather than being squeezed into
+    /// the general-purpose operation result.
     /// </summary>
+    /// <summary>
+    /// Emits the analysis as a SARIF 2.1.0 log. A run that produced no report (for example, no
+    /// projects were discovered) still emits a valid empty log so a code-scanning upload step
+    /// does not fail on a missing file.
+    /// </summary>
+    private static async Task WriteSarifOutputForMigration(
+        Options options,
+        MigrationResult result,
+        IConsoleService consoleService
+    )
+    {
+        var report =
+            result.AnalysisReport ?? new AnalysisReport(0, 0, Array.Empty<AnalyzerResult>());
+        var packageInfo =
+            result.PackageInfo ?? new ProjectPackageInfo(Array.Empty<PackageReference>());
+        var basePath = string.IsNullOrWhiteSpace(result.BasePath)
+            ? Directory.GetCurrentDirectory()
+            : result.BasePath;
+
+        var sarif = SarifFormatter.Format(
+            report,
+            packageInfo,
+            basePath,
+            DescribeScanOutcome(result)
+        );
+
+        await JsonOutputWriter.EmitAsync(sarif, options, consoleService);
+    }
+
+    /// <summary>
+    /// Decides whether the scan behind a result can be trusted. An empty finding list from a scan
+    /// that never ran — or that failed on some projects — is a false negative, and reporting it as
+    /// a successful run would let a code-scanning gate pass on unexamined code.
+    /// </summary>
+    private static SarifRunOutcome DescribeScanOutcome(MigrationResult result)
+    {
+        if (result.AnalysisReport is null)
+        {
+            return SarifRunOutcome.Failed("Analysis did not run: no projects were found to scan.");
+        }
+
+        if (result.ScanFailures > 0)
+        {
+            return SarifRunOutcome.Failed(
+                $"{result.ScanFailures} of {result.ProjectsDiscovered} projects failed to scan; "
+                    + "these findings are incomplete."
+            );
+        }
+
+        if (result.DeepScanFailures > 0)
+        {
+            return SarifRunOutcome.Failed(
+                $"{result.DeepScanFailures} package quer(ies) failed "
+                    + "(--audit/--outdated/--deprecated); those findings are missing, not absent."
+            );
+        }
+
+        return SarifRunOutcome.Successful;
+    }
+
     private static async Task WriteJsonOutputForMigration(
         Options options,
         MigrationResult result,
-        IConsoleService consoleService)
+        IConsoleService consoleService
+    )
     {
+        if (options.Output == OutputFormat.Sarif)
+        {
+            await WriteSarifOutputForMigration(options, result, consoleService);
+            return;
+        }
+
         if (options.Output != OutputFormat.Json)
         {
             return;
@@ -732,34 +946,44 @@ internal static class CommandRouter
         var formatter = new JsonFormatter();
         var operation = GetOperationName(options);
 
-        var analysisIssues = result.AnalysisReport == null
-            ? new List<AnalysisIssueInfo>()
-            : result.AnalysisReport.Results
-                .SelectMany(analyzer => analyzer.Issues.Select(issue => new AnalysisIssueInfo
-                {
-                    Type = analyzer.AnalyzerName,
-                    IssueCode = issue.IssueCode.ToString(),
-                    Severity = issue.Severity.ToString(),
-                    Package = issue.PackageName,
-                    Description = issue.Description,
-                    AffectedProjects = issue.AffectedProjects.ToList(),
-                    Fixable = issue.Fixable,
-                    Metadata = issue.Metadata?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-                }))
-                .ToList();
+        var analysisIssues =
+            result.AnalysisReport == null
+                ? new List<AnalysisIssueInfo>()
+                : result
+                    .AnalysisReport.Results.SelectMany(analyzer =>
+                        analyzer.Issues.Select(issue => new AnalysisIssueInfo
+                        {
+                            Type = analyzer.AnalyzerName,
+                            IssueCode = issue.IssueCode.ToString(),
+                            Severity = issue.Severity.ToString(),
+                            Package = issue.PackageName,
+                            Description = issue.Description,
+                            AffectedProjects = issue.AffectedProjects.ToList(),
+                            Fixable = issue.Fixable,
+                            Metadata = issue.Metadata?.ToDictionary(
+                                kvp => kvp.Key,
+                                kvp => kvp.Value
+                            ),
+                        })
+                    )
+                    .ToList();
 
-        var fixes = result.FixReport == null
-            ? new List<FixInfo>()
-            : result.FixReport.Results.SelectMany(fixResult =>
-                fixResult.Changes.Select(change => new FixInfo
-                {
-                    Type = fixResult.Description,
-                    Package = string.Empty,
-                    File = change.FilePath,
-                    From = change.Before,
-                    To = change.After,
-                    Applied = fixResult.Success
-                })).ToList();
+        var fixes =
+            result.FixReport == null
+                ? new List<FixInfo>()
+                : result
+                    .FixReport.Results.SelectMany(fixResult =>
+                        fixResult.Changes.Select(change => new FixInfo
+                        {
+                            Type = fixResult.Description,
+                            Package = string.Empty,
+                            File = change.FilePath,
+                            From = change.Before,
+                            To = change.After,
+                            Applied = fixResult.Success,
+                        })
+                    )
+                    .ToList();
 
         var operationResult = new OperationResult
         {
@@ -773,14 +997,18 @@ internal static class CommandRouter
                 ConflictsResolved = result.ConflictsResolved,
                 IssuesFound = result.AnalysisReport?.TotalIssues ?? 0,
                 IssuesFixed = result.FixReport?.TotalFixesApplied ?? 0,
-                FilesModified = result.FixReport?.TotalFileChanges ?? 0
+                FilesModified = result.FixReport?.TotalFileChanges ?? 0,
             },
             AnalysisIssues = analysisIssues,
             Fixes = fixes,
-            PropsFile = string.IsNullOrWhiteSpace(result.PropsFilePath) ? null : new PropsFileInfo { Path = result.PropsFilePath },
-            Backup = string.IsNullOrWhiteSpace(result.BackupPath) ? null : new BackupInfo { Path = result.BackupPath, FilesBackedUp = 0 },
+            PropsFile = string.IsNullOrWhiteSpace(result.PropsFilePath)
+                ? null
+                : new PropsFileInfo { Path = result.PropsFilePath },
+            Backup = string.IsNullOrWhiteSpace(result.BackupPath)
+                ? null
+                : new BackupInfo { Path = result.BackupPath, FilesBackedUp = 0 },
             DryRun = result.WasDryRun,
-            Timestamp = DateTime.UtcNow.ToString("o")
+            Timestamp = DateTime.UtcNow.ToString("o"),
         };
 
         var output = formatter.Format(operationResult);
@@ -791,7 +1019,8 @@ internal static class CommandRouter
     private static async Task WriteJsonOutputForPackageUpdate(
         Options options,
         PackageUpdateResult result,
-        IConsoleService consoleService)
+        IConsoleService consoleService
+    )
     {
         if (options.Output != OutputFormat.Json)
         {
@@ -815,20 +1044,22 @@ internal static class CommandRouter
                 WasRolledBack = result.WasRolledBack,
                 PackagesHeldBack = result.PackagesHeldBack,
                 VerificationRuns = result.VerificationRuns,
-                BisectBudgetExhausted = result.BisectBudgetExhausted
+                BisectBudgetExhausted = result.BisectBudgetExhausted,
             },
-            PackageUpdates = result.Updates.Select(update => new PackageUpdateInfo
-            {
-                Package = update.PackageName,
-                CurrentVersion = update.CurrentVersion,
-                LatestVersion = update.LatestVersion,
-                IsMajorUpdate = update.IsMajorUpdate,
-                Accepted = update.Accepted,
-                Transitive = update.IsTransitive,
-                HeldBack = update.HeldBack
-            }).ToList(),
+            PackageUpdates = result
+                .Updates.Select(update => new PackageUpdateInfo
+                {
+                    Package = update.PackageName,
+                    CurrentVersion = update.CurrentVersion,
+                    LatestVersion = update.LatestVersion,
+                    IsMajorUpdate = update.IsMajorUpdate,
+                    Accepted = update.Accepted,
+                    Transitive = update.IsTransitive,
+                    HeldBack = update.HeldBack,
+                })
+                .ToList(),
             DryRun = options.DryRun,
-            Timestamp = DateTime.UtcNow.ToString("o")
+            Timestamp = DateTime.UtcNow.ToString("o"),
         };
 
         var output = formatter.Format(operationResult);
@@ -840,8 +1071,18 @@ internal static class CommandRouter
         Options options,
         string operation,
         int exitCode,
-        string errorMessage)
+        string errorMessage
+    )
     {
+        if (options.Output == OutputFormat.Sarif)
+        {
+            // In SARIF mode stdout is a SARIF log unconditionally, so failures are reported as an
+            // unsuccessful invocation rather than as CPMigrate's own error JSON.
+            var sarif = SarifFormatter.FormatError(errorMessage, Directory.GetCurrentDirectory());
+            await JsonOutputWriter.EmitFailureAsync(sarif, options);
+            return;
+        }
+
         if (options.Output != OutputFormat.Json)
         {
             return;
@@ -855,12 +1096,12 @@ internal static class CommandRouter
             ExitCode = exitCode,
             Errors = new List<string> { errorMessage },
             DryRun = options.DryRun,
-            Timestamp = DateTime.UtcNow.ToString("o")
+            Timestamp = DateTime.UtcNow.ToString("o"),
         };
 
         var output = formatter.Format(operationResult);
 
-        await JsonOutputWriter.EmitAsync(output, options, null, announceFile: false);
+        await JsonOutputWriter.EmitFailureAsync(output, options);
     }
 
     private static string GetOperationName(Options options)
@@ -884,7 +1125,8 @@ internal static class CommandRouter
         VersionResolver versionResolver,
         ConfigService configService,
         IBackupManager backupManager,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null
+    )
     {
         var solutionDiscovery = new SolutionDiscovery(consoleService);
         var projectFileScanner = new ProjectFileScanner(consoleService);
@@ -894,7 +1136,8 @@ internal static class CommandRouter
             solutionDiscovery,
             projectFileScanner,
             packageQueryService,
-            loggerFactory?.CreateLogger<ProjectAnalyzer>());
+            loggerFactory?.CreateLogger<ProjectAnalyzer>()
+        );
 
         return new ApplicationServices(
             consoleService,
@@ -903,6 +1146,7 @@ internal static class CommandRouter
             configService,
             backupManager,
             projectAnalyzer,
-            loggerFactory);
+            loggerFactory
+        );
     }
 }

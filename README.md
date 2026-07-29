@@ -42,7 +42,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.6.1
+dotnet tool install --global CPMigrate --version 3.7.0
 ```
 
 ```bash
@@ -598,8 +598,8 @@ The config file is discovered by walking up from the selected solution/project p
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--output` | | `Terminal` | Output format: `Terminal` or `Json` |
-| `--output-file` | | | Write JSON output to a file |
+| `--output` | | `Terminal` | Output format: `Terminal`, `Json`, or `Sarif` (requires `--analyze`) |
+| `--output-file` | | | Write `Json` or `Sarif` output to a file |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Enable diagnostic logging to `cpmigrate.log` |
 
@@ -623,6 +623,12 @@ The config file is discovered by walking up from the selected solution/project p
 | `5` | AnalysisIssuesFound | Analysis detected issues (useful for CI gates) |
 | `6` | UnexpectedError | Unhandled exception |
 | `7` | TestFailure | Tests failed after package update (rollback performed). With `--bisect`, returned only when *no* update could be kept |
+| `8` | IncompleteAnalysis | A requested scan did not finish, so the findings are incomplete — nothing was necessarily found wrong, but part of the solution went unexamined |
+
+**On `8` (IncompleteAnalysis):** if a project fails to scan, or a `--audit` / `--outdated` /
+`--deprecated` query fails, the run produces no findings for the part it could not read. Before
+3.7.0 that exited `0`, which a CI gate reads as "clean" — the one failure mode a security gate
+exists to prevent. Treat `8` as "re-run or investigate", not as "no issues".
 
 ---
 
@@ -669,6 +675,22 @@ verb would otherwise fall through to the default action and start a real migrati
 › Did you mean: cpmigrate --analyze -s ./MySolution.sln
 ```
 
+### SARIF for GitHub code scanning
+
+`--output Sarif` emits a [SARIF 2.1.0](https://docs.github.com/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning)
+log, so findings appear as annotations on the pull request diff instead of buried in build logs.
+Each result points at the project file **and the line declaring the offending `PackageReference`**,
+carries the rule's description and a link to [the rule reference](docs/rules.md), and includes a
+stable fingerprint so code scanning tracks a finding across runs rather than reopening it.
+
+```bash
+cpmigrate --analyze --audit --outdated --deprecated \
+  --output Sarif --output-file cpmigrate.sarif --quiet
+```
+
+SARIF describes analyzer findings, so `--output Sarif` requires `--analyze`. Severities map to SARIF
+levels as `Critical`/`High` → `error`, `Moderate` → `warning`, `Low`/`Info` → `note`.
+
 ### GitHub Actions Example
 
 ```yaml
@@ -685,6 +707,40 @@ verb would otherwise fall through to the default action and start a real migrati
       echo "::error::Dependency issues detected"
       exit 1
     fi
+```
+
+Or upload SARIF and let code scanning annotate the diff. Capture the exit code rather than using
+`continue-on-error`: that would swallow **every** failure, including exit `8`
+([IncompleteAnalysis](#exit-codes)) — leaving the job green on exactly the unexamined-dependency
+case the upload is meant to catch. Exit `5` is expected here, because code scanning is the gate:
+
+```yaml
+- name: Install CPMigrate
+  run: dotnet tool install --global CPMigrate
+
+- name: Analyze dependencies
+  id: analyze
+  run: |
+    set +e
+    cpmigrate --analyze --audit --outdated --deprecated \
+      --output Sarif --output-file cpmigrate.sarif --quiet
+    echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+- name: Upload SARIF
+  if: always() && hashFiles('cpmigrate.sarif') != ''
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: cpmigrate.sarif
+
+- name: Require a completed scan
+  run: |
+    code="${{ steps.analyze.outputs.exit_code }}"
+    # 0 = clean. 5 = issues found, already annotated on the diff by code scanning.
+    # Anything else (8 = incomplete scan, 1/2/6 = errors) means the results cannot be trusted.
+    case "$code" in
+      0|5) ;;
+      *) echo "::error::cpmigrate exited $code - the analysis did not complete"; exit 1 ;;
+    esac
 ```
 
 ### JSON Output

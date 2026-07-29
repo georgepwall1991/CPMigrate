@@ -6,6 +6,43 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-07-29
+
+### Added
+- **`--output Sarif`: analyzer findings as SARIF 2.1.0, for GitHub code scanning.** Teams wiring CPMigrate into CI previously had to parse CPMigrate's bespoke JSON and re-render it themselves to get findings in front of reviewers. SARIF is the format GitHub, Azure DevOps, and every static-analysis viewer already consume, so `cpmigrate --analyze --output Sarif --output-file cpmigrate.sarif` now feeds `github/codeql-action/upload-sarif` directly — findings land as annotations on the pull request diff.
+  - Each finding resolves to the **project file and the exact line** declaring the offending `PackageReference`, so annotations attach to real code rather than to the repository root.
+  - Every issue code ships full rule metadata — short and full descriptions, tags, and a `helpUri` into the new rule reference — so a reviewer can act on a finding without leaving the PR.
+  - Results carry a `partialFingerprints` entry derived from the issue code, package, and affected projects, letting code scanning track a finding across runs instead of reopening it every build.
+  - Severities map to SARIF levels: `Critical`/`High` → `error`, `Moderate` → `warning`, `Low`/`Info` → `note`.
+  - Tool failures are reported as an unsuccessful SARIF invocation with a tool execution notification, so stdout is a parseable SARIF log even when a run fails — an upload step never breaks on a malformed or missing file.
+- **`docs/rules.md`: a published reference for every rule CPMigrate reports.** Rule IDs are now documented as a public contract shared by SARIF `ruleId`, JSON `issueCode`, and terminal output, with the trigger, default severity, and whether a built-in fixer applies. A test fails the build if an issue code is added without a matching section.
+
+### Changed
+- `--output-file` now accepts `Sarif` as well as `Json`, and reports which format it wrote.
+- Console suppression, prompt guards, and non-TTY safety checks now key off a single "machine-readable output" predicate rather than testing for `Json` at ~20 separate call sites, so any future machine format inherits the same protections instead of re-introducing banner leaks.
+
+### Changed (behavioral — check your CI gates)
+- **An incomplete analysis now exits `8` (`IncompleteAnalysis`) instead of `0`.** If a project fails to scan, or a `--audit`/`--outdated`/`--deprecated` query fails, the run produces no findings for the part it could not read — and exiting `0` told a CI gate the dependencies were clean. Exit `5` (`AnalysisIssuesFound`) still wins when real issues were found, since that is the more actionable signal. A pipeline that treats any non-zero exit as failure will now surface scan failures it previously ignored; one that gates specifically on `5` is unaffected.
+
+### Fixed
+- **A failed `--audit`, `--outdated`, or `--deprecated` query looked identical to a clean result.** Those scans returned a success flag that was discarded, so a NuGet query that never completed simply contributed no findings — and "no vulnerabilities found" was reported for a vulnerability scan that did not run. The failures are now counted, warned about on the terminal, and reported through SARIF as an unsuccessful invocation. This affected every output format, not just SARIF.
+- **`--verbose` corrupted machine-readable stdout.** The "Verbose logging enabled: …" notice was written before the payload, so `--output Json --verbose` emitted prose ahead of the opening brace and no longer parsed as JSON.
+- **An unwritable `--output-file` aborted the process.** The failed write threw, and the error handler retried the same path from inside its catch block, throwing again and terminating with an unhandled exception instead of reporting the original problem. Failure payloads now fall back to stdout.
+- **SARIF annotations were lost for solutions that reference projects above themselves.** A solution under `build/` referencing `../src/App.csproj` put that project outside the scan root, forcing an absolute `file://` URI that code scanning cannot map to a checked-out file. The URI base now widens to the common ancestor of every reported project.
+- **SARIF line locations are resolved by parsing the project as XML, not by matching text.** A project file is XML, and a text search got several valid forms wrong: a commented-out `PackageReference` above the live one won, single-quoted attributes (`Include='Serilog'`) never matched at all, and `Update=` declarations were invisible. An unparseable project now falls back to a file-level annotation instead of a wrong line.
+- **Artifact URIs are percent-encoded.** `artifactLocation.uri` is a URI reference, so a project path containing a space, `#`, or `%` produced an invalid location that a consumer could reject or resolve to the wrong file.
+- **`--output Sarif` is now rejected for modes that cannot produce findings.** `--update`, `--interactive`, `--unify-props`, `--update-packages`, `--rollback`, `--prune-backups`, `--prune-all`, and `--list-backups` are dispatched before per-command validation, so `--update --output Sarif` previously ran a real self-update and emitted no SARIF at all. Each is named explicitly, so passing `--analyze` alongside one no longer slips past the check.
+- **`--output Sarif` is rejected with `--fix`.** The report describes the projects as they were *before* the fixes were written, so uploading it would annotate findings that no longer exist. `--fix-dry-run` changes nothing and is still allowed.
+- **Findings no longer annotate unrelated projects that share a file name.** Analyzer findings carry project *names*, so in a solution with both `src/App/App.csproj` and `tests/App/App.csproj` a finding against one was reported on both. Locations now resolve through the project that actually declared the package, falling back to every candidate only for findings that are not about a single package.
+
+- **Symlinked projects annotate the real file.** A project referenced through a symlink was reported at the link path, which a code-scanning consumer cannot display. The link is now followed — unless its target lies outside the scan root, where the in-repository link path is the more useful of the two.
+
+### Repository
+- `.gitignore` now covers `cpmigrate.log` / `cpmigrate*.log`. CPMigrate writes its own `--verbose` log into the working directory, so running the tool inside its own repo left a machine-specific log staged for commit.
+
+### Validation
+- `--output Sarif` requires `--analyze` (SARIF carries only analyzer findings) and is rejected with `--batch`, `--interactive`, and `--interactive-conflicts`.
+
 ## [3.6.1] - 2026-07-27
 
 ### Documentation

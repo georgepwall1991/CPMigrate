@@ -51,4 +51,34 @@ public class MigrationResult
     /// Fix report, when analyze mode runs with --fix or --fix-dry-run.
     /// </summary>
     public FixReport? FixReport { get; init; }
+
+    /// <summary>
+    /// The package references the analysis was built from. Reporters that need to resolve a
+    /// finding back to a project file (SARIF locations, for example) use this; analyzer issues
+    /// themselves only carry project names.
+    /// </summary>
+    public ProjectPackageInfo? PackageInfo { get; init; }
+
+    /// <summary>
+    /// The directory the scan was rooted at, used to make reported file paths relative.
+    /// </summary>
+    public string? BasePath { get; init; }
+
+    /// <summary>
+    /// Projects that could not be scanned. Any non-zero value means the analysis is incomplete,
+    /// so reporters must not present an empty finding list as a clean result.
+    /// </summary>
+    public int ScanFailures { get; init; }
+
+    /// <summary>
+    /// Opt-in package queries (<c>--audit</c>, <c>--outdated</c>, <c>--deprecated</c>) that failed
+    /// to return. Tracked apart from <see cref="ScanFailures"/> because the project's references
+    /// were still read: the gap is in the extra findings, not in the inventory.
+    /// </summary>
+    public int DeepScanFailures { get; init; }
+
+    /// <summary>
+    /// Projects the scan set out to cover, for reporting the scale of any scan failures.
+    /// </summary>
+    public int ProjectsDiscovered { get; init; }
 }
