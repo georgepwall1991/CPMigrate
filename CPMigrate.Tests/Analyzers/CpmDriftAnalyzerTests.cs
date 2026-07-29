@@ -303,6 +303,132 @@ public class CpmDriftAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_CentralVersionsSuppliedByAnImport_AreFound()
+    {
+        // NuGet uses imported PackageVersion entries, so missing them would report perfectly valid
+        // references as MissingPackageVersion — a High finding that fails CI on a working repository.
+        File.WriteAllText(
+            Path.Combine(_root, "Packages.Shared.props"),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Newtonsoft.Json" Version="13.0.1" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="Packages.Shared.props" />
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_ImportPathBuiltFromAnMsBuildProperty_SuppressesTheUnverifiableRules()
+    {
+        // An import path the analyzer cannot resolve means the central set is incomplete. Guessing
+        // would produce High-severity false positives, so the rules that depend on completeness stand
+        // down.
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="$(SharedPropsDir)/Packages.props" />
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.3.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result
+            .Issues.Should()
+            .NotContain(i =>
+                i.IssueCode == AnalysisIssueCode.MissingPackageVersion
+                || i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+            );
+    }
+
+    [Fact]
+    public void Analyze_ImportedPropsStillReportsInlineVersions()
+    {
+        // Inline detection does not depend on knowing the full central set, so it keeps working when
+        // an import cannot be followed.
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="$(Unknown)/Packages.props" />
+            </Project>
+            """
+        );
+        var project = WriteProject(
+            "Api.csproj",
+            "<PackageReference Include=\"Newtonsoft.Json\" Version=\"13.0.1\" />"
+        );
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result
+            .Issues.Should()
+            .Contain(i => i.IssueCode == AnalysisIssueCode.InlineVersionUnderCpm);
+    }
+
+    [Fact]
+    public void Analyze_TransitivePinningOverriddenToFalse_StillReportsOrphans()
+    {
+        // MSBuild takes the last assignment; accepting any earlier true would ignore the override.
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+              </PropertyGroup>
+              <PropertyGroup>
+                <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Unused.Package" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject(
+            "Api.csproj",
+            "<PackageReference Include=\"Serilog\" Version=\"4.3.0\" />"
+        );
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result
+            .Issues.Should()
+            .Contain(i => i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion);
+    }
+
+    [Fact]
     public void Analyze_GlobalPackageReference_CountsAsACentralVersion()
     {
         // GlobalPackageReference supplies a version centrally too, so a project referencing such a

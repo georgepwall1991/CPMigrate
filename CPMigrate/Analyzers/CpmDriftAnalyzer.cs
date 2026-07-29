@@ -72,7 +72,9 @@ public class CpmDriftAnalyzer : IAnalyzer
             return new AnalyzerResult(Name, issues);
         }
 
-        var central = ReadCentralVersions(props);
+        // A props file may import others, and NuGet uses their entries too. Missing them would
+        // report perfectly valid references as MissingPackageVersion — a High finding that fails CI.
+        var (central, importsResolved) = ReadCentralVersions(props, propsPath);
 
         // A GlobalPackageReference applies to every project by definition, so it is never orphaned —
         // seeding it here keeps the orphan check from reporting all of them.
@@ -83,10 +85,12 @@ public class CpmDriftAnalyzer : IAnalyzer
 
         foreach (var projectPath in packageInfo.GetProjectsScanned())
         {
-            InspectProject(issues, packageInfo, projectPath, central, referenced);
+            InspectProject(issues, packageInfo, projectPath, central, referenced, importsResolved);
         }
 
-        if (!IsTransitivePinningEnabled(props, packageInfo.BasePath))
+        // Both remaining rules compare against the full central set. If an import could not be
+        // followed, that set is incomplete, and every conclusion drawn from it would be a guess.
+        if (importsResolved && !IsTransitivePinningEnabled(props, packageInfo.BasePath))
         {
             AddOrphanedVersionIssues(issues, central, referenced);
         }
@@ -168,13 +172,19 @@ public class CpmDriftAnalyzer : IAnalyzer
             && IsPropertyTrue(buildProps, "CentralPackageTransitivePinningEnabled");
     }
 
+    /// <summary>
+    /// Last-wins value of a boolean property, matching how MSBuild resolves a repeated assignment.
+    /// Accepting any earlier <c>true</c> would ignore a later override to <c>false</c>.
+    /// </summary>
     private static bool IsPropertyTrue(XDocument document, string propertyName)
     {
-        return document
+        var effective = document
             .Descendants()
             .Where(e => e.Name.LocalName == propertyName)
             .Select(e => e.Value.Trim())
-            .Any(value => string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
+            .LastOrDefault();
+
+        return string.Equals(effective, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -197,7 +207,8 @@ public class CpmDriftAnalyzer : IAnalyzer
         ProjectPackageInfo packageInfo,
         string projectPath,
         IReadOnlyDictionary<string, CentralEntry> central,
-        HashSet<string> referenced
+        HashSet<string> referenced,
+        bool importsResolved
     )
     {
         var project = ReadProps(projectPath);
@@ -271,9 +282,9 @@ public class CpmDriftAnalyzer : IAnalyzer
                 continue;
             }
 
-            // 4) A central entry with an empty Version supplies nothing usable, so a reference
-            // relying on it still breaks restore.
-            if (!hasCentralVersion)
+            // A central entry with an empty Version supplies nothing usable, so a reference relying
+            // on it still breaks restore. Only assert that when the central set is complete.
+            if (!hasCentralVersion && importsResolved)
             {
                 issues.Add(
                     new AnalysisIssue(
@@ -330,11 +341,42 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// Central versions by package ID. <c>GlobalPackageReference</c> counts: it supplies a version
     /// centrally too, so a project referencing such a package is not missing anything.
     /// </summary>
-    private static Dictionary<string, CentralEntry> ReadCentralVersions(XDocument props)
+    /// <summary>
+    /// Collects central versions from a props file and everything it imports.
+    ///
+    /// Returns whether every import could be followed. An import path built from MSBuild properties
+    /// or a glob cannot be resolved by reading XML, and when that happens the central set is
+    /// incomplete — so the caller must not conclude a reference is unversioned.
+    /// </summary>
+    private static (Dictionary<string, CentralEntry> Central, bool ImportsResolved) ReadCentralVersions(
+        XDocument props,
+        string propsPath
+    )
     {
         var versions = new Dictionary<string, CentralEntry>(StringComparer.OrdinalIgnoreCase);
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var resolved = CollectCentralVersions(props, propsPath, versions, visited);
 
-        foreach (var element in props.Descendants())
+        return (versions, resolved);
+    }
+
+    private static bool CollectCentralVersions(
+        XDocument document,
+        string documentPath,
+        Dictionary<string, CentralEntry> versions,
+        HashSet<string> visited
+    )
+    {
+        if (!visited.Add(Path.GetFullPath(documentPath)))
+        {
+            // Circular imports are legal in MSBuild (it de-duplicates); re-reading would not add
+            // anything and would not terminate.
+            return true;
+        }
+
+        var allResolved = true;
+
+        foreach (var element in document.Descendants())
         {
             var isPackageVersion = element.Name.LocalName.Equals(
                 PackageVersionItem,
@@ -344,6 +386,12 @@ public class CpmDriftAnalyzer : IAnalyzer
                 GlobalPackageReferenceItem,
                 StringComparison.OrdinalIgnoreCase
             );
+
+            if (element.Name.LocalName.Equals("Import", StringComparison.OrdinalIgnoreCase))
+            {
+                allResolved &= FollowImport(element, documentPath, versions, visited);
+                continue;
+            }
 
             if (!isPackageVersion && !isGlobal)
             {
@@ -358,7 +406,50 @@ public class CpmDriftAnalyzer : IAnalyzer
             }
         }
 
-        return versions;
+        return allResolved;
+    }
+
+    /// <summary>
+    /// Follows one <c>Import</c>. Returns false when the path cannot be resolved by reading XML —
+    /// an MSBuild property or a glob — since the central set is then incomplete.
+    /// </summary>
+    private static bool FollowImport(
+        XElement import,
+        string documentPath,
+        Dictionary<string, CentralEntry> versions,
+        HashSet<string> visited
+    )
+    {
+        var relative = import.Attribute("Project")?.Value;
+        if (string.IsNullOrWhiteSpace(relative))
+        {
+            return true;
+        }
+
+        if (relative.Contains("$(", StringComparison.Ordinal) || relative.Contains('*'))
+        {
+            return false;
+        }
+
+        var directory = Path.GetDirectoryName(Path.GetFullPath(documentPath));
+        if (directory is null)
+        {
+            return false;
+        }
+
+        var importedPath = Path.GetFullPath(
+            Path.Combine(directory, relative.Replace('\\', Path.DirectorySeparatorChar))
+        );
+        var imported = ReadProps(importedPath);
+
+        if (imported is null)
+        {
+            // A conditional import of a file that is not there is normal, so this is not treated as
+            // an unresolved import.
+            return !File.Exists(importedPath) || string.IsNullOrEmpty(import.Attribute("Condition")?.Value);
+        }
+
+        return CollectCentralVersions(imported, importedPath, versions, visited);
     }
 
     /// <summary>
