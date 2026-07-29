@@ -76,12 +76,18 @@ public static class MarkdownFormatter
     )
     {
         var gated = context.GatedIssueCount ?? report.CountAtOrAbove(GateSeverity(context.FailOn));
-        var incomplete = context.ScanFailures > 0 || context.DeepScanFailures > 0;
+        var incomplete =
+            context.ScanFailures > 0
+            || context.DeepScanFailures > 0
+            // A non-zero exit with no findings to explain it means the analysis did not produce a
+            // usable result — no projects discovered, a file error. Rendering that as a clean bill
+            // of health would contradict the command's own exit code.
+            || (context.ExitCode != 0 && gated == 0);
 
         var (icon, verdict) = (gated > 0, incomplete) switch
         {
             (true, _) => ("❌", $"{gated} finding(s) at or above **{context.FailOn}**"),
-            (false, true) => ("⚠️", "Scan incomplete — results cannot be trusted"),
+            (false, true) => ("⚠️", DescribeIncompleteRun(context)),
             (false, false) when report.HasIssues => (
                 "✅",
                 "No findings reached the failure threshold"
@@ -96,6 +102,20 @@ public static class MarkdownFormatter
         markdown.AppendLine();
         markdown.AppendLine(CultureInfo.InvariantCulture, $"**{verdict}.**");
         markdown.AppendLine();
+    }
+
+    /// <summary>
+    /// Explains why a run cannot be trusted, distinguishing a partial scan from one that produced no
+    /// analysis at all.
+    /// </summary>
+    private static string DescribeIncompleteRun(MarkdownReportContext context)
+    {
+        if (context.ScanFailures > 0 || context.DeepScanFailures > 0)
+        {
+            return "Scan incomplete — results cannot be trusted";
+        }
+
+        return $"Analysis did not complete (exit {context.ExitCode}) — no results to report";
     }
 
     private static void WriteScanSummary(
@@ -134,6 +154,16 @@ public static class MarkdownFormatter
     {
         if (context.ScanFailures == 0 && context.DeepScanFailures == 0)
         {
+            if (context.ExitCode != 0)
+            {
+                markdown.AppendLine("> [!WARNING]");
+                markdown.AppendLine(
+                    $"> CPMigrate exited {context.ExitCode} without completing the analysis, so this "
+                        + "report is not evidence that the dependencies are healthy."
+                );
+                markdown.AppendLine();
+            }
+
             return;
         }
 

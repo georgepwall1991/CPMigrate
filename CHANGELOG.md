@@ -19,6 +19,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - When `--fix` applied changes, the report describes the tree **after** the fixes — what is there now, not what was there before.
 
 ### Fixed
+- **A run that failed before producing findings is no longer rendered as a clean result.** `NoProjectsFound` (a misconfigured path, the common case) produced a report reading "✅ No findings" — contradicting the command's own exit code, and the exact false-clean shape this release series has been closing elsewhere. The verdict now accounts for the exit code, and a warning states that the report is not evidence of health.
+- `--output Markdown` is rejected with `--batch`, where the run aggregates into a batch result this report has no shape for and would have emitted nothing at all — including leaving `--output-file` unwritten.
 - Errors are now reported in the requested format. A failure under `--output Markdown` previously emitted raw error JSON into what was meant to be a rendered summary.
 
 ## [3.10.0] - 2026-07-29

@@ -72,6 +72,44 @@ public class MarkdownFormatterTests
     }
 
     [Fact]
+    public void Format_NonZeroExitWithNoFindings_IsNotReportedAsClean()
+    {
+        // The dangerous shape: a run that failed before producing findings looks identical to a
+        // clean one. NoProjectsFound (exit 4) is the common case — a misconfigured path.
+        var markdown = MarkdownFormatter.Format(
+            EmptyReport(),
+            EmptyPackageInfo(),
+            new MarkdownReportContext(ExitCode: ExitCodes.NoProjectsFound)
+        );
+
+        markdown.Should().StartWith("## ⚠️");
+        markdown.Should().Contain("Analysis did not complete (exit 4)");
+        markdown.Should().Contain("not evidence that the dependencies are healthy");
+    }
+
+    [Fact]
+    public void Format_NonZeroExitBecauseFindingsWereGated_ReportsTheFindings()
+    {
+        // Exit 5 with findings is the gate working, not a failed run: the verdict must name the
+        // findings rather than claim the analysis did not complete.
+        var report = ReportWith(Issue("System.Text.Json", AnalysisSeverity.Critical));
+
+        var markdown = MarkdownFormatter.Format(
+            report,
+            EmptyPackageInfo(),
+            new MarkdownReportContext(
+                FailOn: FailOnSeverity.High,
+                GatedIssueCount: 1,
+                ExitCode: ExitCodes.AnalysisIssuesFound
+            )
+        );
+
+        markdown.Should().StartWith("## ❌");
+        markdown.Should().Contain("at or above **High**");
+        markdown.Should().NotContain("did not complete");
+    }
+
+    [Fact]
     public void Format_BreaksFindingsDownBySeverity_WorstFirst()
     {
         var report = ReportWith(

@@ -102,6 +102,12 @@ public class MarkdownOutputContractTests : IDisposable
 
         stdout.Should().NotContain("\"exitCode\"", "the payload must not be JSON");
         stdout.Should().StartWith("## ");
+        stdout
+            .Should()
+            .NotStartWith(
+                "## ✅",
+                "an analysis that never ran must not be presented as a clean result"
+            );
     }
 
     [Fact]
@@ -132,6 +138,23 @@ public class MarkdownOutputContractTests : IDisposable
 
         exitCode.Should().Be(ExitCodes.ValidationError);
         console.ErrorMessages.Should().Contain(m => m.Contains("Markdown"));
+    }
+
+    [Fact]
+    public void Validate_MarkdownWithBatch_IsRejected()
+    {
+        // Batch aggregates into a BatchResult this report has no shape for, so the command would
+        // emit nothing at all — worse than refusing.
+        var options = new Options
+        {
+            Analyze = true,
+            Output = OutputFormat.Markdown,
+            BatchDir = _testDirectory,
+        };
+
+        var validate = () => options.Validate();
+
+        validate.Should().Throw<ArgumentException>().WithMessage("*--batch*");
     }
 
     private Task<int> RunAnalyzeAsync(Action<Options> configure)

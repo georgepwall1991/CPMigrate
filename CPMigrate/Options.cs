@@ -770,6 +770,16 @@ public class Options
             );
         }
 
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            // Batch runs each solution through a silent console and aggregates into a BatchResult,
+            // which this report has no shape for — the command would emit nothing at all.
+            throw new ArgumentException(
+                "--output Markdown cannot be used with --batch; run one solution at a time, or use "
+                    + "--output Json."
+            );
+        }
+
         var conflictingMode = FindModeInsteadOfAnalysis();
         if (conflictingMode is not null)
         {
