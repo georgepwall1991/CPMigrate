@@ -21,6 +21,34 @@ public enum ConflictStrategy
 }
 
 /// <summary>
+/// The lowest finding severity that makes <c>--analyze</c> fail the build.
+///
+/// The values deliberately mirror <see cref="Models.AnalysisSeverity"/> so they compare directly,
+/// with <see cref="Never"/> sitting above every real severity — nothing can reach it, which is
+/// exactly what "report but do not gate" means.
+/// </summary>
+public enum FailOnSeverity
+{
+    /// <summary>Fail on any finding. The default, and CPMigrate's behaviour before 3.8.0.</summary>
+    Info = 0,
+
+    /// <summary>Fail on Low findings and worse.</summary>
+    Low = 1,
+
+    /// <summary>Fail on Moderate findings and worse.</summary>
+    Moderate = 2,
+
+    /// <summary>Fail on High and Critical findings.</summary>
+    High = 3,
+
+    /// <summary>Fail only on Critical findings.</summary>
+    Critical = 4,
+
+    /// <summary>Never fail on findings. They are still reported in full.</summary>
+    Never = 5,
+}
+
+/// <summary>
 /// Exit codes returned by CPMigrate.
 /// </summary>
 public static class ExitCodes
@@ -169,6 +197,15 @@ public class Options
         HelpText = "Include deprecated package checks (requires --analyze)."
     )]
     public bool AnalyzeDeprecated { get; set; }
+
+    [Option(
+        "fail-on",
+        Default = FailOnSeverity.Info,
+        HelpText = "Lowest finding severity that fails the build: Info (default, any finding), Low, "
+            + "Moderate, High, Critical, or Never to report without gating. Does not suppress "
+            + "exit 8 for an incomplete scan."
+    )]
+    public FailOnSeverity FailOn { get; set; } = FailOnSeverity.Info;
 
     [Option(
         'i',
@@ -488,6 +525,41 @@ public class Options
                 new Options { PruneBackups = true, Retention = 3 }
             ),
         };
+
+    /// <summary>
+    /// Produces the options for one solution inside a <c>--batch</c> run.
+    ///
+    /// Copies everything and overrides only what must differ per solution. The direction matters:
+    /// this used to be an explicit allow-list, so every option added afterwards was silently
+    /// dropped — a batch run ignored <c>--audit</c>, <c>--outdated</c>, <c>--deprecated</c>, and
+    /// <c>--transitive</c>, meaning a monorepo security scan reported no vulnerabilities because it
+    /// never looked for any. Copy-then-override fails safe: a new option propagates unless someone
+    /// deliberately excludes it.
+    /// </summary>
+    /// <param name="solutionDir">Directory of the solution being processed.</param>
+    /// <param name="backupDirName">Per-solution backup directory name, so parallel runs cannot collide.</param>
+    internal Options CloneForBatchSolution(string solutionDir, string backupDirName)
+    {
+        var clone = (Options)MemberwiseClone();
+
+        clone.SolutionFileDir = solutionDir;
+        clone.OutputDir = solutionDir;
+        clone.GitignoreDir = solutionDir;
+        clone.BackupDir = Path.Combine(solutionDir, backupDirName);
+
+        // Batch operates per solution, so a project filter from the outer invocation cannot apply.
+        clone.ProjectFileDir = string.Empty;
+
+        // Individual solution output would drown the batch summary.
+        clone.Quiet = true;
+
+        // Modes the batch driver owns and must not delegate to a solution run.
+        clone.BatchDir = string.Empty;
+        clone.Rollback = false;
+        clone.Interactive = false;
+
+        return clone;
+    }
 
     /// <summary>
     /// Validates the command-line options for logical consistency.

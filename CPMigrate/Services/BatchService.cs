@@ -199,12 +199,7 @@ public class BatchService
                     Name = solutionName,
                     Success = migrationResult.ExitCode == ExitCodes.Success,
                     ExitCode = migrationResult.ExitCode,
-                    Summary = new OperationSummary
-                    {
-                        ProjectsProcessed = migrationResult.ProjectsProcessed,
-                        PackagesFound = migrationResult.PackagesCentralized,
-                        ConflictsResolved = migrationResult.ConflictsResolved
-                    },
+                    Summary = BuildSolutionSummary(migrationResult, solutionOptions),
                     PropsFile = migrationResult.PropsFilePath
                 });
             }
@@ -261,7 +256,14 @@ public class BatchService
                     var solutionOptions = CloneOptionsForSolution(options, solutionDir, solutionName);
                     var migrationResult = await _migrationExecutor(solutionOptions);
 
-                    results.Add(CreateSolutionResult(sln, solutionName, migrationResult));
+                    results.Add(
+                        CreateSolutionResult(
+                            sln,
+                            solutionName,
+                            migrationResult,
+                            solutionOptions
+                        )
+                    );
 
                     if (migrationResult.ExitCode != ExitCodes.Success && !options.BatchContinue)
                     {
@@ -290,7 +292,12 @@ public class BatchService
         return results.OrderBy(r => r.Path).ToList();
     }
 
-    private static SolutionResult CreateSolutionResult(string sln, string solutionName, MigrationResult migrationResult)
+    private static SolutionResult CreateSolutionResult(
+        string sln,
+        string solutionName,
+        MigrationResult migrationResult,
+        Options solutionOptions
+    )
     {
         return new SolutionResult
         {
@@ -298,13 +305,35 @@ public class BatchService
             Name = solutionName,
             Success = migrationResult.ExitCode == ExitCodes.Success,
             ExitCode = migrationResult.ExitCode,
-            Summary = new OperationSummary
-            {
-                ProjectsProcessed = migrationResult.ProjectsProcessed,
-                PackagesFound = migrationResult.PackagesCentralized,
-                ConflictsResolved = migrationResult.ConflictsResolved
-            },
+            Summary = BuildSolutionSummary(migrationResult, solutionOptions),
             PropsFile = migrationResult.PropsFilePath
+        };
+    }
+
+    /// <summary>
+    /// Builds a solution's summary, including the analysis gate metadata. Batch output advertises
+    /// the same JSON schema as a single-solution run, so omitting these fields would leave a
+    /// consumer unable to tell a below-threshold batch result from a genuinely clean one.
+    /// </summary>
+    private static OperationSummary BuildSolutionSummary(
+        MigrationResult migrationResult,
+        Options solutionOptions
+    )
+    {
+        var report = migrationResult.AnalysisReport;
+
+        return new OperationSummary
+        {
+            ProjectsProcessed = migrationResult.ProjectsProcessed,
+            PackagesFound = migrationResult.PackagesCentralized,
+            ConflictsResolved = migrationResult.ConflictsResolved,
+            IssuesFound = report?.TotalIssues ?? 0,
+            FailOnSeverity = report is null ? null : solutionOptions.FailOn.ToString(),
+            IssuesAtOrAboveThreshold = migrationResult.GatedIssueCount,
+            IssuesRemainingAfterFixes = migrationResult.PostFixAnalysisReport?.TotalIssues,
+            HighestSeverity = report?.HighestSeverity?.ToString(),
+            ScanFailures = report is null ? null : migrationResult.ScanFailures,
+            DeepScanFailures = report is null ? null : migrationResult.DeepScanFailures,
         };
     }
 
@@ -326,35 +355,18 @@ public class BatchService
         cts.Cancel();
     }
 
-    private Options CloneOptionsForSolution(Options options, string solutionDir, string? solutionName = null)
+    private static Options CloneOptionsForSolution(
+        Options options,
+        string solutionDir,
+        string? solutionName = null
+    )
     {
-        // Use solution-specific backup directory to prevent collisions in parallel mode
-        // Format: .cpmigrate_backup_{solutionName} for uniqueness
+        // Solution-specific backup directory, so parallel runs cannot collide.
         var backupDirName = string.IsNullOrEmpty(solutionName)
             ? ".cpmigrate_backup"
             : $".cpmigrate_backup_{solutionName}";
 
-        return new Options
-        {
-            SolutionFileDir = solutionDir,
-            OutputDir = solutionDir,
-            ProjectFileDir = string.Empty,
-            KeepAttributes = options.KeepAttributes,
-            NoBackup = options.NoBackup,
-            BackupDir = Path.Combine(solutionDir, backupDirName),
-            AddBackupToGitignore = options.AddBackupToGitignore,
-            GitignoreDir = solutionDir,
-            DryRun = options.DryRun,
-            ConflictStrategy = options.ConflictStrategy,
-            Rollback = false,
-            Analyze = options.Analyze,
-            Interactive = false,
-            Output = options.Output,
-            OutputFile = options.OutputFile,
-            Quiet = true, // Suppress individual solution output in batch mode
-            Fix = options.Fix,
-            FixDryRun = options.FixDryRun
-        };
+        return options.CloneForBatchSolution(solutionDir, backupDirName);
     }
 
     private void WriteBatchSummary(BatchResult result, string batchDir)

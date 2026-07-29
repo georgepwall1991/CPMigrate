@@ -51,6 +51,8 @@ public static class ProgramRunner
                         services.ConsoleService
                     );
 
+                    WarnAboutIneffectiveFailOn(options, args, services.ConsoleService);
+
                     // Initialize logging based on --verbose flag. The notice is written before the
                     // payload, so under a machine-readable format it would put prose ahead of the
                     // opening brace and stop the document parsing at all.
@@ -87,6 +89,38 @@ public static class ProgramRunner
                     return Task.FromResult(ExitCodes.ValidationError);
                 }
             );
+    }
+
+    /// <summary>
+    /// Warns when <c>--fail-on</c> was passed on the command line for a command it cannot affect.
+    /// It only changes analysis exit codes, so without <c>--analyze</c> the default action — a real,
+    /// file-rewriting migration — runs while the flag does nothing.
+    ///
+    /// A warning rather than an error, because the same setting can arrive from
+    /// <c>.cpmigrate.json</c> as a team-wide policy; rejecting it would break every migration run
+    /// in a repository that configures a gate. Only an explicit CLI flag is reported, since that is
+    /// the case where the user was expecting it to apply to <em>this</em> command.
+    /// </summary>
+    private static void WarnAboutIneffectiveFailOn(
+        Options options,
+        string[] args,
+        IConsoleService consoleService
+    )
+    {
+        if (options.Analyze || options.Output.IsMachineReadable())
+        {
+            return;
+        }
+
+        if (!CliArgumentParser.GetExplicitArguments(args).Contains("fail-on"))
+        {
+            return;
+        }
+
+        consoleService.Warning(
+            "--fail-on only affects --analyze; it is ignored for this command. "
+                + "Did you mean to add --analyze?"
+        );
     }
 
     /// <summary>

@@ -21,4 +21,38 @@ public record AnalysisReport(
     /// Returns true if any analyzer found issues.
     /// </summary>
     public bool HasIssues => TotalIssues > 0;
+
+    /// <summary>
+    /// The severity of the worst finding, or null when nothing was found.
+    /// </summary>
+    public AnalysisSeverity? HighestSeverity =>
+        Results
+            .SelectMany(result => result.Issues)
+            .Select(issue => (AnalysisSeverity?)issue.Severity)
+            .Max();
+
+    /// <summary>
+    /// Counts findings at or above a severity. This is what a CI gate keys off: a team with
+    /// existing informational debt needs to fail on vulnerabilities without failing on everything,
+    /// otherwise the gate gets disabled and the real finding lands with the noise.
+    /// </summary>
+    /// <param name="threshold">The lowest severity that counts.</param>
+    public int CountAtOrAbove(AnalysisSeverity threshold)
+    {
+        return Results.Sum(result => result.Issues.Count(issue => issue.Severity >= threshold));
+    }
+
+    /// <summary>
+    /// Counts findings at or above a severity that no built-in fixer can repair. After a successful
+    /// <c>--fix</c> run these are what remain on disk: a security advisory, for example, is never
+    /// auto-fixable, so treating the whole run as clean because something else was repaired would
+    /// report a live vulnerability as a pass.
+    /// </summary>
+    /// <param name="threshold">The lowest severity that counts.</param>
+    public int CountUnfixableAtOrAbove(AnalysisSeverity threshold)
+    {
+        return Results.Sum(result =>
+            result.Issues.Count(issue => !issue.Fixable && issue.Severity >= threshold)
+        );
+    }
 }

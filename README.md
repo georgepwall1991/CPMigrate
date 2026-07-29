@@ -42,7 +42,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.7.0
+dotnet tool install --global CPMigrate --version 3.8.0
 ```
 
 ```bash
@@ -553,6 +553,46 @@ The config file is discovered by walking up from the selected solution/project p
 | `--deprecated` | | `false` | Include deprecated package checks |
 | `--fix` | | `false` | Apply auto-fixes (requires `--analyze`) |
 | `--fix-dry-run` | | `false` | Preview auto-fixes without applying |
+| `--fail-on` | | `Info` | Lowest severity that fails the build: `Info`, `Low`, `Moderate`, `High`, `Critical`, or `Never` |
+
+#### Gating on severity with `--fail-on`
+
+By default any finding fails the build. That is unusable for a repository with existing debt: the
+gate fires on every run, so it gets switched off — and the vulnerability you actually cared about
+goes with it. `--fail-on` narrows the gate without narrowing the report.
+
+```bash
+# Fail only on High and Critical findings; everything else is still reported
+cpmigrate --analyze --audit --outdated --fail-on High
+
+# Report everything, gate on nothing (useful when SARIF upload is the signal)
+cpmigrate --analyze --audit --output Sarif --output-file cpmigrate.sarif --fail-on Never
+```
+
+Findings below the threshold still appear in terminal, JSON, and SARIF output — only the exit code
+changes. Each rule's default severity is listed in [the rule reference](docs/rules.md).
+
+`--fail-on` **cannot** suppress exit `8` ([IncompleteAnalysis](#exit-codes)). A severity threshold
+says which findings matter; it does not make an unexamined project safe.
+
+Set it once for the whole team in `.cpmigrate.json`:
+
+```json
+{ "failOn": "High" }
+```
+
+The JSON payload reports the policy alongside the findings, so a consumer never has to re-derive it:
+
+```json
+"summary": {
+  "issuesFound": 12,
+  "failOnSeverity": "High",
+  "issuesAtOrAboveThreshold": 0,
+  "highestSeverity": "Moderate",
+  "scanFailures": 0,
+  "deepScanFailures": 0
+}
+```
 
 ### Package Updates (v3.0+)
 

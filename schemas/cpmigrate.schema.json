@@ -42,9 +42,15 @@
     },
     "outputFormat": {
       "type": "string",
-      "enum": ["Terminal", "Json"],
+      "enum": ["Terminal", "Json", "Sarif"],
       "default": "Terminal",
-      "description": "Output format: Terminal (rich UI) or Json (for CI/CD)"
+      "description": "Output format: Terminal (rich UI), Json (for CI/CD), or Sarif (GitHub code scanning; requires --analyze)"
+    },
+    "failOn": {
+      "type": "string",
+      "enum": ["Info", "Low", "Moderate", "High", "Critical", "Never"],
+      "default": "Info",
+      "description": "Lowest finding severity that fails the build during --analyze. Info fails on any finding; Never reports without gating. Does not suppress exit 8 for an incomplete scan."
     },
     "retention": {
       "type": "object",
