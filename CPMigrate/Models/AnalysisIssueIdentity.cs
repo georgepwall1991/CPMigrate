@@ -26,6 +26,16 @@ public static class AnalysisIssueIdentity
     /// unresolved finding, and a fingerprint that changed with it would defeat both tracking and
     /// suppression. Package IDs are lowercased because NuGet treats them case-insensitively, and
     /// project names are sorted because analyzers do not guarantee ordering.
+    ///
+    /// <para>
+    /// Known limitation: analyzer findings carry project file <em>names</em>, not paths, so two
+    /// distinct projects sharing a basename (<c>src/App/App.csproj</c> and
+    /// <c>tests/App/App.csproj</c>) produce the same identity. A baseline entry for one can
+    /// therefore suppress an equivalent finding in the other. Fixing it properly means carrying
+    /// project paths on <see cref="AnalysisIssue"/>, which also removes the guesswork in SARIF
+    /// location resolution; it is tracked as a follow-up rather than worked around here, because a
+    /// partial disambiguation would change fingerprints without actually closing the gap.
+    /// </para>
     /// </summary>
     /// <param name="issue">The finding to identify.</param>
     /// <returns>A 32-character lowercase hex fingerprint.</returns>

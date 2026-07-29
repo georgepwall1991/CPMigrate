@@ -135,6 +135,41 @@ public sealed class BaselineService
         }
 
         if (
+            !string.Equals(baseline.BaselineVersion, BaselineFile.CurrentVersion, StringComparison.Ordinal)
+        )
+        {
+            return (
+                null,
+                $"Baseline file {path} declares format version '{baseline.BaselineVersion}', "
+                    + $"but this version of CPMigrate reads '{BaselineFile.CurrentVersion}'."
+            );
+        }
+
+        if (baseline.Findings is null)
+        {
+            // Property initializers make every field look present, so a null or missing array
+            // survives deserialization and would fault later, inside Apply.
+            return (
+                null,
+                $"Baseline file {path} has no 'findings' array. Regenerate it with --write-baseline."
+            );
+        }
+
+        var invalid = baseline.Findings.FirstOrDefault(finding =>
+            string.IsNullOrWhiteSpace(finding.Fingerprint)
+            || string.IsNullOrWhiteSpace(finding.IssueCode)
+            || finding.Projects is null
+        );
+        if (invalid is not null)
+        {
+            return (
+                null,
+                $"Baseline file {path} contains an entry missing a fingerprint, issue code, or "
+                    + "project list. Regenerate it with --write-baseline."
+            );
+        }
+
+        if (
             !string.Equals(
                 baseline.FingerprintVersion,
                 AnalysisIssueIdentity.Version,

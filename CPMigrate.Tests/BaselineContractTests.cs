@@ -246,6 +246,34 @@ public class BaselineContractTests : IDisposable
         File.Exists(baselinePath).Should().BeFalse("a partial baseline is worse than none");
     }
 
+    [Theory]
+    [InlineData("--update")]
+    [InlineData("--update-packages")]
+    [InlineData("--unify-props")]
+    [InlineData("--rollback")]
+    public async Task RunAsync_BaselineWithAModeThatRunsInsteadOfAnalysis_IsRejected(string mode)
+    {
+        // These are dispatched before analysis, so the baseline would be silently ignored while a
+        // mutating operation went ahead.
+        var console = new TestDoubles.FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[]
+            {
+                mode,
+                "--analyze",
+                "--write-baseline",
+                "-s",
+                _testDirectory,
+                "--force",
+            },
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(m => m.Contains("baseline"));
+    }
+
     [Fact]
     public void Validate_WriteBaselineWithBatch_IsRejected()
     {

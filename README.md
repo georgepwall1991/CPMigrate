@@ -583,12 +583,15 @@ Severity is one axis; the other is *which* findings. A repository that already h
 on a gate that fails on all of it, so record the current state once and gate on what is new:
 
 ```bash
-# Once, on a green branch — commit the result
+# Once, on a green branch — writes .cpmigrate-baseline.json; commit it
 cpmigrate --analyze --audit --outdated --write-baseline
 
 # Every run after that: existing debt is reported, new debt fails
 cpmigrate --analyze --audit --outdated --baseline .cpmigrate-baseline.json
 ```
+
+`--baseline` needs an explicit path. To apply it to every run without repeating it, set it in
+`.cpmigrate.json` (below).
 
 Baselined findings **stay in every report** — terminal, JSON (`suppressed: true`), and SARIF (as a
 `suppressions` entry with `kind: "external"`). The debt stays visible; it just stops blocking.
@@ -601,6 +604,14 @@ project is new information, so it does not.
 When baseline entries stop matching anything — the findings were fixed — CPMigrate says so and
 suggests regenerating, which is what stops a baseline growing forever and quietly suppressing a
 finding that came back.
+
+> **Known limitation:** findings identify projects by file name, so two distinct projects sharing a
+> basename (`src/App/App.csproj` and `tests/App/App.csproj`) share an identity — a baseline entry for
+> one can suppress an equivalent finding in the other.
+
+A baseline is never recorded from an incomplete scan: if a project fails to scan or an `--audit`
+query fails, `--write-baseline` refuses and exits `8` rather than writing a file that permanently
+accepts findings nobody looked for.
 
 Set the path once for the team in `.cpmigrate.json`:
 

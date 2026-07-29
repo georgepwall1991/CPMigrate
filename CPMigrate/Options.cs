@@ -218,8 +218,8 @@ public class Options
         "baseline",
         HelpText = "Path to a baseline file of accepted findings. Findings it records are still "
             + "reported but do not fail the build, so a repository with existing debt can gate on "
-            + "new problems only. Defaults to " + BaselineDefaultFileName + " when the flag is "
-            + "given without a value."
+            + "new problems only. Requires a path; set \"baseline\" in .cpmigrate.json to apply it "
+            + "to every run."
     )]
     public string? Baseline { get; set; }
 
@@ -227,7 +227,7 @@ public class Options
         "write-baseline",
         Default = false,
         HelpText = "Record the current findings as the accepted baseline instead of gating on them, "
-            + "then exit. Writes to --baseline, or " + BaselineDefaultFileName + "."
+            + "then exit. Writes to --baseline when given, otherwise " + BaselineDefaultFileName + "."
     )]
     public bool WriteBaseline { get; set; }
 
@@ -668,8 +668,7 @@ public class Options
             );
         }
 
-        ValidateSarifOptions();
-        ValidateBaselineOptions();
+        ValidateReportingContract();
     }
 
     /// <summary>
@@ -688,6 +687,17 @@ public class Options
         {
             throw new ArgumentException(
                 "--baseline and --write-baseline require --analyze; a baseline records analyzer findings."
+            );
+        }
+
+        var conflictingMode = FindModeInsteadOfAnalysis();
+        if (conflictingMode is not null)
+        {
+            // These run instead of an analysis, so the baseline would be silently ignored — while a
+            // mutating operation went ahead.
+            throw new ArgumentException(
+                $"--baseline and --write-baseline cannot be combined with {conflictingMode}, which "
+                    + "runs instead of an analysis. Run the analysis as a separate step."
             );
         }
 
@@ -725,6 +735,20 @@ public class Options
     /// perform a real self-update and emit no SARIF at all.
     /// </summary>
     /// <exception cref="ArgumentException">Thrown when SARIF is requested for an unsupported mode.</exception>
+    /// <summary>
+    /// Checks the option combinations that must be rejected before <c>CommandRouter</c> dispatches
+    /// a mode. Several modes (<c>--update</c>, <c>--interactive</c>, <c>--unify-props</c>, pruning)
+    /// run ahead of per-command validation, so a contract enforced only in <see cref="Validate"/>
+    /// would be bypassed — <c>--update --analyze --write-baseline</c> would perform a real
+    /// self-update and never write or reject anything.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when the combination is unsupported.</exception>
+    public void ValidateReportingContract()
+    {
+        ValidateSarifOptions();
+        ValidateBaselineOptions();
+    }
+
     public void ValidateSarifOptions()
     {
         if (Output != OutputFormat.Sarif)
@@ -743,7 +767,14 @@ public class Options
         // passing both would run the other operation and emit no SARIF at all. Name each one
         // rather than inferring, so a mode added later fails loudly here instead of silently
         // producing an empty log.
-        var conflictingMode = FindModeIncompatibleWithSarif();
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            throw new ArgumentException(
+                "--output Sarif cannot be used with --batch; run one solution at a time, or use --output Json."
+            );
+        }
+
+        var conflictingMode = FindModeInsteadOfAnalysis();
         if (conflictingMode is not null)
         {
             throw new ArgumentException(
@@ -766,15 +797,14 @@ public class Options
     }
 
     /// <summary>
-    /// Returns the flag naming a mode that cannot produce SARIF findings, or null when none is set.
+    /// Returns the flag naming a mode that runs instead of an analysis, or null when none is set.
+    ///
+    /// <c>CommandRouter</c> dispatches these ahead of analysis, so any feature that reports on
+    /// analyzer findings — SARIF output, baselines — is silently skipped when one is present. Naming
+    /// them explicitly means a mode added later fails loudly here rather than quietly doing nothing.
     /// </summary>
-    private string? FindModeIncompatibleWithSarif()
+    private string? FindModeInsteadOfAnalysis()
     {
-        if (!string.IsNullOrEmpty(BatchDir))
-        {
-            return "--batch";
-        }
-
         if (Update)
         {
             return "--update";

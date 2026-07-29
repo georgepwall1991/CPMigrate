@@ -295,6 +295,60 @@ public class BaselineServiceTests : IDisposable
         error.Should().Contain("v99").And.Contain("--write-baseline");
     }
 
+    [Theory]
+    [InlineData("""{ "baselineVersion": "1.0.0", "fingerprintVersion": "v1", "findings": null }""", "findings")]
+    [InlineData("""{ "baselineVersion": "2.0.0", "fingerprintVersion": "v1", "findings": [] }""", "format version")]
+    public void Read_StructurallyInvalidFile_ReportsAnErrorRatherThanFaultingLater(
+        string json,
+        string expected
+    )
+    {
+        // Property initializers make every field look present after deserialization, so a null or
+        // missing array survives Read() and would fault inside Apply instead.
+        var path = Path.Combine(_root, "invalid.json");
+        File.WriteAllText(path, json);
+
+        var (baseline, error) = _service.Read(path);
+
+        baseline.Should().BeNull();
+        error.Should().Contain(expected);
+    }
+
+    [Fact]
+    public void Read_MissingFindingsArray_IsAnEmptyBaselineRatherThanAnError()
+    {
+        // Absent is not the same as null: a baseline that accepts nothing is legitimate, and it
+        // cannot cause the fault an explicit null would.
+        var path = Path.Combine(_root, "empty.json");
+        File.WriteAllText(path, """{ "baselineVersion": "1.0.0", "fingerprintVersion": "v1" }""");
+
+        var (baseline, error) = _service.Read(path);
+
+        error.Should().BeNull();
+        baseline!.Findings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Read_EntryMissingRequiredFields_ReportsAnError()
+    {
+        var path = Path.Combine(_root, "partial.json");
+        File.WriteAllText(
+            path,
+            """
+            {
+              "baselineVersion": "1.0.0",
+              "fingerprintVersion": "v1",
+              "findings": [ { "package": "Newtonsoft.Json" } ]
+            }
+            """
+        );
+
+        var (baseline, error) = _service.Read(path);
+
+        baseline.Should().BeNull();
+        error.Should().Contain("--write-baseline");
+    }
+
     private static AnalysisReport ReportWith(params AnalysisIssue[] issues)
     {
         return new AnalysisReport(1, issues.Length, new[] { new AnalyzerResult("Stub", issues) });

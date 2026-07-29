@@ -38,7 +38,7 @@
           "fingerprint": {
             "type": "string",
             "pattern": "^[0-9a-f]{32}$",
-            "description": "Stable identity of the finding: rule, package, and affected projects. Deliberately independent of the observed versions, so version drift does not unsuppress accepted debt."
+            "description": "Stable identity of the finding: rule, package, and affected projects. Deliberately independent of the observed versions, so version drift does not unsuppress accepted debt. Note: projects are identified by file name, so two distinct projects sharing a basename currently share an identity."
           },
           "issueCode": {
             "type": "string",
