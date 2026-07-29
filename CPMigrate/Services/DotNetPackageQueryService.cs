@@ -64,7 +64,7 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
                 return ([], false);
             }
 
-            return (ParseVulnerabilitiesFromJson(output, projectName), true);
+            return (ParseVulnerabilitiesFromJson(output, projectName, projectFilePath), true);
         }
         catch (Exception ex)
         {
@@ -169,7 +169,11 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         return references;
     }
 
-    internal static List<VulnerabilityInfo> ParseVulnerabilitiesFromJson(string output, string projectName)
+    internal static List<VulnerabilityInfo> ParseVulnerabilitiesFromJson(
+        string output,
+        string projectName,
+        string projectFilePath = ""
+    )
     {
         var vulnerabilities = new List<VulnerabilityInfo>();
         using var doc = JsonDocument.Parse(output);
@@ -188,8 +192,20 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
 
             foreach (var framework in frameworksNode.EnumerateArray())
             {
-                AddVulnerabilities(framework, "topLevelPackages", projectName, vulnerabilities);
-                AddVulnerabilities(framework, "transitivePackages", projectName, vulnerabilities);
+                AddVulnerabilities(
+                    framework,
+                    "topLevelPackages",
+                    projectName,
+                    projectFilePath,
+                    vulnerabilities
+                );
+                AddVulnerabilities(
+                    framework,
+                    "transitivePackages",
+                    projectName,
+                    projectFilePath,
+                    vulnerabilities
+                );
             }
         }
 
@@ -310,6 +326,7 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         JsonElement framework,
         string propertyName,
         string projectName,
+        string projectFilePath,
         List<VulnerabilityInfo> vulnerabilities)
     {
         if (!TryGetPropertyCaseInsensitive(framework, propertyName, out var packagesNode) || packagesNode.ValueKind != JsonValueKind.Array)
@@ -344,7 +361,8 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
                     advisoryUrl,
                     resolvedVersion,
                     fixedVersion,
-                    projectName));
+                    projectName,
+                    projectFilePath));
             }
         }
     }

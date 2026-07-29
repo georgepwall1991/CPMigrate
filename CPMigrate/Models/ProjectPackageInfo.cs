@@ -48,13 +48,50 @@ public record DeprecatedPackageInfo(
 /// <param name="Vulnerabilities">Optional vulnerability findings from CLI scan.</param>
 /// <param name="OutdatedPackages">Optional outdated package findings from CLI scan.</param>
 /// <param name="DeprecatedPackages">Optional deprecated package findings from CLI scan.</param>
+/// <param name="BasePath">
+/// Directory the scan was rooted at. Findings identify projects by their path relative to this, so
+/// that identity is unambiguous (two projects can share a file name) and portable (a machine-specific
+/// absolute path would make a committed baseline useless on any other machine).
+/// </param>
 public record ProjectPackageInfo(
     IReadOnlyList<PackageReference> References,
     IReadOnlyList<VulnerabilityInfo>? Vulnerabilities = null,
     IReadOnlyList<OutdatedPackageInfo>? OutdatedPackages = null,
-    IReadOnlyList<DeprecatedPackageInfo>? DeprecatedPackages = null
+    IReadOnlyList<DeprecatedPackageInfo>? DeprecatedPackages = null,
+    string? BasePath = null
 )
 {
+    /// <summary>
+    /// The stable identifier for a project: its path relative to the scan root, with forward
+    /// slashes so the value is identical on every platform.
+    ///
+    /// Falls back to the file name when the path cannot be made relative — a project outside the
+    /// scan root, or a scan with no root recorded. That reintroduces the ambiguity this method
+    /// exists to remove, but a name is still more useful to a reader than an absolute path, and it
+    /// keeps a committed baseline from embedding one.
+    /// </summary>
+    /// <param name="projectPath">Full path to the project file.</param>
+    public string ProjectId(string projectPath)
+    {
+        if (string.IsNullOrWhiteSpace(projectPath))
+        {
+            return string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(BasePath))
+        {
+            return Path.GetFileName(projectPath);
+        }
+
+        var relative = Path.GetRelativePath(BasePath, Path.GetFullPath(projectPath));
+        if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+        {
+            return Path.GetFileName(projectPath);
+        }
+
+        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace('\\', '/');
+    }
+
     /// <summary>
     /// Gets the total number of package references.
     /// </summary>

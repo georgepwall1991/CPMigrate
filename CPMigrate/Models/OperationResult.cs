@@ -221,6 +221,12 @@ public class AnalysisIssueInfo
     [JsonPropertyName("description")]
     public string Description { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Projects the finding affects, each identified by its path relative to the scan root
+    /// (<c>src/Api/Api.csproj</c>), forward-slashed and free of absolute paths so the value is the
+    /// same on every machine. Before schema 1.3.0 this held bare file names, which could not tell
+    /// two same-named projects apart.
+    /// </summary>
     [JsonPropertyName("affectedProjects")]
     public List<string> AffectedProjects { get; init; } = new();
 

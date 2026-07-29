@@ -20,8 +20,8 @@ public class DuplicatePackageAnalyzerTests
         var packageInfo = new ProjectPackageInfo(
             new List<PackageReference>
             {
-                new PackageReference("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1"),
-                new PackageReference("Microsoft.Extensions.DependencyInjection", "6.0.0", "P2.csproj", "P2")
+                new PackageReference("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1.csproj"),
+                new PackageReference("Microsoft.Extensions.DependencyInjection", "6.0.0", "P2.csproj", "P2.csproj")
             },
             new List<VulnerabilityInfo>()
         );
@@ -40,8 +40,8 @@ public class DuplicatePackageAnalyzerTests
         var packageInfo = new ProjectPackageInfo(
             new List<PackageReference>
             {
-                new PackageReference("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1"),
-                new PackageReference("newtonsoft.json", "13.0.1", "P2.csproj", "P2")
+                new PackageReference("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1.csproj"),
+                new PackageReference("newtonsoft.json", "13.0.1", "P2.csproj", "P2.csproj")
             },
             new List<VulnerabilityInfo>()
         );
@@ -55,7 +55,7 @@ public class DuplicatePackageAnalyzerTests
         result.Issues[0].Description.Should().Contain("2 casing variations");
         result.Issues[0].Description.Should().Contain("Newtonsoft.Json");
         result.Issues[0].Description.Should().Contain("newtonsoft.json");
-        result.Issues[0].AffectedProjects.Should().Contain(new[] { "P1", "P2" });
+        result.Issues[0].AffectedProjects.Should().Contain(new[] { "P1.csproj", "P2.csproj" });
     }
 
     [Fact]
@@ -65,10 +65,10 @@ public class DuplicatePackageAnalyzerTests
         var packageInfo = new ProjectPackageInfo(
             new List<PackageReference>
             {
-                new PackageReference("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1"),
-                new PackageReference("newtonsoft.json", "13.0.1", "P2.csproj", "P2"),
+                new PackageReference("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1.csproj"),
+                new PackageReference("newtonsoft.json", "13.0.1", "P2.csproj", "P2.csproj"),
                 // Actually the analyzer groups by lowercase, so "NEWTONSOFT.JSON" is another variation
-                new PackageReference("NEWTONSOFT.JSON", "13.0.1", "P3.csproj", "P3")
+                new PackageReference("NEWTONSOFT.JSON", "13.0.1", "P3.csproj", "P3.csproj")
             },
             new List<VulnerabilityInfo>()
         );

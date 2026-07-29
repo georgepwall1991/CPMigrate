@@ -6,6 +6,18 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-07-29
+
+### Changed (action required if you have a baseline)
+- **Findings now identify projects by path, not by file name.** A project file name is not an identifier — two projects can share one — so `src/App/App.csproj` and `tests/App/App.csproj` were indistinguishable to everything downstream. That had two concrete consequences: a baseline entry accepting debt in one project silently suppressed a *new, unrelated* finding in the other, and SARIF had to guess which of several same-named files to annotate, sometimes annotating a project that never referenced the package. Findings now carry each project's path relative to the scan root (`src/App/App.csproj`), forward-slashed and free of absolute paths so a committed baseline matches on every machine.
+  - **Regenerate baselines**: the fingerprint scheme is now `v2`. A `v1` baseline is rejected with an explicit instruction rather than silently matching nothing — run `cpmigrate --analyze --write-baseline` again.
+  - **JSON schema 1.3.0**: `analysisIssues[].affectedProjects` holds relative paths instead of file names. This is the only field whose meaning has changed across any schema revision.
+  - Terminal output and finding descriptions show the same relative paths, which also disambiguates them for a human reader.
+- `VulnerabilityInfo` carries the project path alongside the name, since it was the one finding source that could not be traced back to a file.
+
+### Removed
+- The package-matching heuristic SARIF used to guess between same-named projects, and the fallback that annotated *every* candidate when the guess had nothing to go on. Resolution is now an exact lookup, so both are unnecessary.
+
 ## [3.9.0] - 2026-07-29
 
 ### Added

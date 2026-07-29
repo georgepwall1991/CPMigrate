@@ -24,7 +24,7 @@ public class LiftingAnalyzerTests
         var packageInfo = new ProjectPackageInfo(
             new List<PackageReference>
             {
-                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1")
+                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1.csproj")
             },
             new List<VulnerabilityInfo>()
         );
@@ -46,7 +46,7 @@ public class LiftingAnalyzerTests
         var packageInfo = new ProjectPackageInfo(
             new List<PackageReference>
             {
-                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1")
+                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1.csproj")
             },
             new List<VulnerabilityInfo>()
         );

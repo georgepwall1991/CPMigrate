@@ -102,7 +102,10 @@ public class FailOnContractTests : IDisposable
         root.GetProperty("success").GetBoolean().Should().BeTrue();
         root.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.Success);
         root.GetProperty("analysisIssues").GetArrayLength().Should().BeGreaterThan(0);
-        root.GetProperty("outputSchemaVersion").GetString().Should().Be("1.2.0");
+        root.GetProperty("outputSchemaVersion")
+            .GetString()
+            .Should()
+            .Be(OutputMetadata.SchemaVersion);
     }
 
     [Fact]

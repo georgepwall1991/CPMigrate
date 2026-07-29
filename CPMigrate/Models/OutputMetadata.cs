@@ -22,9 +22,17 @@ public static class OutputMetadata
     /// consumer distinguish a clean run from one whose findings were below the gate, and either
     /// from one whose scan did not complete.
     /// </para>
-    /// No existing field has changed meaning in any revision.
+    /// <para>
+    /// 1.3.0 changed the meaning of one field: <c>analysisIssues[].affectedProjects</c> now holds
+    /// each project's path relative to the scan root (<c>src/Api/Api.csproj</c>) rather than its
+    /// file name (<c>Api.csproj</c>). Two projects can share a file name, so the old value could not
+    /// identify a project — which made finding identity ambiguous and left SARIF location
+    /// resolution guessing. Values are forward-slashed and contain no absolute paths, so they are
+    /// identical on every machine.
+    /// </para>
+    /// This is the only field whose meaning has changed in any revision.
     /// </remarks>
-    public const string SchemaVersion = "1.2.0";
+    public const string SchemaVersion = "1.3.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.
