@@ -192,6 +192,78 @@ public class BaselineContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Analyze_BaselineWithFix_KeepsSuppressingAcceptedFindingsAfterTheRescan()
+    {
+        // --fix triggers a rescan, which produces a fresh unsuppressed report. If the baseline is
+        // not reapplied to it, accepted debt starts failing the build the moment an unrelated fix
+        // runs — the exact opposite of what a baseline is for.
+        CreateFixture();
+
+        // A deprecated-style finding no fixer addresses, so something survives the fix.
+        CreateProject("Extra.csproj", "Serilog", "4.0.0");
+        CreateProject("Extra2.csproj", "Serilog", "3.0.0");
+        CreateSolution("Test.sln", "Api.csproj", "Lib.csproj", "Extra.csproj", "Extra2.csproj");
+
+        var baselinePath = Path.Combine(_testDirectory, "baseline.json");
+        await RunAsync(o =>
+        {
+            o.WriteBaseline = true;
+            o.Baseline = baselinePath;
+        });
+
+        var exitCode = await RunAsync(o =>
+        {
+            o.Baseline = baselinePath;
+            o.Fix = true;
+            o.NoBackup = true;
+        });
+
+        exitCode
+            .Should()
+            .NotBe(
+                ExitCodes.AnalysisIssuesFound,
+                "every finding was accepted in the baseline, before and after the fixes"
+            );
+    }
+
+    [Fact]
+    public async Task WriteBaseline_WithAnIncompleteScan_RefusesToRecordAndReportsIncomplete()
+    {
+        // A baseline claims to be the accepted current state. Recording one from a partial scan
+        // permanently accepts findings that were never looked for.
+        CreateProject("Api.csproj", "Newtonsoft.Json", "13.0.1");
+        File.WriteAllText(Path.Combine(_testDirectory, "Broken.csproj"), "<Project><ItemGroup>");
+        CreateSolution("Test.sln", "Api.csproj", "Broken.csproj");
+
+        var baselinePath = Path.Combine(_testDirectory, "baseline.json");
+        var exitCode = await RunAsync(o =>
+        {
+            o.WriteBaseline = true;
+            o.Baseline = baselinePath;
+        });
+
+        exitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+        File.Exists(baselinePath).Should().BeFalse("a partial baseline is worse than none");
+    }
+
+    [Fact]
+    public void Validate_WriteBaselineWithBatch_IsRejected()
+    {
+        // Each solution would write the same file: sequentially the last wins, in parallel they
+        // race. Either way the baseline covers one solution while claiming to cover the repository.
+        var options = new Options
+        {
+            Analyze = true,
+            WriteBaseline = true,
+            BatchDir = _testDirectory,
+        };
+
+        var validate = () => options.Validate();
+
+        validate.Should().Throw<ArgumentException>().WithMessage("*--batch*");
+    }
+
+    [Fact]
     public void Validate_BaselineWithoutAnalyze_IsRejected()
     {
         var options = new Options { Baseline = "b.json", SolutionFileDir = _testDirectory };

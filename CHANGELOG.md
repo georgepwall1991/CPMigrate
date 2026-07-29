@@ -19,9 +19,12 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **JSON:** `analysisIssues[].suppressed` and `summary.issuesBaselined` (additive; schema stays 1.2.0-compatible in shape, both fields omitted when no baseline is used).
 
 ### Changed
+- **`--baseline` survives `--fix`.** Applying fixes triggers a rescan (3.8.0), which produces a fresh unsuppressed report; the baseline is now reapplied to it, so accepted debt does not start failing the build the moment an unrelated fix runs.
 - Finding identity now lives in one place (`AnalysisIssueIdentity`), shared by SARIF `partialFingerprints` and baseline matching. They have to agree on what "the same finding" means, and two implementations of that would drift.
 
 ### Validation
+- **A baseline is never recorded from an incomplete scan.** If a project fails to scan or an `--audit`/`--outdated`/`--deprecated` query fails, `--write-baseline` refuses and exits `8` rather than writing a file that permanently accepts findings nobody looked for — a transient audit failure would otherwise silently bless every vulnerability it missed.
+- `--write-baseline` is rejected with `--batch`, where every solution would write the same file: sequentially the last wins, in parallel they race, and either way the result covers one solution while claiming to cover the repository. Reading a shared baseline across a batch is fine and still supported.
 - `--baseline` and `--write-baseline` require `--analyze`. `--write-baseline` is rejected with `--fix`, which would record findings from the pre-fix tree and so accept debt the same run just repaired. A missing baseline file is a validation error rather than a silent fall-back to gating on everything.
 
 ## [3.8.0] - 2026-07-29

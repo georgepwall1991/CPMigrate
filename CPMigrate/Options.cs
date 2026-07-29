@@ -691,6 +691,18 @@ public class Options
             );
         }
 
+        if (WriteBaseline && !string.IsNullOrEmpty(BatchDir))
+        {
+            // Every solution in the batch would write the same file: sequentially the last one wins,
+            // in parallel they race. Either way the resulting baseline covers one solution while
+            // claiming to cover the repository, so the next batch run treats the rest as new debt.
+            throw new ArgumentException(
+                "--write-baseline cannot be combined with --batch, because each solution would "
+                    + "overwrite the same file. Record a baseline per solution with -s, or record "
+                    + "one for the whole repository from a single run."
+            );
+        }
+
         if (WriteBaseline && Fix)
         {
             // The findings would be recorded from the pre-fix tree, immediately accepting debt the

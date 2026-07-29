@@ -75,7 +75,15 @@ internal sealed class AnalysisHandler
 
         if (options.WriteBaseline)
         {
-            return await WriteBaselineAsync(options, report, packageInfo, basePath, projectPaths.Count);
+            return await WriteBaselineAsync(
+                options,
+                report,
+                packageInfo,
+                basePath,
+                scanFailures,
+                deepScanFailures,
+                projectPaths.Count
+            );
         }
 
         var (baselinedReport, baselineError) = ApplyBaseline(options, report);
@@ -440,8 +448,17 @@ internal sealed class AnalysisHandler
                 // gate has to run against what is actually on disk now: an issue's Fixable flag says
                 // a fixer *exists*, not that it ran or succeeded, so trusting it would let an
                 // unrepaired High finding exit successfully. Re-scanning is the only honest answer.
-                var (postFixReport, postFixScanFailures, postFixDeepScanFailures) =
+                var (rescanned, postFixScanFailures, postFixDeepScanFailures) =
                     await ReanalyzeAfterFixesAsync(options, projectPaths: null);
+
+                // The rescan produces a fresh, unsuppressed report. Without reapplying the
+                // baseline, findings the team accepted would start failing the build the moment an
+                // unrelated fix ran.
+                var (postFixReport, postFixBaselineError) = ApplyBaseline(options, rescanned);
+                if (postFixBaselineError is not null)
+                {
+                    _consoleService.Error(postFixBaselineError);
+                }
 
                 if (!_quietMode)
                 {
@@ -528,10 +545,36 @@ internal sealed class AnalysisHandler
         AnalysisReport report,
         ProjectPackageInfo packageInfo,
         string basePath,
+        int scanFailures,
+        int deepScanFailures,
         int projectsDiscovered
     )
     {
         var path = options.ResolveBaselinePath();
+
+        if (scanFailures > 0 || deepScanFailures > 0)
+        {
+            // A baseline claims to be the current accepted state. Recording one from a partial scan
+            // would permanently accept findings that were simply never looked for — a transient
+            // audit failure would silently bless every vulnerability it missed.
+            _consoleService.Error(
+                "Refusing to record a baseline from an incomplete scan: it would accept findings "
+                    + "that were never checked. Fix the scan failures above and re-run."
+            );
+
+            return new MigrationResult
+            {
+                ProjectsProcessed = packageInfo.ProjectCount,
+                PackagesCentralized = packageInfo.TotalReferences,
+                AnalysisReport = report,
+                PackageInfo = packageInfo,
+                BasePath = basePath,
+                ScanFailures = scanFailures,
+                DeepScanFailures = deepScanFailures,
+                ProjectsDiscovered = projectsDiscovered,
+                ExitCode = ExitCodes.IncompleteAnalysis,
+            };
+        }
 
         try
         {
