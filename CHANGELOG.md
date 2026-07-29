@@ -21,6 +21,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - `--output-file` now accepts `Sarif` as well as `Json`, and reports which format it wrote.
 - Console suppression, prompt guards, and non-TTY safety checks now key off a single "machine-readable output" predicate rather than testing for `Json` at ~20 separate call sites, so any future machine format inherits the same protections instead of re-introducing banner leaks.
 
+### Fixed
+- **A failed `--audit`, `--outdated`, or `--deprecated` query looked identical to a clean result.** Those scans returned a success flag that was discarded, so a NuGet query that never completed simply contributed no findings — and "no vulnerabilities found" was reported for a vulnerability scan that did not run. The failures are now counted, warned about on the terminal, and reported through SARIF as an unsuccessful invocation. This affected every output format, not just SARIF.
+- **`--verbose` corrupted machine-readable stdout.** The "Verbose logging enabled: …" notice was written before the payload, so `--output Json --verbose` emitted prose ahead of the opening brace and no longer parsed as JSON.
+- **An unwritable `--output-file` aborted the process.** The failed write threw, and the error handler retried the same path from inside its catch block, throwing again and terminating with an unhandled exception instead of reporting the original problem. Failure payloads now fall back to stdout.
+
 ### Validation
 - `--output Sarif` requires `--analyze` (SARIF carries only analyzer findings) and is rejected with `--batch`, `--interactive`, and `--interactive-conflicts`.
 

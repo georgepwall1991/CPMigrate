@@ -50,13 +50,16 @@ internal sealed class AnalysisHandler
             return new MigrationResult { ExitCode = ExitCodes.NoProjectsFound };
         }
 
-        var (packageInfo, scanFailures) = await PerformAnalysisScanAsync(options, projectPaths);
+        var (packageInfo, scanFailures, deepScanFailures) = await PerformAnalysisScanAsync(
+            options,
+            projectPaths
+        );
 
         if (!_quietMode)
         {
             _consoleService.WriteLine();
         }
-        ReportScanFailures(scanFailures, projectPaths.Count);
+        ReportScanFailures(scanFailures, deepScanFailures, projectPaths.Count);
 
         if (!_quietMode)
         {
@@ -88,11 +91,16 @@ internal sealed class AnalysisHandler
             packageInfo,
             basePath,
             scanFailures,
+            deepScanFailures,
             projectPaths.Count
         );
     }
 
-    private async Task<(ProjectPackageInfo PackageInfo, int ScanFailures)> PerformAnalysisScanAsync(
+    private async Task<(
+        ProjectPackageInfo PackageInfo,
+        int ScanFailures,
+        int DeepScanFailures
+    )> PerformAnalysisScanAsync(
         Options options,
         List<string> projectPaths
     )
@@ -102,12 +110,13 @@ internal sealed class AnalysisHandler
         var allOutdatedPackages = new List<OutdatedPackageInfo>();
         var allDeprecatedPackages = new List<DeprecatedPackageInfo>();
         var scanFailures = 0;
+        var deepScanFailures = 0;
 
         if (_quietMode)
         {
             foreach (var projectPath in projectPaths)
             {
-                var success = await ScanSingleProjectForAnalysisAsync(
+                var (success, deepFailures) = await ScanSingleProjectForAnalysisAsync(
                     options,
                     projectPath,
                     null,
@@ -117,6 +126,7 @@ internal sealed class AnalysisHandler
                     allDeprecatedPackages
                 );
 
+                deepScanFailures += deepFailures;
                 if (!success)
                 {
                     scanFailures++;
@@ -149,7 +159,7 @@ internal sealed class AnalysisHandler
                         task.Description =
                             $"[cyan]Scanning[/] [white]{Markup.Escape(projectName)}[/]";
 
-                        var success = await ScanSingleProjectForAnalysisAsync(
+                        var (success, deepFailures) = await ScanSingleProjectForAnalysisAsync(
                             options,
                             projectPath,
                             task,
@@ -159,6 +169,7 @@ internal sealed class AnalysisHandler
                             allDeprecatedPackages
                         );
 
+                        deepScanFailures += deepFailures;
                         if (!success)
                         {
                             scanFailures++;
@@ -179,11 +190,12 @@ internal sealed class AnalysisHandler
                 allOutdatedPackages,
                 allDeprecatedPackages
             ),
-            scanFailures
+            scanFailures,
+            deepScanFailures
         );
     }
 
-    private async Task<bool> ScanSingleProjectForAnalysisAsync(
+    private async Task<(bool ReferencesScanned, int DeepScanFailures)> ScanSingleProjectForAnalysisAsync(
         Options options,
         string projectPath,
         ProgressTask? task,
@@ -197,9 +209,10 @@ internal sealed class AnalysisHandler
         allReferences.AddRange(references);
         CacheScanResults(projectPath, references);
 
+        var deepScanFailures = 0;
         if (options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated)
         {
-            await RunDeepScansAsync(
+            deepScanFailures = await RunDeepScansAsync(
                 options,
                 projectPath,
                 task,
@@ -209,7 +222,7 @@ internal sealed class AnalysisHandler
             );
         }
 
-        return success;
+        return (success, deepScanFailures);
     }
 
     private async Task<(
@@ -237,7 +250,12 @@ internal sealed class AnalysisHandler
         _cachedProjectScans[projectPath] = references;
     }
 
-    private async Task RunDeepScansAsync(
+    /// <summary>
+    /// Runs the opt-in package queries. Returns the number that did not complete: a failed audit
+    /// or inventory query yields no findings, which is indistinguishable from a clean result
+    /// unless the failure is counted.
+    /// </summary>
+    private async Task<int> RunDeepScansAsync(
         Options options,
         string projectPath,
         ProgressTask? task,
@@ -252,23 +270,27 @@ internal sealed class AnalysisHandler
             task.Description = $"[cyan]Deep scanning[/] [white]{Markup.Escape(projectName)}[/]";
         }
 
-        if (options.AuditSecurity)
+        var failures = 0;
+
+        if (options.AuditSecurity && !await ScanVulnerabilitiesAsync(projectPath, allVulnerabilities))
         {
-            await ScanVulnerabilitiesAsync(projectPath, allVulnerabilities);
+            failures++;
         }
 
-        if (options.AnalyzeOutdated)
+        if (options.AnalyzeOutdated && !await ScanOutdatedPackagesAsync(options, projectPath, allOutdatedPackages))
         {
-            await ScanOutdatedPackagesAsync(options, projectPath, allOutdatedPackages);
+            failures++;
         }
 
-        if (options.AnalyzeDeprecated)
+        if (options.AnalyzeDeprecated && !await ScanDeprecatedPackagesAsync(options, projectPath, allDeprecatedPackages))
         {
-            await ScanDeprecatedPackagesAsync(options, projectPath, allDeprecatedPackages);
+            failures++;
         }
+
+        return failures;
     }
 
-    private async Task ScanVulnerabilitiesAsync(
+    private async Task<bool> ScanVulnerabilitiesAsync(
         string projectPath,
         List<VulnerabilityInfo> allVulnerabilities
     )
@@ -280,9 +302,11 @@ internal sealed class AnalysisHandler
         {
             allVulnerabilities.AddRange(vulnerabilities);
         }
+
+        return auditSuccess;
     }
 
-    private async Task ScanOutdatedPackagesAsync(
+    private async Task<bool> ScanOutdatedPackagesAsync(
         Options options,
         string projectPath,
         List<OutdatedPackageInfo> allOutdatedPackages
@@ -297,9 +321,11 @@ internal sealed class AnalysisHandler
         {
             allOutdatedPackages.AddRange(outdated);
         }
+
+        return outdatedSuccess;
     }
 
-    private async Task ScanDeprecatedPackagesAsync(
+    private async Task<bool> ScanDeprecatedPackagesAsync(
         Options options,
         string projectPath,
         List<DeprecatedPackageInfo> allDeprecatedPackages
@@ -314,10 +340,22 @@ internal sealed class AnalysisHandler
         {
             allDeprecatedPackages.AddRange(deprecated);
         }
+
+        return deprecatedSuccess;
     }
 
-    private void ReportScanFailures(int scanFailures, int totalProjects)
+    private void ReportScanFailures(int scanFailures, int deepScanFailures, int totalProjects)
     {
+        if (deepScanFailures > 0)
+        {
+            // Previously silent: a failed audit or inventory query simply contributed no findings,
+            // which reads identically to a clean result.
+            _consoleService.Warning(
+                $"{deepScanFailures} package quer(ies) failed (--audit/--outdated/--deprecated); "
+                    + "those findings are missing, not absent."
+            );
+        }
+
         if (scanFailures > 0)
         {
             var failureRate = (double)scanFailures / totalProjects * 100;
@@ -339,6 +377,7 @@ internal sealed class AnalysisHandler
         ProjectPackageInfo packageInfo,
         string basePath,
         int scanFailures,
+        int deepScanFailures,
         int projectsDiscovered
     )
     {
@@ -368,6 +407,7 @@ internal sealed class AnalysisHandler
                     PackageInfo = packageInfo,
                     BasePath = basePath,
                     ScanFailures = scanFailures,
+                    DeepScanFailures = deepScanFailures,
                     ProjectsDiscovered = projectsDiscovered,
                     ExitCode =
                         fixReport.GetFailedFixes().Count > 0
@@ -387,6 +427,7 @@ internal sealed class AnalysisHandler
                 PackageInfo = packageInfo,
                 BasePath = basePath,
                 ScanFailures = scanFailures,
+                DeepScanFailures = deepScanFailures,
                 ProjectsDiscovered = projectsDiscovered,
                 ExitCode = report.HasIssues ? ExitCodes.AnalysisIssuesFound : ExitCodes.Success,
             }

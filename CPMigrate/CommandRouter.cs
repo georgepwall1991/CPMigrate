@@ -902,6 +902,14 @@ internal static class CommandRouter
             );
         }
 
+        if (result.DeepScanFailures > 0)
+        {
+            return SarifRunOutcome.Failed(
+                $"{result.DeepScanFailures} package quer(ies) failed "
+                    + "(--audit/--outdated/--deprecated); those findings are missing, not absent."
+            );
+        }
+
         return SarifRunOutcome.Successful;
     }
 
@@ -1057,10 +1065,7 @@ internal static class CommandRouter
         {
             // In SARIF mode stdout is a SARIF log unconditionally, so failures are reported as an
             // unsuccessful invocation rather than as CPMigrate's own error JSON.
-            var sarif = SarifFormatter.FormatError(
-                errorMessage,
-                Directory.GetCurrentDirectory()
-            );
+            var sarif = SarifFormatter.FormatError(errorMessage, Directory.GetCurrentDirectory());
             await JsonOutputWriter.EmitFailureAsync(sarif, options);
             return;
         }
