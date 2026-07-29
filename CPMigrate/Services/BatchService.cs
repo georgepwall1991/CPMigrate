@@ -330,6 +330,7 @@ public class BatchService
             IssuesFound = report?.TotalIssues ?? 0,
             FailOnSeverity = report is null ? null : solutionOptions.FailOn.ToString(),
             IssuesAtOrAboveThreshold = migrationResult.GatedIssueCount,
+            IssuesRemainingAfterFixes = migrationResult.PostFixAnalysisReport?.TotalIssues,
             HighestSeverity = report?.HighestSeverity?.ToString(),
             ScanFailures = report is null ? null : migrationResult.ScanFailures,
             DeepScanFailures = report is null ? null : migrationResult.DeepScanFailures,

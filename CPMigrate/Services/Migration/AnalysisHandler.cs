@@ -83,7 +83,14 @@ internal sealed class AnalysisHandler
         if (!_quietMode)
         {
             _consoleService.WriteAnalysisSummary(report);
-            ReportThresholdDecision(options, report);
+
+            // With --fix pending, these findings may not survive: the gate is decided against a
+            // rescan of the modified tree, so announcing a verdict here could contradict the exit
+            // code. The post-fix decision is reported once the rescan has happened.
+            if (!options.Fix)
+            {
+                ReportThresholdDecision(options, report);
+            }
         }
 
         return await ApplyAnalysisFixesIfNeededAsync(
@@ -414,6 +421,14 @@ internal sealed class AnalysisHandler
                 // unrepaired High finding exit successfully. Re-scanning is the only honest answer.
                 var (postFixReport, postFixScanFailures, postFixDeepScanFailures) =
                     await ReanalyzeAfterFixesAsync(options, projectPaths: null);
+
+                if (!_quietMode)
+                {
+                    _consoleService.Dim(
+                        $"After fixes: {postFixReport.TotalIssues} finding(s) remain."
+                    );
+                    ReportThresholdDecision(options, postFixReport);
+                }
 
                 return new MigrationResult
                 {
