@@ -81,4 +81,12 @@ public class MigrationResult
     /// Projects the scan set out to cover, for reporting the scale of any scan failures.
     /// </summary>
     public int ProjectsDiscovered { get; init; }
+
+    /// <summary>
+    /// Findings that reached the <c>--fail-on</c> threshold — the subset <see cref="ExitCode"/>
+    /// reflects. Recorded here rather than re-derived by reporters: the gate has exceptions (a
+    /// successful <c>--fix</c> run does not gate on findings it just repaired), and a second
+    /// implementation of the policy drifts from the first.
+    /// </summary>
+    public int? GatedIssueCount { get; init; }
 }

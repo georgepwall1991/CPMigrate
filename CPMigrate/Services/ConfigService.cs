@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CPMigrate.Models;
 
 namespace CPMigrate.Services;
@@ -94,19 +95,37 @@ public class ConfigService
         return config;
     }
 
-    private (ConfigModel? Config, string? ConfigPath, string? ErrorMessage) ParseConfigDetailed(string configPath)
+    /// <summary>
+    /// Enum-valued settings are written and read as names, not numbers. The published schema
+    /// (<c>schemas/cpmigrate.schema.json</c>) permits only names and the documentation shows names,
+    /// so without this converter every documented enum setting failed to parse — the config was
+    /// reported as invalid and silently fell back to defaults.
+    /// </summary>
+    private static readonly JsonStringEnumConverter EnumConverter = new();
+
+    private readonly JsonSerializerOptions _readOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        Converters = { EnumConverter },
+    };
+
+    private readonly JsonSerializerOptions _writeOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { EnumConverter },
+    };
+
+    private (ConfigModel? Config, string? ConfigPath, string? ErrorMessage) ParseConfigDetailed(
+        string configPath
+    )
     {
         try
         {
             var json = File.ReadAllText(configPath);
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                ReadCommentHandling = JsonCommentHandling.Skip,
-                AllowTrailingCommas = true
-            };
-
-            var config = JsonSerializer.Deserialize<ConfigModel>(json, options);
+            var config = JsonSerializer.Deserialize<ConfigModel>(json, _readOptions);
             return (config, configPath, null);
         }
         catch (JsonException ex)
@@ -211,13 +230,7 @@ public class ConfigService
             }
         };
 
-        var options = new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
-
-        var json = JsonSerializer.Serialize(sampleConfig, options);
+        var json = JsonSerializer.Serialize(sampleConfig, _writeOptions);
         File.WriteAllText(path, json);
     }
 }

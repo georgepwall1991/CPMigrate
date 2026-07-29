@@ -18,6 +18,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **JSON schema 1.2.0 (additive):** `summary.failOnSeverity`, `summary.issuesAtOrAboveThreshold`, `summary.highestSeverity`, `summary.scanFailures`, and `summary.deepScanFailures`. Together these let a consumer distinguish a clean run from one whose findings were below the gate, and either from one whose scan did not complete — without re-deriving the policy from the issue list. No existing field changed meaning.
 
 ### Fixed
+- **Enum-valued config settings never worked.** `ConfigService` deserialized without a string-enum converter, so the documented — and schema-mandated — `{ "conflictStrategy": "Highest" }` threw a parse error, the whole config file was rejected with a warning, and every setting in it silently fell back to its default. This affected `conflictStrategy` and `outputFormat` from the day config files shipped, and would have taken `failOn` with it. The generated sample config had the mirror-image problem: it wrote enums as *numbers*, which the published schema rejects, so the file CPMigrate produced showed as invalid in an editor. Both directions now use names, with a round-trip test.
 - **`schemas/cpmigrate.schema.json` was missing `Sarif` from `outputFormat`,** so a valid 3.7.0 config showed as an editor error. New `ConfigSchemaDriftTests` fail the build when a config property or enum value is added without updating the published schema — the schema is hand-written, so it had no other protection.
 
 ## [3.7.0] - 2026-07-29

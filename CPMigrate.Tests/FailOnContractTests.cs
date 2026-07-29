@@ -106,6 +106,50 @@ public class FailOnContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Analyze_WithSuccessfulFix_ReportsAGatedCountConsistentWithTheExitCode()
+    {
+        // issuesAtOrAboveThreshold exists to explain the exit code. A successful --fix leaves the
+        // report describing the tree as it was *before* the fixes, and the run deliberately does
+        // not gate on findings it just repaired — so reporting a positive count next to exitCode 0
+        // would contradict the field's whole purpose.
+        CreateFixture();
+
+        var stdout = await CaptureStdoutAsync(() =>
+            CommandRouter.RouteCommand(
+                new Options
+                {
+                    Analyze = true,
+                    Fix = true,
+                    Output = OutputFormat.Json,
+                    Quiet = true,
+                    SolutionFileDir = _testDirectory,
+                    NoBackup = true,
+                },
+                new SpectreConsoleService(_versionResolver),
+                new InteractiveService(SilentConsoleService.Instance),
+                _versionResolver,
+                new ConfigService(SilentConsoleService.Instance),
+                new BackupManager()
+            )
+        );
+
+        var root = JsonDocument.Parse(stdout).RootElement;
+        var exitCode = root.GetProperty("exitCode").GetInt32();
+        var gated = root.GetProperty("summary").GetProperty("issuesAtOrAboveThreshold").GetInt32();
+
+        if (exitCode == ExitCodes.Success)
+        {
+            gated.Should().Be(0, "a successful run must not claim findings reached the gate");
+        }
+        else
+        {
+            gated
+                .Should()
+                .BeGreaterThan(0, "a gated failure must name how many findings caused it");
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_FailOnWithoutAnalyze_WarnsRatherThanSilentlyMigrating()
     {
         // --fail-on only affects analysis exit codes, so passing it without --analyze means the

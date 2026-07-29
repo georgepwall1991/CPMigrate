@@ -419,6 +419,10 @@ internal sealed class AnalysisHandler
                     ScanFailures = scanFailures,
                     DeepScanFailures = deepScanFailures,
                     ProjectsDiscovered = projectsDiscovered,
+                    // The fixes were written, so the report no longer describes the tree on disk.
+                    // Findings that were just repaired must not gate the build — but a fix that
+                    // failed to apply is a failure regardless of severity.
+                    GatedIssueCount = 0,
                     ExitCode =
                         fixReport.GetFailedFixes().Count > 0
                             ? ExitCodes.AnalysisIssuesFound
@@ -444,6 +448,7 @@ internal sealed class AnalysisHandler
                 ScanFailures = scanFailures,
                 DeepScanFailures = deepScanFailures,
                 ProjectsDiscovered = projectsDiscovered,
+                GatedIssueCount = CountGatedIssues(report, options.FailOn),
                 ExitCode = ResolveExitCode(report, options.FailOn, scanFailures, deepScanFailures),
             }
         );
@@ -509,11 +514,15 @@ internal sealed class AnalysisHandler
     /// </summary>
     private static bool ReachesFailureThreshold(AnalysisReport report, FailOnSeverity failOn)
     {
-        if (failOn == FailOnSeverity.Never)
-        {
-            return false;
-        }
+        return CountGatedIssues(report, failOn) > 0;
+    }
 
-        return report.CountAtOrAbove((AnalysisSeverity)failOn) > 0;
+    /// <summary>
+    /// Findings that reach the threshold. <see cref="FailOnSeverity.Never"/> sits above every real
+    /// severity, so nothing counts.
+    /// </summary>
+    private static int CountGatedIssues(AnalysisReport report, FailOnSeverity failOn)
+    {
+        return failOn == FailOnSeverity.Never ? 0 : report.CountAtOrAbove((AnalysisSeverity)failOn);
     }
 }
