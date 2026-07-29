@@ -17,7 +17,8 @@ public static class OutputMetadata
     /// <para>
     /// 1.2.0 additively introduced the analysis-gate fields: <c>summary.failOnSeverity</c>,
     /// <c>summary.issuesAtOrAboveThreshold</c>, <c>summary.highestSeverity</c>,
-    /// <c>summary.scanFailures</c>, and <c>summary.deepScanFailures</c>. Together these let a
+    /// <c>summary.scanFailures</c>, <c>summary.deepScanFailures</c>, and
+    /// <c>summary.issuesRemainingAfterFixes</c>. Together these let a
     /// consumer distinguish a clean run from one whose findings were below the gate, and either
     /// from one whose scan did not complete.
     /// </para>

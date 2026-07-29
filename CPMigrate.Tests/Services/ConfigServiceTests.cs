@@ -17,7 +17,10 @@ public class ConfigServiceTests : IDisposable
 
     public ConfigServiceTests()
     {
-        _testDirectory = Path.Combine(Path.GetTempPath(), $"CPMigrateConfigTest_{Guid.NewGuid():N}");
+        _testDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"CPMigrateConfigTest_{Guid.NewGuid():N}"
+        );
         Directory.CreateDirectory(_testDirectory);
         _console = new FakeConsoleService();
         _configService = new ConfigService(_console);
@@ -38,8 +41,9 @@ public class ConfigServiceTests : IDisposable
     {
         // Arrange
         var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
-        var configContent = @"{
-  ""conflictStrategy"": 1,
+        var configContent =
+            @"{
+  ""conflictStrategy"": ""Lowest"",
   ""backup"": false
 }";
         File.WriteAllText(configPath, configContent);
@@ -178,14 +182,15 @@ public class ConfigServiceTests : IDisposable
     {
         // Arrange
         var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
-        var configContent = @"{
-  ""conflictStrategy"": 1,
+        var configContent =
+            @"{
+  ""conflictStrategy"": ""Lowest"",
   ""backup"": true,
   ""backupDir"": ""backup"",
   ""addGitignore"": true,
   ""keepVersionAttributes"": false,
   ""mergeExisting"": true,
-  ""outputFormat"": 1,
+  ""outputFormat"": ""Json"",
   ""retention"": {
     ""enabled"": true,
     ""maxBackups"": 10
@@ -218,8 +223,9 @@ public class ConfigServiceTests : IDisposable
     {
         // Arrange
         var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
-        var configContent = @"{
-  ""conflictStrategy"": 0,
+        var configContent =
+            @"{
+  ""conflictStrategy"": ""Highest"",
   ""backup"": true
 }";
         File.WriteAllText(configPath, configContent);
@@ -252,9 +258,10 @@ public class ConfigServiceTests : IDisposable
     {
         // Arrange
         var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
-        var configContent = @"{
+        var configContent =
+            @"{
   // This is a comment
-  ""conflictStrategy"": 1,
+  ""conflictStrategy"": ""Lowest"",
   ""backup"": true // inline comment
 }";
         File.WriteAllText(configPath, configContent);
@@ -273,8 +280,9 @@ public class ConfigServiceTests : IDisposable
     {
         // Arrange
         var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
-        var configContent = @"{
-  ""conflictStrategy"": 0,
+        var configContent =
+            @"{
+  ""conflictStrategy"": ""Highest"",
   ""backup"": true,
 }";
         File.WriteAllText(configPath, configContent);
@@ -320,8 +328,9 @@ public class ConfigServiceTests : IDisposable
     {
         // Arrange - lowercase property names
         var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
-        var configContent = @"{
-  ""CONFLICTSTRATEGY"": 1,
+        var configContent =
+            @"{
+  ""CONFLICTSTRATEGY"": ""Lowest"",
   ""BACKUP"": true,
   ""backupdir"": ""backup""
 }";
@@ -358,7 +367,11 @@ public class ConfigServiceTests : IDisposable
         var options = new Options { MergeExisting = false };
         var config = new ConfigModel { MergeExisting = true };
 
-        ConfigService.MergeConfig(options, config, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "merge" });
+        ConfigService.MergeConfig(
+            options,
+            config,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "merge" }
+        );
 
         options.MergeExisting.Should().BeFalse();
     }
@@ -468,11 +481,7 @@ public class ConfigServiceTests : IDisposable
         var options = new Options { Retention = 0 };
         var config = new ConfigModel
         {
-            Retention = new RetentionConfig
-            {
-                Enabled = true,
-                MaxBackups = 10
-            }
+            Retention = new RetentionConfig { Enabled = true, MaxBackups = 10 },
         };
 
         // Act
@@ -489,11 +498,7 @@ public class ConfigServiceTests : IDisposable
         var options = new Options { Retention = 0 };
         var config = new ConfigModel
         {
-            Retention = new RetentionConfig
-            {
-                Enabled = false,
-                MaxBackups = 10
-            }
+            Retention = new RetentionConfig { Enabled = false, MaxBackups = 10 },
         };
 
         // Act
@@ -531,7 +536,7 @@ public class ConfigServiceTests : IDisposable
             KeepVersionAttributes = true,
             MergeExisting = true,
             OutputFormat = OutputFormat.Json,
-            Retention = new RetentionConfig { Enabled = true, MaxBackups = 42 }
+            Retention = new RetentionConfig { Enabled = true, MaxBackups = 42 },
         };
 
         // Act
@@ -562,12 +567,18 @@ public class ConfigServiceTests : IDisposable
             KeepVersionAttributes = true,
             MergeExisting = true,
             OutputFormat = OutputFormat.Json,
-            Retention = new RetentionConfig { Enabled = true, MaxBackups = 42 }
+            Retention = new RetentionConfig { Enabled = true, MaxBackups = 42 },
         };
         var cliArgs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "conflict-strategy", "no-backup", "backup-dir", "add-gitignore",
-            "keep-attrs", "merge", "output", "retention"
+            "conflict-strategy",
+            "no-backup",
+            "backup-dir",
+            "add-gitignore",
+            "keep-attrs",
+            "merge",
+            "output",
+            "retention",
         };
 
         // Act

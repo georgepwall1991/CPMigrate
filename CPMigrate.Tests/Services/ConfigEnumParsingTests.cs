@@ -66,6 +66,25 @@ public class ConfigEnumParsingTests : IDisposable
         config!.OutputFormat.Should().Be(OutputFormat.Sarif);
     }
 
+    [Theory]
+    [InlineData("""{ "failOn": 99 }""")]
+    [InlineData("""{ "failOn": 3 }""")]
+    [InlineData("""{ "conflictStrategy": 1 }""")]
+    public void LoadConfigDetailed_NumericEnumValue_IsRejected(string json)
+    {
+        // The schema permits only names. An out-of-range number would cast to an undefined severity
+        // that no real finding can reach, silently disabling the gate rather than reporting a bad
+        // config — so even in-range numbers are refused, to keep one accepted spelling.
+        WriteConfig(json);
+
+        var (config, _, error) = new ConfigService(
+            SilentConsoleService.Instance
+        ).LoadConfigDetailed(_root);
+
+        config.Should().BeNull();
+        error.Should().NotBeNullOrWhiteSpace();
+    }
+
     [Fact]
     public void LoadConfigDetailed_UnknownEnumValue_ReportsAParseError()
     {

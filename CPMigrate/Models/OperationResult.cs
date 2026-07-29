@@ -129,6 +129,14 @@ public class OperationSummary
     public int? IssuesAtOrAboveThreshold { get; init; }
 
     /// <summary>
+    /// Findings still present after a <c>--fix</c> run wrote its changes, from a fresh scan of the
+    /// modified tree. Null when no fixes were applied. <c>issuesFound</c> stays as the pre-fix count
+    /// so it lines up with the <c>fixes</c> array.
+    /// </summary>
+    [JsonPropertyName("issuesRemainingAfterFixes")]
+    public int? IssuesRemainingAfterFixes { get; init; }
+
+    /// <summary>
     /// Severity of the worst finding, or null when nothing was found.
     /// </summary>
     [JsonPropertyName("highestSeverity")]

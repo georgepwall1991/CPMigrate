@@ -998,6 +998,7 @@ internal static class CommandRouter
                 IssuesFound = result.AnalysisReport?.TotalIssues ?? 0,
                 FailOnSeverity = result.AnalysisReport is null ? null : options.FailOn.ToString(),
                 IssuesAtOrAboveThreshold = result.GatedIssueCount,
+                IssuesRemainingAfterFixes = result.PostFixAnalysisReport?.TotalIssues,
                 HighestSeverity = result.AnalysisReport?.HighestSeverity?.ToString(),
                 ScanFailures = result.AnalysisReport is null ? null : result.ScanFailures,
                 DeepScanFailures = result.AnalysisReport is null ? null : result.DeepScanFailures,

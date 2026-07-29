@@ -408,27 +408,32 @@ internal sealed class AnalysisHandler
 
             if (fixReport.HasChanges && !options.FixDryRun)
             {
+                // The fixes were written, so the pre-fix report no longer describes the tree. The
+                // gate has to run against what is actually on disk now: an issue's Fixable flag says
+                // a fixer *exists*, not that it ran or succeeded, so trusting it would let an
+                // unrepaired High finding exit successfully. Re-scanning is the only honest answer.
+                var (postFixReport, postFixScanFailures, postFixDeepScanFailures) =
+                    await ReanalyzeAfterFixesAsync(options, projectPaths: null);
+
                 return new MigrationResult
                 {
                     ProjectsProcessed = packageInfo.ProjectCount,
                     PackagesCentralized = packageInfo.TotalReferences,
                     AnalysisReport = report,
+                    PostFixAnalysisReport = postFixReport,
                     FixReport = fixReport,
                     PackageInfo = packageInfo,
                     BasePath = basePath,
-                    ScanFailures = scanFailures,
-                    DeepScanFailures = deepScanFailures,
+                    ScanFailures = postFixScanFailures,
+                    DeepScanFailures = postFixDeepScanFailures,
                     ProjectsDiscovered = projectsDiscovered,
-                    // The fixes were written, so the report no longer describes the tree on disk.
-                    // Repaired findings must not gate the build — but the ones no fixer can repair
-                    // are still there, and a fix that failed to apply is a failure outright.
-                    GatedIssueCount = CountRemainingGatedIssues(report, options.FailOn),
+                    GatedIssueCount = CountGatedIssues(postFixReport, options.FailOn),
                     ExitCode = ResolveExitCodeAfterFixes(
-                        report,
+                        postFixReport,
                         fixReport,
                         options.FailOn,
-                        scanFailures,
-                        deepScanFailures
+                        postFixScanFailures,
+                        postFixDeepScanFailures
                     ),
                 };
             }
@@ -525,15 +530,31 @@ internal sealed class AnalysisHandler
     }
 
     /// <summary>
-    /// Findings that reach the threshold and are still on disk after a successful fix run — the
-    /// ones no built-in fixer addresses. Reporting zero here whenever anything was fixed would let
-    /// an unfixable Critical advisory exit successfully.
+    /// Re-scans the tree after fixes have been written, so the gate is evaluated against reality
+    /// rather than against the report that prompted the fixes.
     /// </summary>
-    private static int CountRemainingGatedIssues(AnalysisReport report, FailOnSeverity failOn)
+    private async Task<(
+        AnalysisReport Report,
+        int ScanFailures,
+        int DeepScanFailures
+    )> ReanalyzeAfterFixesAsync(Options options, List<string>? projectPaths)
     {
-        return failOn == FailOnSeverity.Never
-            ? 0
-            : report.CountUnfixableAtOrAbove((AnalysisSeverity)failOn);
+        var paths = projectPaths;
+        if (paths is null)
+        {
+            var (_, discovered) = await _discoverProjects(options);
+            paths = discovered;
+        }
+
+        // The cache holds pre-fix references; the point of this pass is to read the new files.
+        _cachedProjectScans = null;
+
+        var (packageInfo, scanFailures, deepScanFailures) = await PerformAnalysisScanAsync(
+            options,
+            paths
+        );
+
+        return (_analysisService.Analyze(packageInfo), scanFailures, deepScanFailures);
     }
 
     /// <summary>
@@ -553,7 +574,7 @@ internal sealed class AnalysisHandler
             return ExitCodes.AnalysisIssuesFound;
         }
 
-        if (CountRemainingGatedIssues(report, failOn) > 0)
+        if (CountGatedIssues(report, failOn) > 0)
         {
             return ExitCodes.AnalysisIssuesFound;
         }

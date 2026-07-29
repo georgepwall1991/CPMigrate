@@ -53,6 +53,14 @@ public class MigrationResult
     public FixReport? FixReport { get; init; }
 
     /// <summary>
+    /// Findings that survived a <c>--fix</c> run, from a fresh scan of the modified tree.
+    /// <see cref="AnalysisReport"/> is deliberately left as the pre-fix report so it lines up with
+    /// <see cref="FixReport"/> — what was found, and what was done about it — while the gate and the
+    /// remaining-issue count come from here, which is what is actually on disk.
+    /// </summary>
+    public AnalysisReport? PostFixAnalysisReport { get; init; }
+
+    /// <summary>
     /// The package references the analysis was built from. Reporters that need to resolve a
     /// finding back to a project file (SARIF locations, for example) use this; analyzer issues
     /// themselves only carry project names.

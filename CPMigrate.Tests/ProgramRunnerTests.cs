@@ -309,7 +309,7 @@ public class ProgramRunnerTests
     {
         var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempPath);
-        File.WriteAllText(Path.Combine(tempPath, ".cpmigrate.json"), "{\"outputFormat\":1}");
+        File.WriteAllText(Path.Combine(tempPath, ".cpmigrate.json"), "{\"outputFormat\":\"Json\"}");
 
         var fakeConsole = new FakeConsoleService();
         var stdout = new StringWriter();
@@ -341,7 +341,7 @@ public class ProgramRunnerTests
     {
         var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempPath);
-        File.WriteAllText(Path.Combine(tempPath, ".cpmigrate.json"), "{\"outputFormat\":1}");
+        File.WriteAllText(Path.Combine(tempPath, ".cpmigrate.json"), "{\"outputFormat\":\"Json\"}");
 
         var fakeConsole = new FakeConsoleService();
         var stdout = new StringWriter();
@@ -381,7 +381,7 @@ public class ProgramRunnerTests
     {
         var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempPath);
-        File.WriteAllText(Path.Combine(tempPath, ".cpmigrate.json"), "{\"outputFormat\":1}");
+        File.WriteAllText(Path.Combine(tempPath, ".cpmigrate.json"), "{\"outputFormat\":\"Json\"}");
 
         var outputFile = Path.Combine(tempPath, "result.json");
         var fakeConsole = new FakeConsoleService();

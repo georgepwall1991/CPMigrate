@@ -101,7 +101,15 @@ public class ConfigService
     /// so without this converter every documented enum setting failed to parse — the config was
     /// reported as invalid and silently fell back to defaults.
     /// </summary>
-    private static readonly JsonStringEnumConverter EnumConverter = new();
+    /// <summary>
+    /// Names only. Integers are rejected because the schema permits only names, and an out-of-range
+    /// number would cast to an undefined severity that no real finding could reach — silently
+    /// disabling the CI gate instead of reporting a bad config.
+    /// </summary>
+    private static readonly JsonStringEnumConverter EnumConverter = new(
+        namingPolicy: null,
+        allowIntegerValues: false
+    );
 
     private readonly JsonSerializerOptions _readOptions = new()
     {
