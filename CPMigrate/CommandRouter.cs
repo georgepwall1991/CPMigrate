@@ -75,6 +75,19 @@ internal static class CommandRouter
             services = services.WithConsole(executionConsole);
         }
 
+        // The modes below are dispatched before per-command validation, so the output-format
+        // contract has to be checked here. Otherwise `--update --output Sarif` would run a real
+        // self-update and emit no SARIF, and the promised "stdout is always a SARIF log" is broken.
+        try
+        {
+            options.ValidateSarifOptions();
+        }
+        catch (ArgumentException ex)
+        {
+            consoleService.Error(ex.Message);
+            return ExitCodes.ValidationError;
+        }
+
         // Handle Update command
         if (options.Update)
         {

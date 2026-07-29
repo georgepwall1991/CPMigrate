@@ -537,6 +537,134 @@ public class SarifFormatterTests : IDisposable
     }
 
     [Fact]
+    public void Format_PercentEncodesReservedCharactersInArtifactUris()
+    {
+        // artifactLocation.uri is a URI reference, not a filesystem path. A raw space or '#'
+        // makes it invalid, and a consumer either rejects it or resolves it to the wrong file.
+        var projectPath = CreateProject("src/My App #2/App.csproj", "Newtonsoft.Json", "13.0.1");
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Newtonsoft.Json", "13.0.1", projectPath, "App.csproj") }
+        );
+
+        var uri = FormatToDocument(packageInfo, "App.csproj")
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0]
+            .GetProperty("locations")[0]
+            .GetProperty("physicalLocation")
+            .GetProperty("artifactLocation")
+            .GetProperty("uri")
+            .GetString();
+
+        uri.Should().Be("src/My%20App%20%232/App.csproj");
+        Uri.IsWellFormedUriString(uri, UriKind.Relative).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("    <PackageReference Include='Serilog' Version='4.3.0' />", 4)]
+    [InlineData("    <PackageReference Update=\"Serilog\" Version=\"4.3.0\" />", 4)]
+    [InlineData("    <PackageReference Include=\"Serilog\">", 4)]
+    public void Format_LocatesTheDeclarationRegardlessOfAttributeStyle(
+        string declaration,
+        int expectedLine
+    )
+    {
+        // The declaration is XML, not text: single quotes, an Update= attribute, and a child-element
+        // form are all valid and all appear in real projects.
+        var projectPath = Path.Combine(_root, "Styles.csproj");
+        File.WriteAllText(
+            projectPath,
+            string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    "<Project Sdk=\"Microsoft.NET.Sdk\">",
+                    "  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>",
+                    "  <ItemGroup>",
+                    declaration,
+                    declaration.TrimEnd().EndsWith("/>", StringComparison.Ordinal)
+                        ? "    <!-- closed -->"
+                        : "    </PackageReference>",
+                    "  </ItemGroup>",
+                    "</Project>",
+                }
+            )
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Serilog", "4.3.0", projectPath, "Styles.csproj") }
+        );
+
+        var region = FormatToDocument(packageInfo, "Styles.csproj", "Serilog")
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0]
+            .GetProperty("locations")[0]
+            .GetProperty("physicalLocation")
+            .GetProperty("region");
+
+        region.GetProperty("startLine").GetInt32().Should().Be(expectedLine);
+    }
+
+    [Fact]
+    public void Format_MalformedProjectFile_FallsBackToAFileLevelLocation()
+    {
+        var projectPath = Path.Combine(_root, "Broken.csproj");
+        File.WriteAllText(projectPath, "<Project><ItemGroup><PackageReference Include=\"Serilog\"");
+
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Serilog", "4.3.0", projectPath, "Broken.csproj") }
+        );
+
+        var physicalLocation = FormatToDocument(packageInfo, "Broken.csproj", "Serilog")
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0]
+            .GetProperty("locations")[0]
+            .GetProperty("physicalLocation");
+
+        physicalLocation
+            .GetProperty("artifactLocation")
+            .GetProperty("uri")
+            .GetString()
+            .Should()
+            .Be("Broken.csproj");
+        physicalLocation
+            .TryGetProperty("region", out _)
+            .Should()
+            .BeFalse("an unparseable project still deserves a file-level annotation");
+    }
+
+    /// <summary>
+    /// Builds a single-finding report against <paramref name="projectName"/> and formats it.
+    /// </summary>
+    private JsonDocument FormatToDocument(
+        ProjectPackageInfo packageInfo,
+        string projectName,
+        string packageName = "Newtonsoft.Json"
+    )
+    {
+        var report = new AnalysisReport(
+            1,
+            1,
+            new[]
+            {
+                new AnalyzerResult(
+                    "Version Inconsistencies",
+                    new[]
+                    {
+                        Issue(
+                            packageName,
+                            AnalysisIssueCode.VersionInconsistency,
+                            AnalysisSeverity.Moderate,
+                            projectName
+                        ),
+                    }
+                ),
+            }
+        );
+
+        return FormatToDocument(report, packageInfo);
+    }
+
+    [Fact]
     public void Format_OmitsLocationsWhenNoProjectCanBeResolved()
     {
         var report = new AnalysisReport(

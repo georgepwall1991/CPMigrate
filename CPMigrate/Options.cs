@@ -561,8 +561,14 @@ public class Options
     /// SARIF describes analyzer findings, so it only makes sense for commands that produce them.
     /// Rejecting it elsewhere is friendlier than emitting an empty, valid-but-useless log that a
     /// code-scanning upload would silently accept.
+    ///
+    /// Public and called separately from <see cref="Validate"/> because several modes
+    /// (<c>--update</c>, <c>--interactive</c>, <c>--unify-props</c>) are dispatched before
+    /// per-command validation runs. Without an early check, <c>--update --output Sarif</c> would
+    /// perform a real self-update and emit no SARIF at all.
     /// </summary>
-    private void ValidateSarifOptions()
+    /// <exception cref="ArgumentException">Thrown when SARIF is requested for an unsupported mode.</exception>
+    public void ValidateSarifOptions()
     {
         if (Output != OutputFormat.Sarif)
         {

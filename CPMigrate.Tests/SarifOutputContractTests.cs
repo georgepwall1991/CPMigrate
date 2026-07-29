@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CPMigrate.Models;
 using CPMigrate.Services;
+using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
 using Spectre.Console;
 
@@ -173,6 +174,25 @@ public class SarifOutputContractTests : IDisposable
             .GetString()
             .Should()
             .Be("2.1.0");
+    }
+
+    [Theory]
+    [InlineData("--update")]
+    [InlineData("--interactive")]
+    [InlineData("--unify-props")]
+    public async Task RunAsync_SarifWithAnAlternateMode_IsRejectedBeforeAnythingRuns(string mode)
+    {
+        // These modes are dispatched before per-command validation, so the SARIF contract used to
+        // be bypassed: `--update --output Sarif` performed a real self-update and emitted no SARIF.
+        var console = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { mode, "--output", "Sarif", "-s", _testDirectory },
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(m => m.Contains("Sarif"));
     }
 
     [Fact]

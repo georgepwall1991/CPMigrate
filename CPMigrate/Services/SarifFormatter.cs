@@ -3,16 +3,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Xml;
+using System.Xml.Linq;
 using CPMigrate.Analyzers;
 using CPMigrate.Models;
 
 namespace CPMigrate.Services;
 
-/// <summary>
-/// Renders an <see cref="AnalysisReport"/> as a SARIF 2.1.0 log so analyzer findings can be
-/// uploaded to GitHub code scanning (or any other SARIF consumer) instead of being parsed
-/// out of CPMigrate's bespoke JSON.
-/// </summary>
 /// <summary>
 /// Whether a scan completed, and why not when it did not. SARIF distinguishes "the tool ran and
 /// found nothing" from "the tool did not finish"; conflating the two turns an aborted scan into a
@@ -33,6 +30,11 @@ public record SarifRunOutcome(bool Completed, string? FailureMessage = null)
     }
 }
 
+/// <summary>
+/// Renders an <see cref="AnalysisReport"/> as a SARIF 2.1.0 log so analyzer findings can be
+/// uploaded to GitHub code scanning (or any other SARIF consumer) instead of being parsed
+/// out of CPMigrate's bespoke JSON.
+/// </summary>
 public static class SarifFormatter
 {
 #pragma warning disable S1075 // URIs should not be hardcoded - the SARIF schema and repo home are fixed, published locations
@@ -486,49 +488,74 @@ public static class SarifFormatter
             return new Uri(fullPath).AbsoluteUri;
         }
 
-        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace('\\', '/');
+        // artifactLocation.uri is a URI reference, not a filesystem path: a raw space, '#', or '%'
+        // makes it invalid, and a consumer either rejects the location or resolves it to the wrong
+        // file. Encode per segment so the separators survive.
+        var segments = relative
+            .Replace('\\', '/')
+            .Replace(Path.DirectorySeparatorChar, '/')
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(Uri.EscapeDataString);
+
+        return string.Join('/', segments);
     }
 }
 
 /// <summary>
-/// Best-effort lookup of the line where a project declares a package, so SARIF results can
-/// annotate the exact <c>PackageReference</c> instead of the whole file. Results are cached
-/// per file because one project usually contributes several findings.
+/// Locates the line where a project declares a package, so SARIF results can annotate the exact
+/// declaration instead of the whole file.
+///
+/// This parses the project as XML rather than scanning text. A project file is XML, so quoting
+/// style (<c>Include='X'</c> vs <c>Include="X"</c>), the <c>Update=</c> form, child-element
+/// syntax, and commented-out declarations all have to be understood the way MSBuild understands
+/// them — a text search gets each of those wrong, and a wrong line means the annotation lands on
+/// code that has nothing to do with the finding.
+///
+/// Parsed documents are cached because one project usually contributes several findings.
 /// </summary>
 internal sealed class PackageDeclarationLocator
 {
-    private readonly Dictionary<string, string[]?> _fileCache = new(
+    private readonly Dictionary<string, XDocument?> _documentCache = new(
         StringComparer.OrdinalIgnoreCase
     );
 
     /// <summary>
-    /// Returns the 1-based line declaring <paramref name="packageName"/>, or null when the file
-    /// is unreadable or the package is not declared inline (for example, it is transitive or the
-    /// version already lives in Directory.Packages.props).
+    /// Returns the 1-based line declaring <paramref name="packageName"/>, or null when the project
+    /// is unreadable or unparseable, or the package is not declared in this project (for example,
+    /// it arrives transitively).
     /// </summary>
+    /// <param name="projectPath">Full path to the project file.</param>
+    /// <param name="packageName">The package ID to locate.</param>
     public int? FindPackageLine(string projectPath, string packageName)
     {
-        var lines = ReadLines(projectPath);
-        if (lines is null || string.IsNullOrWhiteSpace(packageName))
+        if (string.IsNullOrWhiteSpace(packageName))
         {
             return null;
         }
 
-        var needle = $"\"{packageName}\"";
-        var insideComment = false;
-
-        for (var i = 0; i < lines.Length; i++)
+        var document = LoadDocument(projectPath);
+        if (document?.Root is null)
         {
-            var line = lines[i];
-            var (code, stillInsideComment) = StripComments(line, insideComment);
-            insideComment = stillInsideComment;
+            return null;
+        }
 
-            if (
-                code.Contains("Include=", StringComparison.OrdinalIgnoreCase)
-                && code.Contains(needle, StringComparison.OrdinalIgnoreCase)
-            )
+        foreach (var element in document.Root.Descendants())
+        {
+            if (!IsPackageItem(element.Name.LocalName))
             {
-                return i + 1;
+                continue;
+            }
+
+            var declared =
+                element.Attribute("Include")?.Value ?? element.Attribute("Update")?.Value;
+            if (!string.Equals(declared, packageName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (element is IXmlLineInfo lineInfo && lineInfo.HasLineInfo())
+            {
+                return lineInfo.LineNumber;
             }
         }
 
@@ -536,72 +563,40 @@ internal sealed class PackageDeclarationLocator
     }
 
     /// <summary>
-    /// Removes XML-commented spans from a line and reports whether a comment is still open at the
-    /// end of it. A commented-out <c>PackageReference</c> is a stale declaration the analyzer never
-    /// saw; annotating it would point a reviewer at code that has no effect on the build.
+    /// Matches the item types that carry a package ID. <c>PackageVersion</c> and
+    /// <c>GlobalPackageReference</c> are included so a finding against a centrally managed package
+    /// points at its Directory.Packages.props entry rather than falling back to the file.
     /// </summary>
-    /// <param name="line">The raw source line.</param>
-    /// <param name="insideComment">Whether a comment was left open by the preceding line.</param>
-    private static (string Code, bool InsideComment) StripComments(string line, bool insideComment)
+    private static bool IsPackageItem(string elementName)
     {
-        var code = new StringBuilder(line.Length);
-        var index = 0;
-
-        while (index < line.Length)
-        {
-            if (insideComment)
-            {
-                var close = line.IndexOf("-->", index, StringComparison.Ordinal);
-                if (close < 0)
-                {
-                    return (code.ToString(), true);
-                }
-
-                index = close + 3;
-                insideComment = false;
-                continue;
-            }
-
-            var open = line.IndexOf("<!--", index, StringComparison.Ordinal);
-            if (open < 0)
-            {
-                code.Append(line, index, line.Length - index);
-                return (code.ToString(), false);
-            }
-
-            code.Append(line, index, open - index);
-            index = open + 4;
-            insideComment = true;
-        }
-
-        return (code.ToString(), insideComment);
+        return elementName.Equals("PackageReference", StringComparison.OrdinalIgnoreCase)
+            || elementName.Equals("PackageVersion", StringComparison.OrdinalIgnoreCase)
+            || elementName.Equals("GlobalPackageReference", StringComparison.OrdinalIgnoreCase);
     }
 
-    private string[]? ReadLines(string projectPath)
+    private XDocument? LoadDocument(string projectPath)
     {
-        if (_fileCache.TryGetValue(projectPath, out var cached))
+        if (_documentCache.TryGetValue(projectPath, out var cached))
         {
             return cached;
         }
 
-        string[]? lines = null;
+        XDocument? document = null;
         try
         {
             if (File.Exists(projectPath))
             {
-                lines = File.ReadAllLines(projectPath);
+                document = XDocument.Load(projectPath, LoadOptions.SetLineInfo);
             }
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is XmlException or IOException or UnauthorizedAccessException)
         {
-            lines = null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            lines = null;
+            // A project that will not parse still deserves a file-level annotation, so fall back
+            // rather than failing the whole report.
+            document = null;
         }
 
-        _fileCache[projectPath] = lines;
-        return lines;
+        _documentCache[projectPath] = document;
+        return document;
     }
 }
