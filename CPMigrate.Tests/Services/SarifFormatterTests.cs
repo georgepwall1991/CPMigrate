@@ -703,6 +703,39 @@ public class SarifFormatterTests : IDisposable
     }
 
     [Fact]
+    public void Format_CaseVariantPackageIds_StillResolveToEveryDeclaringProject()
+    {
+        // NuGet package IDs are case-insensitive — that is exactly why DuplicatePackageCasing is a
+        // rule. A case-sensitive lookup would resolve only the project spelling it the canonical
+        // way and silently drop the other annotation.
+        var first = CreateProject("src/One/App.csproj", "Newtonsoft.Json", "13.0.1");
+        var second = CreateProject("src/Two/App.csproj", "newtonsoft.json", "12.0.3");
+
+        var packageInfo = new ProjectPackageInfo(
+            new[]
+            {
+                new PackageReference("Newtonsoft.Json", "13.0.1", first, "App.csproj"),
+                new PackageReference("newtonsoft.json", "12.0.3", second, "App.csproj"),
+            }
+        );
+
+        var uris = FormatToDocument(packageInfo, "App.csproj")
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0]
+            .GetProperty("locations")
+            .EnumerateArray()
+            .Select(l =>
+                l.GetProperty("physicalLocation")
+                    .GetProperty("artifactLocation")
+                    .GetProperty("uri")
+                    .GetString()
+            )
+            .ToList();
+
+        uris.Should().BeEquivalentTo(new[] { "src/One/App.csproj", "src/Two/App.csproj" });
+    }
+
+    [Fact]
     public void Format_AmbiguousNameWithNoPackageMatch_FallsBackToEveryCandidate()
     {
         // A finding that is not about one package (framework alignment, for example) cannot be

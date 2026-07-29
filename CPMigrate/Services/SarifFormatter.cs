@@ -586,6 +586,14 @@ internal sealed class ProjectPathIndex
     private readonly Dictionary<string, List<string>> _byName = new(
         StringComparer.OrdinalIgnoreCase
     );
+
+    /// <summary>
+    /// Keys are lowercased on the way in and out: project file names follow the filesystem's
+    /// case rules and NuGet package IDs are case-insensitive by specification — which is precisely
+    /// why <see cref="Models.AnalysisIssueCode.DuplicatePackageCasing"/> exists. A case-sensitive
+    /// lookup here would match only the project spelling the ID canonically and silently drop the
+    /// other project's annotation.
+    /// </summary>
     private readonly Dictionary<(string Project, string Package), List<string>> _byNameAndPackage =
         new();
 
@@ -616,7 +624,7 @@ internal sealed class ProjectPathIndex
             Add(index._byName, reference.ProjectName, reference.ProjectPath);
             Add(
                 index._byNameAndPackage,
-                (reference.ProjectName, reference.PackageName),
+                PackageKey(reference.ProjectName, reference.PackageName),
                 reference.ProjectPath
             );
         }
@@ -636,13 +644,18 @@ internal sealed class ProjectPathIndex
     {
         if (
             !string.IsNullOrWhiteSpace(packageName)
-            && _byNameAndPackage.TryGetValue((projectName, packageName), out var exact)
+            && _byNameAndPackage.TryGetValue(PackageKey(projectName, packageName), out var exact)
         )
         {
             return exact;
         }
 
         return _byName.TryGetValue(projectName, out var candidates) ? candidates : None;
+    }
+
+    private static (string Project, string Package) PackageKey(string projectName, string packageName)
+    {
+        return (projectName.ToLowerInvariant(), packageName.ToLowerInvariant());
     }
 
     private static void Add<TKey>(Dictionary<TKey, List<string>> index, TKey key, string path)
