@@ -38,4 +38,25 @@ internal static class JsonOutputWriter
 
         Console.WriteLine(json);
     }
+
+    /// <summary>
+    /// Emits a payload that reports a failure, falling back to stdout when the configured output
+    /// file cannot be written. The error handler is often reached <em>because</em> the output path
+    /// is bad; retrying it there would throw a second time out of a catch block and abort the
+    /// process instead of reporting the original problem.
+    /// </summary>
+    /// <param name="json">The serialized failure payload.</param>
+    /// <param name="options">The parsed options controlling output destination.</param>
+    public static async Task EmitFailureAsync(string json, Options options)
+    {
+        try
+        {
+            await EmitAsync(json, options, null, announceFile: false);
+        }
+        catch (Exception ex)
+            when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            Console.WriteLine(json);
+        }
+    }
 }

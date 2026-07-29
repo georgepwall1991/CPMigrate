@@ -24,6 +24,34 @@ public class ProgramRunnerTests
     }
 
     [Theory]
+    [InlineData("Json")]
+    [InlineData("Sarif")]
+    public async Task RunAsync_VerboseWithMachineOutput_SuppressesTheLogNotice(string format)
+    {
+        // The notice is written before the payload, so leaking it puts prose ahead of the
+        // opening brace and stops the document parsing as JSON or SARIF at all.
+        var fakeConsole = new FakeConsoleService();
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateVerbose_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            await ProgramRunner.RunAsync(
+                new[] { "--analyze", "--verbose", "--quiet", "--output", format, "-s", directory },
+                fakeConsole
+            );
+
+            fakeConsole
+                .OutputMessages.Should()
+                .NotContain(m => m.Contains("Verbose logging enabled"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
     [InlineData("analyze")]
     [InlineData("audit")]
     [InlineData("update")]
@@ -153,7 +181,9 @@ public class ProgramRunnerTests
             if (exitCode != ExitCodes.NoProjectsFound)
             {
                 var errors = string.Join("\n", fakeConsole.ErrorMessages);
-                throw new Exception($"Expected NoProjectsFound (4), but got {exitCode}. Errors: {errors}");
+                throw new Exception(
+                    $"Expected NoProjectsFound (4), but got {exitCode}. Errors: {errors}"
+                );
             }
             exitCode.Should().Be(ExitCodes.NoProjectsFound);
         }
@@ -291,7 +321,8 @@ public class ProgramRunnerTests
 
             var exitCode = await ProgramRunner.RunAsync(
                 new[] { "-s", tempPath, "--output", "Terminal" },
-                fakeConsole);
+                fakeConsole
+            );
 
             exitCode.Should().Be(ExitCodes.NoProjectsFound);
             stdout.ToString().Should().BeEmpty();
@@ -322,7 +353,8 @@ public class ProgramRunnerTests
 
             var exitCode = await ProgramRunner.RunAsync(
                 new[] { "-s", tempPath, "--quiet" },
-                fakeConsole);
+                fakeConsole
+            );
 
             exitCode.Should().Be(ExitCodes.NoProjectsFound);
             fakeConsole.OutputMessages.Should().NotContain(m => m.Contains("Loaded config from:"));
@@ -330,7 +362,11 @@ public class ProgramRunnerTests
             var payload = stdout.ToString();
             payload.Should().NotBeNullOrWhiteSpace();
             using var document = JsonDocument.Parse(payload);
-            document.RootElement.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.NoProjectsFound);
+            document
+                .RootElement.GetProperty("exitCode")
+                .GetInt32()
+                .Should()
+                .Be(ExitCodes.NoProjectsFound);
         }
         finally
         {
@@ -358,14 +394,19 @@ public class ProgramRunnerTests
 
             var exitCode = await ProgramRunner.RunAsync(
                 new[] { "-s", tempPath, "--quiet", "--output-file", outputFile },
-                fakeConsole);
+                fakeConsole
+            );
 
             exitCode.Should().Be(ExitCodes.NoProjectsFound);
             stdout.ToString().Should().BeEmpty();
             fakeConsole.OutputMessages.Should().NotContain(m => m.Contains("Loaded config from:"));
 
             using var document = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
-            document.RootElement.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.NoProjectsFound);
+            document
+                .RootElement.GetProperty("exitCode")
+                .GetInt32()
+                .Should()
+                .Be(ExitCodes.NoProjectsFound);
         }
         finally
         {
@@ -378,7 +419,9 @@ public class ProgramRunnerTests
     [Fact]
     public void Examples_ProjectExample_DoesNotCarryDefaultSolutionPath()
     {
-        var projectExample = Options.Examples.Single(example => example.HelpText == "Convert only one project");
+        var projectExample = Options.Examples.Single(example =>
+            example.HelpText == "Convert only one project"
+        );
         var sample = projectExample.Sample.Should().BeOfType<Options>().Subject;
 
         sample.ProjectFileDir.Should().Be(Path.Combine("path", "to", "project.csproj"));

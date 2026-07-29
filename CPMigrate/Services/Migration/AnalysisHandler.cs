@@ -82,7 +82,14 @@ internal sealed class AnalysisHandler
             _consoleService.WriteAnalysisSummary(report);
         }
 
-        return await ApplyAnalysisFixesIfNeededAsync(options, report, packageInfo, basePath);
+        return await ApplyAnalysisFixesIfNeededAsync(
+            options,
+            report,
+            packageInfo,
+            basePath,
+            scanFailures,
+            projectPaths.Count
+        );
     }
 
     private async Task<(ProjectPackageInfo PackageInfo, int ScanFailures)> PerformAnalysisScanAsync(
@@ -330,7 +337,9 @@ internal sealed class AnalysisHandler
         Options options,
         AnalysisReport report,
         ProjectPackageInfo packageInfo,
-        string basePath
+        string basePath,
+        int scanFailures,
+        int projectsDiscovered
     )
     {
         FixReport? fixReport = null;
@@ -358,6 +367,8 @@ internal sealed class AnalysisHandler
                     FixReport = fixReport,
                     PackageInfo = packageInfo,
                     BasePath = basePath,
+                    ScanFailures = scanFailures,
+                    ProjectsDiscovered = projectsDiscovered,
                     ExitCode =
                         fixReport.GetFailedFixes().Count > 0
                             ? ExitCodes.AnalysisIssuesFound
@@ -375,6 +386,8 @@ internal sealed class AnalysisHandler
                 FixReport = fixReport,
                 PackageInfo = packageInfo,
                 BasePath = basePath,
+                ScanFailures = scanFailures,
+                ProjectsDiscovered = projectsDiscovered,
                 ExitCode = report.HasIssues ? ExitCodes.AnalysisIssuesFound : ExitCodes.Success,
             }
         );

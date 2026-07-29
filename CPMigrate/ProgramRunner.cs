@@ -21,7 +21,10 @@ public static class ProgramRunner
         // Check for interactive mode (no args)
         if (args.Length == 0)
         {
-            return await CommandRouter.RouteCommand(new Options { Interactive = true }, bootstrapServices);
+            return await CommandRouter.RouteCommand(
+                new Options { Interactive = true },
+                bootstrapServices
+            );
         }
 
         if (CliVerbGuard.RejectsLeadingVerb(args, bootstrapServices.ConsoleService))
@@ -30,20 +33,33 @@ public static class ProgramRunner
         }
 
         // Parse command-line arguments
-        return await Parser.Default.ParseArguments<Options>(args)
+        return await Parser
+            .Default.ParseArguments<Options>(args)
             .MapResult(
                 async options =>
                 {
-                    using var loggerFactory = LoggingConfiguration.CreateLoggerFactory(options.Verbose);
+                    using var loggerFactory = LoggingConfiguration.CreateLoggerFactory(
+                        options.Verbose
+                    );
                     var services = ApplicationServices.Create(customConsole, loggerFactory);
 
                     // Merge config file with CLI args (CLI args take precedence)
-                    MergeConfigWithCliArgs(options, args, services.ConfigService, services.ConsoleService);
+                    MergeConfigWithCliArgs(
+                        options,
+                        args,
+                        services.ConfigService,
+                        services.ConsoleService
+                    );
 
-                    // Initialize logging based on --verbose flag
-                    if (options.Verbose)
+                    // Initialize logging based on --verbose flag. The notice is written before the
+                    // payload, so under a machine-readable format it would put prose ahead of the
+                    // opening brace and stop the document parsing at all.
+                    if (options.Verbose && !options.Output.IsMachineReadable())
                     {
-                        var logPath = Path.Combine(Directory.GetCurrentDirectory(), "cpmigrate.log");
+                        var logPath = Path.Combine(
+                            Directory.GetCurrentDirectory(),
+                            "cpmigrate.log"
+                        );
                         services.ConsoleService.Dim($"Verbose logging enabled: {logPath}");
                     }
                     var logger = loggerFactory.CreateLogger("CPMigrate");
@@ -59,12 +75,18 @@ public static class ProgramRunner
                 },
                 errors =>
                 {
-                    if (errors.Any(e => e.Tag == ErrorType.HelpRequestedError || e.Tag == ErrorType.VersionRequestedError))
+                    if (
+                        errors.Any(e =>
+                            e.Tag == ErrorType.HelpRequestedError
+                            || e.Tag == ErrorType.VersionRequestedError
+                        )
+                    )
                     {
                         return Task.FromResult(0);
                     }
                     return Task.FromResult(ExitCodes.ValidationError);
-                });
+                }
+            );
     }
 
     /// <summary>
@@ -74,7 +96,8 @@ public static class ProgramRunner
         Options options,
         string[] args,
         ConfigService configService,
-        IConsoleService consoleService)
+        IConsoleService consoleService
+    )
     {
         var startDir = options.GetConfigSearchStartDirectory();
         var (config, configPath, errorMessage) = configService.LoadConfigDetailed(startDir);

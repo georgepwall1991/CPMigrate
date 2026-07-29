@@ -251,6 +251,60 @@ public class SarifFormatterTests : IDisposable
     }
 
     [Fact]
+    public void Format_IncompleteScan_ReportsAnUnsuccessfulInvocation()
+    {
+        var report = new AnalysisReport(0, 0, Array.Empty<AnalyzerResult>());
+
+        var json = SarifFormatter.Format(
+            report,
+            new ProjectPackageInfo(Array.Empty<PackageReference>()),
+            _root,
+            new SarifRunOutcome(false, "No projects were found to analyze.")
+        );
+
+        var invocation = JsonDocument
+            .Parse(json)
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("invocations")[0];
+
+        invocation
+            .GetProperty("executionSuccessful")
+            .GetBoolean()
+            .Should()
+            .BeFalse(
+                "an empty result set from an incomplete scan is a false negative, not a clean bill of health"
+            );
+        invocation
+            .GetProperty("toolExecutionNotifications")[0]
+            .GetProperty("message")
+            .GetProperty("text")
+            .GetString()
+            .Should()
+            .Be("No projects were found to analyze.");
+    }
+
+    [Fact]
+    public void Format_CompleteScan_ReportsASuccessfulInvocation()
+    {
+        var report = new AnalysisReport(1, 1, Array.Empty<AnalyzerResult>());
+
+        var json = SarifFormatter.Format(
+            report,
+            new ProjectPackageInfo(Array.Empty<PackageReference>()),
+            _root,
+            SarifRunOutcome.Successful
+        );
+
+        var invocation = JsonDocument
+            .Parse(json)
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("invocations")[0];
+
+        invocation.GetProperty("executionSuccessful").GetBoolean().Should().BeTrue();
+        invocation.TryGetProperty("toolExecutionNotifications", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public void FormatError_ReportsAnUnsuccessfulInvocationRatherThanAFinding()
     {
         var doc = JsonDocument.Parse(SarifFormatter.FormatError("Solution file not found.", _root));

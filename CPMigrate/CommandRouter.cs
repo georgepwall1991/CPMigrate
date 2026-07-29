@@ -872,9 +872,37 @@ internal static class CommandRouter
             ? Directory.GetCurrentDirectory()
             : result.BasePath;
 
-        var sarif = SarifFormatter.Format(report, packageInfo, basePath);
+        var sarif = SarifFormatter.Format(
+            report,
+            packageInfo,
+            basePath,
+            DescribeScanOutcome(result)
+        );
 
         await JsonOutputWriter.EmitAsync(sarif, options, consoleService);
+    }
+
+    /// <summary>
+    /// Decides whether the scan behind a result can be trusted. An empty finding list from a scan
+    /// that never ran — or that failed on some projects — is a false negative, and reporting it as
+    /// a successful run would let a code-scanning gate pass on unexamined code.
+    /// </summary>
+    private static SarifRunOutcome DescribeScanOutcome(MigrationResult result)
+    {
+        if (result.AnalysisReport is null)
+        {
+            return SarifRunOutcome.Failed("Analysis did not run: no projects were found to scan.");
+        }
+
+        if (result.ScanFailures > 0)
+        {
+            return SarifRunOutcome.Failed(
+                $"{result.ScanFailures} of {result.ProjectsDiscovered} projects failed to scan; "
+                    + "these findings are incomplete."
+            );
+        }
+
+        return SarifRunOutcome.Successful;
     }
 
     private static async Task WriteJsonOutputForMigration(
@@ -1029,8 +1057,11 @@ internal static class CommandRouter
         {
             // In SARIF mode stdout is a SARIF log unconditionally, so failures are reported as an
             // unsuccessful invocation rather than as CPMigrate's own error JSON.
-            var sarif = SarifFormatter.FormatError(errorMessage, Directory.GetCurrentDirectory());
-            await JsonOutputWriter.EmitAsync(sarif, options, null, announceFile: false);
+            var sarif = SarifFormatter.FormatError(
+                errorMessage,
+                Directory.GetCurrentDirectory()
+            );
+            await JsonOutputWriter.EmitFailureAsync(sarif, options);
             return;
         }
 
@@ -1052,7 +1083,7 @@ internal static class CommandRouter
 
         var output = formatter.Format(operationResult);
 
-        await JsonOutputWriter.EmitAsync(output, options, null, announceFile: false);
+        await JsonOutputWriter.EmitFailureAsync(output, options);
     }
 
     private static string GetOperationName(Options options)

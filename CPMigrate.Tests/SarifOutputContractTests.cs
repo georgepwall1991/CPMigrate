@@ -117,6 +117,65 @@ public class SarifOutputContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Analyze_SarifWithNoProjectsFound_ReportsAnUnsuccessfulInvocation()
+    {
+        // No solution and no projects: the scan never ran, so an empty result set must not be
+        // presented to code scanning as a clean bill of health.
+        var empty = Path.Combine(_testDirectory, "empty");
+        Directory.CreateDirectory(empty);
+
+        var stdout = await CaptureStdoutAsync(() =>
+            CommandRouter.RouteCommand(
+                new Options
+                {
+                    Analyze = true,
+                    Output = OutputFormat.Sarif,
+                    Quiet = true,
+                    SolutionFileDir = empty,
+                },
+                new SpectreConsoleService(_versionResolver),
+                new InteractiveService(SilentConsoleService.Instance),
+                _versionResolver,
+                new ConfigService(SilentConsoleService.Instance),
+                new BackupManager()
+            )
+        );
+
+        var invocation = JsonDocument
+            .Parse(stdout)
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("invocations")[0];
+
+        invocation.GetProperty("executionSuccessful").GetBoolean().Should().BeFalse();
+        invocation
+            .GetProperty("toolExecutionNotifications")
+            .GetArrayLength()
+            .Should()
+            .BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Analyze_SarifWithUnwritableOutputFile_FallsBackToStdoutInsteadOfCrashing()
+    {
+        CreateFixture();
+        var unwritable = Path.Combine(_testDirectory, "does", "not", "exist", "out.sarif");
+
+        var stdout = await CaptureStdoutAsync(() =>
+            RunAnalyzeAsync(OutputFormat.Sarif, unwritable)
+        );
+
+        // The write fails, but the run must still report through stdout rather than aborting
+        // with an unhandled exception while trying to write the failure to the same bad path.
+        stdout.Should().StartWith("{");
+        JsonDocument
+            .Parse(stdout)
+            .RootElement.GetProperty("version")
+            .GetString()
+            .Should()
+            .Be("2.1.0");
+    }
+
+    [Fact]
     public void Validate_SarifWithoutAnalyze_IsRejected()
     {
         var options = new Options { Output = OutputFormat.Sarif, SolutionFileDir = _testDirectory };

@@ -63,4 +63,15 @@ public class MigrationResult
     /// The directory the scan was rooted at, used to make reported file paths relative.
     /// </summary>
     public string? BasePath { get; init; }
+
+    /// <summary>
+    /// Projects that could not be scanned. Any non-zero value means the analysis is incomplete,
+    /// so reporters must not present an empty finding list as a clean result.
+    /// </summary>
+    public int ScanFailures { get; init; }
+
+    /// <summary>
+    /// Projects the scan set out to cover, for reporting the scale of any scan failures.
+    /// </summary>
+    public int ProjectsDiscovered { get; init; }
 }

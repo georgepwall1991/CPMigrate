@@ -13,6 +13,26 @@ namespace CPMigrate.Services;
 /// uploaded to GitHub code scanning (or any other SARIF consumer) instead of being parsed
 /// out of CPMigrate's bespoke JSON.
 /// </summary>
+/// <summary>
+/// Whether a scan completed, and why not when it did not. SARIF distinguishes "the tool ran and
+/// found nothing" from "the tool did not finish"; conflating the two turns an aborted scan into a
+/// clean bill of health, which is the one failure mode a code-scanning gate cannot detect.
+/// </summary>
+/// <param name="Completed">True when the scan completed over every project it set out to scan.</param>
+/// <param name="FailureMessage">Why the run is incomplete; null when it is not.</param>
+public record SarifRunOutcome(bool Completed, string? FailureMessage = null)
+{
+    /// <summary>A scan that completed. Findings — or their absence — can be trusted.</summary>
+    public static SarifRunOutcome Successful { get; } = new(true);
+
+    /// <summary>A run that did not complete, carrying the reason for the SARIF notification.</summary>
+    /// <param name="message">The reason the run is incomplete.</param>
+    public static SarifRunOutcome Failed(string message)
+    {
+        return new SarifRunOutcome(false, message);
+    }
+}
+
 public static class SarifFormatter
 {
 #pragma warning disable S1075 // URIs should not be hardcoded - the SARIF schema and repo home are fixed, published locations
@@ -39,15 +59,22 @@ public static class SarifFormatter
     /// <param name="report">The analyzer findings to render.</param>
     /// <param name="packageInfo">Scanned package references, used to resolve project names to file paths.</param>
     /// <param name="basePath">The directory findings are reported relative to (the scan root).</param>
+    /// <param name="outcome">
+    /// Whether the scan actually completed. An incomplete scan producing zero findings is a false
+    /// negative, not a clean result, so it must not be reported as a successful invocation.
+    /// </param>
     /// <returns>An indented SARIF JSON document.</returns>
     public static string Format(
         AnalysisReport report,
         ProjectPackageInfo packageInfo,
-        string basePath
+        string basePath,
+        SarifRunOutcome? outcome = null
     )
     {
         ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(packageInfo);
+
+        outcome ??= SarifRunOutcome.Successful;
 
         var rootDirectory = ResolveRootDirectory(basePath);
         var projectPaths = BuildProjectPathIndex(packageInfo);
@@ -82,7 +109,55 @@ public static class SarifFormatter
             );
         }
 
-        var log = new JsonObject
+        return BuildLog(rules, results, rootDirectory, outcome).ToJsonString(SerializerOptions);
+    }
+
+    /// <summary>
+    /// Renders a failed run as a SARIF log so that <c>--output Sarif</c> always produces a
+    /// parseable document. The failure is reported the way SARIF expects — an unsuccessful
+    /// invocation carrying a tool execution notification — rather than as a finding, so
+    /// consumers do not mistake a crash for a code-quality issue.
+    /// </summary>
+    /// <param name="errorMessage">The failure to report.</param>
+    /// <param name="basePath">The directory the run was rooted at.</param>
+    /// <returns>An indented SARIF JSON document describing the failure.</returns>
+    public static string FormatError(string errorMessage, string basePath)
+    {
+        return BuildLog(
+                new JsonArray(),
+                new JsonArray(),
+                ResolveRootDirectory(basePath),
+                SarifRunOutcome.Failed(errorMessage)
+            )
+            .ToJsonString(SerializerOptions);
+    }
+
+    private static JsonObject BuildLog(
+        JsonArray rules,
+        JsonArray results,
+        string rootDirectory,
+        SarifRunOutcome outcome
+    )
+    {
+        var invocation = new JsonObject
+        {
+            ["executionSuccessful"] = outcome.Completed,
+            ["endTimeUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+        };
+
+        if (outcome.FailureMessage is not null)
+        {
+            invocation["toolExecutionNotifications"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["level"] = "error",
+                    ["message"] = new JsonObject { ["text"] = outcome.FailureMessage },
+                },
+            };
+        }
+
+        return new JsonObject
         {
             ["$schema"] = SchemaUri,
             ["version"] = "2.1.0",
@@ -106,87 +181,11 @@ public static class SarifFormatter
                         [UriBaseId] = new JsonObject { ["uri"] = ToDirectoryUri(rootDirectory) },
                     },
                     ["columnKind"] = "utf16CodeUnits",
-                    ["invocations"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["executionSuccessful"] = true,
-                            ["endTimeUtc"] = DateTime.UtcNow.ToString(
-                                "o",
-                                CultureInfo.InvariantCulture
-                            ),
-                        },
-                    },
+                    ["invocations"] = new JsonArray { invocation },
                     ["results"] = results,
                 },
             },
         };
-
-        return log.ToJsonString(SerializerOptions);
-    }
-
-    /// <summary>
-    /// Renders a failed run as a SARIF log so that <c>--output Sarif</c> always produces a
-    /// parseable document. The failure is reported the way SARIF expects — an unsuccessful
-    /// invocation carrying a tool execution notification — rather than as a finding, so
-    /// consumers do not mistake a crash for a code-quality issue.
-    /// </summary>
-    /// <param name="errorMessage">The failure to report.</param>
-    /// <param name="basePath">The directory the run was rooted at.</param>
-    /// <returns>An indented SARIF JSON document describing the failure.</returns>
-    public static string FormatError(string errorMessage, string basePath)
-    {
-        var rootDirectory = ResolveRootDirectory(basePath);
-
-        var log = new JsonObject
-        {
-            ["$schema"] = SchemaUri,
-            ["version"] = "2.1.0",
-            ["runs"] = new JsonArray
-            {
-                new JsonObject
-                {
-                    ["tool"] = new JsonObject
-                    {
-                        ["driver"] = new JsonObject
-                        {
-                            ["name"] = "CPMigrate",
-                            ["version"] = OutputMetadata.CurrentVersion,
-                            ["semanticVersion"] = OutputMetadata.CurrentVersion,
-                            ["informationUri"] = InformationUri,
-                            ["rules"] = new JsonArray(),
-                        },
-                    },
-                    ["originalUriBaseIds"] = new JsonObject
-                    {
-                        [UriBaseId] = new JsonObject { ["uri"] = ToDirectoryUri(rootDirectory) },
-                    },
-                    ["columnKind"] = "utf16CodeUnits",
-                    ["invocations"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["executionSuccessful"] = false,
-                            ["endTimeUtc"] = DateTime.UtcNow.ToString(
-                                "o",
-                                CultureInfo.InvariantCulture
-                            ),
-                            ["toolExecutionNotifications"] = new JsonArray
-                            {
-                                new JsonObject
-                                {
-                                    ["level"] = "error",
-                                    ["message"] = new JsonObject { ["text"] = errorMessage },
-                                },
-                            },
-                        },
-                    },
-                    ["results"] = new JsonArray(),
-                },
-            },
-        };
-
-        return log.ToJsonString(SerializerOptions);
     }
 
     private static JsonObject BuildRule(AnalysisRule rule)
