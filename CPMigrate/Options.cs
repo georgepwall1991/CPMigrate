@@ -246,8 +246,9 @@ public class Options
     [Option(
         "output",
         Default = OutputFormat.Terminal,
-        HelpText = "Output format: Terminal (default), Json for CI/CD integration, or Sarif "
-            + "(requires --analyze) for GitHub code scanning."
+        HelpText = "Output format: Terminal (default), Json for CI/CD integration, Sarif for GitHub "
+            + "code scanning, or Markdown for a CI job summary or PR comment. Sarif and Markdown "
+            + "require --analyze."
     )]
     public OutputFormat Output { get; set; }
 
@@ -746,7 +747,37 @@ public class Options
     public void ValidateReportingContract()
     {
         ValidateSarifOptions();
+        ValidateMarkdownOptions();
         ValidateBaselineOptions();
+    }
+
+    /// <summary>
+    /// Markdown reports analyzer findings, so like SARIF it only makes sense for a command that
+    /// produces them.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when Markdown is requested for an unsupported mode.</exception>
+    public void ValidateMarkdownOptions()
+    {
+        if (Output != OutputFormat.Markdown)
+        {
+            return;
+        }
+
+        if (!Analyze)
+        {
+            throw new ArgumentException(
+                "--output Markdown requires --analyze; the report describes analyzer findings."
+            );
+        }
+
+        var conflictingMode = FindModeInsteadOfAnalysis();
+        if (conflictingMode is not null)
+        {
+            throw new ArgumentException(
+                $"--output Markdown cannot be combined with {conflictingMode}, which runs instead "
+                    + "of an analysis."
+            );
+        }
     }
 
     public void ValidateSarifOptions()

@@ -42,7 +42,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.10.0
+dotnet tool install --global CPMigrate --version 3.11.0
 ```
 
 ```bash
@@ -678,8 +678,8 @@ The JSON payload reports the policy alongside the findings, so a consumer never 
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--output` | | `Terminal` | Output format: `Terminal`, `Json`, or `Sarif` (requires `--analyze`) |
-| `--output-file` | | | Write `Json` or `Sarif` output to a file |
+| `--output` | | `Terminal` | Output format: `Terminal`, `Json`, `Sarif`, or `Markdown` (the last two require `--analyze`) |
+| `--output-file` | | | Write `Json`, `Sarif`, or `Markdown` output to a file |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Enable diagnostic logging to `cpmigrate.log` |
 
@@ -770,6 +770,39 @@ cpmigrate --analyze --audit --outdated --deprecated \
 
 SARIF describes analyzer findings, so `--output Sarif` requires `--analyze`. Severities map to SARIF
 levels as `Critical`/`High` → `error`, `Moderate` → `warning`, `Low`/`Info` → `note`.
+
+### Markdown for a job summary or PR comment
+
+SARIF only surfaces findings that map to a line in the diff under review, and a dependency problem
+is usually about the solution as a whole — so it never appears on the diff, and nobody goes digging
+in build logs for it. `--output Markdown` puts the report where a reviewer will actually see it:
+
+```bash
+cpmigrate --analyze --audit --outdated --output Markdown --quiet >> "$GITHUB_STEP_SUMMARY"
+```
+
+The report leads with the verdict — did anything reach the `--fail-on` threshold — then scan totals,
+a severity breakdown, and a table of findings linking each one to [its rule](docs/rules.md).
+Baselined findings are marked. An incomplete scan gets a prominent warning, because "no findings"
+from a scan that did not finish reads exactly like a clean result. Long finding lists collapse behind
+a `<details>` disclosure so they do not bury the rest of the summary.
+
+To post it as a PR comment instead:
+
+```yaml
+- name: Analyze dependencies
+  id: analyze
+  run: |
+    set +e
+    cpmigrate --analyze --audit --output Markdown --output-file report.md --quiet
+    echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+- name: Comment on the PR
+  if: github.event_name == 'pull_request'
+  run: gh pr comment "${{ github.event.number }}" --body-file report.md
+  env:
+    GH_TOKEN: ${{ github.token }}
+```
 
 ### GitHub Actions Example
 
