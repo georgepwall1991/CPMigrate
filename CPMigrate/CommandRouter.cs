@@ -922,7 +922,10 @@ internal static class CommandRouter
                 result.ExitCode,
                 result.ScanFailures,
                 result.DeepScanFailures,
-                options.UsesBaseline() ? options.ResolveBaselinePath() : null
+                result.BaselinePath
+                    ?? (options.UsesBaseline() ? options.ResolveBaselinePath() : null),
+                result.BaselineWritten,
+                result.ProjectsDiscovered > 0 ? result.ProjectsDiscovered : null
             )
         );
 

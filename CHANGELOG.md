@@ -21,6 +21,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 ### Fixed
 - **A run that failed before producing findings is no longer rendered as a clean result.** `NoProjectsFound` (a misconfigured path, the common case) produced a report reading "✅ No findings" — contradicting the command's own exit code, and the exact false-clean shape this release series has been closing elsewhere. The verdict now accounts for the exit code, and a warning states that the report is not evidence of health.
 - `--output Markdown` is rejected with `--batch`, where the run aggregates into a batch result this report has no shape for and would have emitted nothing at all — including leaving `--output-file` unwritten.
+- **`--write-baseline --output Markdown` reported nothing about the baseline.** Recording one is the run's whole point, but the terminal confirmation is suppressed for machine-readable formats, so the report said only that no findings reached the threshold. It now leads with the outcome and names the file.
+- **The projects-scanned count excluded projects with no `PackageReference`,** because it was derived from the references themselves — a solution whose projects have no packages reported zero scanned.
 - Errors are now reported in the requested format. A failure under `--output Markdown` previously emitted raw error JSON into what was meant to be a rendered summary.
 
 ## [3.10.0] - 2026-07-29

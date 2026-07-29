@@ -244,6 +244,43 @@ public class MarkdownFormatterTests
     }
 
     [Fact]
+    public void Format_BaselineWrittenRun_LeadsWithThatOutcome()
+    {
+        // Recording a baseline is the run's whole point, and the terminal confirmation is suppressed
+        // when a machine-readable format is requested — so the report has to say it.
+        var report = ReportWith(Issue("Newtonsoft.Json", AnalysisSeverity.Moderate));
+
+        var markdown = MarkdownFormatter.Format(
+            report,
+            EmptyPackageInfo(),
+            new MarkdownReportContext(
+                BaselinePath: ".cpmigrate-baseline.json",
+                BaselineWritten: true
+            )
+        );
+
+        markdown.Should().StartWith("## ✅ CPMigrate — baseline recorded");
+        markdown.Should().Contain("Recorded **1 finding(s)**");
+        markdown.Should().Contain(".cpmigrate-baseline.json");
+        markdown.Should().Contain("Commit it");
+        markdown.Should().NotContain("reached the failure threshold", "nothing was gated");
+    }
+
+    [Fact]
+    public void Format_ProjectsWithNoPackages_AreStillCountedAsScanned()
+    {
+        // ProjectCount is derived from package references, so a project with none contributes
+        // nothing — and a solution whose projects have no packages would report zero scanned.
+        var markdown = MarkdownFormatter.Format(
+            EmptyReport(),
+            EmptyPackageInfo(),
+            new MarkdownReportContext(ProjectsScanned: 7)
+        );
+
+        markdown.Should().Contain("| Projects scanned | 7 |");
+    }
+
+    [Fact]
     public void Format_ReportsScanTotalsAndTheToolVersion()
     {
         var packageInfo = new ProjectPackageInfo(

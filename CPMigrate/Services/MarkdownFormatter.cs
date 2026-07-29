@@ -15,14 +15,25 @@ namespace CPMigrate.Services;
 /// <param name="ExitCode">Exit code the run produced.</param>
 /// <param name="ScanFailures">Projects that could not be scanned.</param>
 /// <param name="DeepScanFailures">Opt-in package queries that failed.</param>
-/// <param name="BaselinePath">Baseline in use, when one was.</param>
+/// <param name="BaselinePath">Baseline read or written, when one was.</param>
+/// <param name="BaselineWritten">
+/// True when the run recorded a baseline. That is the run's primary outcome, and the terminal
+/// confirmation is suppressed in machine-readable mode, so the report has to say it.
+/// </param>
+/// <param name="ProjectsScanned">
+/// Projects the scan covered. Passed in rather than derived from the package references, because a
+/// project with no PackageReference contributes none — so a reference-derived count under-reports,
+/// and reads as zero for a solution whose projects have no packages at all.
+/// </param>
 public record MarkdownReportContext(
     FailOnSeverity FailOn = FailOnSeverity.Info,
     int? GatedIssueCount = null,
     int ExitCode = 0,
     int ScanFailures = 0,
     int DeepScanFailures = 0,
-    string? BaselinePath = null
+    string? BaselinePath = null,
+    bool BaselineWritten = false,
+    int? ProjectsScanned = null
 );
 
 /// <summary>
@@ -59,7 +70,8 @@ public static class MarkdownFormatter
         var markdown = new StringBuilder();
 
         WriteHeading(markdown, report, context);
-        WriteScanSummary(markdown, report, packageInfo);
+        WriteBaselineWrittenNote(markdown, report, context);
+        WriteScanSummary(markdown, report, packageInfo, context);
         WriteIncompleteScanWarning(markdown, context);
         WriteSeverityBreakdown(markdown, report);
         WriteFindings(markdown, report);
@@ -83,6 +95,14 @@ public static class MarkdownFormatter
             // usable result — no projects discovered, a file error. Rendering that as a clean bill
             // of health would contradict the command's own exit code.
             || (context.ExitCode != 0 && gated == 0);
+
+        if (context.BaselineWritten)
+        {
+            // A baseline run is not gating on anything, so a pass/fail verdict would be misleading.
+            markdown.AppendLine("## ✅ CPMigrate — baseline recorded");
+            markdown.AppendLine();
+            return;
+        }
 
         var (icon, verdict) = (gated > 0, incomplete) switch
         {
@@ -118,17 +138,41 @@ public static class MarkdownFormatter
         return $"Analysis did not complete (exit {context.ExitCode}) — no results to report";
     }
 
+    /// <summary>
+    /// States the outcome of a <c>--write-baseline</c> run. It is the whole point of the command, and
+    /// the terminal confirmation is suppressed when a machine-readable format is requested.
+    /// </summary>
+    private static void WriteBaselineWrittenNote(
+        StringBuilder markdown,
+        AnalysisReport report,
+        MarkdownReportContext context
+    )
+    {
+        if (!context.BaselineWritten)
+        {
+            return;
+        }
+
+        markdown.AppendLine(
+            $"Recorded **{report.TotalIssues} finding(s)** as the accepted baseline in "
+                + $"`{Escape(context.BaselinePath ?? Options.BaselineDefaultFileName)}`. "
+                + "Commit it: subsequent runs report these findings without failing the build."
+        );
+        markdown.AppendLine();
+    }
+
     private static void WriteScanSummary(
         StringBuilder markdown,
         AnalysisReport report,
-        ProjectPackageInfo packageInfo
+        ProjectPackageInfo packageInfo,
+        MarkdownReportContext context
     )
     {
         markdown.AppendLine("| | |");
         markdown.AppendLine("|---|---|");
         markdown.AppendLine(
             CultureInfo.InvariantCulture,
-            $"| Projects scanned | {packageInfo.ProjectCount} |"
+            $"| Projects scanned | {context.ProjectsScanned ?? packageInfo.ProjectCount} |"
         );
         markdown.AppendLine(
             CultureInfo.InvariantCulture,
