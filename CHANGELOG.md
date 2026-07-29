@@ -6,6 +6,25 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-07-30
+
+### Added
+- **`--output Markdown`: put the report where a reviewer will actually see it.** Neither existing format reaches a human at the moment they need it — JSON is for parsers, and SARIF only surfaces findings that map to a line in the diff under review. A dependency problem is usually about the solution as a whole, so it never appears on the diff at all, and nobody goes digging in build logs for it. Redirect this into `$GITHUB_STEP_SUMMARY`, or post it as a PR comment with `gh pr comment --body-file`.
+  - Leads with the **verdict** — whether anything reached the `--fail-on` threshold — before any detail, so the answer to "did this pass, and why" is the first thing read.
+  - Scan totals, a severity breakdown worst-first, and a findings table linking each rule to its documentation.
+  - An incomplete scan gets a prominent `> [!WARNING]` callout, because "no findings" from a scan that did not finish reads exactly like a clean result.
+  - Baselined findings are marked *(baselined)* and explained, so accepted debt is visible without looking like a live problem.
+  - Long lists collapse behind a `<details>` disclosure, and a finding spanning many projects summarises its tail, so one noisy result cannot bury the rest of a job summary.
+  - Package names, project paths, and descriptions are escaped: they come from files CPMigrate did not write, and a single stray `|` would silently destroy every table row after it.
+  - When `--fix` applied changes, the report describes the tree **after** the fixes — what is there now, not what was there before.
+
+### Fixed
+- **A run that failed before producing findings is no longer rendered as a clean result.** `NoProjectsFound` (a misconfigured path, the common case) produced a report reading "✅ No findings" — contradicting the command's own exit code, and the exact false-clean shape this release series has been closing elsewhere. The verdict now accounts for the exit code, and a warning states that the report is not evidence of health.
+- `--output Markdown` is rejected with `--batch`, where the run aggregates into a batch result this report has no shape for and would have emitted nothing at all — including leaving `--output-file` unwritten.
+- **`--write-baseline --output Markdown` reported nothing about the baseline.** Recording one is the run's whole point, but the terminal confirmation is suppressed for machine-readable formats, so the report said only that no findings reached the threshold. It now leads with the outcome and names the file.
+- **The projects-scanned count excluded projects with no `PackageReference`,** because it was derived from the references themselves — a solution whose projects have no packages reported zero scanned.
+- Errors are now reported in the requested format. A failure under `--output Markdown` previously emitted raw error JSON into what was meant to be a rendered summary.
+
 ## [3.10.0] - 2026-07-29
 
 ### Changed (action required if you have a baseline)

@@ -896,6 +896,43 @@ internal static class CommandRouter
     }
 
     /// <summary>
+    /// Emits the analysis as a Markdown report, for a CI job summary or a pull request comment.
+    /// </summary>
+    private static async Task WriteMarkdownOutputForMigration(
+        Options options,
+        MigrationResult result,
+        IConsoleService consoleService
+    )
+    {
+        // Report whatever the run produced, including the post-fix state when fixes were applied —
+        // a reader wants to know what is in the tree now, not what was there before.
+        var report =
+            result.PostFixAnalysisReport
+            ?? result.AnalysisReport
+            ?? new AnalysisReport(0, 0, Array.Empty<AnalyzerResult>());
+        var packageInfo =
+            result.PackageInfo ?? new ProjectPackageInfo(Array.Empty<PackageReference>());
+
+        var markdown = MarkdownFormatter.Format(
+            report,
+            packageInfo,
+            new MarkdownReportContext(
+                options.FailOn,
+                result.GatedIssueCount,
+                result.ExitCode,
+                result.ScanFailures,
+                result.DeepScanFailures,
+                result.BaselinePath
+                    ?? (options.UsesBaseline() ? options.ResolveBaselinePath() : null),
+                result.BaselineWritten,
+                result.ProjectsDiscovered > 0 ? result.ProjectsDiscovered : null
+            )
+        );
+
+        await JsonOutputWriter.EmitAsync(markdown, options, consoleService);
+    }
+
+    /// <summary>
     /// Decides whether the scan behind a result can be trusted. An empty finding list from a scan
     /// that never ran — or that failed on some projects — is a false negative, and reporting it as
     /// a successful run would let a code-scanning gate pass on unexamined code.
@@ -935,6 +972,12 @@ internal static class CommandRouter
         if (options.Output == OutputFormat.Sarif)
         {
             await WriteSarifOutputForMigration(options, result, consoleService);
+            return;
+        }
+
+        if (options.Output == OutputFormat.Markdown)
+        {
+            await WriteMarkdownOutputForMigration(options, result, consoleService);
             return;
         }
 
@@ -1084,6 +1127,14 @@ internal static class CommandRouter
         string errorMessage
     )
     {
+        if (options.Output == OutputFormat.Markdown)
+        {
+            var report =
+                $"## ❌ CPMigrate — {operation} failed\n\n{errorMessage}\n";
+            await JsonOutputWriter.EmitFailureAsync(report, options);
+            return;
+        }
+
         if (options.Output == OutputFormat.Sarif)
         {
             // In SARIF mode stdout is a SARIF log unconditionally, so failures are reported as an

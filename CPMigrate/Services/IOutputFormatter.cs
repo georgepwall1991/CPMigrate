@@ -33,6 +33,13 @@ public enum OutputFormat
 
     /// <summary>SARIF 2.1.0 output for GitHub code scanning and other static-analysis consumers.</summary>
     Sarif,
+
+    /// <summary>
+    /// GitHub-flavoured Markdown, for a CI job summary or a pull request comment. Machine-readable
+    /// in the sense that matters here — written to stdout verbatim with no banners — but the audience
+    /// is a person.
+    /// </summary>
+    Markdown,
 }
 
 /// <summary>
@@ -48,6 +55,6 @@ public static class OutputFormatExtensions
     /// <param name="format">The configured output format.</param>
     public static bool IsMachineReadable(this OutputFormat format)
     {
-        return format is OutputFormat.Json or OutputFormat.Sarif;
+        return format is OutputFormat.Json or OutputFormat.Sarif or OutputFormat.Markdown;
     }
 }

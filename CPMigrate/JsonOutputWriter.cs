@@ -30,7 +30,12 @@ internal static class JsonOutputWriter
             await File.WriteAllTextAsync(options.OutputFile, json);
             if (announceFile && !options.Quiet && consoleService is not null)
             {
-                var format = options.Output == OutputFormat.Sarif ? "SARIF" : "JSON";
+                var format = options.Output switch
+                {
+                    OutputFormat.Sarif => "SARIF",
+                    OutputFormat.Markdown => "Markdown",
+                    _ => "JSON",
+                };
                 consoleService.Dim($"{format} output written to: {options.OutputFile}");
             }
             return;
