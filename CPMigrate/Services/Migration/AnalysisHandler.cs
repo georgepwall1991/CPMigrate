@@ -409,10 +409,11 @@ internal sealed class AnalysisHandler
                     ScanFailures = scanFailures,
                     DeepScanFailures = deepScanFailures,
                     ProjectsDiscovered = projectsDiscovered,
-                    ExitCode =
-                        fixReport.GetFailedFixes().Count > 0
-                            ? ExitCodes.AnalysisIssuesFound
-                            : ExitCodes.Success,
+                    ExitCode = ResolveExitCode(
+                        fixReport.GetFailedFixes().Count > 0,
+                        scanFailures,
+                        deepScanFailures
+                    ),
                 };
             }
         }
@@ -429,8 +430,26 @@ internal sealed class AnalysisHandler
                 ScanFailures = scanFailures,
                 DeepScanFailures = deepScanFailures,
                 ProjectsDiscovered = projectsDiscovered,
-                ExitCode = report.HasIssues ? ExitCodes.AnalysisIssuesFound : ExitCodes.Success,
+                ExitCode = ResolveExitCode(report.HasIssues, scanFailures, deepScanFailures),
             }
         );
+    }
+
+    /// <summary>
+    /// Chooses the exit code for an analysis run. An incomplete scan reports
+    /// <see cref="ExitCodes.IncompleteAnalysis"/> rather than success: zero findings from a scan
+    /// that did not finish is an unknown, not a clean result, and a CI gate reading a 0 cannot
+    /// tell the difference. Real findings still win, since they are the more actionable signal.
+    /// </summary>
+    private static int ResolveExitCode(bool hasIssues, int scanFailures, int deepScanFailures)
+    {
+        if (hasIssues)
+        {
+            return ExitCodes.AnalysisIssuesFound;
+        }
+
+        return scanFailures > 0 || deepScanFailures > 0
+            ? ExitCodes.IncompleteAnalysis
+            : ExitCodes.Success;
     }
 }

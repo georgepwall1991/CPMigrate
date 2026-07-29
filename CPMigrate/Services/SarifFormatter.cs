@@ -76,8 +76,11 @@ public static class SarifFormatter
 
         outcome ??= SarifRunOutcome.Successful;
 
-        var rootDirectory = ResolveRootDirectory(basePath);
         var projectPaths = BuildProjectPathIndex(packageInfo);
+        var rootDirectory = WidenRootToCoverProjects(
+            ResolveRootDirectory(basePath),
+            projectPaths.Values.SelectMany(paths => paths)
+        );
         var lineLocator = new PackageDeclarationLocator();
 
         var issues = report
@@ -385,6 +388,81 @@ public static class SarifFormatter
         return File.Exists(full) ? Path.GetDirectoryName(full) ?? full : full;
     }
 
+    /// <summary>
+    /// Widens the URI base until it contains every reported project. A solution under <c>build/</c>
+    /// that references <c>../src/App.csproj</c> would otherwise leave that project outside the
+    /// scan root, forcing an absolute <c>file://</c> URI that code scanning cannot map back to a
+    /// checked-out file — silently dropping the annotation the feature exists to produce.
+    /// </summary>
+    private static string WidenRootToCoverProjects(
+        string rootDirectory,
+        IEnumerable<string> projectPaths
+    )
+    {
+        var root = rootDirectory;
+
+        foreach (var projectPath in projectPaths)
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(projectPath));
+            if (string.IsNullOrEmpty(directory))
+            {
+                continue;
+            }
+
+            root = FindCommonAncestor(root, directory) ?? root;
+        }
+
+        return root;
+    }
+
+    /// <summary>
+    /// Returns the deepest directory containing both paths, or null when they share no root
+    /// (separate Windows drives, for example), where no relative URI is possible.
+    /// </summary>
+    private static string? FindCommonAncestor(string first, string second)
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        var firstSegments = SplitPath(first);
+        var secondSegments = SplitPath(second);
+
+        var shared = 0;
+        while (
+            shared < firstSegments.Length
+            && shared < secondSegments.Length
+            && string.Equals(firstSegments[shared], secondSegments[shared], comparison)
+        )
+        {
+            shared++;
+        }
+
+        if (shared == 0)
+        {
+            return null;
+        }
+
+        if (shared == firstSegments.Length)
+        {
+            return first;
+        }
+
+        var ancestor = string.Join(Path.DirectorySeparatorChar, firstSegments.Take(shared));
+
+        // On Unix the leading separator is the first (empty) segment, which join drops.
+        return Path.IsPathRooted(first) && !Path.IsPathRooted(ancestor)
+            ? Path.DirectorySeparatorChar + ancestor
+            : ancestor;
+    }
+
+    private static string[] SplitPath(string path)
+    {
+        return Path.GetFullPath(path)
+            .TrimEnd(Path.DirectorySeparatorChar)
+            .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+    }
+
     private static string ToDirectoryUri(string directory)
     {
         var withSeparator = directory.EndsWith(Path.DirectorySeparatorChar)
@@ -437,12 +515,17 @@ internal sealed class PackageDeclarationLocator
         }
 
         var needle = $"\"{packageName}\"";
+        var insideComment = false;
+
         for (var i = 0; i < lines.Length; i++)
         {
             var line = lines[i];
+            var (code, stillInsideComment) = StripComments(line, insideComment);
+            insideComment = stillInsideComment;
+
             if (
-                line.Contains("Include=", StringComparison.OrdinalIgnoreCase)
-                && line.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                code.Contains("Include=", StringComparison.OrdinalIgnoreCase)
+                && code.Contains(needle, StringComparison.OrdinalIgnoreCase)
             )
             {
                 return i + 1;
@@ -450,6 +533,48 @@ internal sealed class PackageDeclarationLocator
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Removes XML-commented spans from a line and reports whether a comment is still open at the
+    /// end of it. A commented-out <c>PackageReference</c> is a stale declaration the analyzer never
+    /// saw; annotating it would point a reviewer at code that has no effect on the build.
+    /// </summary>
+    /// <param name="line">The raw source line.</param>
+    /// <param name="insideComment">Whether a comment was left open by the preceding line.</param>
+    private static (string Code, bool InsideComment) StripComments(string line, bool insideComment)
+    {
+        var code = new StringBuilder(line.Length);
+        var index = 0;
+
+        while (index < line.Length)
+        {
+            if (insideComment)
+            {
+                var close = line.IndexOf("-->", index, StringComparison.Ordinal);
+                if (close < 0)
+                {
+                    return (code.ToString(), true);
+                }
+
+                index = close + 3;
+                insideComment = false;
+                continue;
+            }
+
+            var open = line.IndexOf("<!--", index, StringComparison.Ordinal);
+            if (open < 0)
+            {
+                code.Append(line, index, line.Length - index);
+                return (code.ToString(), false);
+            }
+
+            code.Append(line, index, open - index);
+            index = open + 4;
+            insideComment = true;
+        }
+
+        return (code.ToString(), insideComment);
     }
 
     private string[]? ReadLines(string projectPath)

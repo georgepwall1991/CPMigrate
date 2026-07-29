@@ -70,6 +70,38 @@ public class AnalysisHandlerScanFailureTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteAsync_AllScansSucceedWithNoIssues_ExitsSuccess()
+    {
+        var handler = CreateHandler(auditSucceeds: true, referenceScanSucceeds: true);
+
+        var result = await handler.ExecuteAsync(AuditOptions());
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AuditQueryFails_ExitsIncompleteAnalysisRatherThanSuccess()
+    {
+        // Exiting 0 here tells a CI security gate the dependencies are clean when the audit
+        // never ran — the failure mode the gate exists to prevent.
+        var handler = CreateHandler(auditSucceeds: false, referenceScanSucceeds: true);
+
+        var result = await handler.ExecuteAsync(AuditOptions());
+
+        result.ExitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReferenceScanFails_ExitsIncompleteAnalysis()
+    {
+        var handler = CreateHandler(auditSucceeds: true, referenceScanSucceeds: false);
+
+        var result = await handler.ExecuteAsync(AuditOptions());
+
+        result.ExitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_AuditNotRequested_DoesNotCountAMissingAudit()
     {
         var handler = CreateHandler(auditSucceeds: false, referenceScanSucceeds: true);

@@ -33,6 +33,13 @@ public static class ExitCodes
     public const int AnalysisIssuesFound = 5;
     public const int UnexpectedError = 6;
     public const int TestFailure = 7;
+
+    /// <summary>
+    /// A requested scan did not complete, so the findings are incomplete. Distinct from
+    /// <see cref="AnalysisIssuesFound"/> — nothing was necessarily found wrong; the point is that
+    /// part of the codebase went unexamined, and a gate must not read that as clean.
+    /// </summary>
+    public const int IncompleteAnalysis = 8;
 }
 
 /// <summary>

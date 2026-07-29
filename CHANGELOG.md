@@ -21,10 +21,15 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - `--output-file` now accepts `Sarif` as well as `Json`, and reports which format it wrote.
 - Console suppression, prompt guards, and non-TTY safety checks now key off a single "machine-readable output" predicate rather than testing for `Json` at ~20 separate call sites, so any future machine format inherits the same protections instead of re-introducing banner leaks.
 
+### Changed (behavioral — check your CI gates)
+- **An incomplete analysis now exits `8` (`IncompleteAnalysis`) instead of `0`.** If a project fails to scan, or a `--audit`/`--outdated`/`--deprecated` query fails, the run produces no findings for the part it could not read — and exiting `0` told a CI gate the dependencies were clean. Exit `5` (`AnalysisIssuesFound`) still wins when real issues were found, since that is the more actionable signal. A pipeline that treats any non-zero exit as failure will now surface scan failures it previously ignored; one that gates specifically on `5` is unaffected.
+
 ### Fixed
 - **A failed `--audit`, `--outdated`, or `--deprecated` query looked identical to a clean result.** Those scans returned a success flag that was discarded, so a NuGet query that never completed simply contributed no findings — and "no vulnerabilities found" was reported for a vulnerability scan that did not run. The failures are now counted, warned about on the terminal, and reported through SARIF as an unsuccessful invocation. This affected every output format, not just SARIF.
 - **`--verbose` corrupted machine-readable stdout.** The "Verbose logging enabled: …" notice was written before the payload, so `--output Json --verbose` emitted prose ahead of the opening brace and no longer parsed as JSON.
 - **An unwritable `--output-file` aborted the process.** The failed write threw, and the error handler retried the same path from inside its catch block, throwing again and terminating with an unhandled exception instead of reporting the original problem. Failure payloads now fall back to stdout.
+- **SARIF annotations were lost for solutions that reference projects above themselves.** A solution under `build/` referencing `../src/App.csproj` put that project outside the scan root, forcing an absolute `file://` URI that code scanning cannot map to a checked-out file. The URI base now widens to the common ancestor of every reported project.
+- **SARIF could annotate a commented-out `PackageReference`.** The line lookup was a raw text search, so a stale commented declaration above the live one won. It is now comment-aware, including multi-line comments.
 
 ### Validation
 - `--output Sarif` requires `--analyze` (SARIF carries only analyzer findings) and is rejected with `--batch`, `--interactive`, and `--interactive-conflicts`.

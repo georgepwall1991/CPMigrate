@@ -368,6 +368,175 @@ public class SarifFormatterTests : IDisposable
     }
 
     [Fact]
+    public void Format_ProjectAboveTheScanRoot_StaysRepositoryRelative()
+    {
+        // A solution under build/ referencing ../src/App.csproj is a common layout. Emitting a
+        // runner-absolute file:// URI for it would leave code scanning unable to map the finding
+        // back to a checked-out file, losing the annotation entirely.
+        var projectPath = CreateProject("src/App/App.csproj", "Newtonsoft.Json", "13.0.1");
+        var solutionDirectory = Path.Combine(_root, "build");
+        Directory.CreateDirectory(solutionDirectory);
+
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Newtonsoft.Json", "13.0.1", projectPath, "App.csproj") }
+        );
+        var report = new AnalysisReport(
+            1,
+            1,
+            new[]
+            {
+                new AnalyzerResult(
+                    "Version Inconsistencies",
+                    new[]
+                    {
+                        Issue(
+                            "Newtonsoft.Json",
+                            AnalysisIssueCode.VersionInconsistency,
+                            AnalysisSeverity.Moderate,
+                            "App.csproj"
+                        ),
+                    }
+                ),
+            }
+        );
+
+        var json = SarifFormatter.Format(report, packageInfo, solutionDirectory);
+        var run = JsonDocument.Parse(json).RootElement.GetProperty("runs")[0];
+
+        var uri = run.GetProperty("results")[0]
+            .GetProperty("locations")[0]
+            .GetProperty("physicalLocation")
+            .GetProperty("artifactLocation")
+            .GetProperty("uri")
+            .GetString();
+
+        uri.Should().Be("src/App/App.csproj", "the URI base widens to cover every reported file");
+        uri.Should().NotStartWith("file://").And.NotStartWith("..");
+
+        run.GetProperty("originalUriBaseIds")
+            .GetProperty("SRCROOT")
+            .GetProperty("uri")
+            .GetString()
+            .Should()
+            .Be(new Uri(_root + Path.DirectorySeparatorChar).AbsoluteUri);
+    }
+
+    [Fact]
+    public void Format_SkipsCommentedOutReferencesWhenLocatingTheLine()
+    {
+        var projectPath = Path.Combine(_root, "Commented.csproj");
+        File.WriteAllText(
+            projectPath,
+            string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    "<Project Sdk=\"Microsoft.NET.Sdk\">",
+                    "  <ItemGroup>",
+                    "    <!-- <PackageReference Include=\"Newtonsoft.Json\" Version=\"9.0.0\" /> -->",
+                    "    <PackageReference Include=\"Newtonsoft.Json\" Version=\"13.0.1\" />",
+                    "  </ItemGroup>",
+                    "</Project>",
+                }
+            )
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            new[]
+            {
+                new PackageReference("Newtonsoft.Json", "13.0.1", projectPath, "Commented.csproj"),
+            }
+        );
+        var report = new AnalysisReport(
+            1,
+            1,
+            new[]
+            {
+                new AnalyzerResult(
+                    "Version Inconsistencies",
+                    new[]
+                    {
+                        Issue(
+                            "Newtonsoft.Json",
+                            AnalysisIssueCode.VersionInconsistency,
+                            AnalysisSeverity.Moderate,
+                            "Commented.csproj"
+                        ),
+                    }
+                ),
+            }
+        );
+
+        var region = FormatToDocument(report, packageInfo)
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0]
+            .GetProperty("locations")[0]
+            .GetProperty("physicalLocation")
+            .GetProperty("region");
+
+        region
+            .GetProperty("startLine")
+            .GetInt32()
+            .Should()
+            .Be(4, "the annotation must land on the live reference, not the commented-out one");
+    }
+
+    [Fact]
+    public void Format_MultiLineCommentHidingAReference_IsStillSkipped()
+    {
+        var projectPath = Path.Combine(_root, "MultiLine.csproj");
+        File.WriteAllText(
+            projectPath,
+            string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    "<Project Sdk=\"Microsoft.NET.Sdk\">",
+                    "  <!--",
+                    "    <PackageReference Include=\"Serilog\" Version=\"1.0.0\" />",
+                    "  -->",
+                    "  <ItemGroup>",
+                    "    <PackageReference Include=\"Serilog\" Version=\"4.3.0\" />",
+                    "  </ItemGroup>",
+                    "</Project>",
+                }
+            )
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Serilog", "4.3.0", projectPath, "MultiLine.csproj") }
+        );
+        var report = new AnalysisReport(
+            1,
+            1,
+            new[]
+            {
+                new AnalyzerResult(
+                    "Version Inconsistencies",
+                    new[]
+                    {
+                        Issue(
+                            "Serilog",
+                            AnalysisIssueCode.VersionInconsistency,
+                            AnalysisSeverity.Moderate,
+                            "MultiLine.csproj"
+                        ),
+                    }
+                ),
+            }
+        );
+
+        var region = FormatToDocument(report, packageInfo)
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0]
+            .GetProperty("locations")[0]
+            .GetProperty("physicalLocation")
+            .GetProperty("region");
+
+        region.GetProperty("startLine").GetInt32().Should().Be(6);
+    }
+
+    [Fact]
     public void Format_OmitsLocationsWhenNoProjectCanBeResolved()
     {
         var report = new AnalysisReport(

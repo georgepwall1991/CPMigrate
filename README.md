@@ -623,6 +623,12 @@ The config file is discovered by walking up from the selected solution/project p
 | `5` | AnalysisIssuesFound | Analysis detected issues (useful for CI gates) |
 | `6` | UnexpectedError | Unhandled exception |
 | `7` | TestFailure | Tests failed after package update (rollback performed). With `--bisect`, returned only when *no* update could be kept |
+| `8` | IncompleteAnalysis | A requested scan did not finish, so the findings are incomplete — nothing was necessarily found wrong, but part of the solution went unexamined |
+
+**On `8` (IncompleteAnalysis):** if a project fails to scan, or a `--audit` / `--outdated` /
+`--deprecated` query fails, the run produces no findings for the part it could not read. Before
+3.7.0 that exited `0`, which a CI gate reads as "clean" — the one failure mode a security gate
+exists to prevent. Treat `8` as "re-run or investigate", not as "no issues".
 
 ---
 
