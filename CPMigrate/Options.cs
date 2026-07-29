@@ -12,10 +12,12 @@ public enum ConflictStrategy
 {
     /// <summary>Use the highest version found (default).</summary>
     Highest,
+
     /// <summary>Use the lowest version found.</summary>
     Lowest,
+
     /// <summary>Exit with error if conflicts are detected.</summary>
-    Fail
+    Fail,
 }
 
 /// <summary>
@@ -39,196 +41,310 @@ public static class ExitCodes
 /// </summary>
 public class Options
 {
-    [Option('s', "solution",
+    [Option(
+        's',
+        "solution",
         HelpText = "Path to a .sln/.slnx file, or a directory containing one. When omitted, CPMigrate uses the current directory.",
-        Required = false)]
+        Required = false
+    )]
     public string SolutionFileDir { get; set; } = string.Empty;
 
-    [Option('p', "project",
-        HelpText = "Path to a specific project file, or a directory containing one project (.csproj, .fsproj, .vbproj).")]
+    [Option(
+        'p',
+        "project",
+        HelpText = "Path to a specific project file, or a directory containing one project (.csproj, .fsproj, .vbproj)."
+    )]
     public string ProjectFileDir { get; set; } = string.Empty;
 
     [Option('o', "output-dir", HelpText = "The props file output directory.", Default = ".")]
     public string OutputDir { get; set; } = ".";
 
-    [Option('k', "keep-attrs", Default = false,
-        HelpText = "Keeps the 'Version' attribute in the project files.")]
+    [Option(
+        'k',
+        "keep-attrs",
+        Default = false,
+        HelpText = "Keeps the 'Version' attribute in the project files."
+    )]
     public bool KeepAttributes { get; set; }
 
-    [Option('n', "no-backup", Default = false,
-        HelpText = "Disables the default backup option.", Required = false)]
+    [Option(
+        'n',
+        "no-backup",
+        Default = false,
+        HelpText = "Disables the default backup option.",
+        Required = false
+    )]
     public bool NoBackup { get; set; }
 
-    [Option("backup-dir", Default = ".",
-        HelpText = "The backup directory for project files about to be changed.")]
+    [Option(
+        "backup-dir",
+        Default = ".",
+        HelpText = "The backup directory for project files about to be changed."
+    )]
     public string BackupDir { get; set; } = ".";
 
-    [Option("add-gitignore", Default = false,
-        HelpText = "Adds the backup directory to .gitignore file. Creates one if not present.")]
+    [Option(
+        "add-gitignore",
+        Default = false,
+        HelpText = "Adds the backup directory to .gitignore file. Creates one if not present."
+    )]
     public bool AddBackupToGitignore { get; set; }
 
-    [Option("gitignore-dir", Default = ".",
-        HelpText = "The directory for .gitignore file if there isn't one existing.")]
+    [Option(
+        "gitignore-dir",
+        Default = ".",
+        HelpText = "The directory for .gitignore file if there isn't one existing."
+    )]
     public string GitignoreDir { get; set; } = string.Empty;
 
-    [Option('d', "dry-run", Default = false,
-        HelpText = "Preview changes without modifying any files.")]
+    [Option(
+        'd',
+        "dry-run",
+        Default = false,
+        HelpText = "Preview changes without modifying any files."
+    )]
     public bool DryRun { get; set; }
 
-    [Option("merge", Default = false,
-        HelpText = "Merge into existing Directory.Packages.props instead of failing if it already exists.")]
+    [Option(
+        "merge",
+        Default = false,
+        HelpText = "Merge into existing Directory.Packages.props instead of failing if it already exists."
+    )]
     public bool MergeExisting { get; set; }
 
-    [Option("conflict-strategy", Default = ConflictStrategy.Highest,
-        HelpText = "How to handle version conflicts: Highest (default), Lowest, or Fail.")]
+    [Option(
+        "conflict-strategy",
+        Default = ConflictStrategy.Highest,
+        HelpText = "How to handle version conflicts: Highest (default), Lowest, or Fail."
+    )]
     public ConflictStrategy ConflictStrategy { get; set; }
 
-    [Option('r', "rollback", Default = false,
-        HelpText = "Restore project files from most recent backup and remove Directory.Packages.props.")]
+    [Option(
+        'r',
+        "rollback",
+        Default = false,
+        HelpText = "Restore project files from most recent backup and remove Directory.Packages.props."
+    )]
     public bool Rollback { get; set; }
 
-    [Option('a', "analyze", Default = false,
-        HelpText = "Analyze packages for issues (version inconsistencies, duplicates, redundant references) without modifying files.")]
+    [Option(
+        'a',
+        "analyze",
+        Default = false,
+        HelpText = "Analyze packages for issues (version inconsistencies, duplicates, redundant references) without modifying files."
+    )]
     public bool Analyze { get; set; }
 
-    [Option("transitive", Default = false,
-        HelpText = "Include transitive dependencies in analysis and migration suggestions (requires 'dotnet restore').")]
+    [Option(
+        "transitive",
+        Default = false,
+        HelpText = "Include transitive dependencies in analysis and migration suggestions (requires 'dotnet restore')."
+    )]
     public bool IncludeTransitive { get; set; }
 
-    [Option("audit", Default = false,
-        HelpText = "Perform security audit for known vulnerabilities (requires 'dotnet restore').")]
+    [Option(
+        "audit",
+        Default = false,
+        HelpText = "Perform security audit for known vulnerabilities (requires 'dotnet restore')."
+    )]
     public bool AuditSecurity { get; set; }
 
-    [Option("outdated", Default = false,
-        HelpText = "Include outdated package checks (requires --analyze).")]
+    [Option(
+        "outdated",
+        Default = false,
+        HelpText = "Include outdated package checks (requires --analyze)."
+    )]
     public bool AnalyzeOutdated { get; set; }
 
-    [Option("deprecated", Default = false,
-        HelpText = "Include deprecated package checks (requires --analyze).")]
+    [Option(
+        "deprecated",
+        Default = false,
+        HelpText = "Include deprecated package checks (requires --analyze)."
+    )]
     public bool AnalyzeDeprecated { get; set; }
 
-    [Option('i', "interactive", Default = false,
-        HelpText = "Run in interactive wizard mode with guided prompts.")]
+    [Option(
+        'i',
+        "interactive",
+        Default = false,
+        HelpText = "Run in interactive wizard mode with guided prompts."
+    )]
     public bool Interactive { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Output Formatting
     // ═══════════════════════════════════════════════════════════════════════
 
-    [Option("output", Default = OutputFormat.Terminal,
-        HelpText = "Output format: Terminal (default) or Json for CI/CD integration.")]
+    [Option(
+        "output",
+        Default = OutputFormat.Terminal,
+        HelpText = "Output format: Terminal (default), Json for CI/CD integration, or Sarif "
+            + "(requires --analyze) for GitHub code scanning."
+    )]
     public OutputFormat Output { get; set; }
 
-    [Option("output-file",
-        HelpText = "Write output to file instead of stdout (only applies to JSON output).")]
+    [Option(
+        "output-file",
+        HelpText = "Write output to file instead of stdout (only applies to Json and Sarif output)."
+    )]
     public string? OutputFile { get; set; }
 
-    [Option('q', "quiet", Default = false,
-        HelpText = "Suppress non-essential output (progress bars, spinners). Useful for scripts.")]
+    [Option(
+        'q',
+        "quiet",
+        Default = false,
+        HelpText = "Suppress non-essential output (progress bars, spinners). Useful for scripts."
+    )]
     public bool Quiet { get; set; }
 
-    [Option('v', "verbose", Default = false,
-        HelpText = "Enable verbose diagnostic logging to a file (cpmigrate.log in current directory).")]
+    [Option(
+        'v',
+        "verbose",
+        Default = false,
+        HelpText = "Enable verbose diagnostic logging to a file (cpmigrate.log in current directory)."
+    )]
     public bool Verbose { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Batch Processing
     // ═══════════════════════════════════════════════════════════════════════
 
-    [Option("batch",
-        HelpText = "Scan directory recursively for .sln files and process each.")]
+    [Option("batch", HelpText = "Scan directory recursively for .sln files and process each.")]
     public string? BatchDir { get; set; }
 
-    [Option("batch-parallel", Default = false,
-        HelpText = "Process solutions in parallel (default: sequential).")]
+    [Option(
+        "batch-parallel",
+        Default = false,
+        HelpText = "Process solutions in parallel (default: sequential)."
+    )]
     public bool BatchParallel { get; set; }
 
-    [Option("batch-continue", Default = false,
-        HelpText = "Continue processing even if one solution fails.")]
+    [Option(
+        "batch-continue",
+        Default = false,
+        HelpText = "Continue processing even if one solution fails."
+    )]
     public bool BatchContinue { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Backup Management
     // ═══════════════════════════════════════════════════════════════════════
 
-    [Option("prune-backups", Default = false,
-        HelpText = "Delete old backups, keeping only the most recent based on --retention.")]
+    [Option(
+        "prune-backups",
+        Default = false,
+        HelpText = "Delete old backups, keeping only the most recent based on --retention."
+    )]
     public bool PruneBackups { get; set; }
 
-    [Option("prune-all", Default = false,
-        HelpText = "Delete ALL backups (requires confirmation unless --quiet is set).")]
+    [Option(
+        "prune-all",
+        Default = false,
+        HelpText = "Delete ALL backups (requires confirmation unless --quiet is set)."
+    )]
     public bool PruneAll { get; set; }
 
-    [Option("retention", Default = 5,
-        HelpText = "Number of backups to keep when pruning (default: 5, 0 = keep all).")]
+    [Option(
+        "retention",
+        Default = 5,
+        HelpText = "Number of backups to keep when pruning (default: 5, 0 = keep all)."
+    )]
     public int Retention { get; set; }
 
-    [Option("list-backups", Default = false,
-        HelpText = "List all available backups with timestamps and file counts.")]
+    [Option(
+        "list-backups",
+        Default = false,
+        HelpText = "List all available backups with timestamps and file counts."
+    )]
     public bool ListBackups { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Conflict Resolution
     // ═══════════════════════════════════════════════════════════════════════
 
-    [Option("interactive-conflicts", Default = false,
-        HelpText = "Prompt for each version conflict instead of auto-resolving.")]
+    [Option(
+        "interactive-conflicts",
+        Default = false,
+        HelpText = "Prompt for each version conflict instead of auto-resolving."
+    )]
     public bool InteractiveConflicts { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
     // v2.5 Options - Directory.Build.props Unification
     // ═══════════════════════════════════════════════════════════════════════
 
-    [Option("unify-props", Default = false,
-        HelpText = "Migrate common properties from projects to Directory.Build.props.")]
+    [Option(
+        "unify-props",
+        Default = false,
+        HelpText = "Migrate common properties from projects to Directory.Build.props."
+    )]
     public bool UnifyProps { get; set; }
 
-    [Option("force", Default = false,
-        HelpText = "Force operations without confirmation prompts.")]
+    [Option("force", Default = false, HelpText = "Force operations without confirmation prompts.")]
     public bool Force { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Analysis & Auto-Fix
     // ═══════════════════════════════════════════════════════════════════════
 
-    [Option("fix", Default = false,
-        HelpText = "Apply automatic fixes for detected issues (use with --analyze).")]
+    [Option(
+        "fix",
+        Default = false,
+        HelpText = "Apply automatic fixes for detected issues (use with --analyze)."
+    )]
     public bool Fix { get; set; }
 
-    [Option("fix-dry-run", Default = false,
-        HelpText = "Show what --fix would change without modifying files.")]
+    [Option(
+        "fix-dry-run",
+        Default = false,
+        HelpText = "Show what --fix would change without modifying files."
+    )]
     public bool FixDryRun { get; set; }
 
-    [Option("update", Default = false,
-        HelpText = "Check for and install the latest version of CPMigrate.")]
+    [Option(
+        "update",
+        Default = false,
+        HelpText = "Check for and install the latest version of CPMigrate."
+    )]
     public bool Update { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
     // v3.0 Options - Package Updates
     // ═══════════════════════════════════════════════════════════════════════
 
-    [Option("update-packages", Default = false,
-        HelpText = "Update all packages to latest versions, run tests, rollback on failure.")]
+    [Option(
+        "update-packages",
+        Default = false,
+        HelpText = "Update all packages to latest versions, run tests, rollback on failure."
+    )]
     public bool UpdatePackages { get; set; }
 
-    [Option("include-prerelease", Default = false,
-        HelpText = "Include pre-release versions when updating packages.")]
+    [Option(
+        "include-prerelease",
+        Default = false,
+        HelpText = "Include pre-release versions when updating packages."
+    )]
     public bool IncludePrerelease { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
     // v3.6 Options - Bisecting Updates
     // ═══════════════════════════════════════════════════════════════════════
 
-    [Option("bisect", Default = false,
-        HelpText = "On test failure, bisect the update set and keep the largest subset that stays green " +
-                   "instead of rolling everything back.")]
+    [Option(
+        "bisect",
+        Default = false,
+        HelpText = "On test failure, bisect the update set and keep the largest subset that stays green "
+            + "instead of rolling everything back."
+    )]
     public bool Bisect { get; set; }
 
     // Nullable rather than defaulted: it keeps "the user asked for a budget" distinguishable from "nobody
     // said", which the validation below relies on, and stops the value being echoed into every --help example.
-    [Option("bisect-budget",
-        HelpText = "Maximum restore+test cycles a bisection may spend before holding back what is left. " +
-                   "Defaults to 16.")]
+    [Option(
+        "bisect-budget",
+        HelpText = "Maximum restore+test cycles a bisection may spend before holding back what is left. "
+            + "Defaults to 16."
+    )]
     public int? BisectBudget { get; set; }
 
     /// <summary>
@@ -236,13 +352,14 @@ public class Options
     /// </summary>
     public int EffectiveBisectBudget => BisectBudget ?? BisectSearchStrategy.DefaultBudget;
 
-    [Option("bisect-test-filter",
-        HelpText = "dotnet test --filter expression used for each bisection probe, to narrow the search to a " +
-                   "fast subset of the suite.")]
+    [Option(
+        "bisect-test-filter",
+        HelpText = "dotnet test --filter expression used for each bisection probe, to narrow the search to a "
+            + "fast subset of the suite."
+    )]
     public string? BisectTestFilter { get; set; }
 
-    [Option("only",
-        HelpText = "Comma-separated package IDs to restrict --update-packages to.")]
+    [Option("only", HelpText = "Comma-separated package IDs to restrict --update-packages to.")]
     public string? Only { get; set; }
 
     /// <summary>
@@ -255,8 +372,10 @@ public class Options
             return null;
         }
 
-        var names = Only
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        var names = Only.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            )
             .ToList();
 
         return names.Count > 0 ? names : null;
@@ -313,31 +432,54 @@ public class Options
         new List<Example>()
         {
             new("Default behaviour", new Options { }),
-            new("Convert only one project",
-                new Options { ProjectFileDir = Path.Combine("path", "to", "project.csproj") }),
-            new("Specify the output directory, generates '../upDir/Directory.Packages.props'",
-                new Options { OutputDir = Path.Combine("..", "upDir") }),
-            new("Preview changes without modifying files",
-                new Options { DryRun = true }),
-            new("Fail if version conflicts are detected",
-                new Options { ConflictStrategy = ConflictStrategy.Fail }),
-            new("Analyze packages for issues without migrating",
-                new Options { Analyze = true }),
-            new("Run in interactive wizard mode",
-                new Options { Interactive = true }),
-            new("Merge with existing Directory.Packages.props",
-                new Options { MergeExisting = true }),
+            new(
+                "Convert only one project",
+                new Options { ProjectFileDir = Path.Combine("path", "to", "project.csproj") }
+            ),
+            new(
+                "Specify the output directory, generates '../upDir/Directory.Packages.props'",
+                new Options { OutputDir = Path.Combine("..", "upDir") }
+            ),
+            new("Preview changes without modifying files", new Options { DryRun = true }),
+            new(
+                "Fail if version conflicts are detected",
+                new Options { ConflictStrategy = ConflictStrategy.Fail }
+            ),
+            new("Analyze packages for issues without migrating", new Options { Analyze = true }),
+            new("Run in interactive wizard mode", new Options { Interactive = true }),
+            new(
+                "Merge with existing Directory.Packages.props",
+                new Options { MergeExisting = true }
+            ),
             // v2.0 examples
-            new("Output JSON for CI/CD integration",
-                new Options { Output = OutputFormat.Json }),
-            new("Batch migrate all solutions in a directory",
-                new Options { BatchDir = Path.Combine("path", "to", "repo") }),
-            new("Analyze and auto-fix issues",
-                new Options { Analyze = true, Fix = true }),
-            new("Analyze and include outdated/deprecated package checks",
-                new Options { Analyze = true, AnalyzeOutdated = true, AnalyzeDeprecated = true }),
-            new("Prune old backups, keeping last 3",
-                new Options { PruneBackups = true, Retention = 3 }),
+            new("Output JSON for CI/CD integration", new Options { Output = OutputFormat.Json }),
+            new(
+                "Emit SARIF for GitHub code scanning",
+                new Options
+                {
+                    Analyze = true,
+                    Output = OutputFormat.Sarif,
+                    OutputFile = "cpmigrate.sarif",
+                }
+            ),
+            new(
+                "Batch migrate all solutions in a directory",
+                new Options { BatchDir = Path.Combine("path", "to", "repo") }
+            ),
+            new("Analyze and auto-fix issues", new Options { Analyze = true, Fix = true }),
+            new(
+                "Analyze and include outdated/deprecated package checks",
+                new Options
+                {
+                    Analyze = true,
+                    AnalyzeOutdated = true,
+                    AnalyzeDeprecated = true,
+                }
+            ),
+            new(
+                "Prune old backups, keeping last 3",
+                new Options { PruneBackups = true, Retention = 3 }
+            ),
         };
 
     /// <summary>
@@ -384,19 +526,54 @@ public class Options
     /// </summary>
     private void ValidateOutputOptions()
     {
-        if (!string.IsNullOrEmpty(OutputFile) && Output != OutputFormat.Json)
+        if (!string.IsNullOrEmpty(OutputFile) && !Output.IsMachineReadable())
         {
-            throw new ArgumentException("--output-file can only be used with --output Json.");
+            throw new ArgumentException(
+                "--output-file can only be used with --output Json or --output Sarif."
+            );
         }
 
-        if (Output == OutputFormat.Json && Interactive)
+        if (Output.IsMachineReadable() && Interactive)
         {
-            throw new ArgumentException("--output Json cannot be used with --interactive mode.");
+            throw new ArgumentException(
+                $"--output {Output} cannot be used with --interactive mode."
+            );
         }
 
-        if (Output == OutputFormat.Json && InteractiveConflicts)
+        if (Output.IsMachineReadable() && InteractiveConflicts)
         {
-            throw new ArgumentException("--output Json cannot be used with --interactive-conflicts.");
+            throw new ArgumentException(
+                $"--output {Output} cannot be used with --interactive-conflicts."
+            );
+        }
+
+        ValidateSarifOptions();
+    }
+
+    /// <summary>
+    /// SARIF describes analyzer findings, so it only makes sense for commands that produce them.
+    /// Rejecting it elsewhere is friendlier than emitting an empty, valid-but-useless log that a
+    /// code-scanning upload would silently accept.
+    /// </summary>
+    private void ValidateSarifOptions()
+    {
+        if (Output != OutputFormat.Sarif)
+        {
+            return;
+        }
+
+        if (!Analyze)
+        {
+            throw new ArgumentException(
+                "--output Sarif requires --analyze; SARIF only carries analyzer findings."
+            );
+        }
+
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            throw new ArgumentException(
+                "--output Sarif cannot be used with --batch; run one solution at a time, or use --output Json."
+            );
         }
     }
 
@@ -460,9 +637,11 @@ public class Options
             throw new ArgumentException("--retention must be 0 or greater.");
         }
 
-        if (Output == OutputFormat.Json && !Force)
+        if (Output.IsMachineReadable() && !Force)
         {
-            throw new ArgumentException("--prune-backups and --prune-all require --force when --output Json is used.");
+            throw new ArgumentException(
+                "--prune-backups and --prune-all require --force when --output Json is used."
+            );
         }
 
         return true;
@@ -544,7 +723,7 @@ public class Options
             throw new ArgumentException("backup-dir must be specified for rollback.");
         }
 
-        if (Output == OutputFormat.Json && !Force)
+        if (Output.IsMachineReadable() && !Force)
         {
             throw new ArgumentException("--rollback requires --force when --output Json is used.");
         }
@@ -594,7 +773,8 @@ public class Options
         if (Bisect && DryRun)
         {
             throw new ArgumentException(
-                "--bisect cannot be used with --dry-run. Bisection has to run tests against real changes.");
+                "--bisect cannot be used with --dry-run. Bisection has to run tests against real changes."
+            );
         }
 
         return true;
@@ -639,8 +819,10 @@ public class Options
     {
         if (NoBackup && AddBackupToGitignore)
         {
-            throw new ArgumentException("--add-gitignore cannot be used with --no-backup. " +
-                "A backup directory must exist to add it to .gitignore.");
+            throw new ArgumentException(
+                "--add-gitignore cannot be used with --no-backup. "
+                    + "A backup directory must exist to add it to .gitignore."
+            );
         }
 
         if (!NoBackup && string.IsNullOrWhiteSpace(BackupDir))
@@ -650,14 +832,17 @@ public class Options
 
         if (AddBackupToGitignore && string.IsNullOrWhiteSpace(GitignoreDir))
         {
-            throw new ArgumentException("gitignore-dir must be specified when add-gitignore is enabled.");
+            throw new ArgumentException(
+                "gitignore-dir must be specified when add-gitignore is enabled."
+            );
         }
 
         if (HasExplicitSolutionPath && HasExplicitProjectPath)
         {
             throw new ArgumentException(
-                "Both --solution and --project were specified. Use only one: " +
-                "--solution to scan a .sln file, or --project to scan a specific project.");
+                "Both --solution and --project were specified. Use only one: "
+                    + "--solution to scan a .sln file, or --project to scan a specific project."
+            );
         }
     }
 }

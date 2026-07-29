@@ -51,4 +51,16 @@ public class MigrationResult
     /// Fix report, when analyze mode runs with --fix or --fix-dry-run.
     /// </summary>
     public FixReport? FixReport { get; init; }
+
+    /// <summary>
+    /// The package references the analysis was built from. Reporters that need to resolve a
+    /// finding back to a project file (SARIF locations, for example) use this; analyzer issues
+    /// themselves only carry project names.
+    /// </summary>
+    public ProjectPackageInfo? PackageInfo { get; init; }
+
+    /// <summary>
+    /// The directory the scan was rooted at, used to make reported file paths relative.
+    /// </summary>
+    public string? BasePath { get; init; }
 }

@@ -777,7 +777,7 @@ public class MigrationService
             return true;
         }
 
-        if (options.Output == OutputFormat.Json)
+        if (options.Output.IsMachineReadable())
         {
             return false;
         }

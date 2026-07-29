@@ -81,7 +81,7 @@ public static class ProgramRunner
 
         if (!string.IsNullOrWhiteSpace(errorMessage))
         {
-            if (options.Output != OutputFormat.Json)
+            if (!options.Output.IsMachineReadable())
             {
                 consoleService.Warning(errorMessage);
             }
@@ -97,7 +97,7 @@ public static class ProgramRunner
         var cliArgsProvided = CliArgumentParser.GetExplicitArguments(args);
         ConfigService.MergeConfig(options, config, cliArgsProvided);
 
-        if (options.Output != OutputFormat.Json && !string.IsNullOrWhiteSpace(configPath))
+        if (!options.Output.IsMachineReadable() && !string.IsNullOrWhiteSpace(configPath))
         {
             consoleService.Dim($"Loaded config from: {configPath}");
         }

@@ -42,7 +42,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.6.1
+dotnet tool install --global CPMigrate --version 3.7.0
 ```
 
 ```bash
@@ -598,8 +598,8 @@ The config file is discovered by walking up from the selected solution/project p
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--output` | | `Terminal` | Output format: `Terminal` or `Json` |
-| `--output-file` | | | Write JSON output to a file |
+| `--output` | | `Terminal` | Output format: `Terminal`, `Json`, or `Sarif` (requires `--analyze`) |
+| `--output-file` | | | Write `Json` or `Sarif` output to a file |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Enable diagnostic logging to `cpmigrate.log` |
 
@@ -669,6 +669,22 @@ verb would otherwise fall through to the default action and start a real migrati
 › Did you mean: cpmigrate --analyze -s ./MySolution.sln
 ```
 
+### SARIF for GitHub code scanning
+
+`--output Sarif` emits a [SARIF 2.1.0](https://docs.github.com/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning)
+log, so findings appear as annotations on the pull request diff instead of buried in build logs.
+Each result points at the project file **and the line declaring the offending `PackageReference`**,
+carries the rule's description and a link to [the rule reference](docs/rules.md), and includes a
+stable fingerprint so code scanning tracks a finding across runs rather than reopening it.
+
+```bash
+cpmigrate --analyze --audit --outdated --deprecated \
+  --output Sarif --output-file cpmigrate.sarif --quiet
+```
+
+SARIF describes analyzer findings, so `--output Sarif` requires `--analyze`. Severities map to SARIF
+levels as `Critical`/`High` → `error`, `Moderate` → `warning`, `Low`/`Info` → `note`.
+
 ### GitHub Actions Example
 
 ```yaml
@@ -685,6 +701,23 @@ verb would otherwise fall through to the default action and start a real migrati
       echo "::error::Dependency issues detected"
       exit 1
     fi
+```
+
+Or upload SARIF and let code scanning annotate the diff. `--analyze` exits `5` when it finds
+issues, so `continue-on-error` keeps the upload step reachable:
+
+```yaml
+- name: Install CPMigrate
+  run: dotnet tool install --global CPMigrate
+
+- name: Analyze dependencies
+  continue-on-error: true
+  run: cpmigrate --analyze --audit --outdated --deprecated --output Sarif --output-file cpmigrate.sarif --quiet
+
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: cpmigrate.sarif
 ```
 
 ### JSON Output

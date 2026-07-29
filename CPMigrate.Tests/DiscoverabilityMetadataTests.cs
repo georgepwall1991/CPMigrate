@@ -12,7 +12,7 @@ public sealed class DiscoverabilityMetadataTests
     private static string RepositoryRoot =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
 
-    private const string ExpectedVersion = "3.6.1";
+    private const string ExpectedVersion = "3.7.0";
 
     private const string RawBase =
         "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/";
@@ -129,9 +129,7 @@ public sealed class DiscoverabilityMetadataTests
             .Matches(readme, @"!\[[^\]]*\]\(([^)]+)\)")
             .Select(m => m.Groups[1].Value)
             .Concat(
-                Regex
-                    .Matches(readme, @"<img[^>]+src=""([^""]+)""")
-                    .Select(m => m.Groups[1].Value)
+                Regex.Matches(readme, @"<img[^>]+src=""([^""]+)""").Select(m => m.Groups[1].Value)
             )
             .Distinct(StringComparer.Ordinal);
 

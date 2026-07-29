@@ -1,4 +1,4 @@
-# CPMigrate discoverability keyword map (3.6.1)
+# CPMigrate discoverability keyword map (3.7.0)
 
 Session research for NuGet.org / GitHub conversion. Not marketing fiction — terms map to real product surfaces.
 
@@ -57,7 +57,7 @@ CPMigrate already ranks for `Directory.Packages.props` (3.6.0, ~13k downloads). 
 | centralised (UK) | tags only | centralised | — (search only) |
 | migrator | tags | migrator | Hook |
 
-## Recommended package metadata (3.6.1)
+## Recommended package metadata (3.7.0)
 
 **Title:** CPMigrate — NuGet Central Package Management Migration & Dependency Analysis CLI
 

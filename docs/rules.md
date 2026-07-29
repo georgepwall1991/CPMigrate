@@ -1,0 +1,129 @@
+# CPMigrate rule reference
+
+Every finding CPMigrate reports carries a stable **rule ID**. The same ID appears in three places,
+so you can move between them without a translation table:
+
+| Surface | Where the ID appears |
+| --- | --- |
+| `--output Json` | the `issueCode` field of each entry in `analysisIssues` |
+| `--output Sarif` | the `ruleId` of each SARIF result, and the `id` of each entry under `tool.driver.rules` |
+| Terminal output | the analyzer section heading the finding is printed under |
+
+Rule IDs are part of CPMigrate's public contract. They are not renamed within a major version.
+
+Severities map onto SARIF levels as follows:
+
+| CPMigrate severity | SARIF level |
+| --- | --- |
+| `Critical`, `High` | `error` |
+| `Moderate` | `warning` |
+| `Low`, `Info` | `note` |
+
+---
+
+## VersionInconsistency
+
+**The same package is referenced at different versions across projects.**
+
+Divergent versions of one package in a single solution produce assembly binding surprises and make
+upgrades unpredictable. Centralize the package in `Directory.Packages.props` so every project
+resolves the same version.
+
+- Default severity: `Moderate`
+- Fixable: yes — `cpmigrate --analyze --fix`, or migrate with `cpmigrate -s ./Solution.sln`
+
+## DuplicatePackageCasing
+
+**One package is referenced under multiple casings.**
+
+NuGet package IDs are case-insensitive, so `newtonsoft.json` and `Newtonsoft.Json` are the same
+package. Mixed casing defeats deduplication and can produce duplicate `PackageVersion` entries
+under central package management. Settle on the canonical casing published on nuget.org.
+
+- Default severity: `Low`
+- Fixable: yes
+
+## RedundantReference
+
+**A project declares the same `PackageReference` more than once.**
+
+Repeated `PackageReference` items for one package are ignored by NuGet at best and produce
+conflicting versions at worst. Remove the duplicates and keep a single declaration.
+
+- Default severity: `Low`
+- Fixable: yes
+
+## TransitiveConflict
+
+**Projects resolve conflicting versions of a shared transitive dependency.**
+
+When two projects pull different versions of the same transitive package, the version that wins at
+runtime depends on build order and restore graph shape. Pin the package explicitly so the resolved
+version is deliberate.
+
+- Requires `--transitive`
+- Default severity: `Moderate`
+- Fixable: yes
+
+## SecurityVulnerability
+
+**A referenced package has a known security advisory.**
+
+NuGet audit reported a published advisory affecting this package. Upgrade to the fixed version, or
+if the package is transitive, pin a patched version explicitly.
+
+- Requires `--audit`
+- Default severity: mirrors the advisory (`Low` … `Critical`)
+- Fixable: no — review the advisory before changing versions
+
+## RedundantDirectReference
+
+**A package is referenced directly even though it already arrives transitively.**
+
+Direct references that duplicate a transitive dependency add maintenance cost and can pin an older
+version than the graph would otherwise resolve. Remove the direct reference unless the project
+genuinely needs to control that version.
+
+- Requires `--transitive`
+- Default severity: `Low`
+- Fixable: no — removing a direct reference can change the resolved version, so review it yourself
+
+## FrameworkAlignment
+
+**Projects in the solution target different frameworks.**
+
+Mixed target frameworks constrain which package versions can be shared and often surface as restore
+failures during a central package management migration. Align the frameworks, or confirm the split
+is intentional.
+
+- Default severity: `Info`
+- Fixable: no
+
+## OutdatedPackage
+
+**A newer version of the package is published.**
+
+The referenced version is behind the latest release on the configured feed. Review the changelog and
+update, or pin deliberately if the newer version is not wanted yet.
+
+- Requires `--outdated`
+- Default severity: `Low`
+- Fixable: no — use `cpmigrate --update-packages` to update with test verification
+
+## DeprecatedPackage
+
+**The package is marked deprecated by its author.**
+
+Deprecated packages stop receiving fixes, including security fixes. Migrate to the suggested
+alternative, or vendor the functionality if no replacement exists.
+
+- Requires `--deprecated`
+- Default severity: `Moderate`
+- Fixable: no
+
+## Unknown
+
+**An analyzer reported a finding without a specific rule code.**
+
+This is a fallback used when an analyzer does not classify its finding. Treat the message text as
+the source of truth.

@@ -6,6 +6,24 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-07-29
+
+### Added
+- **`--output Sarif`: analyzer findings as SARIF 2.1.0, for GitHub code scanning.** Teams wiring CPMigrate into CI previously had to parse CPMigrate's bespoke JSON and re-render it themselves to get findings in front of reviewers. SARIF is the format GitHub, Azure DevOps, and every static-analysis viewer already consume, so `cpmigrate --analyze --output Sarif --output-file cpmigrate.sarif` now feeds `github/codeql-action/upload-sarif` directly — findings land as annotations on the pull request diff.
+  - Each finding resolves to the **project file and the exact line** declaring the offending `PackageReference`, so annotations attach to real code rather than to the repository root.
+  - Every issue code ships full rule metadata — short and full descriptions, tags, and a `helpUri` into the new rule reference — so a reviewer can act on a finding without leaving the PR.
+  - Results carry a `partialFingerprints` entry derived from the issue code, package, and affected projects, letting code scanning track a finding across runs instead of reopening it every build.
+  - Severities map to SARIF levels: `Critical`/`High` → `error`, `Moderate` → `warning`, `Low`/`Info` → `note`.
+  - Tool failures are reported as an unsuccessful SARIF invocation with a tool execution notification, so stdout is a parseable SARIF log even when a run fails — an upload step never breaks on a malformed or missing file.
+- **`docs/rules.md`: a published reference for every rule CPMigrate reports.** Rule IDs are now documented as a public contract shared by SARIF `ruleId`, JSON `issueCode`, and terminal output, with the trigger, default severity, and whether a built-in fixer applies. A test fails the build if an issue code is added without a matching section.
+
+### Changed
+- `--output-file` now accepts `Sarif` as well as `Json`, and reports which format it wrote.
+- Console suppression, prompt guards, and non-TTY safety checks now key off a single "machine-readable output" predicate rather than testing for `Json` at ~20 separate call sites, so any future machine format inherits the same protections instead of re-introducing banner leaks.
+
+### Validation
+- `--output Sarif` requires `--analyze` (SARIF carries only analyzer findings) and is rejected with `--batch`, `--interactive`, and `--interactive-conflicts`.
+
 ## [3.6.1] - 2026-07-27
 
 ### Documentation
