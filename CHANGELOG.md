@@ -18,6 +18,10 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - **`OrphanedPackageVersion`** (Low) — a central pin nothing references. Harmless to restore, but stale pins accumulate, and once nothing uses a package its pin is indistinguishable from a deliberate one.
   - **`CpmNotEnabled`** (High) — a `Directory.Packages.props` without `ManagePackageVersionsCentrally`, so every entry in it is inert. The file looks authoritative and does nothing.
   - `GlobalPackageReference` counts as a central version, so a project referencing an analyzer package supplied that way is not reported as missing one.
+  - **`VersionOverride` is reported too**, at `Low`. It is NuGet's sanctioned per-project escape hatch, so it is not a mistake the way a stray `Version` attribute is — but the project has still stepped outside the central version, which is what a reviewer needs to see.
+  - When central management is **off**, only the configuration problem is reported. Continuing would flag every ordinary versioned reference in the solution as drift, since with CPM disabled an inline version overrides nothing.
+  - **Transitive pinning is respected.** With `CentralPackageTransitivePinningEnabled`, a `PackageVersion` deliberately pins a package no project references directly, so the orphan check is skipped rather than reporting every such pin.
+  - A central entry with an **empty** `Version` does not satisfy a reference: the entry exists but supplies nothing usable, and restore still fails.
   - `CpmNotEnabled` also honours `Directory.Build.props`, the other conventional home for the property. Reporting on the props file alone was a High-severity false positive on repositories that set it there — MSBuild resolves the property through imports, so its absence from one file proves nothing.
   - Like the other analyzers, these are gated on **data rather than a flag**: they report nothing unless the solution actually has a `Directory.Packages.props` to drift from, so a pre-migration repository sees no change. They flow through every existing surface — terminal, JSON, SARIF, Markdown, `--fail-on`, and baselines.
 

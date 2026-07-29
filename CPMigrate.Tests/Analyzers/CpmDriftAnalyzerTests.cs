@@ -212,6 +212,97 @@ public class CpmDriftAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_CpmDisabled_ReportsOnlyTheConfigurationProblem()
+    {
+        // With central management off, an inline version overrides nothing — it is simply how every
+        // project declares its packages. Continuing would report the whole dependency list as drift.
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject(
+            "Api.csproj",
+            "<PackageReference Include=\"Newtonsoft.Json\" Version=\"13.0.1\" />"
+        );
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().ContainSingle().Which.IssueCode.Should().Be(AnalysisIssueCode.CpmNotEnabled);
+    }
+
+    [Fact]
+    public void Analyze_VersionOverride_IsReportedAsADeliberateDeparture()
+    {
+        // VersionOverride is NuGet's supported escape hatch, so it is not a mistake the way a stray
+        // Version attribute is — but the project has stepped outside the central version, which is
+        // exactly what a reviewer needs to see.
+        WriteProps("<PackageVersion Include=\"Newtonsoft.Json\" Version=\"13.0.1\" />");
+        var project = WriteProject(
+            "Api.csproj",
+            "<PackageReference Include=\"Newtonsoft.Json\" VersionOverride=\"12.0.3\" />"
+        );
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        var issue = result.Issues.Should().ContainSingle().Subject;
+        issue.IssueCode.Should().Be(AnalysisIssueCode.InlineVersionUnderCpm);
+        issue.Severity.Should().Be(AnalysisSeverity.Low, "it is deliberate and sanctioned");
+        issue.Description.Should().Contain("VersionOverride").And.Contain("Intentional");
+    }
+
+    [Fact]
+    public void Analyze_TransitivePinningEnabled_DoesNotReportOrphans()
+    {
+        // With transitive pinning on, a PackageVersion deliberately pins a package no project
+        // references directly — so every such pin would otherwise look unused.
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Transitively.Pinned" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject(
+            "Api.csproj",
+            "<PackageReference Include=\"Serilog\" Version=\"4.3.0\" />"
+        );
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result
+            .Issues.Should()
+            .NotContain(i => i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion);
+    }
+
+    [Fact]
+    public void Analyze_CentralEntryWithAnEmptyVersion_DoesNotSatisfyAReference()
+    {
+        // The entry exists but supplies nothing usable, so restore still fails — treating the key's
+        // presence as sufficient would hide that.
+        WriteProps("<PackageVersion Include=\"Newtonsoft.Json\" Version=\"\" />");
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result
+            .Issues.Should()
+            .Contain(i => i.IssueCode == AnalysisIssueCode.MissingPackageVersion);
+    }
+
+    [Fact]
     public void Analyze_GlobalPackageReference_CountsAsACentralVersion()
     {
         // GlobalPackageReference supplies a version centrally too, so a project referencing such a

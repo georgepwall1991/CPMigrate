@@ -62,7 +62,15 @@ public class CpmDriftAnalyzer : IAnalyzer
             return new AnalyzerResult(Name, issues);
         }
 
-        AddCpmNotEnabledIssue(issues, props, packageInfo.BasePath);
+        if (!IsCpmEnabled(props, packageInfo.BasePath, out var enablement))
+        {
+            AddCpmNotEnabledIssue(issues, enablement);
+
+            // Stop here. With central management off, an inline version is not overriding anything —
+            // it is simply how every project in the solution declares its packages, so the remaining
+            // rules would report the entire dependency list as drift.
+            return new AnalyzerResult(Name, issues);
+        }
 
         var central = ReadCentralVersions(props);
 
@@ -78,7 +86,10 @@ public class CpmDriftAnalyzer : IAnalyzer
             InspectProject(issues, packageInfo, projectPath, central, referenced);
         }
 
-        AddOrphanedVersionIssues(issues, central, referenced);
+        if (!IsTransitivePinningEnabled(props, packageInfo.BasePath))
+        {
+            AddOrphanedVersionIssues(issues, central, referenced);
+        }
 
         return new AnalyzerResult(Name, issues);
     }
@@ -88,20 +99,16 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// leaves every <c>PackageVersion</c> entry inert — the file looks authoritative and does
     /// nothing.
     /// </summary>
-    private static void AddCpmNotEnabledIssue(
-        List<AnalysisIssue> issues,
-        XDocument props,
-        string? basePath
-    )
+    private static bool IsCpmEnabled(XDocument props, string? basePath, out string? enablement)
     {
-        var enabled = ReadCpmEnablement(props);
+        enablement = ReadCpmEnablement(props);
 
-        if (string.Equals(enabled, "true", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(enablement, "true", StringComparison.OrdinalIgnoreCase))
         {
-            return;
+            return true;
         }
 
-        if (enabled is null)
+        if (enablement is null)
         {
             // MSBuild resolves the property through imports, and Directory.Build.props is the other
             // conventional home for it. Absence from both is still not proof — a custom import could
@@ -115,13 +122,18 @@ public class CpmDriftAnalyzer : IAnalyzer
             {
                 if (string.Equals(inherited, "true", StringComparison.OrdinalIgnoreCase))
                 {
-                    return;
+                    return true;
                 }
 
-                enabled = inherited;
+                enablement = inherited;
             }
         }
 
+        return false;
+    }
+
+    private static void AddCpmNotEnabledIssue(List<AnalysisIssue> issues, string? enabled)
+    {
         issues.Add(
             new AnalysisIssue(
                 PropsFileName,
@@ -135,6 +147,34 @@ public class CpmDriftAnalyzer : IAnalyzer
                 AnalysisSeverity.High
             )
         );
+    }
+
+    /// <summary>
+    /// True when transitive pinning is on, in which case a <c>PackageVersion</c> may deliberately pin
+    /// a package no project references directly — so every such pin would look orphaned.
+    /// </summary>
+    private static bool IsTransitivePinningEnabled(XDocument props, string? basePath)
+    {
+        if (IsPropertyTrue(props, "CentralPackageTransitivePinningEnabled"))
+        {
+            return true;
+        }
+
+        var buildProps = basePath is null
+            ? null
+            : ReadProps(Path.Combine(basePath, "Directory.Build.props"));
+
+        return buildProps is not null
+            && IsPropertyTrue(buildProps, "CentralPackageTransitivePinningEnabled");
+    }
+
+    private static bool IsPropertyTrue(XDocument document, string propertyName)
+    {
+        return document
+            .Descendants()
+            .Where(e => e.Name.LocalName == propertyName)
+            .Select(e => e.Value.Trim())
+            .Any(value => string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -179,14 +219,44 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             referenced.Add(packageName);
 
+            var hasCentralVersion =
+                central.TryGetValue(packageName, out var centralEntry)
+                && centralEntry.Version is not null;
+
+            var overrideVersion = ReadAttributeOrChild(element, "VersionOverride");
+            if (overrideVersion is not null)
+            {
+                // VersionOverride is NuGet's supported per-project escape hatch, so this is not a
+                // mistake the way a stray Version attribute is — but the project has still stepped
+                // outside the central version, which is what a reviewer needs to see. Lower severity
+                // accordingly: it is deliberate.
+                issues.Add(
+                    new AnalysisIssue(
+                        packageName,
+                        $"Uses VersionOverride=\"{overrideVersion}\" to step outside the central "
+                            + (
+                                hasCentralVersion
+                                    ? $"{centralEntry.Version}."
+                                    : "version."
+                            )
+                            + " Intentional, but the project no longer follows the solution.",
+                        new[] { projectId },
+                        AnalysisIssueCode.InlineVersionUnderCpm,
+                        AnalysisSeverity.Low,
+                        Fixable: false
+                    )
+                );
+
+                continue;
+            }
+
             var inlineVersion = ReadVersion(element);
             if (inlineVersion is not null)
             {
                 issues.Add(
                     new AnalysisIssue(
                         packageName,
-                        central.TryGetValue(packageName, out var centralEntry)
-                        && centralEntry.Version is not null
+                        hasCentralVersion
                             ? $"Declares Version=\"{inlineVersion}\" inline, overriding the central "
                                 + $"{centralEntry.Version}. Remove the attribute so the central version applies."
                             : $"Declares Version=\"{inlineVersion}\" inline instead of centrally. "
@@ -201,7 +271,9 @@ public class CpmDriftAnalyzer : IAnalyzer
                 continue;
             }
 
-            if (!central.ContainsKey(packageName))
+            // 4) A central entry with an empty Version supplies nothing usable, so a reference
+            // relying on it still breaks restore.
+            if (!hasCentralVersion)
             {
                 issues.Add(
                     new AnalysisIssue(
@@ -310,7 +382,17 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// </summary>
     private static string? ReadVersion(XElement element)
     {
-        var attribute = element.Attribute("Version")?.Value;
+        return ReadAttributeOrChild(element, "Version");
+    }
+
+    /// <summary>
+    /// Reads a value from either the attribute or the child-element form, both of which MSBuild
+    /// accepts. Returns null when absent or empty — an empty value overrides nothing, so treating it
+    /// as present would be a false positive.
+    /// </summary>
+    private static string? ReadAttributeOrChild(XElement element, string name)
+    {
+        var attribute = element.Attribute(name)?.Value;
         if (!string.IsNullOrWhiteSpace(attribute))
         {
             return attribute.Trim();
@@ -318,9 +400,7 @@ public class CpmDriftAnalyzer : IAnalyzer
 
         var child = element
             .Elements()
-            .FirstOrDefault(e =>
-                e.Name.LocalName.Equals("Version", StringComparison.OrdinalIgnoreCase)
-            )
+            .FirstOrDefault(e => e.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))
             ?.Value;
 
         return string.IsNullOrWhiteSpace(child) ? null : child.Trim();
