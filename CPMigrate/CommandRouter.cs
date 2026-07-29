@@ -960,6 +960,7 @@ internal static class CommandRouter
                             Description = issue.Description,
                             AffectedProjects = issue.AffectedProjects.ToList(),
                             Fixable = issue.Fixable,
+                            Suppressed = issue.Suppressed,
                             Metadata = issue.Metadata?.ToDictionary(
                                 kvp => kvp.Key,
                                 kvp => kvp.Value
@@ -999,6 +1000,9 @@ internal static class CommandRouter
                 FailOnSeverity = result.AnalysisReport is null ? null : options.FailOn.ToString(),
                 IssuesAtOrAboveThreshold = result.GatedIssueCount,
                 IssuesRemainingAfterFixes = result.PostFixAnalysisReport?.TotalIssues,
+                IssuesBaselined = options.UsesBaseline()
+                    ? result.AnalysisReport?.SuppressedCount
+                    : null,
                 HighestSeverity = result.AnalysisReport?.HighestSeverity?.ToString(),
                 ScanFailures = result.AnalysisReport is null ? null : result.ScanFailures,
                 DeepScanFailures = result.AnalysisReport is null ? null : result.DeepScanFailures,

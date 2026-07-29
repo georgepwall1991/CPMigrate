@@ -6,6 +6,24 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-07-29
+
+### Added
+- **`--baseline` / `--write-baseline`: adopt a CI gate on a codebase that already has debt.** `--fail-on` narrows a gate by severity; this narrows it by *which findings*. A repository with a backlog cannot turn on a gate that fails on all of it, so record the current state once (`--write-baseline`, committed alongside the code) and every run after that fails only on findings the baseline does not contain.
+  - Baselined findings **stay in every report** — terminal, JSON (`suppressed: true`), and SARIF, where they are emitted as a `suppressions` entry with `kind: "external"`, which is exactly the construct the spec provides for a suppression the tool was told about. The debt stays visible; it stops blocking.
+  - A finding is identified by its rule, package, and affected projects — deliberately **not** by the versions in its description. A version inconsistency drifting from `13.0.1, 12.0.3` to `13.0.2, 12.0.3` is the same unresolved finding, so the suppression holds; spreading to a new project is new information, so it does not.
+  - The baseline file is reviewable: each entry carries the rule, package, severity, and projects next to its fingerprint, so accepting technical debt shows up in a pull request as a decision rather than as a list of hashes. Entries are ordered deterministically, so regenerating an unchanged baseline produces no diff.
+  - **Stale entries are reported.** When a baseline entry no longer matches anything the findings were fixed, and CPMigrate says so and suggests regenerating — which is what stops a baseline growing forever and quietly suppressing a finding that came back under the same identity.
+  - A baseline written under a different fingerprint scheme is **rejected** rather than silently matching nothing, because "suppressed nothing" and "no debt accepted" look identical from the outside.
+  - Path settable team-wide as `"baseline"` in `.cpmigrate.json`; published schema at `schemas/cpmigrate-baseline.schema.json`.
+- **JSON:** `analysisIssues[].suppressed` and `summary.issuesBaselined` (additive; schema stays 1.2.0-compatible in shape, both fields omitted when no baseline is used).
+
+### Changed
+- Finding identity now lives in one place (`AnalysisIssueIdentity`), shared by SARIF `partialFingerprints` and baseline matching. They have to agree on what "the same finding" means, and two implementations of that would drift.
+
+### Validation
+- `--baseline` and `--write-baseline` require `--analyze`. `--write-baseline` is rejected with `--fix`, which would record findings from the pre-fix tree and so accept debt the same run just repaired. A missing baseline file is a validation error rather than a silent fall-back to gating on everything.
+
 ## [3.8.0] - 2026-07-29
 
 ### Added

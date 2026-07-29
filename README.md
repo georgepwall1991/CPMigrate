@@ -42,7 +42,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.8.0
+dotnet tool install --global CPMigrate --version 3.9.0
 ```
 
 ```bash
@@ -554,6 +554,8 @@ The config file is discovered by walking up from the selected solution/project p
 | `--fix` | | `false` | Apply auto-fixes (requires `--analyze`) |
 | `--fix-dry-run` | | `false` | Preview auto-fixes without applying |
 | `--fail-on` | | `Info` | Lowest severity that fails the build: `Info`, `Low`, `Moderate`, `High`, `Critical`, or `Never` |
+| `--baseline` | | | Path to a file of accepted findings; they are reported but do not fail the build |
+| `--write-baseline` | | `false` | Record current findings as the accepted baseline, then exit |
 
 #### Gating on severity with `--fail-on`
 
@@ -574,6 +576,37 @@ changes. Each rule's default severity is listed in [the rule reference](docs/rul
 
 `--fail-on` **cannot** suppress exit `8` ([IncompleteAnalysis](#exit-codes)). A severity threshold
 says which findings matter; it does not make an unexamined project safe.
+
+#### Adopting a gate on an existing codebase with `--baseline`
+
+Severity is one axis; the other is *which* findings. A repository that already has debt cannot turn
+on a gate that fails on all of it, so record the current state once and gate on what is new:
+
+```bash
+# Once, on a green branch — commit the result
+cpmigrate --analyze --audit --outdated --write-baseline
+
+# Every run after that: existing debt is reported, new debt fails
+cpmigrate --analyze --audit --outdated --baseline .cpmigrate-baseline.json
+```
+
+Baselined findings **stay in every report** — terminal, JSON (`suppressed: true`), and SARIF (as a
+`suppressions` entry with `kind: "external"`). The debt stays visible; it just stops blocking.
+
+A finding is identified by its rule, package, and affected projects — deliberately **not** by the
+versions in its description. A version inconsistency drifting from `13.0.1, 12.0.3` to
+`13.0.2, 12.0.3` is the same unresolved finding, so the suppression holds. Spreading to another
+project is new information, so it does not.
+
+When baseline entries stop matching anything — the findings were fixed — CPMigrate says so and
+suggests regenerating, which is what stops a baseline growing forever and quietly suppressing a
+finding that came back.
+
+Set the path once for the team in `.cpmigrate.json`:
+
+```json
+{ "baseline": ".cpmigrate-baseline.json", "failOn": "High" }
+```
 
 Set it once for the whole team in `.cpmigrate.json`:
 

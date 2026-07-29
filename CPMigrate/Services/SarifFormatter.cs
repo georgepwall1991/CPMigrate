@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Xml;
@@ -47,8 +45,11 @@ public static class SarifFormatter
     /// <summary>Identifier for the URI base that all artifact locations are relative to.</summary>
     private const string UriBaseId = "SRCROOT";
 
-    /// <summary>Fingerprint key; versioned so the scheme can change without colliding with old runs.</summary>
-    private const string FingerprintKey = "cpmigrate/v1";
+    /// <summary>
+    /// Fingerprint key, versioned from the shared identity scheme so a change to how findings are
+    /// identified cannot silently collide with fingerprints recorded by older runs.
+    /// </summary>
+    private static readonly string FingerprintKey = $"cpmigrate/{AnalysisIssueIdentity.Version}";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -238,7 +239,7 @@ public static class SarifFormatter
             }
         }
 
-        return new JsonObject
+        var result = new JsonObject
         {
             ["ruleId"] = AnalysisRuleCatalog.Get(issue.IssueCode).Id,
             ["ruleIndex"] = ruleIndex,
@@ -247,10 +248,26 @@ public static class SarifFormatter
             ["locations"] = BuildLocations(issue, rootDirectory, projectPaths, lineLocator),
             ["partialFingerprints"] = new JsonObject
             {
-                [FingerprintKey] = ComputeFingerprint(issue),
+                [FingerprintKey] = AnalysisIssueIdentity.Compute(issue),
             },
             ["properties"] = properties,
         };
+
+        if (issue.Suppressed)
+        {
+            // "external" is the SARIF kind for a suppression the tool was told about rather than one
+            // found in source, which is precisely what a baseline file is.
+            result["suppressions"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["kind"] = "external",
+                    ["justification"] = "Accepted in the CPMigrate baseline.",
+                },
+            };
+        }
+
+        return result;
     }
 
     private static string BuildMessage(AnalysisIssue issue)
@@ -320,28 +337,6 @@ public static class SarifFormatter
         }
 
         return locations;
-    }
-
-    /// <summary>
-    /// Builds a stable identity for a finding so code scanning can track it across runs.
-    /// Project names are sorted because analyzers do not guarantee ordering.
-    /// </summary>
-    private static string ComputeFingerprint(AnalysisIssue issue)
-    {
-        var projects = issue
-            .AffectedProjects.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        // Unit separator: it cannot occur in a package ID or project name, so the parts stay unambiguous.
-        var seed = string.Join(
-            '\u001F',
-            issue.IssueCode.ToString(),
-            issue.PackageName.ToLowerInvariant(),
-            string.Join(',', projects)
-        );
-
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
-        return Convert.ToHexStringLower(hash.AsSpan(0, 16));
     }
 
     private static ProjectPathIndex BuildProjectPathIndex(ProjectPackageInfo packageInfo)

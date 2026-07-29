@@ -60,6 +60,13 @@ public class ConfigModel
     [JsonPropertyName("failOn")]
     public FailOnSeverity? FailOn { get; set; }
 
+    /// <summary>
+    /// Path to the accepted-findings baseline. A team-wide setting: the file is committed alongside
+    /// the code it describes, so every run should find it without being told where it is.
+    /// </summary>
+    [JsonPropertyName("baseline")]
+    public string? Baseline { get; set; }
+
     [JsonPropertyName("outputFormat")]
     public OutputFormat? OutputFormat { get; set; }
 

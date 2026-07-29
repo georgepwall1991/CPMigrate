@@ -76,6 +76,13 @@ public static class ExitCodes
 /// </summary>
 public class Options
 {
+    /// <summary>
+    /// Default baseline file name. Dot-prefixed and repository-local, because a baseline is a record
+    /// of accepted debt that belongs in version control next to the code it describes.
+    /// </summary>
+    public const string BaselineDefaultFileName = ".cpmigrate-baseline.json";
+
+
     [Option(
         's',
         "solution",
@@ -206,6 +213,23 @@ public class Options
             + "exit 8 for an incomplete scan."
     )]
     public FailOnSeverity FailOn { get; set; } = FailOnSeverity.Info;
+
+    [Option(
+        "baseline",
+        HelpText = "Path to a baseline file of accepted findings. Findings it records are still "
+            + "reported but do not fail the build, so a repository with existing debt can gate on "
+            + "new problems only. Defaults to " + BaselineDefaultFileName + " when the flag is "
+            + "given without a value."
+    )]
+    public string? Baseline { get; set; }
+
+    [Option(
+        "write-baseline",
+        Default = false,
+        HelpText = "Record the current findings as the accepted baseline instead of gating on them, "
+            + "then exit. Writes to --baseline, or " + BaselineDefaultFileName + "."
+    )]
+    public bool WriteBaseline { get; set; }
 
     [Option(
         'i',
@@ -527,6 +551,24 @@ public class Options
         };
 
     /// <summary>
+    /// The baseline file this run should read or write, resolving the default when the flag was
+    /// given without a path.
+    /// </summary>
+    public string ResolveBaselinePath()
+    {
+        return string.IsNullOrWhiteSpace(Baseline) ? BaselineDefaultFileName : Baseline;
+    }
+
+    /// <summary>
+    /// True when the run should match findings against a baseline. Writing one is a separate mode:
+    /// it would be circular to suppress the findings being recorded.
+    /// </summary>
+    public bool UsesBaseline()
+    {
+        return !WriteBaseline && !string.IsNullOrWhiteSpace(Baseline);
+    }
+
+    /// <summary>
     /// Produces the options for one solution inside a <c>--batch</c> run.
     ///
     /// Copies everything and overrides only what must differ per solution. The direction matters:
@@ -627,6 +669,37 @@ public class Options
         }
 
         ValidateSarifOptions();
+        ValidateBaselineOptions();
+    }
+
+    /// <summary>
+    /// A baseline records analyzer findings, so it only makes sense for a command that produces
+    /// them. Silently ignoring the flag would leave someone believing debt was accepted when it
+    /// never was.
+    /// </summary>
+    private void ValidateBaselineOptions()
+    {
+        if (!WriteBaseline && string.IsNullOrWhiteSpace(Baseline))
+        {
+            return;
+        }
+
+        if (!Analyze)
+        {
+            throw new ArgumentException(
+                "--baseline and --write-baseline require --analyze; a baseline records analyzer findings."
+            );
+        }
+
+        if (WriteBaseline && Fix)
+        {
+            // The findings would be recorded from the pre-fix tree, immediately accepting debt the
+            // same run just repaired.
+            throw new ArgumentException(
+                "--write-baseline cannot be combined with --fix. Record the baseline first, or fix "
+                    + "and then record what remains."
+            );
+        }
     }
 
     /// <summary>

@@ -46,6 +46,11 @@
       "default": "Terminal",
       "description": "Output format: Terminal (rich UI), Json (for CI/CD), or Sarif (GitHub code scanning; requires --analyze)"
     },
+    "baseline": {
+      "type": "string",
+      "default": ".cpmigrate-baseline.json",
+      "description": "Path to the accepted-findings baseline. Findings it records are reported but do not fail the build, so CI gates on new problems only. Generate with: cpmigrate --analyze --write-baseline"
+    },
     "failOn": {
       "type": "string",
       "enum": ["Info", "Low", "Moderate", "High", "Critical", "Never"],

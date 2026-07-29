@@ -39,6 +39,11 @@ public enum AnalysisSeverity
 /// <param name="Severity">Issue severity for reporting and CI policy decisions.</param>
 /// <param name="Fixable">Whether a built-in fixer can address this issue.</param>
 /// <param name="Metadata">Optional structured metadata for machine consumers.</param>
+/// <param name="Suppressed">
+/// Whether a baseline has accepted this finding. Suppressed findings are still reported — the debt
+/// stays visible — but they do not fail the build, which is what lets a repository with existing
+/// debt adopt a CI gate that only catches new problems.
+/// </param>
 public record AnalysisIssue(
     string PackageName,
     string Description,
@@ -46,5 +51,6 @@ public record AnalysisIssue(
     AnalysisIssueCode IssueCode = AnalysisIssueCode.Unknown,
     AnalysisSeverity Severity = AnalysisSeverity.Info,
     bool Fixable = false,
-    IReadOnlyDictionary<string, string>? Metadata = null
+    IReadOnlyDictionary<string, string>? Metadata = null,
+    bool Suppressed = false
 );
