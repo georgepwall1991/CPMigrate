@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.13.0] - 2026-07-30
+
+### Added
+- **`--completions <shell>`: shell completion for bash, zsh, fish, and PowerShell.** CPMigrate has 45 options; remembering which of `--fail-on`, `--baseline`, and `--output` takes a value, and that the value is `Sarif` rather than `SARIF`, is not a reasonable expectation.
+  - **Generated from the option metadata**, not hand-written. A hand-written script is wrong the moment an option is added and nobody notices — and a stale completion list is worse than none, because it actively suggests flags that no longer exist. Reflecting over the same `[Option]` attributes that drive parsing means the two cannot disagree, and a test asserts every option appears in every script.
+  - Enum-valued options complete their values, so `--output <tab>` offers `Terminal`, `Json`, `Sarif`, `Markdown`.
+  - Path options complete filenames rather than flag names.
+  - zsh shows each option's help text inline while completing, which is most of what a zsh completion is for. Brackets and colons in that text are escaped, since both are structural in a zsh spec.
+  - Output is deterministic, so a committed script regenerates without a diff.
+  - Verified by asking the shells themselves: the generated bash and zsh scripts are parsed with `-n`, which catches an unbalanced quote or a missing `esac` that no structural assertion would.
+
 ## [3.12.0] - 2026-07-30
 
 ### Changed

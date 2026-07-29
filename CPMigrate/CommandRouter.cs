@@ -88,6 +88,14 @@ internal static class CommandRouter
             return ExitCodes.ValidationError;
         }
 
+        // Completions are pure output with no side effects, so they run before anything that could
+        // discover projects, touch the network, or prompt.
+        if (options.Completions.HasValue)
+        {
+            Console.WriteLine(CompletionScriptGenerator.Generate(options.Completions.Value));
+            return ExitCodes.Success;
+        }
+
         // Handle Update command
         if (options.Update)
         {
