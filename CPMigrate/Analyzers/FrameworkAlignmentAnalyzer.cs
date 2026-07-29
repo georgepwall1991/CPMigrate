@@ -36,7 +36,7 @@ public class FrameworkAlignmentAnalyzer : IAnalyzer
                 frameworks[tfm] = list;
             }
 
-            list.Add(Path.GetFileName(path));
+            list.Add(packageInfo.ProjectId(path));
         }
 
         if (frameworks.Count > 1)

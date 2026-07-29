@@ -33,7 +33,7 @@ public class DuplicatePackageAnalyzer : IAnalyzer
             }
 
             var description = $"Found {variations.Count} casing variations: {string.Join(", ", variations)}";
-            var affectedProjects = group.Select(r => r.ProjectName).Distinct().ToList();
+            var affectedProjects = group.Select(r => packageInfo.ProjectId(r.ProjectPath)).Distinct().ToList();
 
             issues.Add(new AnalysisIssue(
                 variations[0], // Use the first variation as the canonical name

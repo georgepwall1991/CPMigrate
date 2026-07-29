@@ -14,9 +14,16 @@ public static class AnalysisIssueIdentity
 {
     /// <summary>
     /// Versioned so the scheme can change without silently invalidating stored fingerprints: a
-    /// baseline written under v1 is recognisably v1.
+    /// baseline written under an older scheme is recognisably older, and is rejected with a
+    /// regenerate instruction rather than quietly matching nothing.
+    ///
+    /// <para>
+    /// v2 identifies projects by their path relative to the scan root. v1 used file names, so two
+    /// projects sharing a basename shared an identity and a baseline entry for one could suppress a
+    /// finding in the other.
+    /// </para>
     /// </summary>
-    public const string Version = "v1";
+    public const string Version = "v2";
 
     /// <summary>
     /// Computes the fingerprint for a finding.
@@ -25,16 +32,12 @@ public static class AnalysisIssueIdentity
     /// inconsistency that drifts from "13.0.1, 12.0.3" to "13.0.2, 12.0.3" is still the same
     /// unresolved finding, and a fingerprint that changed with it would defeat both tracking and
     /// suppression. Package IDs are lowercased because NuGet treats them case-insensitively, and
-    /// project names are sorted because analyzers do not guarantee ordering.
+    /// project identifiers are sorted because analyzers do not guarantee ordering.
     ///
     /// <para>
-    /// Known limitation: analyzer findings carry project file <em>names</em>, not paths, so two
-    /// distinct projects sharing a basename (<c>src/App/App.csproj</c> and
-    /// <c>tests/App/App.csproj</c>) produce the same identity. A baseline entry for one can
-    /// therefore suppress an equivalent finding in the other. Fixing it properly means carrying
-    /// project paths on <see cref="AnalysisIssue"/>, which also removes the guesswork in SARIF
-    /// location resolution; it is tracked as a follow-up rather than worked around here, because a
-    /// partial disambiguation would change fingerprints without actually closing the gap.
+    /// Projects are identified by their path relative to the scan root, so two projects sharing a
+    /// file name are distinct — and the value stays portable, which matters because a committed
+    /// baseline has to match on every machine that runs the tool.
     /// </para>
     /// </summary>
     /// <param name="issue">The finding to identify.</param>

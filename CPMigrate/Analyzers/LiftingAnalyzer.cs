@@ -21,15 +21,16 @@ public class LiftingAnalyzer : IAnalyzer
     {
         List<AnalysisIssue> issues = [];
 
-        foreach (var reference in packageInfo.References.DistinctBy(r => r.ProjectPath))
+        foreach (var projectPath in packageInfo.References.Select(r => r.ProjectPath).Distinct())
         {
-            var redundant = _graphService.IdentifyRedundantDirectReferences(reference.ProjectPath);
+            var projectId = packageInfo.ProjectId(projectPath);
+            var redundant = _graphService.IdentifyRedundantDirectReferences(projectPath);
             foreach (var packageName in redundant)
             {
                 issues.Add(new AnalysisIssue(
                     packageName,
-                    $"Direct reference is redundant; it is already provided transitively by another top-level package in {reference.ProjectName}.",
-                    [reference.ProjectName],
+                    $"Direct reference is redundant; it is already provided transitively by another top-level package in {projectId}.",
+                    [projectId],
                     AnalysisIssueCode.RedundantDirectReference,
                     AnalysisSeverity.Low,
                     Fixable: false

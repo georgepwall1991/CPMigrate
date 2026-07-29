@@ -24,11 +24,11 @@ public class VersionInconsistencyAnalyzer : IAnalyzer
             // Build description showing which versions are where
             var versionsByProject = group
                 .GroupBy(r => r.Version)
-                .Select(vg => $"{vg.Key} ({string.Join(", ", vg.Select(r => r.ProjectName))})")
+                .Select(vg => $"{vg.Key} ({string.Join(", ", vg.Select(r => packageInfo.ProjectId(r.ProjectPath)))})")
                 .ToList();
 
             var description = string.Join(", ", versionsByProject);
-            var affectedProjects = group.Select(r => r.ProjectName).Distinct().ToList();
+            var affectedProjects = group.Select(r => packageInfo.ProjectId(r.ProjectPath)).Distinct().ToList();
 
             issues.Add(new AnalysisIssue(
                 group.Key,

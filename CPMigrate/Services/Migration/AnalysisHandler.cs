@@ -53,7 +53,8 @@ internal sealed class AnalysisHandler
 
         var (packageInfo, scanFailures, deepScanFailures) = await PerformAnalysisScanAsync(
             options,
-            projectPaths
+            projectPaths,
+            basePath
         );
 
         if (!_quietMode)
@@ -137,7 +138,7 @@ internal sealed class AnalysisHandler
         ProjectPackageInfo PackageInfo,
         int ScanFailures,
         int DeepScanFailures
-    )> PerformAnalysisScanAsync(Options options, List<string> projectPaths)
+    )> PerformAnalysisScanAsync(Options options, List<string> projectPaths, string basePath)
     {
         var allReferences = new List<PackageReference>();
         var allVulnerabilities = new List<VulnerabilityInfo>();
@@ -222,7 +223,8 @@ internal sealed class AnalysisHandler
                 allReferences,
                 allVulnerabilities,
                 allOutdatedPackages,
-                allDeprecatedPackages
+                allDeprecatedPackages,
+                basePath
             ),
             scanFailures,
             deepScanFailures
@@ -716,19 +718,16 @@ internal sealed class AnalysisHandler
         int DeepScanFailures
     )> ReanalyzeAfterFixesAsync(Options options, List<string>? projectPaths)
     {
-        var paths = projectPaths;
-        if (paths is null)
-        {
-            var (_, discovered) = await _discoverProjects(options);
-            paths = discovered;
-        }
+        var (basePath, discovered) = await _discoverProjects(options);
+        var paths = projectPaths ?? discovered;
 
         // The cache holds pre-fix references; the point of this pass is to read the new files.
         _cachedProjectScans = null;
 
         var (packageInfo, scanFailures, deepScanFailures) = await PerformAnalysisScanAsync(
             options,
-            paths
+            paths,
+            basePath
         );
 
         return (_analysisService.Analyze(packageInfo), scanFailures, deepScanFailures);

@@ -21,7 +21,7 @@ public class OutdatedPackageAnalyzer : IAnalyzer
             .Select(group =>
             {
                 var sample = group.First();
-                var affectedProjects = group.Select(p => p.ProjectName).Distinct().ToList();
+                var affectedProjects = group.Select(p => packageInfo.ProjectId(p.ProjectPath)).Distinct().ToList();
                 var latestVersions = group.Select(p => p.LatestVersion).Distinct().OrderBy(v => v).ToList();
                 var description = $"Resolved: {sample.ResolvedVersion}, Latest: {string.Join(", ", latestVersions)}";
 

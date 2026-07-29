@@ -33,7 +33,7 @@ public class RedundantReferenceAnalyzer : IAnalyzer
                     continue;
                 }
 
-                var projectName = firstRef.ProjectName;
+                var projectName = packageInfo.ProjectId(firstRef.ProjectPath);
                 var count = packageGroup.Count();
                 var versions = packageGroup.Select(r => r.Version).Distinct().ToList();
 

@@ -20,8 +20,8 @@ public class RedundantReferenceAnalyzerTests
         var packageInfo = new ProjectPackageInfo(
             new List<PackageReference>
             {
-                new PackageReference("Pkg1", "1.0.0", "P1.csproj", "P1"),
-                new PackageReference("Pkg2", "1.0.0", "P1.csproj", "P1")
+                new PackageReference("Pkg1", "1.0.0", "P1.csproj", "P1.csproj"),
+                new PackageReference("Pkg2", "1.0.0", "P1.csproj", "P1.csproj")
             },
             new List<VulnerabilityInfo>()
         );
@@ -40,8 +40,8 @@ public class RedundantReferenceAnalyzerTests
         var packageInfo = new ProjectPackageInfo(
             new List<PackageReference>
             {
-                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1"),
-                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1")
+                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1.csproj"),
+                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1.csproj")
             },
             new List<VulnerabilityInfo>()
         );
@@ -52,7 +52,7 @@ public class RedundantReferenceAnalyzerTests
         // Assert
         result.Issues.Should().HaveCount(1);
         result.Issues[0].PackageName.Should().Be("Pkg");
-        result.Issues[0].AffectedProjects.Should().Contain("P1");
+        result.Issues[0].AffectedProjects.Should().Contain("P1.csproj");
     }
 
     [Fact]
@@ -62,8 +62,8 @@ public class RedundantReferenceAnalyzerTests
         var packageInfo = new ProjectPackageInfo(
             new List<PackageReference>
             {
-                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1"),
-                new PackageReference("Pkg", "2.0.0", "P1.csproj", "P1")
+                new PackageReference("Pkg", "1.0.0", "P1.csproj", "P1.csproj"),
+                new PackageReference("Pkg", "2.0.0", "P1.csproj", "P1.csproj")
             },
             new List<VulnerabilityInfo>()
         );

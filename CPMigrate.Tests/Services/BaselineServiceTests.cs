@@ -214,6 +214,45 @@ public class BaselineServiceTests : IDisposable
     }
 
     [Fact]
+    public void Apply_ProjectsSharingAFileName_AreDistinctFindings()
+    {
+        // Before findings carried paths, src/App/App.csproj and tests/App/App.csproj shared an
+        // identity: accepting the debt in one silently suppressed a new, unrelated finding in the
+        // other. That is the failure a baseline must never have — it hides new problems.
+        var accepted = Issue(
+            "Newtonsoft.Json",
+            AnalysisIssueCode.VersionInconsistency,
+            AnalysisSeverity.Moderate
+        ) with
+        {
+            AffectedProjects = new[] { "src/App/App.csproj" },
+        };
+        var baseline = _service.Create(ReportWith(accepted));
+
+        var elsewhere = accepted with { AffectedProjects = new[] { "tests/App/App.csproj" } };
+        var match = _service.Apply(ReportWith(elsewhere), baseline);
+
+        match.Suppressed.Should().Be(0, "a different project is a different finding");
+        match.Stale.Should().ContainSingle("the accepted finding was not present in this run");
+    }
+
+    [Fact]
+    public void Apply_SameProjectPath_StillMatches()
+    {
+        var accepted = Issue(
+            "Newtonsoft.Json",
+            AnalysisIssueCode.VersionInconsistency,
+            AnalysisSeverity.Moderate
+        ) with
+        {
+            AffectedProjects = new[] { "src/App/App.csproj" },
+        };
+        var baseline = _service.Create(ReportWith(accepted));
+
+        _service.Apply(ReportWith(accepted), baseline).Suppressed.Should().Be(1);
+    }
+
+    [Fact]
     public void Apply_ProjectOrderingDoesNotAffectMatching()
     {
         var original = Issue(
@@ -296,8 +335,8 @@ public class BaselineServiceTests : IDisposable
     }
 
     [Theory]
-    [InlineData("""{ "baselineVersion": "1.0.0", "fingerprintVersion": "v1", "findings": null }""", "findings")]
-    [InlineData("""{ "baselineVersion": "2.0.0", "fingerprintVersion": "v1", "findings": [] }""", "format version")]
+    [InlineData("""{ "baselineVersion": "1.0.0", "fingerprintVersion": "v2", "findings": null }""", "findings")]
+    [InlineData("""{ "baselineVersion": "2.0.0", "fingerprintVersion": "v2", "findings": [] }""", "format version")]
     public void Read_StructurallyInvalidFile_ReportsAnErrorRatherThanFaultingLater(
         string json,
         string expected
@@ -320,7 +359,10 @@ public class BaselineServiceTests : IDisposable
         // Absent is not the same as null: a baseline that accepts nothing is legitimate, and it
         // cannot cause the fault an explicit null would.
         var path = Path.Combine(_root, "empty.json");
-        File.WriteAllText(path, """{ "baselineVersion": "1.0.0", "fingerprintVersion": "v1" }""");
+        File.WriteAllText(
+            path,
+            $$"""{ "baselineVersion": "1.0.0", "fingerprintVersion": "{{AnalysisIssueIdentity.Version}}" }"""
+        );
 
         var (baseline, error) = _service.Read(path);
 
@@ -334,10 +376,10 @@ public class BaselineServiceTests : IDisposable
         var path = Path.Combine(_root, "partial.json");
         File.WriteAllText(
             path,
-            """
+            $$"""
             {
               "baselineVersion": "1.0.0",
-              "fingerprintVersion": "v1",
+              "fingerprintVersion": "{{AnalysisIssueIdentity.Version}}",
               "findings": [ { "package": "Newtonsoft.Json" } ]
             }
             """

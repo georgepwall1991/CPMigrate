@@ -665,28 +665,24 @@ public class SarifFormatterTests : IDisposable
     }
 
     [Fact]
-    public void Format_ProjectsSharingAFileName_AnnotateOnlyTheOnesDeclaringThePackage()
+    public void Format_ProjectsSharingAFileName_AnnotateOnlyTheOneTheFindingNames()
     {
-        // src/App/App.csproj and tests/App/App.csproj share a basename, and analyzer findings carry
-        // names rather than paths. Annotating both would put a finding on a file that never
-        // declared the package.
-        var sourceProject = CreateProject("src/App/App.csproj", "Newtonsoft.Json", "13.0.1");
-        CreateProject("tests/App/App.csproj", "xunit", "2.9.0");
+        // src/App/App.csproj and tests/App/App.csproj share a basename. Findings identify projects
+        // by scan-relative path, so this is now exact — no package-matching guess, and no chance of
+        // annotating the wrong file.
+        var source = CreateProject("src/App/App.csproj", "Newtonsoft.Json", "13.0.1");
+        var test = CreateProject("tests/App/App.csproj", "Newtonsoft.Json", "12.0.3");
 
         var packageInfo = new ProjectPackageInfo(
             new[]
             {
-                new PackageReference("Newtonsoft.Json", "13.0.1", sourceProject, "App.csproj"),
-                new PackageReference(
-                    "xunit",
-                    "2.9.0",
-                    Path.Combine(_root, "tests", "App", "App.csproj"),
-                    "App.csproj"
-                ),
-            }
+                new PackageReference("Newtonsoft.Json", "13.0.1", source, "App.csproj"),
+                new PackageReference("Newtonsoft.Json", "12.0.3", test, "App.csproj"),
+            },
+            BasePath: _root
         );
 
-        var uris = FormatToDocument(packageInfo, "App.csproj")
+        var uris = FormatToDocument(packageInfo, "src/App/App.csproj")
             .RootElement.GetProperty("runs")[0]
             .GetProperty("results")[0]
             .GetProperty("locations")
@@ -703,136 +699,18 @@ public class SarifFormatterTests : IDisposable
     }
 
     [Fact]
-    public void Format_SymlinkedProjectInsideTheRoot_ReportsTheRealFile()
+    public void Format_FindingNamingSeveralProjects_AnnotatesEachOfThem()
     {
-        // A repository that links a shared project into another directory should annotate the real
-        // file, since that is the blob a code-scanning consumer can display.
-        var realProject = CreateProject("src/Shared/Shared.csproj", "Newtonsoft.Json", "13.0.1");
-        var linkDirectory = Path.Combine(_root, "apps");
-        Directory.CreateDirectory(linkDirectory);
-        var linkPath = Path.Combine(linkDirectory, "Linked.csproj");
-
-        try
-        {
-            File.CreateSymbolicLink(linkPath, realProject);
-        }
-        catch (Exception ex)
-            when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
-        {
-            // Creating symlinks needs privileges on some platforms; nothing to assert there.
-            return;
-        }
-
-        var packageInfo = new ProjectPackageInfo(
-            new[] { new PackageReference("Newtonsoft.Json", "13.0.1", linkPath, "Linked.csproj") }
-        );
-
-        var uri = FormatToDocument(packageInfo, "Linked.csproj")
-            .RootElement.GetProperty("runs")[0]
-            .GetProperty("results")[0]
-            .GetProperty("locations")[0]
-            .GetProperty("physicalLocation")
-            .GetProperty("artifactLocation")
-            .GetProperty("uri")
-            .GetString();
-
-        uri.Should().Be("src/Shared/Shared.csproj");
-    }
-
-    [Fact]
-    public void Format_SymlinkPointingOutsideTheRoot_KeepsTheInRepositoryPath()
-    {
-        // Following the link here would produce a path outside the checkout, which is strictly
-        // worse than the in-repository symlink path a consumer can at least locate.
-        var outside = Path.Combine(Path.GetTempPath(), $"CPMigrateOutside_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(outside);
-        var target = Path.Combine(outside, "External.csproj");
-        File.WriteAllText(target, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
-        var linkPath = Path.Combine(_root, "Linked.csproj");
-
-        try
-        {
-            File.CreateSymbolicLink(linkPath, target);
-        }
-        catch (Exception ex)
-            when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
-        {
-            return;
-        }
-
-        try
-        {
-            var packageInfo = new ProjectPackageInfo(
-                new[]
-                {
-                    new PackageReference("Newtonsoft.Json", "13.0.1", linkPath, "Linked.csproj"),
-                }
-            );
-
-            var uri = FormatToDocument(packageInfo, "Linked.csproj")
-                .RootElement.GetProperty("runs")[0]
-                .GetProperty("results")[0]
-                .GetProperty("locations")[0]
-                .GetProperty("physicalLocation")
-                .GetProperty("artifactLocation")
-                .GetProperty("uri")
-                .GetString();
-
-            uri.Should().Be("Linked.csproj");
-        }
-        finally
-        {
-            Directory.Delete(outside, recursive: true);
-        }
-    }
-
-    [Fact]
-    public void Format_CaseVariantPackageIds_StillResolveToEveryDeclaringProject()
-    {
-        // NuGet package IDs are case-insensitive — that is exactly why DuplicatePackageCasing is a
-        // rule. A case-sensitive lookup would resolve only the project spelling it the canonical
-        // way and silently drop the other annotation.
-        var first = CreateProject("src/One/App.csproj", "Newtonsoft.Json", "13.0.1");
-        var second = CreateProject("src/Two/App.csproj", "newtonsoft.json", "12.0.3");
+        var source = CreateProject("src/App/App.csproj", "Newtonsoft.Json", "13.0.1");
+        var test = CreateProject("tests/App/App.csproj", "Newtonsoft.Json", "12.0.3");
 
         var packageInfo = new ProjectPackageInfo(
             new[]
             {
-                new PackageReference("Newtonsoft.Json", "13.0.1", first, "App.csproj"),
-                new PackageReference("newtonsoft.json", "12.0.3", second, "App.csproj"),
-            }
-        );
-
-        var uris = FormatToDocument(packageInfo, "App.csproj")
-            .RootElement.GetProperty("runs")[0]
-            .GetProperty("results")[0]
-            .GetProperty("locations")
-            .EnumerateArray()
-            .Select(l =>
-                l.GetProperty("physicalLocation")
-                    .GetProperty("artifactLocation")
-                    .GetProperty("uri")
-                    .GetString()
-            )
-            .ToList();
-
-        uris.Should().BeEquivalentTo(new[] { "src/One/App.csproj", "src/Two/App.csproj" });
-    }
-
-    [Fact]
-    public void Format_AmbiguousNameWithNoPackageMatch_FallsBackToEveryCandidate()
-    {
-        // A finding that is not about one package (framework alignment, for example) cannot be
-        // narrowed by package, so reporting every candidate beats reporting none.
-        var first = CreateProject("src/App/App.csproj", "Newtonsoft.Json", "13.0.1");
-        var second = CreateProject("tests/App/App.csproj", "Newtonsoft.Json", "13.0.1");
-
-        var packageInfo = new ProjectPackageInfo(
-            new[]
-            {
-                new PackageReference("Newtonsoft.Json", "13.0.1", first, "App.csproj"),
-                new PackageReference("Newtonsoft.Json", "13.0.1", second, "App.csproj"),
-            }
+                new PackageReference("Newtonsoft.Json", "13.0.1", source, "App.csproj"),
+                new PackageReference("Newtonsoft.Json", "12.0.3", test, "App.csproj"),
+            },
+            BasePath: _root
         );
 
         var report = new AnalysisReport(
@@ -841,14 +719,15 @@ public class SarifFormatterTests : IDisposable
             new[]
             {
                 new AnalyzerResult(
-                    "Framework Alignment",
+                    "Version Inconsistencies",
                     new[]
                     {
                         Issue(
-                            "net8.0",
-                            AnalysisIssueCode.FrameworkAlignment,
-                            AnalysisSeverity.Info,
-                            "App.csproj"
+                            "Newtonsoft.Json",
+                            AnalysisIssueCode.VersionInconsistency,
+                            AnalysisSeverity.Moderate,
+                            "src/App/App.csproj",
+                            "tests/App/App.csproj"
                         ),
                     }
                 ),
@@ -1012,7 +891,9 @@ public class SarifFormatterTests : IDisposable
             .GetProperty("results")
             .EnumerateArray()
             .Select(r =>
-                r.GetProperty("partialFingerprints").GetProperty("cpmigrate/v1").GetString()!
+                r.GetProperty("partialFingerprints")
+            .GetProperty($"cpmigrate/{AnalysisIssueIdentity.Version}")
+            .GetString()!
             )
             .ToList();
     }

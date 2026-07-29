@@ -42,7 +42,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.9.0
+dotnet tool install --global CPMigrate --version 3.10.0
 ```
 
 ```bash
@@ -604,10 +604,6 @@ project is new information, so it does not.
 When baseline entries stop matching anything — the findings were fixed — CPMigrate says so and
 suggests regenerating, which is what stops a baseline growing forever and quietly suppressing a
 finding that came back.
-
-> **Known limitation:** findings identify projects by file name, so two distinct projects sharing a
-> basename (`src/App/App.csproj` and `tests/App/App.csproj`) share an identity — a baseline entry for
-> one can suppress an equivalent finding in the other.
 
 A baseline is never recorded from an incomplete scan: if a project fails to scan or an `--audit`
 query fails, `--write-baseline` refuses and exits `8` rather than writing a file that permanently

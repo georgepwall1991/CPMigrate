@@ -299,9 +299,9 @@ public static class SarifFormatter
         var locations = new JsonArray();
         var emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var projectName in issue.AffectedProjects)
+        foreach (var projectId in issue.AffectedProjects)
         {
-            var paths = projectPaths.Resolve(projectName, issue.PackageName);
+            var paths = projectPaths.Resolve(projectId);
             if (paths.Count == 0)
             {
                 // The analyzer named a project we never scanned (or reported a label rather than a
@@ -450,10 +450,7 @@ public static class SarifFormatter
 
             var resolved = Path.GetFullPath(target.FullName);
             var relative = Path.GetRelativePath(rootDirectory, resolved);
-            var escapesRoot =
-                relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative);
-
-            return escapesRoot ? fullPath : resolved;
+            return ProjectPackageInfo.EscapesRoot(relative) ? fullPath : resolved;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -479,7 +476,7 @@ public static class SarifFormatter
         var fullPath = ResolveRealPath(Path.GetFullPath(path), rootDirectory);
         var relative = Path.GetRelativePath(rootDirectory, fullPath);
 
-        if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+        if (ProjectPackageInfo.EscapesRoot(relative))
         {
             return new Uri(fullPath).AbsoluteUri;
         }
@@ -598,36 +595,26 @@ internal sealed class PackageDeclarationLocator
 }
 
 /// <summary>
-/// Resolves the project names carried by analyzer findings back to project files.
+/// Resolves the project identifiers carried by analyzer findings back to project files.
 ///
-/// Findings name projects rather than pointing at them, and a solution may reuse a project name
-/// across directories (<c>src/App/App.csproj</c> and <c>tests/App/App.csproj</c>). Reporting every
-/// candidate would annotate files that never declared the package, so the index also records which
-/// project declared which package and prefers that narrower answer.
+/// Findings identify projects by their path relative to the scan root, so this is an exact lookup.
+/// It used to key on file names, which forced a package-matching heuristic to guess between
+/// same-named projects in different directories — and still annotated the wrong file whenever the
+/// guess had nothing to go on.
 /// </summary>
 internal sealed class ProjectPathIndex
 {
     private static readonly IReadOnlyList<string> None = Array.Empty<string>();
 
-    private readonly Dictionary<string, List<string>> _byName = new(
+    private readonly Dictionary<string, List<string>> _byId = new(
         StringComparer.OrdinalIgnoreCase
     );
-
-    /// <summary>
-    /// Keys are lowercased on the way in and out: project file names follow the filesystem's
-    /// case rules and NuGet package IDs are case-insensitive by specification — which is precisely
-    /// why <see cref="Models.AnalysisIssueCode.DuplicatePackageCasing"/> exists. A case-sensitive
-    /// lookup here would match only the project spelling the ID canonically and silently drop the
-    /// other project's annotation.
-    /// </summary>
-    private readonly Dictionary<(string Project, string Package), List<string>> _byNameAndPackage =
-        new();
 
     private ProjectPathIndex() { }
 
     /// <summary>Every distinct project path the scan covered.</summary>
     public IEnumerable<string> AllPaths =>
-        _byName.Values.SelectMany(paths => paths).Distinct(StringComparer.OrdinalIgnoreCase);
+        _byId.Values.SelectMany(paths => paths).Distinct(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Builds the index from the scanned package references.
@@ -637,53 +624,27 @@ internal sealed class ProjectPathIndex
     {
         var index = new ProjectPathIndex();
 
-        foreach (var reference in packageInfo.References)
+        var projectPaths = packageInfo
+            .References.Select(reference => reference.ProjectPath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var projectPath in projectPaths)
         {
-            if (
-                string.IsNullOrWhiteSpace(reference.ProjectName)
-                || string.IsNullOrWhiteSpace(reference.ProjectPath)
-            )
-            {
-                continue;
-            }
-
-            var projectPath = reference.ProjectPath;
-
-            Add(index._byName, reference.ProjectName, projectPath);
-            Add(
-                index._byNameAndPackage,
-                PackageKey(reference.ProjectName, reference.PackageName),
-                projectPath
-            );
+            Add(index._byId, packageInfo.ProjectId(projectPath), projectPath);
         }
 
         return index;
     }
 
     /// <summary>
-    /// Returns the project files a finding should be reported against: the ones declaring the
-    /// package when that is known, otherwise every project with the given name. Findings that are
-    /// not about a single package (framework alignment, for example) fall into the second case,
-    /// where reporting every candidate beats reporting none.
+    /// Returns the project file a finding should be reported against, or an empty list when the
+    /// identifier does not correspond to anything scanned.
     /// </summary>
-    /// <param name="projectName">The project name the analyzer reported.</param>
-    /// <param name="packageName">The package the finding concerns, if any.</param>
-    public IReadOnlyList<string> Resolve(string projectName, string packageName)
+    /// <param name="projectId">The project identifier the analyzer reported.</param>
+    public IReadOnlyList<string> Resolve(string projectId)
     {
-        if (
-            !string.IsNullOrWhiteSpace(packageName)
-            && _byNameAndPackage.TryGetValue(PackageKey(projectName, packageName), out var exact)
-        )
-        {
-            return exact;
-        }
-
-        return _byName.TryGetValue(projectName, out var candidates) ? candidates : None;
-    }
-
-    private static (string Project, string Package) PackageKey(string projectName, string packageName)
-    {
-        return (projectName.ToLowerInvariant(), packageName.ToLowerInvariant());
+        return _byId.TryGetValue(projectId, out var paths) ? paths : None;
     }
 
     private static void Add<TKey>(Dictionary<TKey, List<string>> index, TKey key, string path)

@@ -21,7 +21,7 @@ public class DeprecatedPackageAnalyzer : IAnalyzer
             .Select(group =>
             {
                 var sample = group.First();
-                var affectedProjects = group.Select(p => p.ProjectName).Distinct().ToList();
+                var affectedProjects = group.Select(p => packageInfo.ProjectId(p.ProjectPath)).Distinct().ToList();
                 var reasons = sample.Reasons.Count == 0 ? "Deprecated" : string.Join(", ", sample.Reasons);
                 var alt = string.IsNullOrWhiteSpace(sample.AlternativePackage)
                     ? string.Empty
