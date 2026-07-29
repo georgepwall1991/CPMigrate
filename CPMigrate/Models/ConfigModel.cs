@@ -53,6 +53,13 @@ public class ConfigModel
     /// <summary>
     /// Output format: terminal or json.
     /// </summary>
+    /// <summary>
+    /// Lowest finding severity that fails the build. Belongs in the config file because it is a
+    /// team-wide policy decision, not a per-invocation one.
+    /// </summary>
+    [JsonPropertyName("failOn")]
+    public FailOnSeverity? FailOn { get; set; }
+
     [JsonPropertyName("outputFormat")]
     public OutputFormat? OutputFormat { get; set; }
 

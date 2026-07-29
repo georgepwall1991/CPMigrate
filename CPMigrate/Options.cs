@@ -21,6 +21,34 @@ public enum ConflictStrategy
 }
 
 /// <summary>
+/// The lowest finding severity that makes <c>--analyze</c> fail the build.
+///
+/// The values deliberately mirror <see cref="Models.AnalysisSeverity"/> so they compare directly,
+/// with <see cref="Never"/> sitting above every real severity — nothing can reach it, which is
+/// exactly what "report but do not gate" means.
+/// </summary>
+public enum FailOnSeverity
+{
+    /// <summary>Fail on any finding. The default, and CPMigrate's behaviour before 3.8.0.</summary>
+    Info = 0,
+
+    /// <summary>Fail on Low findings and worse.</summary>
+    Low = 1,
+
+    /// <summary>Fail on Moderate findings and worse.</summary>
+    Moderate = 2,
+
+    /// <summary>Fail on High and Critical findings.</summary>
+    High = 3,
+
+    /// <summary>Fail only on Critical findings.</summary>
+    Critical = 4,
+
+    /// <summary>Never fail on findings. They are still reported in full.</summary>
+    Never = 5,
+}
+
+/// <summary>
 /// Exit codes returned by CPMigrate.
 /// </summary>
 public static class ExitCodes
@@ -169,6 +197,15 @@ public class Options
         HelpText = "Include deprecated package checks (requires --analyze)."
     )]
     public bool AnalyzeDeprecated { get; set; }
+
+    [Option(
+        "fail-on",
+        Default = FailOnSeverity.Info,
+        HelpText = "Lowest finding severity that fails the build: Info (default, any finding), Low, "
+            + "Moderate, High, Critical, or Never to report without gating. Does not suppress "
+            + "exit 8 for an incomplete scan."
+    )]
+    public FailOnSeverity FailOn { get; set; } = FailOnSeverity.Info;
 
     [Option(
         'i',

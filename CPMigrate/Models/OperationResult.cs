@@ -115,6 +115,37 @@ public class OperationSummary
     [JsonPropertyName("issuesFound")]
     public int IssuesFound { get; init; }
 
+    /// <summary>
+    /// The configured <c>--fail-on</c> threshold, so a consumer can tell a genuinely clean run from
+    /// one whose findings were below the gate.
+    /// </summary>
+    [JsonPropertyName("failOnSeverity")]
+    public string? FailOnSeverity { get; init; }
+
+    /// <summary>
+    /// Findings at or above the <c>--fail-on</c> threshold — the subset the exit code reflects.
+    /// </summary>
+    [JsonPropertyName("issuesAtOrAboveThreshold")]
+    public int? IssuesAtOrAboveThreshold { get; init; }
+
+    /// <summary>
+    /// Severity of the worst finding, or null when nothing was found.
+    /// </summary>
+    [JsonPropertyName("highestSeverity")]
+    public string? HighestSeverity { get; init; }
+
+    /// <summary>
+    /// Projects that could not be scanned. Non-zero means the findings are incomplete.
+    /// </summary>
+    [JsonPropertyName("scanFailures")]
+    public int? ScanFailures { get; init; }
+
+    /// <summary>
+    /// Opt-in package queries (<c>--audit</c>/<c>--outdated</c>/<c>--deprecated</c>) that failed.
+    /// </summary>
+    [JsonPropertyName("deepScanFailures")]
+    public int? DeepScanFailures { get; init; }
+
     [JsonPropertyName("issuesFixed")]
     public int IssuesFixed { get; init; }
 

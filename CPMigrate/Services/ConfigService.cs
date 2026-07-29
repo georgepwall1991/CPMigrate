@@ -156,6 +156,9 @@ public class ConfigService
         new(c => c.MergeExisting.HasValue, "merge",
             (o, c) => o.MergeExisting = c.MergeExisting.GetValueOrDefault()),
 
+        new(c => c.FailOn.HasValue, "fail-on",
+            (o, c) => o.FailOn = c.FailOn.GetValueOrDefault()),
+
         new(c => c.OutputFormat.HasValue, "output",
             (o, c) => o.Output = c.OutputFormat.GetValueOrDefault()),
 

@@ -83,6 +83,7 @@ internal sealed class AnalysisHandler
         if (!_quietMode)
         {
             _consoleService.WriteAnalysisSummary(report);
+            ReportThresholdDecision(options, report);
         }
 
         return await ApplyAnalysisFixesIfNeededAsync(
@@ -100,10 +101,7 @@ internal sealed class AnalysisHandler
         ProjectPackageInfo PackageInfo,
         int ScanFailures,
         int DeepScanFailures
-    )> PerformAnalysisScanAsync(
-        Options options,
-        List<string> projectPaths
-    )
+    )> PerformAnalysisScanAsync(Options options, List<string> projectPaths)
     {
         var allReferences = new List<PackageReference>();
         var allVulnerabilities = new List<VulnerabilityInfo>();
@@ -195,7 +193,10 @@ internal sealed class AnalysisHandler
         );
     }
 
-    private async Task<(bool ReferencesScanned, int DeepScanFailures)> ScanSingleProjectForAnalysisAsync(
+    private async Task<(
+        bool ReferencesScanned,
+        int DeepScanFailures
+    )> ScanSingleProjectForAnalysisAsync(
         Options options,
         string projectPath,
         ProgressTask? task,
@@ -272,17 +273,26 @@ internal sealed class AnalysisHandler
 
         var failures = 0;
 
-        if (options.AuditSecurity && !await ScanVulnerabilitiesAsync(projectPath, allVulnerabilities))
+        if (
+            options.AuditSecurity
+            && !await ScanVulnerabilitiesAsync(projectPath, allVulnerabilities)
+        )
         {
             failures++;
         }
 
-        if (options.AnalyzeOutdated && !await ScanOutdatedPackagesAsync(options, projectPath, allOutdatedPackages))
+        if (
+            options.AnalyzeOutdated
+            && !await ScanOutdatedPackagesAsync(options, projectPath, allOutdatedPackages)
+        )
         {
             failures++;
         }
 
-        if (options.AnalyzeDeprecated && !await ScanDeprecatedPackagesAsync(options, projectPath, allDeprecatedPackages))
+        if (
+            options.AnalyzeDeprecated
+            && !await ScanDeprecatedPackagesAsync(options, projectPath, allDeprecatedPackages)
+        )
         {
             failures++;
         }
@@ -409,11 +419,15 @@ internal sealed class AnalysisHandler
                     ScanFailures = scanFailures,
                     DeepScanFailures = deepScanFailures,
                     ProjectsDiscovered = projectsDiscovered,
-                    ExitCode = ResolveExitCode(
-                        fixReport.GetFailedFixes().Count > 0,
-                        scanFailures,
-                        deepScanFailures
-                    ),
+                    ExitCode =
+                        fixReport.GetFailedFixes().Count > 0
+                            ? ExitCodes.AnalysisIssuesFound
+                            : ResolveExitCode(
+                                report,
+                                FailOnSeverity.Never,
+                                scanFailures,
+                                deepScanFailures
+                            ),
                 };
             }
         }
@@ -430,20 +444,28 @@ internal sealed class AnalysisHandler
                 ScanFailures = scanFailures,
                 DeepScanFailures = deepScanFailures,
                 ProjectsDiscovered = projectsDiscovered,
-                ExitCode = ResolveExitCode(report.HasIssues, scanFailures, deepScanFailures),
+                ExitCode = ResolveExitCode(report, options.FailOn, scanFailures, deepScanFailures),
             }
         );
     }
 
     /// <summary>
-    /// Chooses the exit code for an analysis run. An incomplete scan reports
-    /// <see cref="ExitCodes.IncompleteAnalysis"/> rather than success: zero findings from a scan
-    /// that did not finish is an unknown, not a clean result, and a CI gate reading a 0 cannot
-    /// tell the difference. Real findings still win, since they are the more actionable signal.
+    /// Chooses the exit code for an analysis run.
+    ///
+    /// Findings only fail the build when they reach the <c>--fail-on</c> threshold, so a team can
+    /// gate on vulnerabilities without gating on informational debt. An incomplete scan still
+    /// reports <see cref="ExitCodes.IncompleteAnalysis"/> regardless of the threshold: zero
+    /// findings from a scan that did not finish is an unknown, not a clean result, and no severity
+    /// setting should be able to hide an unexamined project.
     /// </summary>
-    private static int ResolveExitCode(bool hasIssues, int scanFailures, int deepScanFailures)
+    private static int ResolveExitCode(
+        AnalysisReport report,
+        FailOnSeverity failOn,
+        int scanFailures,
+        int deepScanFailures
+    )
     {
-        if (hasIssues)
+        if (ReachesFailureThreshold(report, failOn))
         {
             return ExitCodes.AnalysisIssuesFound;
         }
@@ -451,5 +473,47 @@ internal sealed class AnalysisHandler
         return scanFailures > 0 || deepScanFailures > 0
             ? ExitCodes.IncompleteAnalysis
             : ExitCodes.Success;
+    }
+
+    /// <summary>
+    /// Explains the gate decision whenever a non-default threshold is in play. Without this, a run
+    /// that prints "7 issues found" and then exits 0 looks like a bug rather than a policy.
+    /// </summary>
+    private void ReportThresholdDecision(Options options, AnalysisReport report)
+    {
+        if (options.FailOn == FailOnSeverity.Info || !report.HasIssues)
+        {
+            return;
+        }
+
+        var gating = ReachesFailureThreshold(report, options.FailOn);
+        if (options.FailOn == FailOnSeverity.Never)
+        {
+            _consoleService.Dim(
+                $"--fail-on Never: reporting {report.TotalIssues} finding(s) without failing the build."
+            );
+            return;
+        }
+
+        var counted = report.CountAtOrAbove((AnalysisSeverity)options.FailOn);
+        _consoleService.Dim(
+            gating
+                ? $"--fail-on {options.FailOn}: {counted} of {report.TotalIssues} finding(s) meet the threshold."
+                : $"--fail-on {options.FailOn}: none of {report.TotalIssues} finding(s) reach the threshold "
+                    + $"(worst is {report.HighestSeverity}), so the build is not failed."
+        );
+    }
+
+    /// <summary>
+    /// Returns true when at least one finding is at or above the configured threshold.
+    /// </summary>
+    private static bool ReachesFailureThreshold(AnalysisReport report, FailOnSeverity failOn)
+    {
+        if (failOn == FailOnSeverity.Never)
+        {
+            return false;
+        }
+
+        return report.CountAtOrAbove((AnalysisSeverity)failOn) > 0;
     }
 }

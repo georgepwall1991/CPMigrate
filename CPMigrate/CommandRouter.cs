@@ -896,6 +896,20 @@ internal static class CommandRouter
     }
 
     /// <summary>
+    /// Findings that reach the --fail-on threshold, so a consumer can see why the exit code is what
+    /// it is without re-deriving the policy from the issue list.
+    /// </summary>
+    private static int? CountGatedIssues(AnalysisReport? report, FailOnSeverity failOn)
+    {
+        if (report is null)
+        {
+            return null;
+        }
+
+        return failOn == FailOnSeverity.Never ? 0 : report.CountAtOrAbove((AnalysisSeverity)failOn);
+    }
+
+    /// <summary>
     /// Decides whether the scan behind a result can be trusted. An empty finding list from a scan
     /// that never ran — or that failed on some projects — is a false negative, and reporting it as
     /// a successful run would let a code-scanning gate pass on unexamined code.
@@ -996,6 +1010,11 @@ internal static class CommandRouter
                 PackagesFound = result.PackagesCentralized,
                 ConflictsResolved = result.ConflictsResolved,
                 IssuesFound = result.AnalysisReport?.TotalIssues ?? 0,
+                FailOnSeverity = result.AnalysisReport is null ? null : options.FailOn.ToString(),
+                IssuesAtOrAboveThreshold = CountGatedIssues(result.AnalysisReport, options.FailOn),
+                HighestSeverity = result.AnalysisReport?.HighestSeverity?.ToString(),
+                ScanFailures = result.AnalysisReport is null ? null : result.ScanFailures,
+                DeepScanFailures = result.AnalysisReport is null ? null : result.DeepScanFailures,
                 IssuesFixed = result.FixReport?.TotalFixesApplied ?? 0,
                 FilesModified = result.FixReport?.TotalFileChanges ?? 0,
             },

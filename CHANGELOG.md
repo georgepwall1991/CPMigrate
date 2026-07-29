@@ -6,6 +6,20 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-07-29
+
+### Added
+- **`--fail-on <severity>`: gate CI on the findings that matter, not on all of them.** Every finding failed the build, which makes the gate unusable for a repository with existing debt — it fires on every run, so it gets switched off, and the vulnerability anyone actually cared about goes with it. `--fail-on High` narrows the gate without narrowing the report: findings below the threshold still appear in terminal, JSON, and SARIF output, and only the exit code changes.
+  - Accepts `Info` (the default, and the pre-3.8.0 behaviour), `Low`, `Moderate`, `High`, `Critical`, and `Never` for report-without-gating — useful when a SARIF upload is the real signal.
+  - Cannot suppress exit `8` (`IncompleteAnalysis`). A severity threshold says which findings matter; it does not make an unexamined project safe.
+  - Settable team-wide as `"failOn"` in `.cpmigrate.json`.
+  - A non-default threshold is explained on the terminal, so a run that prints "12 findings" and exits `0` reads as a policy rather than a bug.
+  - Passing `--fail-on` on the command line without `--analyze` now warns, because the default action is a real migration and the flag would silently do nothing. It is a warning rather than an error so a repository that sets the policy in config can still run migrations.
+- **JSON schema 1.2.0 (additive):** `summary.failOnSeverity`, `summary.issuesAtOrAboveThreshold`, `summary.highestSeverity`, `summary.scanFailures`, and `summary.deepScanFailures`. Together these let a consumer distinguish a clean run from one whose findings were below the gate, and either from one whose scan did not complete — without re-deriving the policy from the issue list. No existing field changed meaning.
+
+### Fixed
+- **`schemas/cpmigrate.schema.json` was missing `Sarif` from `outputFormat`,** so a valid 3.7.0 config showed as an editor error. New `ConfigSchemaDriftTests` fail the build when a config property or enum value is added without updating the published schema — the schema is hand-written, so it had no other protection.
+
 ## [3.7.0] - 2026-07-29
 
 ### Added
