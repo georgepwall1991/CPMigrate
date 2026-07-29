@@ -41,4 +41,18 @@ public record AnalysisReport(
     {
         return Results.Sum(result => result.Issues.Count(issue => issue.Severity >= threshold));
     }
+
+    /// <summary>
+    /// Counts findings at or above a severity that no built-in fixer can repair. After a successful
+    /// <c>--fix</c> run these are what remain on disk: a security advisory, for example, is never
+    /// auto-fixable, so treating the whole run as clean because something else was repaired would
+    /// report a live vulnerability as a pass.
+    /// </summary>
+    /// <param name="threshold">The lowest severity that counts.</param>
+    public int CountUnfixableAtOrAbove(AnalysisSeverity threshold)
+    {
+        return Results.Sum(result =>
+            result.Issues.Count(issue => !issue.Fixable && issue.Severity >= threshold)
+        );
+    }
 }

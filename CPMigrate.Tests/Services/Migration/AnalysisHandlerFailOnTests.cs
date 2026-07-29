@@ -109,6 +109,94 @@ public class AnalysisHandlerFailOnTests : IDisposable
         result.ExitCode.Should().Be(ExitCodes.IncompleteAnalysis);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_FixRepairsSomeButAnUnfixableFindingRemains_StillGates()
+    {
+        // The realistic shape of this: --fix repairs a version inconsistency while a Critical CVE
+        // sits alongside it, unfixable by definition. Treating the whole run as clean because
+        // *something* was fixed reports a live vulnerability as success.
+        var handler = CreateHandler(
+            new AnalysisIssue(
+                "Newtonsoft.Json",
+                "Version inconsistency.",
+                new[] { "Api.csproj" },
+                AnalysisIssueCode.VersionInconsistency,
+                AnalysisSeverity.Moderate,
+                Fixable: true
+            ),
+            new AnalysisIssue(
+                "System.Text.Json",
+                "Critical severity vulnerability.",
+                new[] { "Api.csproj" },
+                AnalysisIssueCode.SecurityVulnerability,
+                AnalysisSeverity.Critical,
+                Fixable: false
+            )
+        );
+
+        var options = FailOn(FailOnSeverity.High);
+        options.Fix = true;
+
+        var result = await handler.ExecuteAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.AnalysisIssuesFound);
+        result.GatedIssueCount.Should().Be(1, "the unfixable Critical finding is still on disk");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FixRepairsEverythingAtOrAboveTheThreshold_ExitsSuccess()
+    {
+        // The mirror case: everything that would have gated was repaired, so the run is clean.
+        var handler = CreateHandler(
+            new AnalysisIssue(
+                "Newtonsoft.Json",
+                "Version inconsistency.",
+                new[] { "Api.csproj" },
+                AnalysisIssueCode.VersionInconsistency,
+                AnalysisSeverity.Moderate,
+                Fixable: true
+            ),
+            new AnalysisIssue(
+                "Legacy.Package",
+                "Deprecated package.",
+                new[] { "Api.csproj" },
+                AnalysisIssueCode.DeprecatedPackage,
+                AnalysisSeverity.Low,
+                Fixable: false
+            )
+        );
+
+        var options = FailOn(FailOnSeverity.High);
+        options.Fix = true;
+
+        var result = await handler.ExecuteAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        result.GatedIssueCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FixWithUnfixableFindingBelowTheThreshold_ExitsSuccess()
+    {
+        var handler = CreateHandler(
+            new AnalysisIssue(
+                "Legacy.Package",
+                "Deprecated package.",
+                new[] { "Api.csproj" },
+                AnalysisIssueCode.DeprecatedPackage,
+                AnalysisSeverity.Moderate,
+                Fixable: false
+            )
+        );
+
+        var options = FailOn(FailOnSeverity.Critical);
+        options.Fix = true;
+
+        var result = await handler.ExecuteAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+    }
+
     private Options FailOn(FailOnSeverity threshold)
     {
         return new Options
@@ -121,13 +209,33 @@ public class AnalysisHandlerFailOnTests : IDisposable
     }
 
     /// <summary>
-    /// Builds a handler whose scan yields exactly one finding at <paramref name="severity"/>, via a
-    /// version inconsistency between two projects.
+    /// Builds a handler whose analysis yields exactly one finding at the given severity.
     /// </summary>
+    private AnalysisHandler CreateHandler(params AnalysisIssue[] issues)
+    {
+        return CreateHandlerCore(true, issues);
+    }
+
     private AnalysisHandler CreateHandler(
         AnalysisSeverity severity,
         bool referenceScanSucceeds = true
     )
+    {
+        return CreateHandlerCore(
+            referenceScanSucceeds,
+            [
+                new AnalysisIssue(
+                    "Newtonsoft.Json",
+                    $"A {severity} finding.",
+                    new[] { "Api.csproj" },
+                    AnalysisIssueCode.VersionInconsistency,
+                    severity
+                ),
+            ]
+        );
+    }
+
+    private AnalysisHandler CreateHandlerCore(bool referenceScanSucceeds, AnalysisIssue[] issues)
     {
         var projectAnalyzer = new Mock<IProjectAnalyzer>();
         projectAnalyzer
@@ -147,7 +255,7 @@ public class AnalysisHandlerFailOnTests : IDisposable
 
         return new AnalysisHandler(
             projectAnalyzer.Object,
-            new StubAnalysisService(severity),
+            new StubAnalysisService(issues),
             new FixService(SilentConsoleService.Instance),
             SilentConsoleService.Instance,
             quietMode: true,
@@ -156,31 +264,16 @@ public class AnalysisHandlerFailOnTests : IDisposable
     }
 
     /// <summary>
-    /// Returns a single finding at a chosen severity, so each test controls exactly one variable.
+    /// Returns the findings the test supplied, so each test controls exactly one variable.
     /// </summary>
-    private sealed class StubAnalysisService(AnalysisSeverity severity) : IAnalysisService
+    private sealed class StubAnalysisService(AnalysisIssue[] issues) : IAnalysisService
     {
         public AnalysisReport Analyze(ProjectPackageInfo packageInfo)
         {
             return new AnalysisReport(
                 packageInfo.ProjectCount,
                 packageInfo.TotalReferences,
-                new[]
-                {
-                    new AnalyzerResult(
-                        "Stub",
-                        new[]
-                        {
-                            new AnalysisIssue(
-                                "Newtonsoft.Json",
-                                $"A {severity} finding.",
-                                new[] { "Api.csproj" },
-                                AnalysisIssueCode.VersionInconsistency,
-                                severity
-                            ),
-                        }
-                    ),
-                }
+                new[] { new AnalyzerResult("Stub", issues) }
             );
         }
     }

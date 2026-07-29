@@ -420,18 +420,16 @@ internal sealed class AnalysisHandler
                     DeepScanFailures = deepScanFailures,
                     ProjectsDiscovered = projectsDiscovered,
                     // The fixes were written, so the report no longer describes the tree on disk.
-                    // Findings that were just repaired must not gate the build — but a fix that
-                    // failed to apply is a failure regardless of severity.
-                    GatedIssueCount = 0,
-                    ExitCode =
-                        fixReport.GetFailedFixes().Count > 0
-                            ? ExitCodes.AnalysisIssuesFound
-                            : ResolveExitCode(
-                                report,
-                                FailOnSeverity.Never,
-                                scanFailures,
-                                deepScanFailures
-                            ),
+                    // Repaired findings must not gate the build — but the ones no fixer can repair
+                    // are still there, and a fix that failed to apply is a failure outright.
+                    GatedIssueCount = CountRemainingGatedIssues(report, options.FailOn),
+                    ExitCode = ResolveExitCodeAfterFixes(
+                        report,
+                        fixReport,
+                        options.FailOn,
+                        scanFailures,
+                        deepScanFailures
+                    ),
                 };
             }
         }
@@ -524,5 +522,44 @@ internal sealed class AnalysisHandler
     private static int CountGatedIssues(AnalysisReport report, FailOnSeverity failOn)
     {
         return failOn == FailOnSeverity.Never ? 0 : report.CountAtOrAbove((AnalysisSeverity)failOn);
+    }
+
+    /// <summary>
+    /// Findings that reach the threshold and are still on disk after a successful fix run — the
+    /// ones no built-in fixer addresses. Reporting zero here whenever anything was fixed would let
+    /// an unfixable Critical advisory exit successfully.
+    /// </summary>
+    private static int CountRemainingGatedIssues(AnalysisReport report, FailOnSeverity failOn)
+    {
+        return failOn == FailOnSeverity.Never
+            ? 0
+            : report.CountUnfixableAtOrAbove((AnalysisSeverity)failOn);
+    }
+
+    /// <summary>
+    /// Chooses the exit code for a run that wrote fixes. A fix that failed to apply is a failure
+    /// regardless of severity; otherwise the gate applies to whatever the fixers could not repair.
+    /// </summary>
+    private static int ResolveExitCodeAfterFixes(
+        AnalysisReport report,
+        FixReport fixReport,
+        FailOnSeverity failOn,
+        int scanFailures,
+        int deepScanFailures
+    )
+    {
+        if (fixReport.GetFailedFixes().Count > 0)
+        {
+            return ExitCodes.AnalysisIssuesFound;
+        }
+
+        if (CountRemainingGatedIssues(report, failOn) > 0)
+        {
+            return ExitCodes.AnalysisIssuesFound;
+        }
+
+        return scanFailures > 0 || deepScanFailures > 0
+            ? ExitCodes.IncompleteAnalysis
+            : ExitCodes.Success;
     }
 }
