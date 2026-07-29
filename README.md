@@ -36,13 +36,14 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 - **Security vulnerabilities** — known CVEs via `--audit` (direct and transitive)
 - **Outdated / deprecated packages** — inventory checks with `--outdated` / `--deprecated`
 - **Scattered versions** — still living in `.csproj` files instead of `Directory.Packages.props`
+- **CPM drift** — after migrating: inline versions that override the central one, references with no version at all, orphaned pins, a props file with central management switched off
 
 ## Install
 
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.11.0
+dotnet tool install --global CPMigrate --version 3.12.0
 ```
 
 ```bash
@@ -108,7 +109,7 @@ Interactive first run: `cpmigrate` launches Mission Control (wizard). Single pro
 | Surface | What you get |
 |---------|----------------|
 | **CPM migration** | Generate `Directory.Packages.props`, clean Version attributes from projects, conflict strategies |
-| **Dependency analysis** | 7 built-in analyzers + scoreboard; JSON for CI |
+| **Dependency analysis** | 10 built-in analyzers + scoreboard; JSON, SARIF, and Markdown for CI |
 | **Auto-fix** | Version, casing, redundant refs, transitive pin |
 | **Package updates** | Latest versions + `dotnet test` + automatic rollback |
 | **`--bisect`** | Largest green update subset; names held-back packages |

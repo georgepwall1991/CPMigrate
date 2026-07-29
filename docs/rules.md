@@ -121,6 +121,52 @@ alternative, or vendor the functionality if no replacement exists.
 - Default severity: `Moderate`
 - Fixable: no
 
+## CpmNotEnabled
+
+**A `Directory.Packages.props` exists without central package management enabled.**
+
+Without `ManagePackageVersionsCentrally` set to `true`, NuGet ignores every `PackageVersion` entry in
+the file. The result is a props file that looks authoritative and does nothing, while projects
+silently keep using whatever versions they declare themselves.
+
+- Reported when the solution has a `Directory.Packages.props`
+- Default severity: `High`
+- Fixable: no — add `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>`
+
+## InlineVersionUnderCpm
+
+**A project pins a version inline while central package management is in force.**
+
+An inline `Version` attribute overrides the central one, so the solution is quietly half-centralized.
+NuGet does not warn about it — nothing surfaces until two projects disagree and something breaks at
+runtime. Remove the attribute so the central version applies.
+
+- Reported when the solution has a `Directory.Packages.props`
+- Default severity: `Moderate`
+- Fixable: no — removing a pin changes the resolved version, so review it yourself
+
+## MissingPackageVersion
+
+**A referenced package has no version, inline or central.**
+
+Under central package management a `PackageReference` without a `Version` needs a matching
+`PackageVersion` entry. With neither, restore fails.
+
+- Reported when the solution has a `Directory.Packages.props`
+- Default severity: `High`
+- Fixable: no — add the package to `Directory.Packages.props`
+
+## OrphanedPackageVersion
+
+**A central `PackageVersion` entry that no project references.**
+
+Harmless to restore, but stale pins accumulate — and once nothing references a package, its pin is
+indistinguishable from a deliberate one when someone comes to upgrade.
+
+- Reported when the solution has a `Directory.Packages.props`
+- Default severity: `Low`
+- Fixable: no
+
 ## Unknown
 
 **An analyzer reported a finding without a specific rule code.**

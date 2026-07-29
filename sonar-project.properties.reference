@@ -4,7 +4,7 @@ sonar.organization=georgepwall1991
 
 # Project Metadata
 sonar.projectName=CPMigrate
-sonar.projectVersion=3.11.0
+sonar.projectVersion=3.12.0
 
 # Source Configuration
 sonar.sources=CPMigrate
