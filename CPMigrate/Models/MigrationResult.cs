@@ -91,6 +91,16 @@ public class MigrationResult
     public int ProjectsDiscovered { get; init; }
 
     /// <summary>
+    /// The baseline file this run read or wrote, when one was involved.
+    /// </summary>
+    public string? BaselinePath { get; init; }
+
+    /// <summary>
+    /// True when the run recorded a baseline rather than gating on the findings.
+    /// </summary>
+    public bool BaselineWritten { get; init; }
+
+    /// <summary>
     /// Findings that reached the <c>--fail-on</c> threshold — the subset <see cref="ExitCode"/>
     /// reflects. Recorded here rather than re-derived by reporters: the gate has exceptions (a
     /// successful <c>--fix</c> run does not gate on findings it just repaired), and a second

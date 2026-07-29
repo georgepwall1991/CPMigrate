@@ -76,6 +76,13 @@ public static class ExitCodes
 /// </summary>
 public class Options
 {
+    /// <summary>
+    /// Default baseline file name. Dot-prefixed and repository-local, because a baseline is a record
+    /// of accepted debt that belongs in version control next to the code it describes.
+    /// </summary>
+    public const string BaselineDefaultFileName = ".cpmigrate-baseline.json";
+
+
     [Option(
         's',
         "solution",
@@ -206,6 +213,23 @@ public class Options
             + "exit 8 for an incomplete scan."
     )]
     public FailOnSeverity FailOn { get; set; } = FailOnSeverity.Info;
+
+    [Option(
+        "baseline",
+        HelpText = "Path to a baseline file of accepted findings. Findings it records are still "
+            + "reported but do not fail the build, so a repository with existing debt can gate on "
+            + "new problems only. Requires a path; set \"baseline\" in .cpmigrate.json to apply it "
+            + "to every run."
+    )]
+    public string? Baseline { get; set; }
+
+    [Option(
+        "write-baseline",
+        Default = false,
+        HelpText = "Record the current findings as the accepted baseline instead of gating on them, "
+            + "then exit. Writes to --baseline when given, otherwise " + BaselineDefaultFileName + "."
+    )]
+    public bool WriteBaseline { get; set; }
 
     [Option(
         'i',
@@ -527,6 +551,24 @@ public class Options
         };
 
     /// <summary>
+    /// The baseline file this run should read or write, resolving the default when the flag was
+    /// given without a path.
+    /// </summary>
+    public string ResolveBaselinePath()
+    {
+        return string.IsNullOrWhiteSpace(Baseline) ? BaselineDefaultFileName : Baseline;
+    }
+
+    /// <summary>
+    /// True when the run should match findings against a baseline. Writing one is a separate mode:
+    /// it would be circular to suppress the findings being recorded.
+    /// </summary>
+    public bool UsesBaseline()
+    {
+        return !WriteBaseline && !string.IsNullOrWhiteSpace(Baseline);
+    }
+
+    /// <summary>
     /// Produces the options for one solution inside a <c>--batch</c> run.
     ///
     /// Copies everything and overrides only what must differ per solution. The direction matters:
@@ -626,7 +668,60 @@ public class Options
             );
         }
 
-        ValidateSarifOptions();
+        ValidateReportingContract();
+    }
+
+    /// <summary>
+    /// A baseline records analyzer findings, so it only makes sense for a command that produces
+    /// them. Silently ignoring the flag would leave someone believing debt was accepted when it
+    /// never was.
+    /// </summary>
+    private void ValidateBaselineOptions()
+    {
+        if (!WriteBaseline && string.IsNullOrWhiteSpace(Baseline))
+        {
+            return;
+        }
+
+        if (!Analyze)
+        {
+            throw new ArgumentException(
+                "--baseline and --write-baseline require --analyze; a baseline records analyzer findings."
+            );
+        }
+
+        var conflictingMode = FindModeInsteadOfAnalysis();
+        if (conflictingMode is not null)
+        {
+            // These run instead of an analysis, so the baseline would be silently ignored — while a
+            // mutating operation went ahead.
+            throw new ArgumentException(
+                $"--baseline and --write-baseline cannot be combined with {conflictingMode}, which "
+                    + "runs instead of an analysis. Run the analysis as a separate step."
+            );
+        }
+
+        if (WriteBaseline && !string.IsNullOrEmpty(BatchDir))
+        {
+            // Every solution in the batch would write the same file: sequentially the last one wins,
+            // in parallel they race. Either way the resulting baseline covers one solution while
+            // claiming to cover the repository, so the next batch run treats the rest as new debt.
+            throw new ArgumentException(
+                "--write-baseline cannot be combined with --batch, because each solution would "
+                    + "overwrite the same file. Record a baseline per solution with -s, or record "
+                    + "one for the whole repository from a single run."
+            );
+        }
+
+        if (WriteBaseline && Fix)
+        {
+            // The findings would be recorded from the pre-fix tree, immediately accepting debt the
+            // same run just repaired.
+            throw new ArgumentException(
+                "--write-baseline cannot be combined with --fix. Record the baseline first, or fix "
+                    + "and then record what remains."
+            );
+        }
     }
 
     /// <summary>
@@ -640,6 +735,20 @@ public class Options
     /// perform a real self-update and emit no SARIF at all.
     /// </summary>
     /// <exception cref="ArgumentException">Thrown when SARIF is requested for an unsupported mode.</exception>
+    /// <summary>
+    /// Checks the option combinations that must be rejected before <c>CommandRouter</c> dispatches
+    /// a mode. Several modes (<c>--update</c>, <c>--interactive</c>, <c>--unify-props</c>, pruning)
+    /// run ahead of per-command validation, so a contract enforced only in <see cref="Validate"/>
+    /// would be bypassed — <c>--update --analyze --write-baseline</c> would perform a real
+    /// self-update and never write or reject anything.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when the combination is unsupported.</exception>
+    public void ValidateReportingContract()
+    {
+        ValidateSarifOptions();
+        ValidateBaselineOptions();
+    }
+
     public void ValidateSarifOptions()
     {
         if (Output != OutputFormat.Sarif)
@@ -658,7 +767,14 @@ public class Options
         // passing both would run the other operation and emit no SARIF at all. Name each one
         // rather than inferring, so a mode added later fails loudly here instead of silently
         // producing an empty log.
-        var conflictingMode = FindModeIncompatibleWithSarif();
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            throw new ArgumentException(
+                "--output Sarif cannot be used with --batch; run one solution at a time, or use --output Json."
+            );
+        }
+
+        var conflictingMode = FindModeInsteadOfAnalysis();
         if (conflictingMode is not null)
         {
             throw new ArgumentException(
@@ -681,15 +797,14 @@ public class Options
     }
 
     /// <summary>
-    /// Returns the flag naming a mode that cannot produce SARIF findings, or null when none is set.
+    /// Returns the flag naming a mode that runs instead of an analysis, or null when none is set.
+    ///
+    /// <c>CommandRouter</c> dispatches these ahead of analysis, so any feature that reports on
+    /// analyzer findings — SARIF output, baselines — is silently skipped when one is present. Naming
+    /// them explicitly means a mode added later fails loudly here rather than quietly doing nothing.
     /// </summary>
-    private string? FindModeIncompatibleWithSarif()
+    private string? FindModeInsteadOfAnalysis()
     {
-        if (!string.IsNullOrEmpty(BatchDir))
-        {
-            return "--batch";
-        }
-
         if (Update)
         {
             return "--update";

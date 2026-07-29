@@ -11,6 +11,7 @@ internal sealed class AnalysisHandler
     private readonly IFixService _fixService;
     private readonly IConsoleService _consoleService;
     private readonly bool _quietMode;
+    private readonly BaselineService _baselineService = new();
     private readonly Func<
         Options,
         Task<(string BasePath, List<string> ProjectPaths)>
@@ -71,6 +72,34 @@ internal sealed class AnalysisHandler
         }
 
         var report = _analysisService.Analyze(packageInfo);
+
+        if (options.WriteBaseline)
+        {
+            return await WriteBaselineAsync(
+                options,
+                report,
+                packageInfo,
+                basePath,
+                scanFailures,
+                deepScanFailures,
+                projectPaths.Count
+            );
+        }
+
+        var (baselinedReport, baselineError) = ApplyBaseline(options, report);
+        if (baselineError is not null)
+        {
+            _consoleService.Error(baselineError);
+            return new MigrationResult
+            {
+                AnalysisReport = report,
+                PackageInfo = packageInfo,
+                BasePath = basePath,
+                ExitCode = ExitCodes.ValidationError,
+            };
+        }
+
+        report = baselinedReport;
 
         if (!_quietMode)
         {
@@ -419,8 +448,17 @@ internal sealed class AnalysisHandler
                 // gate has to run against what is actually on disk now: an issue's Fixable flag says
                 // a fixer *exists*, not that it ran or succeeded, so trusting it would let an
                 // unrepaired High finding exit successfully. Re-scanning is the only honest answer.
-                var (postFixReport, postFixScanFailures, postFixDeepScanFailures) =
+                var (rescanned, postFixScanFailures, postFixDeepScanFailures) =
                     await ReanalyzeAfterFixesAsync(options, projectPaths: null);
+
+                // The rescan produces a fresh, unsuppressed report. Without reapplying the
+                // baseline, findings the team accepted would start failing the build the moment an
+                // unrelated fix ran.
+                var (postFixReport, postFixBaselineError) = ApplyBaseline(options, rescanned);
+                if (postFixBaselineError is not null)
+                {
+                    _consoleService.Error(postFixBaselineError);
+                }
 
                 if (!_quietMode)
                 {
@@ -496,6 +534,130 @@ internal sealed class AnalysisHandler
         return scanFailures > 0 || deepScanFailures > 0
             ? ExitCodes.IncompleteAnalysis
             : ExitCodes.Success;
+    }
+
+    /// <summary>
+    /// Records the current findings as the accepted baseline and stops. Writing and gating are
+    /// separate modes: suppressing the findings being recorded would be circular.
+    /// </summary>
+    private async Task<MigrationResult> WriteBaselineAsync(
+        Options options,
+        AnalysisReport report,
+        ProjectPackageInfo packageInfo,
+        string basePath,
+        int scanFailures,
+        int deepScanFailures,
+        int projectsDiscovered
+    )
+    {
+        var path = options.ResolveBaselinePath();
+
+        if (scanFailures > 0 || deepScanFailures > 0)
+        {
+            // A baseline claims to be the current accepted state. Recording one from a partial scan
+            // would permanently accept findings that were simply never looked for — a transient
+            // audit failure would silently bless every vulnerability it missed.
+            _consoleService.Error(
+                "Refusing to record a baseline from an incomplete scan: it would accept findings "
+                    + "that were never checked. Fix the scan failures above and re-run."
+            );
+
+            return new MigrationResult
+            {
+                ProjectsProcessed = packageInfo.ProjectCount,
+                PackagesCentralized = packageInfo.TotalReferences,
+                AnalysisReport = report,
+                PackageInfo = packageInfo,
+                BasePath = basePath,
+                ScanFailures = scanFailures,
+                DeepScanFailures = deepScanFailures,
+                ProjectsDiscovered = projectsDiscovered,
+                ExitCode = ExitCodes.IncompleteAnalysis,
+            };
+        }
+
+        try
+        {
+            await _baselineService.WriteAsync(_baselineService.Create(report), path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _consoleService.Error($"Failed to write baseline file {path}: {ex.Message}");
+            return new MigrationResult
+            {
+                AnalysisReport = report,
+                PackageInfo = packageInfo,
+                BasePath = basePath,
+                ExitCode = ExitCodes.FileOperationError,
+            };
+        }
+
+        if (!_quietMode)
+        {
+            _consoleService.Success(
+                $"Recorded {report.TotalIssues} finding(s) as the accepted baseline in {path}."
+            );
+            _consoleService.Dim(
+                "Commit it: subsequent runs report these findings without failing the build, so "
+                    + "only new problems break CI."
+            );
+        }
+
+        return new MigrationResult
+        {
+            ProjectsProcessed = packageInfo.ProjectCount,
+            PackagesCentralized = packageInfo.TotalReferences,
+            AnalysisReport = report,
+            PackageInfo = packageInfo,
+            BasePath = basePath,
+            ProjectsDiscovered = projectsDiscovered,
+            BaselinePath = path,
+            BaselineWritten = true,
+            GatedIssueCount = 0,
+            ExitCode = ExitCodes.Success,
+        };
+    }
+
+    /// <summary>
+    /// Marks findings the baseline has accepted, and reports entries that no longer match anything.
+    /// </summary>
+    private (AnalysisReport Report, string? Error) ApplyBaseline(
+        Options options,
+        AnalysisReport report
+    )
+    {
+        if (!options.UsesBaseline())
+        {
+            return (report, null);
+        }
+
+        var path = options.ResolveBaselinePath();
+        var (baseline, error) = _baselineService.Read(path);
+        if (baseline is null)
+        {
+            return (report, error);
+        }
+
+        var match = _baselineService.Apply(report, baseline);
+
+        if (!_quietMode && match.Suppressed > 0)
+        {
+            _consoleService.Dim(
+                $"Baseline {path}: {match.Suppressed} finding(s) accepted and excluded from the gate."
+            );
+        }
+
+        if (!_quietMode && match.Stale.Count > 0)
+        {
+            // Dead entries accumulate silently and can start suppressing a finding that came back
+            // under the same identity, so they are worth naming.
+            _consoleService.Warning(
+                $"Baseline {path}: {match.Stale.Count} entr(ies) no longer match any finding "
+                    + "(fixed since). Re-run with --write-baseline to prune them."
+            );
+        }
+
+        return (match.Report, null);
     }
 
     /// <summary>

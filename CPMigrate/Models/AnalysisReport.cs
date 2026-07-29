@@ -39,20 +39,17 @@ public record AnalysisReport(
     /// <param name="threshold">The lowest severity that counts.</param>
     public int CountAtOrAbove(AnalysisSeverity threshold)
     {
-        return Results.Sum(result => result.Issues.Count(issue => issue.Severity >= threshold));
+        return Results.Sum(result =>
+            result.Issues.Count(issue => !issue.Suppressed && issue.Severity >= threshold)
+        );
     }
 
     /// <summary>
-    /// Counts findings at or above a severity that no built-in fixer can repair. After a successful
-    /// <c>--fix</c> run these are what remain on disk: a security advisory, for example, is never
-    /// auto-fixable, so treating the whole run as clean because something else was repaired would
-    /// report a live vulnerability as a pass.
+    /// Findings a baseline has accepted. Counted separately from <see cref="TotalIssues"/> because
+    /// they remain visible in every report — accepting debt should not hide it — while being excluded
+    /// from the gate.
     /// </summary>
-    /// <param name="threshold">The lowest severity that counts.</param>
-    public int CountUnfixableAtOrAbove(AnalysisSeverity threshold)
-    {
-        return Results.Sum(result =>
-            result.Issues.Count(issue => !issue.Fixable && issue.Severity >= threshold)
-        );
-    }
+    public int SuppressedCount => Results.Sum(result => result.Issues.Count(issue => issue.Suppressed));
+
+
 }

@@ -137,6 +137,13 @@ public class OperationSummary
     public int? IssuesRemainingAfterFixes { get; init; }
 
     /// <summary>
+    /// Findings a baseline accepted, and therefore excluded from the gate. Null when no baseline
+    /// was used.
+    /// </summary>
+    [JsonPropertyName("issuesBaselined")]
+    public int? IssuesBaselined { get; init; }
+
+    /// <summary>
     /// Severity of the worst finding, or null when nothing was found.
     /// </summary>
     [JsonPropertyName("highestSeverity")]
@@ -219,6 +226,13 @@ public class AnalysisIssueInfo
 
     [JsonPropertyName("fixable")]
     public bool Fixable { get; init; }
+
+    /// <summary>
+    /// Whether a baseline accepted this finding. Suppressed findings are reported but excluded from
+    /// the failure gate.
+    /// </summary>
+    [JsonPropertyName("suppressed")]
+    public bool Suppressed { get; init; }
 
     [JsonPropertyName("metadata")]
     public Dictionary<string, string>? Metadata { get; init; }
