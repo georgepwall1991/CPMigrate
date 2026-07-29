@@ -665,6 +665,96 @@ public class SarifFormatterTests : IDisposable
     }
 
     [Fact]
+    public void Format_ProjectsSharingAFileName_AnnotateOnlyTheOnesDeclaringThePackage()
+    {
+        // src/App/App.csproj and tests/App/App.csproj share a basename, and analyzer findings carry
+        // names rather than paths. Annotating both would put a finding on a file that never
+        // declared the package.
+        var sourceProject = CreateProject("src/App/App.csproj", "Newtonsoft.Json", "13.0.1");
+        CreateProject("tests/App/App.csproj", "xunit", "2.9.0");
+
+        var packageInfo = new ProjectPackageInfo(
+            new[]
+            {
+                new PackageReference("Newtonsoft.Json", "13.0.1", sourceProject, "App.csproj"),
+                new PackageReference(
+                    "xunit",
+                    "2.9.0",
+                    Path.Combine(_root, "tests", "App", "App.csproj"),
+                    "App.csproj"
+                ),
+            }
+        );
+
+        var uris = FormatToDocument(packageInfo, "App.csproj")
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0]
+            .GetProperty("locations")
+            .EnumerateArray()
+            .Select(l =>
+                l.GetProperty("physicalLocation")
+                    .GetProperty("artifactLocation")
+                    .GetProperty("uri")
+                    .GetString()
+            )
+            .ToList();
+
+        uris.Should().Equal("src/App/App.csproj");
+    }
+
+    [Fact]
+    public void Format_AmbiguousNameWithNoPackageMatch_FallsBackToEveryCandidate()
+    {
+        // A finding that is not about one package (framework alignment, for example) cannot be
+        // narrowed by package, so reporting every candidate beats reporting none.
+        var first = CreateProject("src/App/App.csproj", "Newtonsoft.Json", "13.0.1");
+        var second = CreateProject("tests/App/App.csproj", "Newtonsoft.Json", "13.0.1");
+
+        var packageInfo = new ProjectPackageInfo(
+            new[]
+            {
+                new PackageReference("Newtonsoft.Json", "13.0.1", first, "App.csproj"),
+                new PackageReference("Newtonsoft.Json", "13.0.1", second, "App.csproj"),
+            }
+        );
+
+        var report = new AnalysisReport(
+            2,
+            2,
+            new[]
+            {
+                new AnalyzerResult(
+                    "Framework Alignment",
+                    new[]
+                    {
+                        Issue(
+                            "net8.0",
+                            AnalysisIssueCode.FrameworkAlignment,
+                            AnalysisSeverity.Info,
+                            "App.csproj"
+                        ),
+                    }
+                ),
+            }
+        );
+
+        var uris = FormatToDocument(report, packageInfo)
+            .RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0]
+            .GetProperty("locations")
+            .EnumerateArray()
+            .Select(l =>
+                l.GetProperty("physicalLocation")
+                    .GetProperty("artifactLocation")
+                    .GetProperty("uri")
+                    .GetString()
+            )
+            .ToList();
+
+        uris.Should().BeEquivalentTo(new[] { "src/App/App.csproj", "tests/App/App.csproj" });
+    }
+
+    [Fact]
     public void Format_OmitsLocationsWhenNoProjectCanBeResolved()
     {
         var report = new AnalysisReport(

@@ -180,6 +180,70 @@ public class SarifOutputContractTests : IDisposable
     [InlineData("--update")]
     [InlineData("--interactive")]
     [InlineData("--unify-props")]
+    [InlineData("--prune-backups")]
+    [InlineData("--prune-all")]
+    [InlineData("--rollback")]
+    [InlineData("--update-packages")]
+    public async Task RunAsync_SarifWithAnAlternateModeAlongsideAnalyze_IsStillRejected(string mode)
+    {
+        // Requiring --analyze is not enough: passing both means validation sees Analyze and lets
+        // the alternate mode dispatch first, so `--update --analyze --output Sarif` would run a
+        // real self-update and emit nothing.
+        var console = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { mode, "--analyze", "--output", "Sarif", "-s", _testDirectory, "--force" },
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(m => m.Contains("Sarif"));
+    }
+
+    [Fact]
+    public async Task RunAsync_SarifWithMutatingFix_IsRejected()
+    {
+        // --fix rewrites the projects, but the report describes the tree as it was beforehand.
+        // Uploading it would annotate findings that no longer exist.
+        var console = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--analyze", "--fix", "--output", "Sarif", "-s", _testDirectory },
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(m => m.Contains("--fix"));
+    }
+
+    [Fact]
+    public async Task RunAsync_SarifWithFixDryRun_IsAccepted()
+    {
+        // --fix-dry-run changes nothing, so the findings still describe the tree on disk.
+        CreateFixture();
+        var console = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[]
+            {
+                "--analyze",
+                "--fix-dry-run",
+                "--output",
+                "Sarif",
+                "--quiet",
+                "-s",
+                _testDirectory,
+            },
+            console
+        );
+
+        exitCode.Should().NotBe(ExitCodes.ValidationError);
+    }
+
+    [Theory]
+    [InlineData("--update")]
+    [InlineData("--interactive")]
+    [InlineData("--unify-props")]
     public async Task RunAsync_SarifWithAnAlternateMode_IsRejectedBeforeAnythingRuns(string mode)
     {
         // These modes are dispatched before per-command validation, so the SARIF contract used to

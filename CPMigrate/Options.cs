@@ -582,12 +582,88 @@ public class Options
             );
         }
 
-        if (!string.IsNullOrEmpty(BatchDir))
+        // Requiring --analyze is not sufficient: these modes are dispatched ahead of it, so
+        // passing both would run the other operation and emit no SARIF at all. Name each one
+        // rather than inferring, so a mode added later fails loudly here instead of silently
+        // producing an empty log.
+        var conflictingMode = FindModeIncompatibleWithSarif();
+        if (conflictingMode is not null)
         {
             throw new ArgumentException(
-                "--output Sarif cannot be used with --batch; run one solution at a time, or use --output Json."
+                $"--output Sarif cannot be combined with {conflictingMode}; it reports analyzer "
+                    + "findings for a single solution. Run the analysis as a separate step."
             );
         }
+
+        if (Fix)
+        {
+            // The report describes the tree as it was before the fixes were written, so uploading
+            // it would annotate findings that no longer exist. --fix-dry-run changes nothing and
+            // is therefore fine.
+            throw new ArgumentException(
+                "--output Sarif cannot be combined with --fix, because the findings would describe "
+                    + "the projects as they were before the fixes. Use --fix-dry-run, or re-run "
+                    + "the analysis after fixing."
+            );
+        }
+    }
+
+    /// <summary>
+    /// Returns the flag naming a mode that cannot produce SARIF findings, or null when none is set.
+    /// </summary>
+    private string? FindModeIncompatibleWithSarif()
+    {
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            return "--batch";
+        }
+
+        if (Update)
+        {
+            return "--update";
+        }
+
+        if (UpdatePackages)
+        {
+            return "--update-packages";
+        }
+
+        if (Interactive)
+        {
+            return "--interactive";
+        }
+
+        if (InteractiveConflicts)
+        {
+            return "--interactive-conflicts";
+        }
+
+        if (UnifyProps)
+        {
+            return "--unify-props";
+        }
+
+        if (Rollback)
+        {
+            return "--rollback";
+        }
+
+        if (PruneBackups)
+        {
+            return "--prune-backups";
+        }
+
+        if (PruneAll)
+        {
+            return "--prune-all";
+        }
+
+        if (ListBackups)
+        {
+            return "--list-backups";
+        }
+
+        return null;
     }
 
     /// <summary>

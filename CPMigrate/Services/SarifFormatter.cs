@@ -81,7 +81,7 @@ public static class SarifFormatter
         var projectPaths = BuildProjectPathIndex(packageInfo);
         var rootDirectory = WidenRootToCoverProjects(
             ResolveRootDirectory(basePath),
-            projectPaths.Values.SelectMany(paths => paths)
+            projectPaths.AllPaths
         );
         var lineLocator = new PackageDeclarationLocator();
 
@@ -217,7 +217,7 @@ public static class SarifFormatter
         AnalysisIssue issue,
         int ruleIndex,
         string rootDirectory,
-        IReadOnlyDictionary<string, List<string>> projectPaths,
+        ProjectPathIndex projectPaths,
         PackageDeclarationLocator lineLocator
     )
     {
@@ -275,7 +275,7 @@ public static class SarifFormatter
     private static JsonArray BuildLocations(
         AnalysisIssue issue,
         string rootDirectory,
-        IReadOnlyDictionary<string, List<string>> projectPaths,
+        ProjectPathIndex projectPaths,
         PackageDeclarationLocator lineLocator
     )
     {
@@ -284,7 +284,8 @@ public static class SarifFormatter
 
         foreach (var projectName in issue.AffectedProjects)
         {
-            if (!projectPaths.TryGetValue(projectName, out var paths))
+            var paths = projectPaths.Resolve(projectName, issue.PackageName);
+            if (paths.Count == 0)
             {
                 // The analyzer named a project we never scanned (or reported a label rather than a
                 // file). SARIF allows a result with no locations, which is better than inventing one.
@@ -343,40 +344,9 @@ public static class SarifFormatter
         return Convert.ToHexStringLower(hash.AsSpan(0, 16));
     }
 
-    /// <summary>
-    /// Indexes scanned projects by file name so analyzer findings — which carry names, not
-    /// paths — can be resolved back to files. A name may map to several paths in a solution
-    /// that reuses project names across directories.
-    /// </summary>
-    private static Dictionary<string, List<string>> BuildProjectPathIndex(
-        ProjectPackageInfo packageInfo
-    )
+    private static ProjectPathIndex BuildProjectPathIndex(ProjectPackageInfo packageInfo)
     {
-        var index = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var reference in packageInfo.References)
-        {
-            if (
-                string.IsNullOrWhiteSpace(reference.ProjectName)
-                || string.IsNullOrWhiteSpace(reference.ProjectPath)
-            )
-            {
-                continue;
-            }
-
-            if (!index.TryGetValue(reference.ProjectName, out var paths))
-            {
-                paths = new List<string>();
-                index[reference.ProjectName] = paths;
-            }
-
-            if (!paths.Contains(reference.ProjectPath, StringComparer.OrdinalIgnoreCase))
-            {
-                paths.Add(reference.ProjectPath);
-            }
-        }
-
-        return index;
+        return ProjectPathIndex.Build(packageInfo);
     }
 
     private static string ResolveRootDirectory(string basePath)
@@ -598,5 +568,95 @@ internal sealed class PackageDeclarationLocator
 
         _documentCache[projectPath] = document;
         return document;
+    }
+}
+
+/// <summary>
+/// Resolves the project names carried by analyzer findings back to project files.
+///
+/// Findings name projects rather than pointing at them, and a solution may reuse a project name
+/// across directories (<c>src/App/App.csproj</c> and <c>tests/App/App.csproj</c>). Reporting every
+/// candidate would annotate files that never declared the package, so the index also records which
+/// project declared which package and prefers that narrower answer.
+/// </summary>
+internal sealed class ProjectPathIndex
+{
+    private static readonly IReadOnlyList<string> None = Array.Empty<string>();
+
+    private readonly Dictionary<string, List<string>> _byName = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+    private readonly Dictionary<(string Project, string Package), List<string>> _byNameAndPackage =
+        new();
+
+    private ProjectPathIndex() { }
+
+    /// <summary>Every distinct project path the scan covered.</summary>
+    public IEnumerable<string> AllPaths =>
+        _byName.Values.SelectMany(paths => paths).Distinct(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Builds the index from the scanned package references.
+    /// </summary>
+    /// <param name="packageInfo">The references the analysis was built from.</param>
+    public static ProjectPathIndex Build(ProjectPackageInfo packageInfo)
+    {
+        var index = new ProjectPathIndex();
+
+        foreach (var reference in packageInfo.References)
+        {
+            if (
+                string.IsNullOrWhiteSpace(reference.ProjectName)
+                || string.IsNullOrWhiteSpace(reference.ProjectPath)
+            )
+            {
+                continue;
+            }
+
+            Add(index._byName, reference.ProjectName, reference.ProjectPath);
+            Add(
+                index._byNameAndPackage,
+                (reference.ProjectName, reference.PackageName),
+                reference.ProjectPath
+            );
+        }
+
+        return index;
+    }
+
+    /// <summary>
+    /// Returns the project files a finding should be reported against: the ones declaring the
+    /// package when that is known, otherwise every project with the given name. Findings that are
+    /// not about a single package (framework alignment, for example) fall into the second case,
+    /// where reporting every candidate beats reporting none.
+    /// </summary>
+    /// <param name="projectName">The project name the analyzer reported.</param>
+    /// <param name="packageName">The package the finding concerns, if any.</param>
+    public IReadOnlyList<string> Resolve(string projectName, string packageName)
+    {
+        if (
+            !string.IsNullOrWhiteSpace(packageName)
+            && _byNameAndPackage.TryGetValue((projectName, packageName), out var exact)
+        )
+        {
+            return exact;
+        }
+
+        return _byName.TryGetValue(projectName, out var candidates) ? candidates : None;
+    }
+
+    private static void Add<TKey>(Dictionary<TKey, List<string>> index, TKey key, string path)
+        where TKey : notnull
+    {
+        if (!index.TryGetValue(key, out var paths))
+        {
+            paths = new List<string>();
+            index[key] = paths;
+        }
+
+        if (!paths.Contains(path, StringComparer.OrdinalIgnoreCase))
+        {
+            paths.Add(path);
+        }
     }
 }

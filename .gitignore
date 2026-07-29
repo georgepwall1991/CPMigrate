@@ -49,3 +49,7 @@ Thumbs.db
 
 # SonarCloud (config is in GitHub Actions workflow, not sonar-project.properties)
 sonar-project.properties
+
+# CPMigrate's own --verbose log, written to the working directory
+cpmigrate.log
+cpmigrate*.log
