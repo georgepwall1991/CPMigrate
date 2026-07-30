@@ -102,9 +102,11 @@ internal static class SpectreTableBuilder
         var table = new Table()
             .Border(TableBorder.Rounded)
             .BorderColor(SpectrePalette.CyberColors.Dim)
+            .Title($"[{SpectrePalette.Ink.Muted}] ANALYZER SCOREBOARD [/]")
             .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]ANALYZER[/]"))
             .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]ISSUES[/]").RightAligned())
-            .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]SHARE[/]"));
+            .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]SHARE[/]"))
+            .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]STATUS[/]").RightAligned());
 
         var worst = report.Results.Count > 0 ? report.Results.Max(r => r.Issues.Count) : 0;
 
@@ -114,14 +116,42 @@ internal static class SpectreTableBuilder
             var ink = clean ? SpectrePalette.Ink.Dim : SpectrePalette.Ink.Accent;
             var icon = clean ? theme.Glyphs.Success : theme.Glyphs.Warning;
             var iconInk = clean ? SpectrePalette.Ink.Success : SpectrePalette.Ink.Accent;
+            var status = clean ? "PASS" : $"{result.Issues.Count} FOUND";
+            var statusInk = clean ? SpectrePalette.Ink.Success : SpectrePalette.Ink.Warning;
 
             table.AddRow(
                 $"[{iconInk}]{icon}[/] [{ink}]{SpectrePalette.Escape(result.AnalyzerName)}[/]",
                 $"[bold {ink}]{result.Issues.Count}[/]",
-                SpectrePalette.Meter(worst > 0 ? (double)result.Issues.Count / worst : 0, ink, theme.Glyphs, width: 10));
+                SpectrePalette.Meter(worst > 0 ? (double)result.Issues.Count / worst : 0, ink, theme.Glyphs, width: 10),
+                $"[{statusInk}]{status}[/]");
         }
 
         return table;
+    }
+
+    /// <summary>
+    /// Computes a 0-100 dependency health score from the analysis report.
+    /// Each analyzer with issues deducts points weighted by issue count.
+    /// </summary>
+    public static int ComputeHealthScore(AnalysisReport report)
+    {
+        if (report.Results.Count == 0)
+        {
+            return 100;
+        }
+
+        var totalAnalyzers = report.Results.Count;
+        var failingAnalyzers = report.Results.Count(r => r.Issues.Count > 0);
+
+        if (failingAnalyzers == 0)
+        {
+            return 100;
+        }
+
+        var passRate = (double)(totalAnalyzers - failingAnalyzers) / totalAnalyzers;
+        var issuePenalty = Math.Min(0.3, report.TotalIssues * 0.02);
+
+        return (int)Math.Round(Math.Clamp((passRate - issuePenalty) * 100, 0, 100));
     }
 
     private static Table NewTable(string title, params string[] columns)
