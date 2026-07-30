@@ -207,7 +207,7 @@ public static class SarifFormatter
             ["properties"] = new JsonObject
             {
                 ["tags"] = new JsonArray(
-                    rule.Tags.Select(tag => (JsonNode)JsonValue.Create(tag)!).ToArray()
+                    rule.Tags.Select(tag => (JsonNode)JsonValue.Create(tag)).ToArray()
                 ),
             },
         };

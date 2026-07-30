@@ -6,6 +6,22 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.27.0] - 2026-07-30
+
+### Changed
+- **Every dependency is current; nothing is outdated.** `Microsoft.Build`/`.Tasks.Core`/`.Utilities.Core` 18.0.2 → 18.8.2, `Buildalyzer` 8 → 9, `Spectre.Console` and `.Testing` 0.54.0 → 0.57.2, `SonarAnalyzer.CSharp` 10.19 → 10.31, `coverlet.collector` 6.0.4 → 10.0.1. `dotnet list package --outdated` now reports nothing.
+- `SonarAnalyzer` 10.31 brought new rules, and this repository treats warnings as errors, so the upgrade came with seven real fixes: six redundant null-forgiving operators the compiler already proved unnecessary (`S8969`), and one `S4036` suppressed the way the same finding is already suppressed elsewhere in the codebase, with the same justification.
+
+### Correcting the record
+3.24.0 and the closed Dependabot PRs said `Microsoft.Build` 18.8.2 **breaks 20 tests**. That was wrong, and it is worth saying plainly because it was used to justify not shipping four upgrades.
+
+The bisect behind it tested nine packages bumped together (20 failures), everything-except-MSBuild-and-Test.Sdk (clean), and Test.Sdk alone (clean) — and concluded the MSBuild packages were at fault **without ever testing them on their own**. That run also took 14 minutes against a normal 2, and the machine ran out of disk entirely soon after. Resource exhaustion, not incompatibility.
+
+Verified properly this time: MSBuild 18.8.2 is clean on this code across three consecutive runs, and clean on the pre-3.26.0 code too — so the isolation work in 3.26.0 was not the cure either. The other three upgrades held back on the same reasoning are equally fine.
+
+### Testing
+- No new tests; the seven analyzer fixes are covered by the existing suite. 1125 pass.
+
 ## [3.26.0] - 2026-07-30
 
 ### Changed
