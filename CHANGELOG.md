@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.33.0] - 2026-07-30
+
+### Added
+- **`--diff` unified diff preview.** When combined with `--dry-run`, shows a colour-coded unified diff of the `Directory.Packages.props` changes instead of the default panel preview. Added lines render green, removed lines red, hunk headers cyan. Works for both new-file creation and merge-into-existing paths.
+
 ## [3.32.0] - 2026-07-30
 
 ### Changed

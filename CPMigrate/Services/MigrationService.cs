@@ -630,7 +630,15 @@ public class MigrationService
                 _consoleService.WriteLine();
                 _consoleService.DryRun($"Would update: {propsFilePath}");
                 _consoleService.WriteLine();
-                _consoleService.WritePropsPreview(mergedContent);
+                if (options.Diff)
+                {
+                    var original = File.Exists(propsFilePath) ? await File.ReadAllTextAsync(propsFilePath) : null;
+                    _consoleService.WriteDiff(UnifiedDiffGenerator.Generate(original, mergedContent, propsFilePath));
+                }
+                else
+                {
+                    _consoleService.WritePropsPreview(mergedContent);
+                }
             }
         }
         else
@@ -663,7 +671,14 @@ public class MigrationService
                 _consoleService.WriteLine();
                 _consoleService.DryRun($"Would create: {propsFilePath}");
                 _consoleService.WriteLine();
-                _consoleService.WritePropsPreview(updatedPackagePropsContent);
+                if (options.Diff)
+                {
+                    _consoleService.WriteDiff(UnifiedDiffGenerator.Generate(null, updatedPackagePropsContent, propsFilePath));
+                }
+                else
+                {
+                    _consoleService.WritePropsPreview(updatedPackagePropsContent);
+                }
             }
         }
         else

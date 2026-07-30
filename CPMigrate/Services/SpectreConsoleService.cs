@@ -136,6 +136,30 @@ public class SpectreConsoleService : IConsoleService
         _console.Write(SpectrePanelBuilder.BuildPropsPreviewPanel(content));
     }
 
+    public void WriteDiff(string diff)
+    {
+        foreach (var line in diff.Split('\n'))
+        {
+            var trimmed = line.TrimEnd('\r');
+            if (trimmed.StartsWith('+') && !trimmed.StartsWith("+++"))
+            {
+                _console.MarkupLine($"[{Ink.Success}]{EscapeMarkup(trimmed)}[/]");
+            }
+            else if (trimmed.StartsWith('-') && !trimmed.StartsWith("---"))
+            {
+                _console.MarkupLine($"[{Ink.Error}]{EscapeMarkup(trimmed)}[/]");
+            }
+            else if (trimmed.StartsWith("@@"))
+            {
+                _console.MarkupLine($"[{Ink.Secondary}]{EscapeMarkup(trimmed)}[/]");
+            }
+            else
+            {
+                _console.MarkupLine($"[{Ink.Dim}]{EscapeMarkup(trimmed)}[/]");
+            }
+        }
+    }
+
     public void WriteMarkup(string message)
     {
         _console.MarkupLine(message);
