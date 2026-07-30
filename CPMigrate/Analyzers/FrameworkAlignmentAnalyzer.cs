@@ -20,38 +20,28 @@ public class FrameworkAlignmentAnalyzer : IAnalyzer
 
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
     {
-        List<AnalysisIssue> issues = [];
-        Dictionary<string, List<string>> frameworks = [];
+        var frameworks = packageInfo.References
+            .Select(r => r.ProjectPath)
+            .Distinct()
+            .GroupBy(path => _projectFileScanner.GetTargetFramework(path))
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(path => packageInfo.ProjectId(path)).ToList());
 
-        // We need to get frameworks for each project.
-        // PackageReference doesn't have it, but we can extract it.
-        var projectPaths = packageInfo.References.Select(r => r.ProjectPath).Distinct();
-
-        foreach (var path in projectPaths)
+        if (frameworks.Count <= 1)
         {
-            var tfm = _projectFileScanner.GetTargetFramework(path);
-            if (!frameworks.TryGetValue(tfm, out var list))
-            {
-                list = [];
-                frameworks[tfm] = list;
-            }
-
-            list.Add(packageInfo.ProjectId(path));
+            return new AnalyzerResult(Name, []);
         }
 
-        if (frameworks.Count > 1)
-        {
-            var tfmList = string.Join(", ", frameworks.Keys.OrderBy(k => k));
-            issues.Add(new AnalysisIssue(
-                "Multiple Frameworks",
-                $"Repository uses {frameworks.Count} different Target Frameworks: {tfmList}. Ensure package versions in Directory.Packages.props are compatible with all.",
-                frameworks.Values.SelectMany(v => v).ToList(),
-                AnalysisIssueCode.FrameworkAlignment,
-                AnalysisSeverity.Info,
-                Fixable: false
-            ));
-        }
+        var tfmList = string.Join(", ", frameworks.Keys.OrderBy(k => k));
+        var issue = new AnalysisIssue(
+            "Multiple Frameworks",
+            $"Repository uses {frameworks.Count} different Target Frameworks: {tfmList}. Ensure package versions in Directory.Packages.props are compatible with all.",
+            frameworks.Values.SelectMany(v => v).ToList(),
+            AnalysisIssueCode.FrameworkAlignment,
+            AnalysisSeverity.Info,
+            Fixable: false);
 
-        return new AnalyzerResult(Name, issues);
+        return new AnalyzerResult(Name, [issue]);
     }
 }
