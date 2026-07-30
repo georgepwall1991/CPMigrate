@@ -91,15 +91,16 @@ public static class RuleExplainer
         var text = new StringBuilder();
         text.AppendLine($"Unknown rule: {query}");
 
+        // Substring matching alone misses the case this exists for: an ordinary typo, where one
+        // letter is wrong and neither string contains the other. Edit distance catches those.
         var suggestions = AnalysisRuleCatalog
-            .All.Where(rule =>
-                rule.Code != AnalysisIssueCode.Unknown
-                && (
-                    rule.Id.Contains(query, StringComparison.OrdinalIgnoreCase)
-                    || query.Contains(rule.Id, StringComparison.OrdinalIgnoreCase)
-                )
-            )
-            .Select(rule => rule.Id)
+            .All.Where(rule => rule.Code != AnalysisIssueCode.Unknown)
+            .Select(rule => (rule.Id, Distance: Similarity(query.Trim(), rule.Id)))
+            .Where(candidate => candidate.Distance <= MaxSuggestionDistance(query.Trim()))
+            .OrderBy(candidate => candidate.Distance)
+            .ThenBy(candidate => candidate.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(candidate => candidate.Id)
+            .Take(3)
             .ToList();
 
         if (suggestions.Count > 0)
@@ -112,6 +113,80 @@ public static class RuleExplainer
         text.AppendLine("List every rule with: cpmigrate --explain all");
 
         return text.ToString();
+    }
+
+    /// <summary>
+    /// How far a query may be from a rule ID and still be offered as a suggestion.
+    ///
+    /// Scaled to the query length rather than fixed: one edit is a plausible slip in a short word,
+    /// while a 21-character rule ID can absorb two or three and still obviously be the same intent.
+    /// Too generous and every typo suggests every rule, which is no more useful than silence.
+    /// </summary>
+    private static int MaxSuggestionDistance(string query)
+    {
+        return query.Length switch
+        {
+            <= 4 => 1,
+            <= 10 => 2,
+            _ => 4,
+        };
+    }
+
+    /// <summary>
+    /// Case-insensitive Levenshtein distance, with a substring match treated as very close — someone
+    /// typing a fragment of a rule ID knows which rule they want, they just did not type all of it.
+    /// </summary>
+    private static int Similarity(string query, string ruleId)
+    {
+        if (
+            ruleId.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || query.Contains(ruleId, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return 0;
+        }
+
+        return Levenshtein(query.ToLowerInvariant(), ruleId.ToLowerInvariant());
+    }
+
+    /// <summary>
+    /// Standard two-row Levenshtein distance. Two rows rather than a full matrix because the inputs
+    /// are short and only the previous row is ever needed.
+    /// </summary>
+    private static int Levenshtein(string left, string right)
+    {
+        if (left.Length == 0)
+        {
+            return right.Length;
+        }
+
+        if (right.Length == 0)
+        {
+            return left.Length;
+        }
+
+        var previous = new int[right.Length + 1];
+        var current = new int[right.Length + 1];
+
+        for (var j = 0; j <= right.Length; j++)
+        {
+            previous[j] = j;
+        }
+
+        for (var i = 1; i <= left.Length; i++)
+        {
+            current[0] = i;
+
+            for (var j = 1; j <= right.Length; j++)
+            {
+                var substitution = previous[j - 1] + (left[i - 1] == right[j - 1] ? 0 : 1);
+                current[j] = Math.Min(Math.Min(current[j - 1] + 1, previous[j] + 1), substitution);
+            }
+
+            (previous, current) = (current, previous);
+        }
+
+        return previous[right.Length];
     }
 
     /// <summary>

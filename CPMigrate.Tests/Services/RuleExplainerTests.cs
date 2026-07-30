@@ -78,6 +78,31 @@ public class RuleExplainerTests
         output.Should().Contain("Did you mean").And.Contain("VersionInconsistency");
     }
 
+    [Theory]
+    [InlineData("VersionInconsistncy", "VersionInconsistency")]
+    [InlineData("VersionInconsistancy", "VersionInconsistency")]
+    [InlineData("SecurityVulnerabilty", "SecurityVulnerability")]
+    [InlineData("OrphanedPackageVerson", "OrphanedPackageVersion")]
+    [InlineData("CpmNotEnabld", "CpmNotEnabled")]
+    public void Explain_OrdinaryTypo_SuggestsTheRealRule(string typo, string expected)
+    {
+        // The case the feature exists for: one letter wrong, and neither string contains the other,
+        // so substring matching alone would say nothing at all.
+        var (output, found) = RuleExplainer.Explain(typo);
+
+        found.Should().BeFalse();
+        output.Should().Contain("Did you mean").And.Contain(expected);
+    }
+
+    [Fact]
+    public void Explain_SomethingUnrelated_SuggestsNothingRatherThanEverything()
+    {
+        // A suggestion list containing every rule is no more useful than silence.
+        var (output, _) = RuleExplainer.Explain("zzzzzzzzzzzzzzzz");
+
+        output.Should().NotContain("Did you mean");
+    }
+
     [Fact]
     public void Explain_WrapsProseRatherThanEmittingOneLongLine()
     {
