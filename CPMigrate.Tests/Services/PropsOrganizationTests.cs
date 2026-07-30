@@ -377,6 +377,61 @@ public class PropsOrganizationTests : IDisposable
     }
 
     [Fact]
+    public void MergeExisting_TreatsATrailingCommentAsBelongingToItsOwnLine()
+    {
+        // Cross-review caught this: accepting any line that *ends* in a comment close treated a trailing
+        // comment on Alpha's own line as documenting Charlie, so Bravo gave up its sorted position for a
+        // comment that was never in the way and an ordered file came out unordered.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Alpha" Version="1.0.0" /> <!-- why Alpha -->
+                <PackageVersion Include="Charlie" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var (content, _, _, _) = new PropsGenerator().MergeExisting(
+            propsPath,
+            Packages(("Bravo", "2.0.0"))
+        );
+
+        PackageIdsInOrder(content).Should().Equal("Alpha", "Bravo", "Charlie");
+        content.Should().Contain("why Alpha");
+    }
+
+    [Fact]
+    public void MergeExisting_KeepsAMultiLineCommentWithTheEntryBelowIt()
+    {
+        // The counterpart: a comment spanning several lines ends on the line above the pin it documents,
+        // and that line really is comment text rather than an element.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Alpha" Version="1.0.0" />
+                <!-- Charlie is held at 1.x because 2.x drops netstandard2.0.
+                     Revisit when the analyzer package catches up. See #412. -->
+                <PackageVersion Include="Charlie" Version="1.0.0" />
+                <PackageVersion Include="Zulu" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var (content, _, _, _) = new PropsGenerator().MergeExisting(
+            propsPath,
+            Packages(("Bravo", "2.0.0"))
+        );
+
+        var lines = SignificantLines(content);
+        lines[lines.FindIndex(l => l.Contains("See #412")) + 1].Should().Contain("Charlie");
+        PackageIdsInOrder(content).Should().Equal("Alpha", "Charlie", "Bravo", "Zulu");
+    }
+
+    [Fact]
     public void MergeExisting_KeepsSortingWhenSeveralPinsWerePushedPastTheSameComment()
     {
         // Cross-review caught this: one merge can add several pins that all belong before the same

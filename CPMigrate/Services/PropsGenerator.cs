@@ -492,17 +492,36 @@ public class PropsGenerator
                 continue;
             }
 
-            var text = lines[above].Trim();
-            if (
-                text.StartsWith("<!--", StringComparison.Ordinal)
-                || text.EndsWith("-->", StringComparison.Ordinal)
-            )
+            if (IsCommentOnlyLine(lines[above]))
             {
                 documented.Add(item);
             }
         }
 
         return documented;
+    }
+
+    /// <summary>
+    /// Whether a line holds nothing but comment text, and so documents whatever follows it.
+    ///
+    /// A trailing comment on an entry's own line — <c>&lt;PackageVersion … /&gt; &lt;!-- why --&gt;</c> —
+    /// documents *that* entry, not the next one. Accepting any line ending in a comment close marked the
+    /// following pin as documented and gave up its sorted position for a comment that was never in the
+    /// way, so an ordered file came out unordered. A line that opens a comment counts; so does one that
+    /// only closes a comment opened earlier, which is a continuation rather than an element.
+    /// </summary>
+    private static bool IsCommentOnlyLine(string line)
+    {
+        var text = line.Trim();
+
+        if (text.StartsWith("<!--", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return text.EndsWith("-->", StringComparison.Ordinal)
+            && !text.StartsWith('<')
+            && !text.Contains("/>", StringComparison.Ordinal);
     }
 
     /// <summary>
