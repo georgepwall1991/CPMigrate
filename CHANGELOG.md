@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.36.0] - 2026-07-30
+
+### Added
+- **Package license analyzer.** A new `LicenseAnalyzer` checks every package reference against a built-in classification table (30+ common packages) and flags copyleft (GPL, AGPL) and proprietary licenses as High/Moderate severity findings. The `LicenseRisk` rule is registered in the AnalysisRuleCatalog so `--explain LicenseRisk` works. `--licenses` flag added to Options.
+
 ## [3.35.0] - 2026-07-30
 
 ### Added

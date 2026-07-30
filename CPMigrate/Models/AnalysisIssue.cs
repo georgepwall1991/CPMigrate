@@ -26,7 +26,10 @@ public enum AnalysisIssueCode
     MissingPackageVersion,
 
     /// <summary>A central PackageVersion entry no project references.</summary>
-    OrphanedPackageVersion
+    OrphanedPackageVersion,
+
+    /// <summary>A package carries a copyleft, proprietary, or unknown license.</summary>
+    LicenseRisk
 }
 
 /// <summary>
