@@ -165,7 +165,9 @@ public class MigrationServiceCoverageTests
         _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
             .Returns((tempDir, new List<string> { projectPath }));
 
-        _mockAnalyzer.Setup(a => a.ScanResolvedPackagesAsync(projectPath, true))
+        _mockAnalyzer.Setup(a =>
+                a.ScanResolvedPackagesAsync(projectPath, true, It.IsAny<string?>())
+            )
             .ReturnsAsync((new List<PackageReference>(), false));
 
         _mockAnalyzer.Setup(a => a.ScanProjectPackages(It.IsAny<string>()))

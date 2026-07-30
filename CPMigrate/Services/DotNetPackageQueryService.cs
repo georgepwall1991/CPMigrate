@@ -17,13 +17,18 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
 
     public async Task<(List<PackageReference> References, bool Success)> ScanResolvedPackagesAsync(
         string projectFilePath,
-        bool includeTransitive = false)
+        bool includeTransitive = false,
+        string? isolatedIntermediateDirectory = null)
     {
         var projectName = Path.GetFileName(projectFilePath);
 
         try
         {
-            var options = new DotNetPackageListOptions { IncludeTransitive = includeTransitive };
+            var options = new DotNetPackageListOptions
+            {
+                IncludeTransitive = includeTransitive,
+                IsolatedIntermediateDirectory = isolatedIntermediateDirectory,
+            };
             var (output, success) = await _dotNetCliService.RunPackageListJsonAsync(projectFilePath, options);
 
             if (!success)

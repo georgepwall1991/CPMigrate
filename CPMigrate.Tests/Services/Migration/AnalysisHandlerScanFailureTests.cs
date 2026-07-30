@@ -169,7 +169,9 @@ public class AnalysisHandlerScanFailureTests : IDisposable
             .Returns((new List<PackageReference>(), declarationScanSucceeds));
 
         projectAnalyzer
-            .Setup(a => a.ScanResolvedPackagesAsync(_projectPath, It.IsAny<bool>()))
+            .Setup(a =>
+                a.ScanResolvedPackagesAsync(_projectPath, It.IsAny<bool>(), It.IsAny<string?>())
+            )
             .ReturnsAsync(
                 (
                     new List<PackageReference>

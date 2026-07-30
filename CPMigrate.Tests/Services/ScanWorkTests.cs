@@ -329,6 +329,124 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task APropsFileAssigningTheIsolationPropertyFallsBackToSerial()
+    {
+        // Cross-review caught this, and it is the case that defeats isolation outright: the redirection is
+        // passed as environment variables, and a Directory.Build.props assigning
+        // MSBuildProjectExtensionsPath overrides them. Measured — both projects went back to one shared
+        // assets file and the scan failed for both. So when anything reachable could override the
+        // redirection, there is no safe concurrency and the scan runs one project at a time.
+        File.WriteAllText(
+            Path.Combine(_root, "Directory.Build.props"),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <MSBuildProjectExtensionsPath>{Path.Combine(_root, "shared-ext") + Path.DirectorySeparatorChar}</MSBuildProjectExtensionsPath>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteProject("src/Lib/Lib.csproj", "12.0.3");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8))
+            .Should()
+            .Contain(
+                "VersionInconsistency",
+                "the two versions differ, and a layout that cannot be isolated must be scanned serially "
+                    + "rather than concurrently and wrongly"
+            );
+    }
+
+    [Fact]
+    public async Task AnOrdinaryLayoutIsStillIsolatedAndConcurrent()
+    {
+        // The other half: the common case must not be dragged down to serial by the guard above. Nothing
+        // here assigns any of the three properties, so isolation applies.
+        for (var i = 0; i < 6; i++)
+        {
+            WriteProject($"src/P{i}/P{i}.csproj", i % 2 == 0 ? "13.0.1" : "12.0.3");
+        }
+
+        WriteSolution(Enumerable.Range(0, 6).Select(i => $"src/P{i}/P{i}.csproj").ToArray());
+
+        ScanConcurrencyGate.ResetForTests();
+        var findings = await AnalyzeWith(parallelism: 6);
+
+        findings.Should().Contain("VersionInconsistency");
+        ScanConcurrencyGate
+            .Permits.Should()
+            .Be(6, "an isolatable layout keeps the concurrency it asked for");
+    }
+
+    [Fact]
+    public async Task ACustomSdkStillReportsItsFindings()
+    {
+        // Previously asserted through a predictor that tried to decide up front whether isolation would
+        // hold. That predictor is gone: four review rounds each found another MSBuild mechanism it missed —
+        // Directory.Packages.props, custom SDKs, semicolon-separated imports, DirectoryPackagesPropsPath —
+        // because there are more ways to redirect a path than a static reading can enumerate.
+        //
+        // The scan now checks afterwards whether the assets file landed where it was told, and re-runs
+        // serially whatever escaped. So the thing to assert is the outcome, which is what a user cares
+        // about, and which holds regardless of the mechanism: an unresolvable SDK must not cost us the
+        // finding.
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteProject("src/Lib/Lib.csproj", "12.0.3");
+        var api = Path.Combine(_root, "src", "Api", "Api.csproj");
+        File.WriteAllText(
+            api,
+            File.ReadAllText(api)
+                .Replace("Microsoft.NET.Sdk", "Contoso.Custom.Sdk", StringComparison.Ordinal)
+        );
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        // The custom SDK does not resolve, so Api cannot be read — but Lib must still be scanned, and the
+        // run must not claim a clean result for a solution it could not fully examine.
+        var act = async () => await AnalyzeWith(parallelism: 8);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ADirectoryPackagesPropsRedirectingTheAssetsFileStillReportsItsFindings()
+    {
+        // The case that defeats isolation outright: Directory.Packages.props is imported implicitly during
+        // restore and assigns the property, so the environment redirection is overridden and both projects
+        // write to one shared assets file. Detected after the fact — the assets file is not in the isolated
+        // directory — and those projects are re-scanned serially, so the finding survives.
+        File.WriteAllText(
+            Path.Combine(_root, "Directory.Packages.props"),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <MSBuildProjectExtensionsPath>{Path.Combine(_root, "shared-ext") + Path.DirectorySeparatorChar}</MSBuildProjectExtensionsPath>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteProject("src/Lib/Lib.csproj", "12.0.3");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8))
+            .Should()
+            .Contain(
+                "VersionInconsistency",
+                "the redirection was overridden, so those projects are re-scanned serially rather than "
+                    + "trusted"
+            );
+    }
+
+
+    [Fact]
     public async Task TheSameSolutionProducesTheSameReportTwice()
     {
         // Concurrency that merges results in completion order rather than project order produces a report

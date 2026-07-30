@@ -24,7 +24,10 @@ public class DotNetCliService : IDotNetCliService
         var target = ResolveProjectListTarget(projectPathOrDirectory);
         // Primary command for stable SDKs: dotnet list [project] package
         var args = BuildListPackageArguments(options, target.TargetArgument);
-        var (stdOut, stdErr, success) = await RunDotNetCommandDetailedAsync(args, target.WorkingDirectory);
+        var (stdOut, stdErr, success) = await RunDotNetCommandDetailedAsync(
+            args,
+            target.WorkingDirectory,
+            options.IsolatedIntermediateDirectory);
         if (success)
         {
             return (stdOut, true);
@@ -35,7 +38,10 @@ public class DotNetCliService : IDotNetCliService
         if (ShouldTryPackageVerbFallback(combined))
         {
             var packageVerbArgs = BuildPackageListArguments(options, target.TargetArgument);
-            var (packageVerbOut, packageVerbErr, packageVerbSuccess) = await RunDotNetCommandDetailedAsync(packageVerbArgs, target.WorkingDirectory);
+            var (packageVerbOut, packageVerbErr, packageVerbSuccess) = await RunDotNetCommandDetailedAsync(
+                packageVerbArgs,
+                target.WorkingDirectory,
+                options.IsolatedIntermediateDirectory);
             if (packageVerbSuccess)
             {
                 return (packageVerbOut, true);
@@ -182,7 +188,8 @@ public class DotNetCliService : IDotNetCliService
 
     private static async Task<(string StdOut, string StdErr, bool Success)> RunDotNetCommandDetailedAsync(
         string arguments,
-        string workingDirectory)
+        string workingDirectory,
+        string? isolatedIntermediateDirectory = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -196,6 +203,30 @@ public class DotNetCliService : IDotNetCliService
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        if (!string.IsNullOrEmpty(isolatedIntermediateDirectory))
+        {
+            // Environment variables, because `dotnet package list` rejects -p: arguments while MSBuild still
+            // reads the environment as properties. The trailing separator matters: MSBuild treats these as
+            // directory prefixes and concatenates onto them.
+            var directory = isolatedIntermediateDirectory.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar
+            ) + Path.DirectorySeparatorChar;
+
+            // MSBuildProjectExtensionsPath is the one that actually decides where project.assets.json goes,
+            // and it is the one that holds. BaseIntermediateOutputPath alone is not enough: a repo-wide
+            // artifacts/obj set in Directory.Build.props is assigned *before* the default logic runs, so it
+            // overwrites the environment and two projects end up sharing an assets file again — measured,
+            // not assumed. Both are set so that anything deriving a path from the base also lands inside
+            // the isolated directory.
+            startInfo.Environment["MSBuildProjectExtensionsPath"] = directory;
+            startInfo.Environment["BaseIntermediateOutputPath"] = directory;
+            startInfo.Environment["ProjectAssetsFile"] = Path.Combine(
+                directory,
+                "project.assets.json"
+            );
+        }
 
         Process? process;
         try

@@ -42,7 +42,15 @@ public interface IProjectAnalyzer
     /// <summary>
     /// Scans a project for resolved package references via dotnet package list JSON output.
     /// </summary>
-    Task<(List<PackageReference> References, bool Success)> ScanResolvedPackagesAsync(string projectFilePath, bool includeTransitive = false);
+    /// <param name="isolatedIntermediateDirectory">
+    /// Where this invocation should put its MSBuild intermediate output, or null for the project's own
+    /// <c>obj</c>. Supplied when several projects are queried at once, so that two sharing an assets file
+    /// cannot overwrite each other's — see <see cref="DotNetPackageListOptions.IsolatedIntermediateDirectory"/>.
+    /// </param>
+    Task<(List<PackageReference> References, bool Success)> ScanResolvedPackagesAsync(
+        string projectFilePath,
+        bool includeTransitive = false,
+        string? isolatedIntermediateDirectory = null);
 
     /// <summary>
     /// Scans a project for transitive package dependencies.

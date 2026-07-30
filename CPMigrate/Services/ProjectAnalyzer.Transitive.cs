@@ -6,9 +6,15 @@ public partial class ProjectAnalyzer
 {
     public Task<(List<PackageReference> References, bool Success)> ScanResolvedPackagesAsync(
         string projectFilePath,
-        bool includeTransitive = false)
+        bool includeTransitive = false,
+        string? isolatedIntermediateDirectory = null
+    )
     {
-        return _packageQueryService.ScanResolvedPackagesAsync(projectFilePath, includeTransitive);
+        return _packageQueryService.ScanResolvedPackagesAsync(
+            projectFilePath,
+            includeTransitive,
+            isolatedIntermediateDirectory
+        );
     }
 
     public Task<(List<PackageReference> References, bool Success)> ScanTransitivePackagesAsync(string projectFilePath)

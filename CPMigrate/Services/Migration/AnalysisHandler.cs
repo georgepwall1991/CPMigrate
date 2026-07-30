@@ -1,3 +1,4 @@
+using System.Globalization;
 using CPMigrate.Fixers;
 using CPMigrate.Models;
 using Spectre.Console;
@@ -260,36 +261,70 @@ internal sealed class AnalysisHandler
         var deepScansRequested =
             options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated;
 
-        var maxConcurrency = options.ResolveScanParallelism();
-        var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
 
-        // Phase one: the subprocess per project. Serial.
+        // Phase one: the subprocess per project, concurrent.
         //
-        // This was concurrent for a while — it is a separate process per project that spends most of its
-        // half-second waiting, and parallelising it made a 60-project scan two to four times faster. It was
-        // reverted, and the reasoning is worth keeping because the speedup is tempting.
+        // Each invocation gets its own MSBuild intermediate directory. `dotnet package list` restores, and
+        // the assets file it writes lives under that directory — so two projects sharing one cannot be
+        // queried at the same time: the loser reports the other project's packages, and a
+        // version-inconsistency finding vanishes with a clean exit code. Verified directly: two projects in
+        // one directory, one pinned to 13.0.1 and one to 12.0.3, both reported 13.0.1.
         //
-        // `dotnet package list` restores, and two restores that write the same project.assets.json race on
-        // it: the loser comes back reporting the other project's packages, so two projects with different
-        // versions of a package report the same one and the version-inconsistency finding disappears —
-        // cleanly, with a successful exit code. Knowing whether two projects share that file means knowing
-        // where it goes, and eight rounds of review found eight distinct routes to a shared one: a
-        // conditional property, an imported Directory.Build.props, a path built from $(…), an import
-        // reaching a child directory, MSBuildProjectExtensionsPath outranking BaseIntermediateOutputPath,
-        // ProjectAssetsFile naming the file outright, one project redirected into another's default obj, and
-        // --batch-parallel putting two solutions' projects in flight at once. Every fix was correct and the
-        // next round found another.
+        // The redirection is passed as environment variables, because `dotnet package list` rejects -p:
+        // arguments — and MSBuild lets a project override an environment property. So isolation is not
+        // guaranteed, and the interesting design question is what to do about that.
         //
-        // The answer is only available from full MSBuild evaluation — which is exactly what this phase
-        // cannot do, because MSBuild's object model is not thread-safe. So the concurrency cannot be made
-        // safe here at any reasonable cost, and a scan that silently reports fewer findings is a worse
-        // product than a slow one. ScanWorkTests pins the properties any future attempt has to hold.
-        for (var index = 0; index < projectPaths.Count; index++)
+        // It is *checked*, not predicted. Two earlier attempts tried to predict it: 3.24.0 asked "where
+        // would this project's assets file go" and gave up after eight review rounds; the first cut of this
+        // change asked the narrower "could this project override the redirection" and still lost four more
+        // rounds to Directory.Packages.props, custom SDKs, semicolon-separated imports and
+        // DirectoryPackagesPropsPath. Every round found a real hole, because MSBuild has more ways to
+        // redirect a path than a static reading can enumerate.
+        //
+        // Afterwards the question is trivial: is the assets file in the directory we told it to use? If yes,
+        // this invocation wrote there and shared with nobody — whatever the project declares. If no, the
+        // redirection was overridden and the result cannot be trusted, so that project is scanned again
+        // serially. Immune to every mechanism above, and to the next one, because it observes the outcome
+        // instead of modelling the causes.
+        //
+        // Isolation costs a cold restore per project instead of reusing an existing obj, and still wins:
+        // 30 projects, 69s serial against 13s concurrent. Packages come from the shared global cache, so
+        // each temp directory holds ~60K.
+        var requestedConcurrency = options.ResolveScanParallelism();
+        var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
+        var isolationRoot = requestedConcurrency > 1 ? CreateIsolationRoot() : null;
+        var maxConcurrency = ResolveSafeConcurrency(requestedConcurrency, isolationRoot);
+
+        try
         {
-            resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
-                projectPaths[index],
-                options.IncludeTransitive
+            await Parallel.ForEachAsync(
+                Enumerable.Range(0, projectPaths.Count),
+                new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency },
+                async (index, _) =>
+                {
+                    using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
+
+                    // Shared: this restore is isolated, or its result will be discarded and retaken if it
+                    // turns out not to be. Either way it cannot corrupt a restore that *is* isolated. Held
+                    // so that a retake elsewhere in the process — which is not isolated and does have to be
+                    // trusted — can wait for it.
+                    using var restoreSlot = await RestoreScanLock.AcquireSharedAsync();
+
+                    resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                        projectPaths[index],
+                        options.IncludeTransitive,
+                        IsolatedDirectoryFor(isolationRoot, index)
+                    );
+                }
             );
+
+            // Anything whose restore escaped its isolated directory was potentially racing with another
+            // project, so its result is discarded and taken again one at a time.
+            await RescanUnisolatedAsync(options, projectPaths, resolved, isolationRoot);
+        }
+        finally
+        {
+            DeleteIsolationRoot(isolationRoot);
         }
 
         // Phase two: MSBuild. Serial, and deliberately so — see above.
@@ -327,6 +362,13 @@ internal sealed class AnalysisHandler
                 // cap by the number of solutions — producing the feed rate-limiting the cap exists to
                 // avoid.
                 using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
+
+                // Shared, because these also shell out to `dotnet package list` and so also restore. They
+                // are not isolated — that is a separate change, and their own mutual race predates this one
+                // — but they must still participate, or the "exclusive" retake in the resolved-package phase
+                // is not exclusive at all: --batch-parallel would have another solution's deep scans
+                // restoring against the same path while a retake was being trusted.
+                using var restoreSlot = await RestoreScanLock.AcquireSharedAsync();
 
                 var vulnerabilities = new List<VulnerabilityInfo>();
                 var outdated = new List<OutdatedPackageInfo>();
@@ -368,6 +410,150 @@ internal sealed class AnalysisHandler
         List<PackageReference>? DeclaredReferences
     );
 
+
+
+
+    /// <summary>The directory this project's restore should write to, or null when not isolating.</summary>
+    private static string? IsolatedDirectoryFor(string? isolationRoot, int index)
+    {
+        return isolationRoot is null
+            ? null
+            : Path.Combine(isolationRoot, index.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Re-runs, one at a time, any project whose restore did not land where it was told to.
+    ///
+    /// The assets file being absent from the isolated directory means the redirection was overridden — by a
+    /// <c>Directory.Packages.props</c>, a custom SDK, a <c>DirectoryPackagesPropsPath</c>, or something not
+    /// yet thought of. Whatever the cause, that restore wrote somewhere shared and may have collided with
+    /// another project running at the same time, so its result is thrown away rather than trusted.
+    ///
+    /// Serially and without isolation, which is what the scan did before any of this: correct, just slower,
+    /// and only for the projects that actually need it.
+    /// </summary>
+    private async Task RescanUnisolatedAsync(
+        Options options,
+        List<string> projectPaths,
+        (List<PackageReference> References, bool Success)[] resolved,
+        string? isolationRoot
+    )
+    {
+        if (isolationRoot is null)
+        {
+            return;
+        }
+
+        var escaped = Enumerable
+            .Range(0, projectPaths.Count)
+            .Where(index => !IsolationHeld(IsolatedDirectoryFor(isolationRoot, index)!))
+            .ToList();
+
+        if (escaped.Count == 0)
+        {
+            return;
+        }
+
+        // Exclusive across the whole process, which means it also waits out other scans' first passes —
+        // --batch-parallel has those running concurrently, and an escaped restore writes somewhere shared.
+        // Serialising only the retakes against each other was not enough: another solution's first pass
+        // could still be mid-restore against the same path.
+        using var exclusive = await RestoreScanLock.AcquireExclusiveAsync();
+
+        foreach (var index in escaped)
+        {
+            resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                projectPaths[index],
+                options.IncludeTransitive,
+                isolatedIntermediateDirectory: null
+            );
+        }
+    }
+
+    /// <summary>
+    /// Whether the restore actually wrote its assets file where it was told to.
+    ///
+    /// A missing file also covers a restore that failed outright, which is treated the same way: retried
+    /// serially, and reported as a scan failure if it fails again. Erring towards the retry costs one
+    /// subprocess; erring the other way means trusting a result that may describe a different project.
+    /// </summary>
+    private static bool IsolationHeld(string isolatedDirectory)
+    {
+        try
+        {
+            return File.Exists(Path.Combine(isolatedDirectory, "project.assets.json"));
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// How many resolved-package queries may run at once, given whether isolation is available.
+    ///
+    /// No isolation means no concurrency. Without a temp directory there is nowhere to put each
+    /// invocation's assets file, so running them at once is the collision this whole arrangement exists to
+    /// prevent — two projects report the same package version and an inconsistency disappears with a clean
+    /// exit code. One at a time is slower and correct; the alternative is fast and silently wrong.
+    ///
+    /// Extracted and tested rather than inlined because the first version of this only *claimed* the
+    /// property, in a comment on <see cref="CreateIsolationRoot"/>, while the caller went on running
+    /// concurrently regardless. A comment asserting a safety property the code does not implement is the
+    /// exact failure this release series has spent its time removing.
+    /// </summary>
+    internal static int ResolveSafeConcurrency(int requestedConcurrency, string? isolationRoot)
+    {
+        if (requestedConcurrency <= 1)
+        {
+            return 1;
+        }
+
+        return isolationRoot is null ? 1 : requestedConcurrency;
+    }
+
+    /// <summary>
+    /// A directory to hold one intermediate-output directory per project, for the duration of the scan.
+    /// </summary>
+    private static string? CreateIsolationRoot()
+    {
+        try
+        {
+            var root = Path.Combine(
+                Path.GetTempPath(),
+                $"cpmigrate-scan-{Guid.NewGuid():N}"
+            );
+            Directory.CreateDirectory(root);
+
+            return root;
+        }
+        catch (Exception)
+        {
+            // Without a writable temp directory there is nowhere to isolate to. Returning null makes the
+            // caller drop to one project at a time — which it does, checked rather than assumed, because a
+            // concurrent scan without isolation is exactly the collision this guards against.
+            return null;
+        }
+    }
+
+    private static void DeleteIsolationRoot(string? root)
+    {
+        if (root is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        catch (Exception)
+        {
+            // Temp files under the OS temp directory. Failing the run over a cleanup problem would be worse
+            // than leaving them for the OS to reap.
+        }
+    }
+
     /// <summary>
     /// The MSBuild half of the reference pass: the XML fallback when the resolved scan failed, and the
     /// declaration read. Kept separate from the subprocess so that only this part has to be serialised.
@@ -382,7 +568,9 @@ internal sealed class AnalysisHandler
         (List<PackageReference> References, bool Success) resolved
     )
     {
-        var (references, success) = resolved;
+        // Never null in practice — but a null list here surfaced as a NullReferenceException inside a LINQ
+        // merge two frames away, which is a poor way to learn that a scan returned nothing.
+        var (references, success) = (resolved.References ?? [], resolved.Success);
 
         if (!success)
         {
