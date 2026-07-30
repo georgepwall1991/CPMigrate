@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.30.0] - 2026-07-30
+
+### Added
+- **`--init` config scaffolding.** Creates a `.cpmigrate.json` with team defaults. Interactive terminals get prompted for each setting (conflict strategy, backup, fail-on severity, baseline, retention); non-interactive terminals get sensible defaults. Refuses to overwrite an existing config unless `--force` is passed. `cpmigrate init` (bare word) is caught by the verb guard.
+
 ## [3.29.0] - 2026-07-30
 
 ### Added

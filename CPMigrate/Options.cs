@@ -380,6 +380,13 @@ public class Options
     )]
     public bool Doctor { get; set; }
 
+    [Option(
+        "init",
+        Default = false,
+        HelpText = "Create a .cpmigrate.json config file with team defaults. Prompts interactively, or writes sensible defaults in CI."
+    )]
+    public bool Init { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Analysis & Auto-Fix
     // ═══════════════════════════════════════════════════════════════════════
@@ -565,6 +572,7 @@ public class Options
             ),
             new("Analyze and auto-fix issues", new Options { Analyze = true, Fix = true }),
             new("Diagnose your environment", new Options { Doctor = true }),
+            new("Create a .cpmigrate.json config", new Options { Init = true }),
             new(
                 "Analyze and include outdated/deprecated package checks",
                 new Options
