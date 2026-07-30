@@ -6,6 +6,22 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.20.0] - 2026-07-30
+
+### Fixed
+- **`RedundantDirectReference` had never reported a single finding.** The analyzer reads the resolved dependency graph out of `project.assets.json` and looks each package up by composing `Name/Version`. The version it composed with came from `project.frameworks.<tf>.dependencies`, where **NuGet writes a version range** — `"[7.0.0, )"` for an ordinary reference — while the `targets` section is keyed by the **resolved** version, `"Serilog.Sinks.File/7.0.0"`. So every lookup built a key like `Serilog.Sinks.File/[7.0.0, )`, matched nothing, and returned no dependencies. The transitive closure was always empty, so no reference was ever redundant.
+  - It failed as a clean result rather than as an error: the analyzer ran, succeeded, and reported nothing, which is indistinguishable from a project that has no redundant references.
+  - **Its tests passed because their fixtures could not occur.** They declared dependencies as `"version": "1.0.0"`, the one form real restore output never contains — and the only form the broken key happened to match. Those fixtures now use ranges, so nobody re-derives a version-keyed lookup from them.
+  - Lookup is now by **package name** against the resolved graph. Restore settles on exactly one version per package per target framework, so the name identifies a node and no version needs parsing, comparing, or reconstructing.
+  - **Verified end-to-end on a real restored project** (`Serilog.Sinks.File` + a redundant direct `Serilog`): 0 findings with the shipped code, 1 with the fix, same input.
+
+### Changed
+- A `ProjectReference` listed among a framework's dependencies is no longer treated as a package. It appears there with `"target": "Project"` and no version, and whether one project reference is reachable through another is a different question from package redundancy — not one this analyzer is entitled to answer.
+- Traversal tolerates the graph shapes a real file produces: a missing `targets` entry for a declared framework, an assets file truncated by an interrupted restore, inconsistent casing between the dependency list and the target keys, and cycles.
+
+### Testing
+- `DependencyGraphRealAssetsTests` (13 new) uses the shapes real restore output actually contains, which is the entire point. Covers five range forms (floor-only, bare, exact pin, bounded, exclusive floor), a chain several levels deep, case-insensitive IDs, project references, a framework absent from `targets`, a truncated file, and a cycle. 1043 tests pass.
+
 ## [3.19.0] - 2026-07-30
 
 ### Fixed
