@@ -7,12 +7,19 @@ namespace CPMigrate.Models;
 /// <param name="Version">The version string of the package.</param>
 /// <param name="ProjectPath">Full path to the project file containing this reference.</param>
 /// <param name="ProjectName">The file name of the project (e.g., "MyProject.csproj").</param>
+/// <param name="IsConditional">
+/// Whether the declaration, or the item group holding it, carries a <c>Condition</c>. Two conditional
+/// declarations of one package are how multi-targeting is expressed, not a mistake, so a rule about
+/// duplicates has to be able to tell them apart from two unconditional ones. Only ever set on references
+/// read from the project file; the resolved graph has no conditions left in it.
+/// </param>
 public record PackageReference(
     string PackageName,
     string Version,
     string ProjectPath,
     string ProjectName,
-    bool IsTransitive = false
+    bool IsTransitive = false,
+    bool IsConditional = false
 );
 
 /// <summary>
@@ -63,6 +70,31 @@ public record ProjectPackageInfo(
     IReadOnlyList<PackageReference>? DeclaredReferences = null
 )
 {
+    /// <summary>
+    /// Whether a project declares this package behind a <c>Condition</c>.
+    ///
+    /// A multi-targeted project pinning a different version per framework is the ordinary way to say "the
+    /// newer one does not support net8.0". The resolved reference list has no conditions left in it, so a
+    /// rule comparing versions across projects would read those two pins as an inconsistency and — being
+    /// fixable — have them unified to the highest, silently breaking the target that needed the older one.
+    /// </summary>
+    public bool IsConditionallyDeclared(string projectPath, string packageName)
+    {
+        return DeclaredReferences?.Any(reference =>
+                reference.IsConditional
+                && string.Equals(
+                    reference.ProjectPath,
+                    projectPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && string.Equals(
+                    reference.PackageName,
+                    packageName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            ) ?? false;
+    }
+
     /// <summary>
     /// Turns an <c>AffectedProjects</c> entry back into a path on disk.
     ///

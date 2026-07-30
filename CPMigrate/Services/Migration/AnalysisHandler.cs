@@ -321,8 +321,11 @@ internal sealed class AnalysisHandler
 
         // Read the project file as well. The resolved list cannot answer questions about what the file
         // says — resolution collapses duplicate PackageReference items — and this is a local XML parse,
-        // not another process, so it costs a fraction of the scan it accompanies.
-        var (declared, declaredRead) = _projectAnalyzer.ScanProjectPackages(projectPath);
+        // not another process, so it costs a fraction of the scan it accompanies. ScanDeclaredPackages
+        // rather than ScanProjectPackages: the latter drops versionless items, which is how central
+        // package management writes every reference, so it would return nothing for most users of this
+        // tool.
+        var (declared, declaredRead) = _projectAnalyzer.ScanDeclaredPackages(projectPath);
 
         return (references, success, declaredRead ? declared : []);
     }

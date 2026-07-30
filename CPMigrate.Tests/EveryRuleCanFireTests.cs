@@ -252,6 +252,100 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     [Fact]
+    public async Task RedundantReference_FiresUnderCentralPackageManagement()
+    {
+        // Cross-review caught this: the declaration scan reused a method that drops PackageReference items
+        // with no Version — and under CPM a reference normally *has* no version. So for the majority of
+        // this tool's users the rule still could not fire, having just been "fixed".
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" />
+                <PackageReference Include="Newtonsoft.Json" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj");
+        WriteCentralProps(("Newtonsoft.Json", "13.0.1"));
+
+        (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.RedundantReference));
+    }
+
+    [Fact]
+    public async Task ConditionalDeclarations_AreNotReportedAsDuplicates()
+    {
+        // Cross-review caught this, and it was the more serious of the two: declaring a package once per
+        // target framework behind a Condition is how multi-targeting is written. Reporting it would be bad
+        // enough, but the finding is *fixable* — so --fix would delete the declaration another framework
+        // depends on. A rule that quietly reported nothing would have become a rule that breaks a build,
+        // which is the worse failure of the two.
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+              </PropertyGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+                <PackageReference Include="Serilog" Version="4.3.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj");
+
+        // Nor as a version inconsistency — which is what the fix for the above uncovered. That rule read
+        // the resolved list, where conditions no longer exist, so it saw 4.0.0 and 4.3.0 in one project and
+        // called them inconsistent. Being fixable, --fix then unified them to 4.3.0 and broke net8.0.
+        (await Analyze())
+            .Should()
+            .BeEmpty("a per-framework pin is deliberate, not a defect");
+    }
+
+    [Fact]
+    public async Task Fix_LeavesConditionalDeclarationsUntouched()
+    {
+        // The consequence, asserted on the file: both framework-specific declarations must survive a --fix
+        // run. Checking the finding is absent is not enough — the destructive step is the one to pin.
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+              </PropertyGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+                <PackageReference Include="Serilog" Version="4.3.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj");
+        var projectFile = Path.Combine(_root, "src", "Api", "Api.csproj");
+
+        await ProgramRunner.RunAsync(
+            ["--analyze", "--fix", "--no-backup", "--quiet", "-s", _root],
+            new FakeConsoleService()
+        );
+
+        var content = await File.ReadAllTextAsync(projectFile);
+        content.Should().Contain("4.0.0", "the net8.0 declaration must survive");
+        content.Should().Contain("4.3.0", "the net10.0 declaration must survive");
+    }
+
+    [Fact]
     public async Task AFixableFinding_IsActuallyRepairedByFix()
     {
         // Reporting a finding as fixable and then not fixing it is its own silent failure, and this rule had

@@ -94,6 +94,23 @@ public class VersionInconsistencyFixer : IFixer
         return new NuGetVersion(0, 0, 0);
     }
 
+    /// <summary>
+    /// Whether a declaration, or an ancestor holding it, carries a <c>Condition</c> — which makes it
+    /// framework- or configuration-specific and not ours to rewrite.
+    /// </summary>
+    private static bool IsConditional(XElement element)
+    {
+        for (var current = element; current is not null; current = current.Parent)
+        {
+            if (!string.IsNullOrEmpty(current.Attribute("Condition")?.Value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static FileChange? UpdateProjectVersions(string projectPath, string packageName, string targetVersion, bool dryRun)
     {
         if (!File.Exists(projectPath))
@@ -108,7 +125,13 @@ public class VersionInconsistencyFixer : IFixer
 
             var packageRefs = doc.Descendants("PackageReference")
                 .Where(e => e.Attribute("Include")?.Value
-                    .Equals(packageName, StringComparison.OrdinalIgnoreCase) == true);
+                    .Equals(packageName, StringComparison.OrdinalIgnoreCase) == true)
+                // A conditional declaration is deliberate: a multi-targeted project pinning a different
+                // version per framework is the ordinary way to express "the newer one does not support
+                // net8.0". Unifying them to the highest version silently breaks the target that needed the
+                // older one — and the fix reads as a tidy-up, so nobody looks here when the build goes red.
+                // Overlap cannot be evaluated outside a build, so a conditional pin is left alone.
+                .Where(e => !IsConditional(e));
 
             var modified = false;
 

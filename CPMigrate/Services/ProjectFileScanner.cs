@@ -81,6 +81,64 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
     }
 
+    /// <inheritdoc />
+    public (List<PackageReference> References, bool Success) ScanDeclaredPackages(
+        string projectFilePath
+    )
+    {
+        var projectName = Path.GetFileName(projectFilePath);
+        List<PackageReference> references = [];
+
+        try
+        {
+            using var projectCollection = new ProjectCollection();
+            var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
+
+            try
+            {
+                foreach (var item in projectRoot.Items)
+                {
+                    if (item.ItemType != "PackageReference")
+                    {
+                        continue;
+                    }
+
+                    var version =
+                        item.Metadata.FirstOrDefault(m => m.Name == "Version")?.Value ?? string.Empty;
+
+                    // A condition on the item or on its group. Kept rather than filtered, because "this
+                    // package is declared twice, both times conditionally" is a different fact from "this
+                    // package is declared twice" and only the caller knows which one it needs.
+                    var isConditional =
+                        !string.IsNullOrEmpty(item.Condition)
+                        || !string.IsNullOrEmpty(item.Parent?.Condition);
+
+                    references.Add(
+                        new PackageReference(
+                            item.Include,
+                            version,
+                            projectFilePath,
+                            projectName,
+                            IsTransitive: false,
+                            IsConditional: isConditional
+                        )
+                    );
+                }
+
+                return (references, true);
+            }
+            finally
+            {
+                projectCollection.UnloadAllProjects();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not read declarations from {Project}", projectName);
+            return ([], false);
+        }
+    }
+
     public (List<PackageReference> References, bool Success) ScanProjectPackages(string projectFilePath)
     {
         var references = new List<PackageReference>();

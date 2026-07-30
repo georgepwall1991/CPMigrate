@@ -23,8 +23,14 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - `ProjectPackageInfo.ResolveProjectPath` does the reverse lookup, so no caller has to know how a finding's project entry maps back to disk.
   - Verified on a real project: the duplicate reference is now removed from the file, and a test asserts it on the file rather than on the exit code.
 
+- **Conditional declarations are no longer mistaken for defects — by any rule or fixer.** Found in cross-review, and the most serious item here: declaring a package once per target framework behind a `Condition` is how multi-targeting is written, and making `RedundantReference` fire turned a rule that quietly reported nothing into one that would have had `--fix` **delete the declaration another framework depends on**. MSBuild conditions cannot be evaluated outside a build, so overlap is not guessed at: a duplicate is reported only among declarations that always apply.
+  - Fixing that exposed the same flaw in `VersionInconsistency`, which reads the *resolved* list where conditions no longer exist. It saw `4.0.0` and `4.3.0` in one multi-targeted project, called them inconsistent, and — being fixable — unified them to `4.3.0`, breaking the `net8.0` target. A per-framework pin is now excluded from the comparison, and the fixer refuses to rewrite a conditional declaration even if something else reports one.
+  - Reporting a finding a fixer then declines to act on is its own kind of wrong — the same "no changes were needed" over an unrepaired finding as above — so the finding is suppressed rather than merely made unfixable.
+
+- **`RedundantReference` now fires under central package management.** Also found in cross-review. The first fix read declarations through a scan that drops `PackageReference` items with no `Version` — and under CPM a reference normally *has* no version, so for the majority of this tool's users the rule still could not fire, having just been "fixed". A dedicated declaration scan keeps versionless items, and records whether each was conditional.
+
 ### Testing
-- 13 new tests. 1069 pass.
+- 17 new tests. 1072 pass.
 
 ## [3.20.0] - 2026-07-30
 

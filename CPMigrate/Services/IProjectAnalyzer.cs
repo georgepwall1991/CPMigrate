@@ -33,6 +33,13 @@ public interface IProjectAnalyzer
     bool ScanProjectPackages(string projectFilePath, Dictionary<string, HashSet<string>> packageVersions);
 
     /// <summary>
+    /// Every <c>PackageReference</c> the project file declares, as written — including versionless ones,
+    /// which is how central package management expresses a reference. See
+    /// <see cref="IProjectFileScanner.ScanDeclaredPackages"/>.
+    /// </summary>
+    (List<PackageReference> References, bool Success) ScanDeclaredPackages(string projectFilePath);
+
+    /// <summary>
     /// Scans a project for resolved package references via dotnet package list JSON output.
     /// </summary>
     Task<(List<PackageReference> References, bool Success)> ScanResolvedPackagesAsync(string projectFilePath, bool includeTransitive = false);
