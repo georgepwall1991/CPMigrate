@@ -247,15 +247,8 @@ internal sealed class AnalysisHandler
     /// <summary>
     /// Gathers references, then runs the opt-in package queries with bounded concurrency.
     ///
-    /// The reference pass is split in two, along the line that matters for correctness. Resolving packages
-    /// shells out to <c>dotnet package list</c> — a separate process per project, with no shared state and
-    /// most of its half-second spent waiting — so those run concurrently. Reading the project file's own
-    /// text goes through MSBuild's object model, whose static caches are not thread-safe: running *that*
-    /// concurrently produced projects reporting each other's package versions, which silently erased
-    /// version-inconsistency findings rather than crashing. So it stays serial, deliberately, and
-    /// <c>ScanWorkTests</c> pins that it does.
-    ///
-    /// Measured on 60 unrestored projects with no deep scans: 42s → 9s.
+    /// The reference pass is serial in both halves, for two different reasons — see the notes inside. The
+    /// opt-in queries are the part that is safe to parallelise, and they are.
     /// </summary>
     private async Task ScanProjectsAsync(
         Options options,
@@ -270,38 +263,34 @@ internal sealed class AnalysisHandler
         var maxConcurrency = options.ResolveScanParallelism();
         var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
 
-        // Phase one: the subprocess per project, concurrent — nothing here touches MSBuild.
+        // Phase one: the subprocess per project. Serial.
         //
-        // Two gates: ScanConcurrencyGate bounds the total number of queries in flight, and
-        // ProjectDirectoryLock keeps two of them from being aimed at the same directory — see the note on
-        // that type for why sharing one is a silent finding-eraser.
+        // This was concurrent for a while — it is a separate process per project that spends most of its
+        // half-second waiting, and parallelising it made a 60-project scan two to four times faster. It was
+        // reverted, and the reasoning is worth keeping because the speedup is tempting.
         //
-        // The decision to run concurrently at all belongs to the whole scan rather than to each project: if
-        // any project here could move its assets file, no per-project key is provably right, because the
-        // redirect's target may be another project's default directory. In that case the phase runs one at a
-        // time, which is what it did before this release.
-        var scanConcurrency = ProjectDirectoryLock.CanScanConcurrently(projectPaths)
-            ? maxConcurrency
-            : 1;
-
-        await Parallel.ForEachAsync(
-            Enumerable.Range(0, projectPaths.Count),
-            new ParallelOptions { MaxDegreeOfParallelism = scanConcurrency },
-            async (index, _) =>
-            {
-                using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
-
-                // Exclusive on the project's directory, process-wide — grouping within this scan would not
-                // help, because --batch-parallel runs several solutions at once and two of them can
-                // reference projects in the same directory.
-                using var directory = await ProjectDirectoryLock.AcquireAsync(projectPaths[index]);
-
-                resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
-                    projectPaths[index],
-                    options.IncludeTransitive
-                );
-            }
-        );
+        // `dotnet package list` restores, and two restores that write the same project.assets.json race on
+        // it: the loser comes back reporting the other project's packages, so two projects with different
+        // versions of a package report the same one and the version-inconsistency finding disappears —
+        // cleanly, with a successful exit code. Knowing whether two projects share that file means knowing
+        // where it goes, and eight rounds of review found eight distinct routes to a shared one: a
+        // conditional property, an imported Directory.Build.props, a path built from $(…), an import
+        // reaching a child directory, MSBuildProjectExtensionsPath outranking BaseIntermediateOutputPath,
+        // ProjectAssetsFile naming the file outright, one project redirected into another's default obj, and
+        // --batch-parallel putting two solutions' projects in flight at once. Every fix was correct and the
+        // next round found another.
+        //
+        // The answer is only available from full MSBuild evaluation — which is exactly what this phase
+        // cannot do, because MSBuild's object model is not thread-safe. So the concurrency cannot be made
+        // safe here at any reasonable cost, and a scan that silently reports fewer findings is a worse
+        // product than a slow one. ScanWorkTests pins the properties any future attempt has to hold.
+        for (var index = 0; index < projectPaths.Count; index++)
+        {
+            resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                projectPaths[index],
+                options.IncludeTransitive
+            );
+        }
 
         // Phase two: MSBuild. Serial, and deliberately so — see above.
         for (var index = 0; index < projectPaths.Count; index++)
