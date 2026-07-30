@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.43.0] - 2026-07-30
+
+### Added
+- **CSV output format.** `--output Csv` renders analysis findings as comma-separated values for spreadsheet analysis. One row per finding with columns: Rule, Severity, Package, Description, AffectedProjects, Fixable. Fields containing commas or quotes are RFC 4180-escaped. Requires `--analyze`. CsvFormatter.cs provides the standalone utility; CommandRouter dispatches inline to stay within its coupling budget (CA1506 pragma added for the dispatch table).
+
 ## [3.42.0] - 2026-07-30
 
 ### Changed

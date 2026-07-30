@@ -8,7 +8,9 @@ namespace CPMigrate;
 /// <summary>
 /// Routes and executes different command modes based on parsed options.
 /// </summary>
+#pragma warning disable CA1506 // CommandRouter is a dispatch table that inherently touches many types
 internal static class CommandRouter
+#pragma warning restore CA1506
 {
     public static Task<int> RouteCommand(Options options, ApplicationServices services)
     {
@@ -1021,6 +1023,39 @@ internal static class CommandRouter
         await JsonOutputWriter.EmitAsync(markdown, options, consoleService);
     }
 
+    private static async Task WriteCsvOutputAsync(
+        Options options,
+        MigrationResult result,
+        IConsoleService consoleService
+    )
+    {
+        var report =
+            result.PostFixAnalysisReport
+            ?? result.AnalysisReport
+            ?? new AnalysisReport(0, 0, Array.Empty<AnalyzerResult>());
+
+        var rows = report.Results
+            .SelectMany(r => r.Issues.Select(issue =>
+                string.Join(",",
+                    CsvField(r.AnalyzerName),
+                    CsvField(issue.Severity.ToString()),
+                    CsvField(issue.PackageName),
+                    CsvField(issue.Description),
+                    CsvField(string.Join("; ", issue.AffectedProjects)),
+                    issue.Fixable ? "true" : "false")))
+            .ToList();
+
+        var csv = "Rule,Severity,Package,Description,AffectedProjects,Fixable\n"
+            + string.Join("\n", rows) + "\n";
+
+        await JsonOutputWriter.EmitAsync(csv, options, consoleService);
+    }
+
+    private static string CsvField(string value) =>
+        value.Contains(',') || value.Contains('"') || value.Contains('\n')
+            ? $"\"{value.Replace("\"", "\"\"")}\""
+            : value;
+
     /// <summary>
     /// Decides whether the scan behind a result can be trusted. An empty finding list from a scan
     /// that never ran — or that failed on some projects — is a false negative, and reporting it as
@@ -1067,6 +1102,12 @@ internal static class CommandRouter
         if (options.Output == OutputFormat.Markdown)
         {
             await WriteMarkdownOutputForMigration(options, result, consoleService);
+            return;
+        }
+
+        if (options.Output == OutputFormat.Csv)
+        {
+            await WriteCsvOutputAsync(options, result, consoleService);
             return;
         }
 
