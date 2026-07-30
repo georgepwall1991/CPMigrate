@@ -43,7 +43,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.16.0
+dotnet tool install --global CPMigrate --version 3.17.0
 ```
 
 ```bash
@@ -908,6 +908,20 @@ Use `--output Json` to produce machine-readable output for CI/CD pipelines:
 ```bash
 cpmigrate --analyze --output Json --output-file report.json
 ```
+
+The payload has a **published schema** at
+[`schemas/cpmigrate-output.schema.json`](schemas/cpmigrate-output.schema.json), so a parser can be
+validated rather than guessed at, and editors will complete a recorded fixture. Key off
+`outputSchemaVersion` rather than the tool version — additive changes bump its minor, and the one
+field whose meaning has ever changed is called out in the [CHANGELOG](CHANGELOG.md).
+
+Two things worth knowing before writing a parser:
+
+- **`success: true` does not mean "no findings".** Findings below the `--fail-on` threshold, and
+  findings a baseline accepted, both leave it true. Check `summary.issuesFound` for whether anything
+  was reported at all, and `summary.issuesAtOrAboveThreshold` for what the exit code reflects.
+- **Absent fields are meaningful.** `summary` omits counters irrelevant to the command that ran, so
+  a missing `issuesBaselined` means no baseline was used — not zero suppressions.
 
 ---
 

@@ -1,0 +1,229 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
+  "title": "CPMigrate Output",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG.",
+  "type": "object",
+  "required": ["outputSchemaVersion", "version", "operation", "success", "exitCode", "summary"],
+  "properties": {
+    "outputSchemaVersion": {
+      "type": "string",
+      "description": "Version of this contract, independent of the tool version. Additive changes bump the minor; a field changing meaning is called out in the CHANGELOG."
+    },
+    "version": {
+      "type": "string",
+      "description": "CPMigrate version that produced the payload"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "analyze",
+        "migrate",
+        "rollback",
+        "update-packages",
+        "unify-props",
+        "list-backups",
+        "prune-backups",
+        "batch-analyze",
+        "batch-migrate"
+      ],
+      "description": "Which command produced the payload"
+    },
+    "success": {
+      "type": "boolean",
+      "description": "Whether the operation completed without a failure. Note that findings below the --fail-on threshold leave this true — check summary.issuesFound to see whether anything was reported at all."
+    },
+    "exitCode": {
+      "type": "integer",
+      "description": "Process exit code. 0 clean, 5 findings at or above the gate, 8 an incomplete scan — see the exit-code table in the README."
+    },
+    "summary": { "$ref": "#/definitions/summary" },
+    "analysisIssues": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/analysisIssue" },
+      "description": "Findings, for analyze mode"
+    },
+    "fixes": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/fix" },
+      "description": "Changes written by --fix, or proposed by --fix-dry-run"
+    },
+    "packageUpdates": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/packageUpdate" },
+      "description": "Update candidates, for --update-packages"
+    },
+    "errors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Failures encountered during the operation"
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Non-fatal problems worth surfacing"
+    },
+    "propsFile": { "$ref": "#/definitions/propsFile" },
+    "backup": { "$ref": "#/definitions/backup" },
+    "dryRun": {
+      "type": "boolean",
+      "description": "Whether the run was a preview and wrote nothing"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the operation completed, in ISO 8601"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "severity": {
+      "type": "string",
+      "enum": ["Info", "Low", "Moderate", "High", "Critical"]
+    },
+    "summary": {
+      "type": "object",
+      "description": "Counts for the operation. Fields not relevant to the command that ran are omitted rather than zeroed, so their absence is meaningful.",
+      "properties": {
+        "projectsProcessed": { "type": "integer" },
+        "packagesFound": { "type": "integer" },
+        "conflictsResolved": { "type": "integer" },
+        "issuesFound": {
+          "type": "integer",
+          "description": "Every finding reported, including ones below the --fail-on threshold and ones a baseline accepted"
+        },
+        "failOnSeverity": {
+          "type": "string",
+          "enum": ["Info", "Low", "Moderate", "High", "Critical", "Never"],
+          "description": "The configured failure threshold, so a consumer can tell a clean run from one whose findings were below the gate"
+        },
+        "issuesAtOrAboveThreshold": {
+          "type": "integer",
+          "description": "The subset of findings the exit code reflects"
+        },
+        "issuesRemainingAfterFixes": {
+          "type": "integer",
+          "description": "Findings still present after --fix wrote its changes, from a fresh scan. Absent when no fixes were applied; issuesFound stays as the pre-fix count so it lines up with the fixes array."
+        },
+        "issuesBaselined": {
+          "type": "integer",
+          "description": "Findings a baseline accepted, and therefore excluded from the gate. Absent when no baseline was used."
+        },
+        "highestSeverity": { "$ref": "#/definitions/severity" },
+        "scanFailures": {
+          "type": "integer",
+          "description": "Projects that could not be scanned. Non-zero means the findings are incomplete, and exitCode is 8."
+        },
+        "deepScanFailures": {
+          "type": "integer",
+          "description": "Opt-in package queries (--audit/--outdated/--deprecated) that failed to return"
+        },
+        "issuesFixed": { "type": "integer" },
+        "filesModified": { "type": "integer" },
+        "packagesChecked": { "type": "integer" },
+        "packagesUpdated": { "type": "integer" },
+        "packagesSkipped": { "type": "integer" },
+        "transitivePackagesFound": { "type": "integer" },
+        "transitivePackagesUpdated": { "type": "integer" },
+        "testsPassed": { "type": "boolean" },
+        "wasRolledBack": { "type": "boolean" },
+        "packagesHeldBack": {
+          "type": "integer",
+          "description": "Accepted updates that did not survive verification and were left at their old version"
+        },
+        "verificationRuns": {
+          "type": "integer",
+          "description": "Restore+test cycles executed, which is what --bisect spends"
+        },
+        "bisectBudgetExhausted": {
+          "type": "boolean",
+          "description": "Whether bisection stopped early on its run budget, leaving some updates unresolved"
+        }
+      },
+      "additionalProperties": false
+    },
+    "analysisIssue": {
+      "type": "object",
+      "required": ["type", "issueCode", "severity", "package", "description"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Display name of the analyzer that reported the finding"
+        },
+        "issueCode": {
+          "type": "string",
+          "description": "Stable rule identifier, the same value SARIF uses as ruleId. Explain one with: cpmigrate --explain <issueCode>"
+        },
+        "severity": { "$ref": "#/definitions/severity" },
+        "package": { "type": "string" },
+        "description": { "type": "string" },
+        "affectedProjects": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Projects the finding affects, each as a path relative to the scan root and forward-slashed, so the value is identical on every machine. Before schema 1.3.0 these were bare file names."
+        },
+        "fixable": {
+          "type": "boolean",
+          "description": "Whether a built-in fixer addresses this finding"
+        },
+        "suppressed": {
+          "type": "boolean",
+          "description": "Whether a baseline accepted this finding. Suppressed findings are still reported but excluded from the gate."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Analyzer-specific detail; keys vary by rule"
+        }
+      },
+      "additionalProperties": false
+    },
+    "fix": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "What the fixer did" },
+        "package": { "type": "string" },
+        "file": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "applied": {
+          "type": "boolean",
+          "description": "False under --fix-dry-run, and for a fix that failed to write"
+        }
+      },
+      "additionalProperties": false
+    },
+    "packageUpdate": {
+      "type": "object",
+      "properties": {
+        "package": { "type": "string" },
+        "currentVersion": { "type": "string" },
+        "latestVersion": { "type": "string" },
+        "isMajorUpdate": { "type": "boolean" },
+        "accepted": { "type": "boolean" },
+        "transitive": { "type": "boolean" },
+        "heldBack": {
+          "type": "boolean",
+          "description": "Excluded because it broke verification, and left at its old version"
+        }
+      },
+      "additionalProperties": false
+    },
+    "propsFile": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "content": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "backup": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "filesBackedUp": { "type": "integer" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
