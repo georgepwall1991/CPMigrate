@@ -14,7 +14,8 @@ public interface INuGetVersionLookupService : IDisposable
     /// are very different answers: the first is a clean result, the second means the run silently
     /// skipped a package. Callers report this so an incomplete update is visible.
     /// </summary>
-    IReadOnlyCollection<string> FailedLookups { get; }
+    /// <returns>Package IDs whose version could not be determined.</returns>
+    IReadOnlyCollection<string> GetFailedLookups();
 
     /// <summary>
     /// Gets the latest version of a NuGet package.

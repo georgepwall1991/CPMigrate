@@ -61,7 +61,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         {
             // Deliberately not "Everything up to date!" when a lookup failed: that claim would be
             // false, and it is the claim a user acts on.
-            if (_nuGetLookup.FailedLookups.Count > 0)
+            if (_nuGetLookup.GetFailedLookups().Count > 0)
             {
                 _consoleService.Warning(
                     "No updates found, but some packages could not be checked — see above."
@@ -565,7 +565,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
     /// </summary>
     private void ReportFailedLookups()
     {
-        var failed = _nuGetLookup.FailedLookups;
+        var failed = _nuGetLookup.GetFailedLookups();
         if (failed.Count == 0)
         {
             return;

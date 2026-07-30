@@ -15,9 +15,13 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - Whatever still fails is **named**, and the run no longer claims everything is current: "Could not check N package(s) after retries: …", followed by "These are reported as unchanged, not as up to date."
   - `TaskCanceledException` from an `HttpClient` timeout is retried, but the same exception from real cancellation is not — retrying a Ctrl-C would ignore the user.
 
+  - Valid JSON that is not a version index is treated as malformed and recorded, rather than returning "no versions" and being cached as a clean answer.
+  - A package that fails and then succeeds is no longer still reported as unchecked.
+
 ### Changed
 - **Version lookups are cached per run.** A solution referencing one package from thirty projects previously issued thirty identical requests. Cached per instance rather than statically, because the lifetime of a CLI invocation is exactly the window in which a cached version cannot be stale. Transient failures are deliberately *not* cached — one bad moment must not become the run's settled view of a package.
-- `INuGetVersionLookupService` exposes `FailedLookups`, so a caller can distinguish a clean result from a silently incomplete one.
+- Lookup state is held in concurrent collections. Callers run up to eight lookups at once, and the cache is now keyed on the in-flight task — so two projects asking for the same package at the same moment share one request instead of racing to make two.
+- `INuGetVersionLookupService` exposes `GetFailedLookups()`, so a caller can distinguish a clean result from a silently incomplete one.
 
 ## [3.13.0] - 2026-07-30
 

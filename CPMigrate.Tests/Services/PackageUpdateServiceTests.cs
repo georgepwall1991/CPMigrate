@@ -26,7 +26,7 @@ public class PackageUpdateServiceTests : IDisposable
         _consoleService = new FakeConsoleService();
         _projectAnalyzerMock = new Mock<IProjectAnalyzer>();
         _nuGetLookupMock = new Mock<INuGetVersionLookupService>();
-        _nuGetLookupMock.SetupGet(x => x.FailedLookups).Returns(Array.Empty<string>());
+        _nuGetLookupMock.Setup(x => x.GetFailedLookups()).Returns(Array.Empty<string>());
         _dotNetCliMock = new Mock<IDotNetCliService>();
         _backupManagerMock = new Mock<IBackupManager>();
         _propsGenerator = new PropsGenerator();
@@ -385,7 +385,10 @@ public class PackageUpdateServiceTests : IDisposable
     {
         public bool Disposed { get; private set; }
 
-        public IReadOnlyCollection<string> FailedLookups => Array.Empty<string>();
+        public IReadOnlyCollection<string> GetFailedLookups()
+        {
+            return Array.Empty<string>();
+        }
 
         public Task<NuGetVersion?> GetLatestVersionAsync(string packageId, bool includePrerelease = false)
         {

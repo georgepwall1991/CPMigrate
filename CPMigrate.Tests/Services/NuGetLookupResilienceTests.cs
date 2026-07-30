@@ -25,7 +25,7 @@ public class NuGetLookupResilienceTests
 
         latest!.ToString().Should().Be("2.0.0");
         handler.Requests.Should().Be(2);
-        service.FailedLookups.Should().BeEmpty("the retry succeeded");
+        service.GetFailedLookups().Should().BeEmpty("the retry succeeded");
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class NuGetLookupResilienceTests
 
         latest.Should().BeNull();
         handler.Requests.Should().Be(NuGetRetryPolicy.MaxAttempts);
-        service.FailedLookups.Should().Contain("Newtonsoft.Json");
+        service.GetFailedLookups().Should().Contain("Newtonsoft.Json");
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public class NuGetLookupResilienceTests
 
         latest.Should().BeNull();
         handler.Requests.Should().Be(1);
-        service.FailedLookups.Should().BeEmpty("a missing package is an answer, not a failure");
+        service.GetFailedLookups().Should().BeEmpty("a missing package is an answer, not a failure");
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class NuGetLookupResilienceTests
         await service.GetLatestVersionAsync("Newtonsoft.Json");
 
         handler.Requests.Should().Be(1);
-        service.FailedLookups.Should().Contain("Newtonsoft.Json");
+        service.GetFailedLookups().Should().Contain("Newtonsoft.Json");
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public class NuGetLookupResilienceTests
         await service.GetLatestVersionAsync("Newtonsoft.Json");
 
         handler.Requests.Should().Be(1);
-        service.FailedLookups.Should().Contain("Newtonsoft.Json");
+        service.GetFailedLookups().Should().Contain("Newtonsoft.Json");
     }
 
     [Fact]
@@ -190,6 +190,65 @@ public class NuGetLookupResilienceTests
             .ToString()
             .Should()
             .Be("2.0.0-beta.1");
+    }
+
+    [Fact]
+    public async Task GetLatestVersion_ManyPackagesConcurrently_DoesNotCorruptSharedState()
+    {
+        // The update command runs eight lookups at once. An unsynchronised Dictionary and HashSet can
+        // corrupt or throw under exactly that load, and it would do so intermittently.
+        var handler = new ScriptedHandler(RespondWithVersions("1.0.0", "2.0.0"));
+        using var service = CreateService(handler);
+
+        var lookups = Enumerable
+            .Range(0, 200)
+            .Select(i => service.GetLatestVersionAsync($"Package{i % 20}"))
+            .ToList();
+
+        await Task.WhenAll(lookups);
+
+        lookups.Should().AllSatisfy(t => t.Result!.ToString().Should().Be("2.0.0"));
+        service.GetFailedLookups().Should().BeEmpty();
+        handler.Requests.Should().BeLessThanOrEqualTo(20, "each distinct package is fetched once");
+    }
+
+    [Fact]
+    public async Task GetLatestVersion_RecoveredPackage_IsNoLongerReportedAsFailed()
+    {
+        // Otherwise the caller keeps warning that a package could not be checked after it succeeded.
+        var handler = new ScriptedHandler(
+            Respond(HttpStatusCode.ServiceUnavailable),
+            Respond(HttpStatusCode.ServiceUnavailable),
+            Respond(HttpStatusCode.ServiceUnavailable),
+            RespondWithVersions("4.0.0")
+        );
+        using var service = CreateService(handler);
+
+        await service.GetLatestVersionAsync("Newtonsoft.Json");
+        service.GetFailedLookups().Should().Contain("Newtonsoft.Json");
+
+        await service.GetLatestVersionAsync("Newtonsoft.Json");
+
+        service.GetFailedLookups().Should().BeEmpty("the package recovered");
+    }
+
+    [Fact]
+    public async Task GetLatestVersion_ValidJsonThatIsNotAVersionIndex_IsRecordedAsAFailure()
+    {
+        // Returning null silently would let the package be reported as cleanly checked — the exact
+        // silent-incomplete result this work exists to eliminate.
+        var handler = new ScriptedHandler(() =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"unexpected":"shape"}"""),
+            }
+        );
+        using var service = CreateService(handler);
+
+        var latest = await service.GetLatestVersionAsync("Newtonsoft.Json");
+
+        latest.Should().BeNull();
+        service.GetFailedLookups().Should().Contain("Newtonsoft.Json");
     }
 
     private static NuGetVersionLookupService CreateService(ScriptedHandler handler)

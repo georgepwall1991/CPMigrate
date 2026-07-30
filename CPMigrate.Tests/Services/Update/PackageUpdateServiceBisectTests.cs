@@ -24,7 +24,7 @@ public class PackageUpdateServiceBisectTests : IDisposable
     private static Mock<INuGetVersionLookupService> CreateLookupMock()
     {
         var mock = new Mock<INuGetVersionLookupService>();
-        mock.SetupGet(x => x.FailedLookups).Returns(Array.Empty<string>());
+        mock.Setup(x => x.GetFailedLookups()).Returns(Array.Empty<string>());
         return mock;
     }
     private readonly Mock<IDotNetCliService> _cli = new();

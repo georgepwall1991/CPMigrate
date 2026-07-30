@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -35,15 +36,28 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
     /// request. Cached per instance rather than statically: a long-lived cache would serve stale
     /// versions, and the lifetime of a CLI invocation is exactly the window where staleness is
     /// impossible.
+    ///
+    /// Keyed on the in-flight <see cref="Task{TResult}"/> rather than the result, because callers run
+    /// up to eight lookups concurrently — storing the task means two projects asking for the same
+    /// package at the same moment share one request instead of racing to make two.
     /// </summary>
-    private readonly Dictionary<string, List<NuGetVersion>?> _cache = new(
+    private readonly ConcurrentDictionary<string, Task<List<NuGetVersion>?>> _cache = new(
         StringComparer.OrdinalIgnoreCase
     );
 
-    private readonly HashSet<string> _failedLookups = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Packages that could not be checked. A concurrent dictionary rather than a HashSet: the
+    /// concurrent lookups write to this too, and an unsynchronised set can corrupt or throw.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, byte> _failedLookups = new(
+        StringComparer.OrdinalIgnoreCase
+    );
 
     /// <inheritdoc />
-    public IReadOnlyCollection<string> FailedLookups => _failedLookups;
+    public IReadOnlyCollection<string> GetFailedLookups()
+    {
+        return _failedLookups.Keys.ToList();
+    }
 
     /// <summary>
     /// Creates a lookup service.
@@ -110,18 +124,14 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
 
     private async Task<List<NuGetVersion>?> FetchVersionsAsync(string packageId)
     {
-        if (_cache.TryGetValue(packageId, out var cached))
-        {
-            return cached;
-        }
+        var lookup = _cache.GetOrAdd(packageId, FetchWithRetryAsync);
+        var versions = await lookup;
 
-        var versions = await FetchWithRetryAsync(packageId);
-
-        // Only definitive answers are cached. A transient failure must not become this run's settled
-        // view of the package — the next caller may well succeed.
-        if (!_failedLookups.Contains(packageId))
+        if (_failedLookups.ContainsKey(packageId))
         {
-            _cache[packageId] = versions;
+            // A transient failure must not become this run's settled view of the package: drop the
+            // cached task so a later caller retries rather than inheriting the failure.
+            _cache.TryRemove(packageId, out _);
         }
 
         return versions;
@@ -142,6 +152,7 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
                     // Definitive: the package does not exist. Not a failure to report, and not worth
                     // three attempts.
                     _logger.LogDebug("Package {PackageId} not found on the feed", packageId);
+                    ClearFailure(packageId);
                     return null;
                 }
 
@@ -160,7 +171,21 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
                     continue;
                 }
 
-                return ParseVersions(await response.Content.ReadAsStringAsync());
+                var versions = ParseVersions(await response.Content.ReadAsStringAsync());
+
+                if (versions is null)
+                {
+                    // Valid JSON, but not a version index. Caching that as definitive would let the
+                    // package be reported as cleanly checked — the silent-incomplete result this all
+                    // exists to prevent.
+                    RecordFailure(packageId, "response contained no version list");
+                    return null;
+                }
+
+                // An earlier attempt for this package may have exhausted its retries; it has now
+                // recovered, so the caller must not still be told it could not be checked.
+                ClearFailure(packageId);
+                return versions;
             }
             catch (JsonException ex)
             {
@@ -210,8 +235,17 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
     /// </summary>
     private void RecordFailure(string packageId, string reason)
     {
-        _failedLookups.Add(packageId);
+        _failedLookups.TryAdd(packageId, 0);
         _logger.LogWarning("Version lookup for {PackageId} failed: {Reason}", packageId, reason);
+    }
+
+    /// <summary>
+    /// Forgets a previously recorded failure, so a package that recovered is not still reported as
+    /// unchecked.
+    /// </summary>
+    private void ClearFailure(string packageId)
+    {
+        _failedLookups.TryRemove(packageId, out _);
     }
 
     private static List<NuGetVersion>? ParseVersions(string body)
