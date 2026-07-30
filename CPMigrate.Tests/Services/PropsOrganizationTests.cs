@@ -348,18 +348,20 @@ public class PropsOrganizationTests : IDisposable
     {
         // Cross-review caught this: exempting *any* inversion that follows a commented entry hid
         // inversions a comment had nothing to do with, so a hand-arranged file was read as sorted and its
-        // arrangement was overridden. The exemption undoes only the specific displacement this class
-        // creates — a pin pushed past one commented entry — and the result must then be ordered outright.
-        // Here Mike > Bravo cannot be that: undoing it gives Alpha, Bravo, Mike, Charlie, which is still
-        // out of order at Mike > Charlie.
+        // arrangement was overridden. The exemption undoes only the displacement this class creates, and
+        // the result must then be ordered outright.
+        //
+        // The inversion here is Zulu > Charlie with nothing commented between them, so no displacement
+        // explains it. (An earlier review round proposed `Alpha, <!--c--> Mike, Bravo, Charlie` as the
+        // counter-example. That one turned out to be reachable — adding Bravo then Charlie to
+        // `Alpha, <!--c--> Mike` produces exactly it — so reading it as ordered is correct.)
         var propsPath = WriteProps(
             """
             <Project>
               <ItemGroup>
                 <PackageVersion Include="Alpha" Version="1.0.0" />
+                <PackageVersion Include="Zulu" Version="1.0.0" />
                 <!-- some reason -->
-                <PackageVersion Include="Mike" Version="1.0.0" />
-                <PackageVersion Include="Bravo" Version="1.0.0" />
                 <PackageVersion Include="Charlie" Version="1.0.0" />
               </ItemGroup>
             </Project>
@@ -371,7 +373,46 @@ public class PropsOrganizationTests : IDisposable
             Packages(("Delta", "2.0.0"))
         );
 
-        PackageIdsInOrder(content).Should().Equal("Alpha", "Mike", "Bravo", "Charlie", "Delta");
+        PackageIdsInOrder(content).Should().Equal("Alpha", "Zulu", "Charlie", "Delta");
+    }
+
+    [Fact]
+    public void MergeExisting_KeepsSortingWhenSeveralPinsWerePushedPastTheSameComment()
+    {
+        // Cross-review caught this: one merge can add several pins that all belong before the same
+        // commented entry, so more than one ends up behind it. Undoing a single pin left the sequence out
+        // of order, and the next merge read this code's own output as hand-arranged.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Alpha" Version="1.0.0" />
+                <!-- why Charlie -->
+                <PackageVersion Include="Charlie" Version="1.0.0" />
+                <PackageVersion Include="Zulu" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var generator = new PropsGenerator();
+        var (first, addedFirst, _, _) = generator.MergeExisting(
+            propsPath,
+            Packages(("Beta", "2.0.0"), ("Bravo", "2.0.0"))
+        );
+
+        addedFirst.Should().Be(2);
+        PackageIdsInOrder(first).Should().Equal("Alpha", "Charlie", "Beta", "Bravo", "Zulu");
+        File.WriteAllText(propsPath, first);
+
+        var (second, added, _, _) = generator.MergeExisting(propsPath, Packages(("Echo", "3.0.0")));
+
+        added.Should().Be(1);
+        PackageIdsInOrder(second)
+            .Should()
+            .Equal("Alpha", "Charlie", "Beta", "Bravo", "Echo", "Zulu");
+        var lines = SignificantLines(second);
+        lines[lines.FindIndex(l => l.Contains("why Charlie")) + 1].Should().Contain("Charlie");
     }
 
     [Fact]

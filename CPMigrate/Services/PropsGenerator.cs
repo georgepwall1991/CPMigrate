@@ -536,32 +536,48 @@ public class PropsGenerator
         while (index < items.Count)
         {
             // AddNewPackageVersion walks past *every* consecutive commented entry, so a pin can be
-            // displaced by more than one slot and the whole run has to be undone together. Reversing only
-            // the last step would leave the sequence out of order and classify this class's own output as
-            // hand-arranged, which is the degradation the exemption exists to prevent.
-            var runEnd = index;
-            while (runEnd < items.Count && documentedByComment.Contains(items[runEnd]))
+            // displaced by more than one slot; and a single merge can add several pins that all belong
+            // before the same comment, so more than one pin can end up behind it. Both have to be undone
+            // together — reversing one step, or one pin, leaves the sequence out of order and classifies
+            // this class's own output as hand-arranged, which is the degradation the exemption exists to
+            // prevent.
+            var commentedRunEnd = index;
+            while (
+                commentedRunEnd < items.Count
+                && documentedByComment.Contains(items[commentedRunEnd])
+            )
             {
-                runEnd++;
+                commentedRunEnd++;
             }
 
-            var displaced =
-                runEnd > index
-                && runEnd < items.Count
-                && PackageIdOrder.Compare(
-                    GetPackageName(items[index]),
-                    GetPackageName(items[runEnd])
-                ) > 0;
-
-            if (displaced)
+            // Everything after that run which sorts before the run's first entry was pushed past it.
+            var displacedEnd = commentedRunEnd;
+            if (commentedRunEnd > index)
             {
-                normalized.Add(GetPackageName(items[runEnd]));
-                for (var inRun = index; inRun < runEnd; inRun++)
+                var firstInRun = GetPackageName(items[index]);
+                while (
+                    displacedEnd < items.Count
+                    && !documentedByComment.Contains(items[displacedEnd])
+                    && PackageIdOrder.Compare(GetPackageName(items[displacedEnd]), firstInRun) < 0
+                )
+                {
+                    displacedEnd++;
+                }
+            }
+
+            if (displacedEnd > commentedRunEnd)
+            {
+                for (var displaced = commentedRunEnd; displaced < displacedEnd; displaced++)
+                {
+                    normalized.Add(GetPackageName(items[displaced]));
+                }
+
+                for (var inRun = index; inRun < commentedRunEnd; inRun++)
                 {
                     normalized.Add(GetPackageName(items[inRun]));
                 }
 
-                index = runEnd + 1;
+                index = displacedEnd;
                 continue;
             }
 
