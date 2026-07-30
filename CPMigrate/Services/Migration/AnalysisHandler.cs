@@ -275,9 +275,18 @@ internal sealed class AnalysisHandler
         // Two gates: ScanConcurrencyGate bounds the total number of queries in flight, and
         // ProjectDirectoryLock keeps two of them from being aimed at the same directory — see the note on
         // that type for why sharing one is a silent finding-eraser.
+        //
+        // The decision to run concurrently at all belongs to the whole scan rather than to each project: if
+        // any project here could move its assets file, no per-project key is provably right, because the
+        // redirect's target may be another project's default directory. In that case the phase runs one at a
+        // time, which is what it did before this release.
+        var scanConcurrency = ProjectDirectoryLock.CanScanConcurrently(projectPaths)
+            ? maxConcurrency
+            : 1;
+
         await Parallel.ForEachAsync(
             Enumerable.Range(0, projectPaths.Count),
-            new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency },
+            new ParallelOptions { MaxDegreeOfParallelism = scanConcurrency },
             async (index, _) =>
             {
                 using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);

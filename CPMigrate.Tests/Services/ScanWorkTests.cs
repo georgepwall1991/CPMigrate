@@ -33,8 +33,9 @@ public class ScanWorkTests : IDisposable
 
     public void Dispose()
     {
-        // The gate is process-wide; a test that resizes it must not leave that for the next one.
+        // Both are process-wide; a test that touches them must not leave that for the next one.
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
 
         if (Directory.Exists(_root))
         {
@@ -64,6 +65,7 @@ public class ScanWorkTests : IDisposable
         ScanConcurrencyGate.Permits.Should().Be(1, "the serial run must actually have been serial");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
         var parallel = await AnalyzeWith(parallelism: 8);
         ScanConcurrencyGate
             .Permits.Should()
@@ -92,6 +94,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("Api.csproj", "Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
         var findings = await AnalyzeWith(parallelism: 8);
         ScanConcurrencyGate.Permits.Should().Be(8, "the race only appears under real concurrency");
 
@@ -115,6 +118,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
         var findings = await AnalyzeWith(parallelism: 8);
         ScanConcurrencyGate.Permits.Should().Be(8);
 
@@ -148,6 +152,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
         var findings = await AnalyzeWith(parallelism: 8);
 
         findings.Should().Contain("VersionInconsistency");
@@ -165,6 +170,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("Api.csproj", "Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
         var findings = await AnalyzeWith(parallelism: 8);
 
         findings
@@ -187,6 +193,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
 
         (await AnalyzeWith(parallelism: 8)).Should().Contain("VersionInconsistency");
     }
@@ -206,6 +213,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
 
         (await AnalyzeWith(parallelism: 8)).Should().Contain("VersionInconsistency");
     }
@@ -220,6 +228,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
         var act = async () => await AnalyzeWith(parallelism: 8);
 
         await act.Should().NotThrowAsync();
@@ -247,6 +256,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
 
         (await AnalyzeWith(parallelism: 8))
             .Should()
@@ -268,6 +278,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
 
         (await AnalyzeWith(parallelism: 8)).Should().Contain("VersionInconsistency");
     }
@@ -302,6 +313,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
 
         (await AnalyzeWith(parallelism: 8)).Should().Contain("VersionInconsistency");
     }
@@ -320,6 +332,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj", "src/Broken/Broken.csproj");
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
 
         var act = async () => await AnalyzeWith(parallelism: 8);
 
@@ -345,6 +358,7 @@ public class ScanWorkTests : IDisposable
         WriteSolution(Enumerable.Range(0, 6).Select(i => $"src/P{i}/P{i}.csproj").ToArray());
 
         ScanConcurrencyGate.ResetForTests();
+        ProjectDirectoryLock.ResetForTests();
         var first = await AnalyzeRaw(parallelism: 4);
         ScanConcurrencyGate.Permits.Should().Be(4);
         var second = await AnalyzeRaw(parallelism: 4);

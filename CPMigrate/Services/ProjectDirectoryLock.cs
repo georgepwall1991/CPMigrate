@@ -36,41 +36,52 @@ internal static class ProjectDirectoryLock
     );
 
     /// <summary>
-    /// Waits for exclusive access to this project's assets file, returning a handle to release it.
+    /// Waits for exclusive access to this project's <c>obj</c> directory, returning a handle to release it.
     ///
-    /// <para>Keyed on the project directory, which is where <c>obj/project.assets.json</c> lives — but only
-    /// once <see cref="RedirectsAssetsFile"/> has confirmed nothing redirects it. When something might,
-    /// every project shares a single key and the phase runs serially.</para>
-    ///
-    /// <para><b>Why not compute the real path.</b> Successive review rounds each found another route to a
-    /// shared assets file: a conditional property, one set in an imported <c>Directory.Build.props</c>, one
-    /// built from <c>$(…)</c>, <c>MSBuildProjectExtensionsPath</c> outranking
-    /// <c>BaseIntermediateOutputPath</c>, <c>ProjectAssetsFile</c> naming the file outright, an import of an
-    /// import. Each fix was correct and the next round found another, which is the signal that the approach
-    /// was wrong rather than unfinished: knowing where the file really goes means evaluating the project, and
-    /// evaluating the project is the one thing this phase must not do — MSBuild's object model is not
-    /// thread-safe, which is why the phase exists.</para>
-    ///
-    /// <para>So the question asked is not "where does it go" but "could it have moved", which
-    /// <em>is</em> answerable from text: those three property names appear somewhere, or they do not. The
-    /// ordinary layout keeps the full concurrency; anything unusual gets the previous serial behaviour and
-    /// no possibility of a race. A missed redirect can silently erase findings; an unnecessary
-    /// serialisation just costs seconds.</para>
+    /// Safe to key on the directory only because <see cref="CanRedirectAssetsFile"/> has been asked about
+    /// every project in the scan first, and the caller runs the phase serially if any of them said yes. A
+    /// per-project decision cannot work: a redirect's *target* may be another project's default directory, so
+    /// the redirected project and the ordinary one would need to agree on a key without either knowing the
+    /// other exists.
     /// </summary>
     public static async Task<IDisposable> AcquireAsync(string projectPath)
     {
-        var key = RedirectsAssetsFile(projectPath)
-            ? SharedConservativeKey
-            : Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? projectPath;
-
+        var key = Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? projectPath;
         var gate = Locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync();
 
         return new Holder(gate);
     }
 
-    /// <summary>One lock for every project whose assets file might have been moved.</summary>
-    private const string SharedConservativeKey = "\u0000conservative";
+    /// <summary>
+    /// Whether the resolved-package phase can safely run concurrently over these projects.
+    ///
+    /// False as soon as one of them could move its assets file, because then no per-project key is provably
+    /// right — see <see cref="CanRedirectAssetsFile"/> for why the question is put this way round.
+    /// </summary>
+    public static bool CanScanConcurrently(IEnumerable<string> projectPaths)
+    {
+        return !projectPaths.Any(CanRedirectAssetsFile);
+    }
+
+    /// <summary>
+    /// Answers already computed, per project directory.
+    ///
+    /// The walk reads every props and targets file from the project up to the filesystem root, and projects
+    /// in one solution share almost all of those ancestors — so without this, asking once per project made a
+    /// 60-project scan twice as slow as the concurrency it was there to enable. Keyed on the directory
+    /// because that is what determines both the answer's inputs.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, bool> RedirectAnswers = new(
+        StringComparer.Ordinal
+    );
+
+    /// <summary>Clears the memo. Tests only, so one fixture's layout cannot answer for another's.</summary>
+    internal static void ResetForTests()
+    {
+        RedirectAnswers.Clear();
+        Locks.Clear();
+    }
 
     /// <summary>
     /// Whether anything reachable from this project could move its assets file.
@@ -80,14 +91,32 @@ internal static class ProjectDirectoryLock
     /// an import still has to spell it out somewhere. Conservative in both directions that matter: a mention
     /// inside a comment triggers serial mode, which is harmless.
     /// </summary>
-    private static bool RedirectsAssetsFile(string projectPath)
+    private static bool CanRedirectAssetsFile(string projectPath)
+    {
+        string directoryKey;
+        try
+        {
+            directoryKey = Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? projectPath;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+
+        return RedirectAnswers.GetOrAdd(directoryKey, _ => ComputeCanRedirect(projectPath));
+    }
+
+    private static bool ComputeCanRedirect(string projectPath)
     {
         try
         {
             var fullPath = Path.GetFullPath(projectPath);
             var directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
 
-            HashSet<string> visited = new(StringComparer.OrdinalIgnoreCase);
+            // Ordinal, not OrdinalIgnoreCase: on a case-sensitive filesystem a.props and A.props are two
+            // files, and skipping the second because the first was visited would miss whatever it declares.
+            // Revisiting one file under two casings on Windows costs a read.
+            HashSet<string> visited = new(StringComparer.Ordinal);
             Queue<string> pending = new();
 
             pending.Enqueue(fullPath);
@@ -230,24 +259,31 @@ internal static class ProjectDirectoryLock
         }
     }
 
-    /// <summary>Every MSBuild props/targets file beside or above a project directory.</summary>
+    /// <summary>
+    /// The MSBuild files above a project that can contribute properties to it: the nearest
+    /// <c>Directory.Build.props</c> and the nearest <c>Directory.Build.targets</c>.
+    ///
+    /// The *nearest*, and then stop — which is MSBuild's own rule, and also what keeps this affordable. An
+    /// earlier version enumerated every <c>*.props</c> and <c>*.targets</c> in every ancestor up to the
+    /// filesystem root, which on a 60-project solution cost more than the concurrency it was guarding.
+    /// Anything further up is reached by import from these, and imports are followed.
+    /// </summary>
     private static IEnumerable<string> AncestorBuildFiles(string directory)
     {
-        for (var current = new DirectoryInfo(directory); current is not null; current = current.Parent)
+        foreach (var name in new[] { "Directory.Build.props", "Directory.Build.targets" })
         {
-            foreach (
-                var file in Directory
-                    .EnumerateFiles(current.FullName, "*.props", SearchOption.TopDirectoryOnly)
-                    .Concat(
-                        Directory.EnumerateFiles(
-                            current.FullName,
-                            "*.targets",
-                            SearchOption.TopDirectoryOnly
-                        )
-                    )
+            for (
+                var current = new DirectoryInfo(directory);
+                current is not null;
+                current = current.Parent
             )
             {
-                yield return file;
+                var candidate = Path.Combine(current.FullName, name);
+                if (File.Exists(candidate))
+                {
+                    yield return candidate;
+                    break;
+                }
             }
         }
     }
