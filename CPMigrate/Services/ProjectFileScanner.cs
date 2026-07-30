@@ -101,6 +101,12 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             {
                 return true;
             }
+
+            // <Otherwise> has no Condition of its own but applies exactly when no sibling <When> did.
+            if (current is ProjectOtherwiseElement)
+            {
+                return true;
+            }
         }
 
         return false;

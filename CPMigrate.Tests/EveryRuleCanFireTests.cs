@@ -428,6 +428,85 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     [Fact]
+    public async Task AnOtherwiseBranchSurvives_EvenWithUnconditionalDuplicatesInTheSameFile()
+    {
+        // Cross-review caught this, and it showed the Choose/When test above was passing for the wrong
+        // reason: <Otherwise> carries no Condition attribute, so it read as unconditional. On its own that
+        // was harmless — one unconditional declaration is not a duplicate — but add real duplicates
+        // elsewhere in the file and the fallback branch became a deletion candidate.
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="4.3.0" />
+                <PackageReference Include="Serilog" Version="4.3.0" />
+              </ItemGroup>
+              <Choose>
+                <When Condition="'$(TargetFramework)' == 'net8.0'">
+                  <ItemGroup>
+                    <PackageReference Include="Serilog" Version="4.0.0" />
+                  </ItemGroup>
+                </When>
+                <Otherwise>
+                  <ItemGroup>
+                    <PackageReference Include="Serilog" Version="4.1.0" />
+                  </ItemGroup>
+                </Otherwise>
+              </Choose>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj");
+        var projectFile = Path.Combine(_root, "src", "Api", "Api.csproj");
+
+        await ProgramRunner.RunAsync(
+            ["--analyze", "--fix", "--no-backup", "--quiet", "-s", _root],
+            new FakeConsoleService()
+        );
+
+        var content = await File.ReadAllTextAsync(projectFile);
+        content.Should().Contain("4.0.0", "the When branch must survive");
+        content.Should().Contain("4.1.0", "the Otherwise branch must survive");
+    }
+
+    [Fact]
+    public async Task AProjectPinningBothWaysStillReportsARealInconsistency()
+    {
+        // Cross-review caught this: excluding a project/package pair as soon as *any* declaration was
+        // conditional meant a project pinning unconditionally and overriding for one framework had its
+        // unconditional pin excluded too — hiding a genuine inconsistency with another project.
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" Version="99.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteProject("src/Worker/Worker.csproj", ("Serilog", "2.0.0"));
+        WriteSolution("src/Api/Api.csproj", "src/Worker/Worker.csproj");
+
+        (await Analyze())
+            .Should()
+            .Contain(
+                nameof(AnalysisIssueCode.VersionInconsistency),
+                "1.0.0 against 2.0.0 is a real inconsistency, whatever else Api pins conditionally"
+            );
+    }
+
+    [Fact]
     public async Task ADeclarationInsideChooseWhen_CountsAsConditional()
     {
         // Cross-review caught this: <Choose><When Condition=…><ItemGroup> puts no condition on the item or

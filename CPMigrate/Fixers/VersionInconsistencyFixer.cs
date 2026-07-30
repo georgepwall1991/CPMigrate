@@ -111,6 +111,14 @@ public class VersionInconsistencyFixer : IFixer
             {
                 return true;
             }
+
+            // <Otherwise> carries no Condition attribute but is conditional by definition — it applies
+            // exactly when none of its sibling <When> branches did. Reading it as unconditional let a
+            // duplicate elsewhere in the file authorise deleting or rewriting the fallback branch.
+            if (current.Name.LocalName == "Otherwise")
+            {
+                return true;
+            }
         }
 
         return false;

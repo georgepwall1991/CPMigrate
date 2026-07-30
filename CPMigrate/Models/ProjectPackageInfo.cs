@@ -80,9 +80,14 @@ public record ProjectPackageInfo(
     /// </summary>
     public bool IsConditionallyDeclared(string projectPath, string packageName)
     {
-        return DeclaredReferences?.Any(reference =>
-                reference.IsConditional
-                && string.Equals(
+        if (DeclaredReferences is null)
+        {
+            return false;
+        }
+
+        var declarations = DeclaredReferences
+            .Where(reference =>
+                string.Equals(
                     reference.ProjectPath,
                     projectPath,
                     StringComparison.OrdinalIgnoreCase
@@ -92,7 +97,13 @@ public record ProjectPackageInfo(
                     packageName,
                     StringComparison.OrdinalIgnoreCase
                 )
-            ) ?? false;
+            )
+            .ToList();
+
+        // Every declaration, not any: a project can pin a package unconditionally *and* override it for
+        // one framework. Suppressing the whole project/package pair on the strength of the conditional one
+        // would hide a genuine inconsistency between that unconditional pin and another project's.
+        return declarations.Count > 0 && declarations.TrueForAll(reference => reference.IsConditional);
     }
 
     /// <summary>
