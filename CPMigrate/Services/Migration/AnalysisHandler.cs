@@ -284,25 +284,44 @@ internal sealed class AnalysisHandler
         // Grouping by directory misses a project that redirects its obj to somewhere another project also
         // writes. That case is checked for separately and answered by running the whole scan serially —
         // conservatively, since the check is a heuristic rather than a guarantee.
-        var maxConcurrency = ProjectDirectoryScanLock.MightRedirectIntermediateOutput(projectPaths)
-            ? 1
-            : options.ResolveScanParallelism();
+        var maxConcurrency = options.ResolveScanParallelism();
         var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
 
-        await Parallel.ForEachAsync(
-            Enumerable.Range(0, projectPaths.Count),
-            new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency },
-            async (index, _) =>
-            {
-                using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
-                using var directorySlot = await ProjectDirectoryScanLock.AcquireAsync(
-                    projectPaths[index]
-                );
+        // Scheduled by directory rather than guarded by a lock. Projects in one directory run in sequence
+        // within their group; the groups run against each other.
+        //
+        // A lock was the first shape and it blocked badly: Parallel.ForEachAsync would start several
+        // projects from the same directory, all but one would sit waiting on the semaphore while still
+        // holding a worker and a global scan slot, and unrelated directories could not start at all. On a
+        // solution with a few crowded directories that is close to serial. Grouping avoids the queue
+        // entirely — nothing ever waits for a directory, because only one project from it is ever in flight.
+        var groups = Enumerable
+            .Range(0, projectPaths.Count)
+            .GroupBy(index => DirectoryKeyFor(projectPaths[index]), StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-                resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
-                    projectPaths[index],
-                    options.IncludeTransitive
-                );
+        // A solution that redirects intermediate output somewhere shared cannot be grouped by directory at
+        // all, because the sharing is not visible in the paths. Those run one project at a time and, since
+        // --batch-parallel has other solutions running too, hold a process-wide lock while they do.
+        var mightRedirect = ProjectDirectoryScanLock.MightRedirectIntermediateOutput(projectPaths);
+        using var redirectLock = mightRedirect
+            ? await ProjectDirectoryScanLock.AcquireGlobalAsync()
+            : null;
+
+        await Parallel.ForEachAsync(
+            groups,
+            new ParallelOptions { MaxDegreeOfParallelism = mightRedirect ? 1 : maxConcurrency },
+            async (group, _) =>
+            {
+                foreach (var index in group)
+                {
+                    using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
+
+                    resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                        projectPaths[index],
+                        options.IncludeTransitive
+                    );
+                }
             }
         );
 
@@ -342,14 +361,6 @@ internal sealed class AnalysisHandler
                 // avoid.
                 using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
 
-                // Same rule as the resolved scan: these also restore, so projects sharing a directory
-                // must not run together. Demonstrated with --audit, where the consequence is worse than a
-                // wrong version — a project pinned to a clean Newtonsoft.Json was reported carrying a
-                // version with a known high-severity advisory, and it runs the other way just as easily.
-                using var directorySlot = await ProjectDirectoryScanLock.AcquireAsync(
-                    projectPaths[index]
-                );
-
                 var vulnerabilities = new List<VulnerabilityInfo>();
                 var outdated = new List<OutdatedPackageInfo>();
                 var deprecated = new List<DeprecatedPackageInfo>();
@@ -374,6 +385,29 @@ internal sealed class AnalysisHandler
                 progress?.Increment(1);
             }
         );
+    }
+
+
+    /// <summary>
+    /// The key two projects must share before they are made to take turns: the directory their
+    /// <c>obj</c> would go in.
+    ///
+    /// Case-insensitive, because macOS and Windows treat <c>src/Api</c> and <c>src/api</c> as one directory
+    /// and two projects the comparison split apart would be exactly the pair that needs sequencing. On a
+    /// case-sensitive filesystem this is merely conservative.
+    /// </summary>
+    private static string DirectoryKeyFor(string projectPath)
+    {
+        try
+        {
+            return Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? projectPath;
+        }
+        catch (Exception)
+        {
+            // An unusable path groups with nothing, which is the safe answer — and throwing here would
+            // pre-empt the scanner, which is the thing equipped to report it as a failed project.
+            return projectPath;
+        }
     }
 
     /// <summary>
@@ -437,6 +471,20 @@ internal sealed class AnalysisHandler
             }
 
             (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
+
+            // An empty fallback is not a substitute for a failed scan, it is the same failure wearing a
+            // success. This scan drops versionless items — which is every reference under central package
+            // management, i.e. most projects this tool is pointed at — so "read the file fine, found
+            // nothing" is its ordinary answer for exactly the repositories that matter here.
+            //
+            // Letting that through is what made the 3.26.0 regression invisible: the resolved scan failed,
+            // this stood in for it, reported success with no packages, and the project disappeared from the
+            // report with scanFailures 0. Cross-review reproduced it still happening after the frameworks
+            // check was added, because the check was upstream of this fallback rather than downstream.
+            if (references.Count == 0)
+            {
+                success = false;
+            }
 
             // Not reused as the declared list, even though it also comes from the project file: this scan
             // exists to stand in for a resolved one, so it drops versionless items — every reference under

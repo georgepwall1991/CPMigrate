@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Xml.Linq;
 
 namespace CPMigrate.Services;
@@ -29,37 +28,22 @@ namespace CPMigrate.Services;
 /// </summary>
 internal static class ProjectDirectoryScanLock
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> Locks = new(
-        StringComparer.OrdinalIgnoreCase
-    );
-
     /// <summary>
-    /// Waits until no other scan is running for this project's directory.
+    /// Held for the whole of a scan whose projects might redirect their intermediate output somewhere
+    /// shared.
     ///
-    /// Case-insensitive because macOS and Windows treat <c>src/Api</c> and <c>src/api</c> as one directory,
-    /// and two projects the comparison split apart would be exactly the pair that needs serialising. On a
-    /// case-sensitive filesystem this is merely conservative.
+    /// Process-wide because <c>--batch-parallel</c> runs several solutions at once. Those scans cannot be
+    /// grouped by directory — the sharing is not visible in the paths — so the only safe arrangement is one
+    /// such scan at a time, and no other scan alongside it.
     /// </summary>
-    public static async Task<IDisposable> AcquireAsync(string projectPath)
+    public static async Task<IDisposable> AcquireGlobalAsync()
     {
-        string directory;
-        try
-        {
-            directory = Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? projectPath;
-        }
-        catch (Exception)
-        {
-            // An unusable path cannot be grouped with anything, so give it its own key rather than throwing
-            // before the scanner — which is the thing equipped to report it as a failed project.
-            directory = projectPath;
-        }
+        await Global.WaitAsync();
 
-        var gate = Locks.GetOrAdd(directory, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync();
-
-        return new Release(gate);
+        return new Release(Global);
     }
 
+    private static readonly SemaphoreSlim Global = new(1, 1);
 
     /// <summary>
     /// The properties that can move a project's <c>obj</c> somewhere another project also writes.
