@@ -134,16 +134,50 @@ public class ConfigService
         {
             var json = File.ReadAllText(configPath);
             var config = JsonSerializer.Deserialize<ConfigModel>(json, _readOptions);
-            return (config, configPath, null);
+
+            if (config is null)
+            {
+                return (null, configPath, $"Config file {configPath} deserialized to null — check the JSON structure.");
+            }
+
+            var validationWarning = ValidateConfig(config);
+            return (config, configPath, validationWarning);
         }
         catch (JsonException ex)
         {
-            return (null, configPath, $"Failed to parse config file {configPath}: {ex.Message}");
+            var hint = ex.LineNumber.HasValue
+                ? $" (line {ex.LineNumber + 1}, position {ex.BytePositionInLine + 1})"
+                : string.Empty;
+            return (null, configPath, $"Invalid JSON in {configPath}{hint}: {ex.Message}");
         }
         catch (IOException ex)
         {
             return (null, configPath, $"Failed to read config file {configPath}: {ex.Message}");
         }
+    }
+
+    private static string? ValidateConfig(ConfigModel config)
+    {
+        var warnings = new List<string>();
+
+        if (config.Retention is { Enabled: true, MaxBackups: <= 0 })
+        {
+            warnings.Add("retention.maxBackups is 0 or negative — no backups will be kept.");
+        }
+
+        if (config.Backup == false && config.AddGitignore == true)
+        {
+            warnings.Add("addGitignore is true but backup is false — no backup directory will be created to ignore.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.Baseline) && config.FailOn == FailOnSeverity.Never)
+        {
+            warnings.Add("baseline is set but failOn is Never — the baseline will never gate anything.");
+        }
+
+        return warnings.Count > 0
+            ? string.Join(" ", warnings)
+            : null;
     }
 
     /// <summary>
