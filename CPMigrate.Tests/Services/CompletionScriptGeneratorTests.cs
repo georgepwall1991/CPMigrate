@@ -220,11 +220,39 @@ public class CompletionScriptGeneratorTests
     )
     {
         // Structural assertions cannot catch an unbalanced quote or a missing `esac`. Asking the shell
-        // itself can. Piped through stdin rather than written to a temp file, because Git Bash on
-        // Windows cannot open a Windows path — which failed the test for a reason that had nothing to
-        // do with the generated script.
+        // itself can — but only where there is a real shell to ask. On a Windows runner `bash` resolves
+        // to the WSL launcher stub, which exits non-zero for any input, so its verdict has to be
+        // earned: a shell that cannot parse `echo ok` is not one whose opinion means anything.
+        if (!CanParse(interpreter, "echo ok\n"))
+        {
+            return;
+        }
+
         var script = CompletionScriptGenerator.Generate(shell);
 
+        CanParse(interpreter, script)
+            .Should()
+            .BeTrue($"{interpreter} must accept the generated script");
+    }
+
+    [Fact]
+    public void Generate_SyntaxCheckActuallyRejectsBrokenInput()
+    {
+        // Guards the guard: a check that passes everything would silently stop protecting anything.
+        if (!CanParse("bash", "echo ok\n"))
+        {
+            return;
+        }
+
+        CanParse("bash", "if [ x ; then\n").Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Runs <c>&lt;interpreter&gt; -n</c> over a script fed through stdin, returning whether it parsed.
+    /// stdin rather than a temp file because Git Bash on Windows cannot open a Windows path.
+    /// </summary>
+    private static bool CanParse(string interpreter, string script)
+    {
         System.Diagnostics.Process? process;
         try
         {
@@ -239,22 +267,21 @@ public class CompletionScriptGeneratorTests
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            // Interpreter not installed here, which says nothing about the generator.
-            return;
+            return false;
         }
 
         if (process is null)
         {
-            return;
+            return false;
         }
 
         process.StandardInput.Write(script);
         process.StandardInput.Close();
-
-        var stderr = process.StandardError.ReadToEnd();
+        process.StandardError.ReadToEnd();
+        process.StandardOutput.ReadToEnd();
         process.WaitForExit(milliseconds: 30_000);
 
-        process.ExitCode.Should().Be(0, $"{interpreter} rejected the generated script: {stderr}");
+        return process.ExitCode == 0;
     }
 
     [Fact]
