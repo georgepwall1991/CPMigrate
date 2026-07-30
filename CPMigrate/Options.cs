@@ -394,6 +394,13 @@ public class Options
     )]
     public bool Diff { get; set; }
 
+    [Option(
+        "status",
+        Default = false,
+        HelpText = "Show a quick workspace health dashboard: solutions, CPM status, config, git, backups, and target frameworks."
+    )]
+    public bool Status { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Analysis & Auto-Fix
     // ═══════════════════════════════════════════════════════════════════════

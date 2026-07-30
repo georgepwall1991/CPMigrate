@@ -78,6 +78,14 @@ public static class ProgramRunner
                             options.Force);
                     }
 
+                    if (options.Status)
+                    {
+                        var statusService = new StatusService(
+                            services.ConsoleService,
+                            new SolutionDiscovery(services.ConsoleService));
+                        return await statusService.RunAsync(options.GetDiscoveryTargetPath());
+                    }
+
                     // Merge config file with CLI args (CLI args take precedence)
                     MergeConfigWithCliArgs(
                         options,
