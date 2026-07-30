@@ -256,13 +256,29 @@ public class SpectreConsoleService : IConsoleService
 
         if (!report.HasIssues)
         {
-            _console.Write(new Rule($"[{Ink.Success}]ANALYSIS COMPLETE: NO ISSUES[/]") { Style = Style.Parse(Ink.Success) });
+            _console.Write(new Rule($"[{Ink.Success}]{Glyphs.Success} ANALYSIS COMPLETE — CLEAN[/]") { Style = Style.Parse(Ink.Success) });
+            _console.WriteLine();
+            _console.Write(SpectreTableBuilder.BuildAnalysisBreakdownTable(_theme, report));
             return;
         }
 
-        _console.Write(new Rule($"[{Ink.Accent}]ANALYSIS COMPLETE: {report.TotalIssues} ISSUES[/]") { Style = Style.Parse(Ink.Accent) });
+        _console.Write(new Rule($"[{Ink.Accent}]{Glyphs.Warning} ANALYSIS COMPLETE — {report.TotalIssues} ISSUE{(report.TotalIssues == 1 ? "" : "S")}[/]") { Style = Style.Parse(Ink.Accent) });
         _console.WriteLine();
         _console.Write(SpectreTableBuilder.BuildAnalysisBreakdownTable(_theme, report));
+        _console.WriteLine();
+
+        var healthScore = SpectreTableBuilder.ComputeHealthScore(report);
+        var (scoreInk, verdict) = healthScore switch
+        {
+            >= 90 => (Ink.Success, "EXCELLENT"),
+            >= 70 => (Ink.Secondary, "GOOD"),
+            >= 50 => (Ink.Accent, "NEEDS ATTENTION"),
+            _ => (Ink.Error, "CRITICAL"),
+        };
+
+        _console.MarkupLine(
+            $"  [{Ink.Dim}]Dependency Health:[/] {SpectrePalette.Meter(healthScore / 100.0, scoreInk, Glyphs, width: 20)} " +
+            $"[bold {scoreInk}]{healthScore}/100[/] [{scoreInk}]{verdict}[/]");
     }
 
     private static string EscapeMarkup(string text)

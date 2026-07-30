@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.32.0] - 2026-07-30
+
+### Changed
+- **Analysis scoreboard redesigned.** The breakdown table gains a title, a per-analyzer STATUS column (PASS / N FOUND), and the clean-run path now renders the full table instead of a bare rule. A new dependency health score (0-100) with a 20-cell meter and verdict label (EXCELLENT / GOOD / NEEDS ATTENTION / CRITICAL) appears below the table.
+
 ## [3.31.0] - 2026-07-30
 
 ### Changed
