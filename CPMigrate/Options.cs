@@ -401,6 +401,13 @@ public class Options
     )]
     public bool Status { get; set; }
 
+    [Option(
+        "licenses",
+        Default = false,
+        HelpText = "Check package licenses and flag copyleft, proprietary, or unknown licenses (requires --analyze)."
+    )]
+    public bool AnalyzeLicenses { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Analysis & Auto-Fix
     // ═══════════════════════════════════════════════════════════════════════
