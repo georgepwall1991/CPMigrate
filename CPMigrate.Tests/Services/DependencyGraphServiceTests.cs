@@ -4,6 +4,13 @@ using FluentAssertions;
 
 namespace CPMigrate.Tests.Services;
 
+/// <summary>
+/// Fixtures here declare dependencies the way NuGet does — a version *range* in
+/// <c>project.frameworks.&lt;tf&gt;.dependencies</c>, against a <c>targets</c> section keyed by the
+/// resolved version. They used to carry a bare <c>"version": "1.0.0"</c>, which real restore output never
+/// contains, and that is precisely why a lookup composed from the declared version passed these tests
+/// while finding nothing on any actual project. See <see cref="DependencyGraphRealAssetsTests"/>.
+/// </summary>
 public class DependencyGraphServiceTests : IDisposable
 {
     private readonly string _testDir;
@@ -46,8 +53,8 @@ public class DependencyGraphServiceTests : IDisposable
     ""frameworks"": {
       ""net8.0"": {
         ""dependencies"": {
-          ""TopLevel"": { ""version"": ""1.0.0"" },
-          ""Transitive"": { ""version"": ""1.0.0"" }
+          ""TopLevel"": { ""target"": ""Package"", ""version"": ""[1.0.0, )"" },
+          ""Transitive"": { ""target"": ""Package"", ""version"": ""[1.0.0, )"" }
         }
       }
     }
@@ -115,7 +122,7 @@ public class DependencyGraphServiceTests : IDisposable
     ""frameworks"": {
       ""net8.0"": {
         ""dependencies"": {
-          ""TopLevel"": { ""version"": ""1.0.0"" }
+          ""TopLevel"": { ""target"": ""Package"", ""version"": ""[1.0.0, )"" }
         }
       }
     }
