@@ -157,6 +157,30 @@ public class MarkdownOutputContractTests : IDisposable
         validate.Should().Throw<ArgumentException>().WithMessage("*--batch*");
     }
 
+    [Fact]
+    public async Task RunAsync_Completions_EmitsOnlyTheScriptEvenWithAConfigFilePresent()
+    {
+        // `--completions zsh > _cpmigrate` is a documented redirection, so a "Loaded config from: …"
+        // notice landing in the file would corrupt the script — and a configured output format could
+        // otherwise make the reporting contract reject the command outright.
+        await File.WriteAllTextAsync(
+            Path.Combine(_testDirectory, ".cpmigrate.json"),
+            """{ "outputFormat": "Sarif" }"""
+        );
+
+        var console = new FakeConsoleService();
+        var stdout = await CaptureStdoutAsync(() =>
+            ProgramRunner.RunAsync(
+                new[] { "--completions", "Zsh", "-s", _testDirectory },
+                console
+            )
+        );
+
+        stdout.Should().StartWith("#compdef cpmigrate");
+        stdout.Should().NotContain("Loaded config from");
+        console.OutputMessages.Should().NotContain(m => m.Contains("Loaded config from"));
+    }
+
     private Task<int> RunAnalyzeAsync(Action<Options> configure)
     {
         var options = new Options

@@ -43,7 +43,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.12.0
+dotnet tool install --global CPMigrate --version 3.13.0
 ```
 
 ```bash
@@ -683,6 +683,31 @@ The JSON payload reports the policy alongside the findings, so a consumer never 
 | `--output-file` | | | Write `Json`, `Sarif`, or `Markdown` output to a file |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Enable diagnostic logging to `cpmigrate.log` |
+
+### Shell Completions
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--completions` | | Print a completion script and exit: `Bash`, `Zsh`, `Fish`, or `PowerShell` |
+
+Generated from the option list rather than hand-written, so it cannot drift out of step with the
+CLI — a completion script that suggests flags which no longer exist is worse than none at all.
+Enum-valued options complete their values (`--output` offers `Terminal`, `Json`, `Sarif`, `Markdown`),
+and path options complete filenames.
+
+```bash
+# bash
+cpmigrate --completions bash > /usr/local/etc/bash_completion.d/cpmigrate
+
+# zsh — into any directory on $fpath
+cpmigrate --completions zsh > "${fpath[1]}/_cpmigrate"
+
+# fish
+cpmigrate --completions fish > ~/.config/fish/completions/cpmigrate.fish
+
+# PowerShell
+cpmigrate --completions powershell >> $PROFILE
+```
 
 ### Self-Update
 

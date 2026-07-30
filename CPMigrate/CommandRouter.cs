@@ -75,6 +75,15 @@ internal static class CommandRouter
             services = services.WithConsole(executionConsole);
         }
 
+        // Normally handled in ProgramRunner before the config file is read, so a config notice
+        // cannot land in a redirected script. Repeated here for callers that invoke the router
+        // directly, and placed before the reporting contract for the same reason.
+        if (options.Completions.HasValue)
+        {
+            Console.WriteLine(CompletionScriptGenerator.Generate(options.Completions.Value));
+            return ExitCodes.Success;
+        }
+
         // The modes below are dispatched before per-command validation, so the reporting contract
         // has to be checked here. Otherwise `--update --output Sarif` would run a real self-update
         // and emit no SARIF, and `--update --write-baseline` would record nothing.

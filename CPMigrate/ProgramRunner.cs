@@ -43,6 +43,18 @@ public static class ProgramRunner
                     );
                     var services = ApplicationServices.Create(customConsole, loggerFactory);
 
+                    // Emitted before the config file is even read. `--completions zsh > _cpmigrate`
+                    // is a documented redirection, and a "Loaded config from: …" notice would land
+                    // inside the script — while a configured output format could make the reporting
+                    // contract reject the command outright.
+                    if (options.Completions.HasValue)
+                    {
+                        Console.WriteLine(
+                            CompletionScriptGenerator.Generate(options.Completions.Value)
+                        );
+                        return ExitCodes.Success;
+                    }
+
                     // Merge config file with CLI args (CLI args take precedence)
                     MergeConfigWithCliArgs(
                         options,

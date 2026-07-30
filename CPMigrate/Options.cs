@@ -215,6 +215,13 @@ public class Options
     public FailOnSeverity FailOn { get; set; } = FailOnSeverity.Info;
 
     [Option(
+        "completions",
+        HelpText = "Print a shell completion script and exit: Bash, Zsh, Fish, or PowerShell. "
+            + "Generated from the option list, so it cannot go stale."
+    )]
+    public CompletionShell? Completions { get; set; }
+
+    [Option(
         "baseline",
         HelpText = "Path to a baseline file of accepted findings. Findings it records are still "
             + "reported but do not fail the build, so a repository with existing debt can gate on "
