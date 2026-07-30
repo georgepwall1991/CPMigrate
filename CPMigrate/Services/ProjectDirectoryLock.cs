@@ -24,78 +24,84 @@ internal static class ProjectDirectoryLock
     );
 
     /// <summary>
-    /// Waits for exclusive access to wherever this project's assets file lives, returning a handle to
-    /// release it.
+    /// Waits for exclusive access to every location this project's assets file might be written to,
+    /// returning a handle that releases them.
+    ///
+    /// <para><b>Every location, not the most likely one.</b> Which path is in force depends on MSBuild
+    /// conditions, on imported <c>Directory.Build.props</c>, and on properties this phase cannot evaluate —
+    /// evaluating them is precisely what it must not do. Picking one candidate therefore means guessing, and
+    /// a wrong guess splits a lock that should have been shared: two projects that do write to the same file
+    /// get separate locks, race, and one comes back reporting the other's packages. So both candidates are
+    /// locked — the project directory, and any intermediate path the file declares — and the cost of being
+    /// wrong is that two projects are serialised when they need not have been. Slower is a strictly better
+    /// error than silently fewer findings.</para>
+    ///
+    /// <para>Acquired in a fixed order so two callers holding overlapping candidates cannot deadlock.</para>
     /// </summary>
     public static async Task<IDisposable> AcquireAsync(string projectPath)
     {
-        var gate = Locks.GetOrAdd(AssetsKey(projectPath), _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync();
+        var keys = AssetsKeys(projectPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-        return new Holder(gate);
+        List<SemaphoreSlim> held = [];
+
+        foreach (var key in keys)
+        {
+            var gate = Locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync();
+            held.Add(gate);
+        }
+
+        return new Holder(held);
     }
 
     /// <summary>
-    /// Where the project's assets file will be written, as far as can be told cheaply.
-    ///
-    /// The project directory in the ordinary case, since <c>obj/</c> hangs off it. A project that sets
-    /// <c>BaseIntermediateOutputPath</c> or <c>MSBuildProjectExtensionsPath</c> in its own file redirects
-    /// that, and two projects in *different* directories pointed at the same one share an assets file just
-    /// as surely as two in one directory do — so the declared value is what the lock keys on.
-    ///
-    /// <para><b>Known limit.</b> Read with <see cref="XDocument"/>, not MSBuild: this runs in the concurrent
-    /// phase, and MSBuild's object model is exactly what may not run there. So a value set in an imported
-    /// <c>Directory.Build.props</c>, or built from MSBuild properties, is not seen — the key falls back to
-    /// the project directory and two such projects could still race. Closing that would mean evaluating the
-    /// project, which is the thing this phase exists to avoid. Stated rather than implied, because a lock
-    /// that looks total and is not is worse than one with a documented edge.</para>
+    /// Every place this project's assets file could plausibly land: its own directory, plus any
+    /// intermediate path the project file declares, conditional or not.
     /// </summary>
-    private static string AssetsKey(string projectPath)
+    private static IEnumerable<string> AssetsKeys(string projectPath)
     {
         var fullPath = Path.GetFullPath(projectPath);
         var directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
 
+        // Always. A declared path may be conditional and not apply, in which case obj/ under here is where
+        // the file goes.
+        yield return directory;
+
+        List<string> declared;
         try
         {
-            var properties = XDocument.Load(fullPath).Descendants().ToList();
-
-            // MSBuildProjectExtensionsPath wins where both are set: it is the one that decides where
-            // project.assets.json goes, so two projects with different base paths but a shared extensions
-            // path share the file. Taking whichever appeared first in the XML gave them separate locks.
-            var declared =
-                Declared(properties, "MSBuildProjectExtensionsPath")
-                ?? Declared(properties, "BaseIntermediateOutputPath");
-
-            if (declared is not null)
-            {
-                return Path.GetFullPath(declared, directory);
-            }
+            declared = XDocument
+                .Load(fullPath)
+                .Descendants()
+                .Where(element =>
+                    element.Name.LocalName
+                        is "MSBuildProjectExtensionsPath"
+                            or "BaseIntermediateOutputPath"
+                )
+                .Select(element => element.Value.Trim())
+                .Where(value =>
+                    !string.IsNullOrEmpty(value) && !value.Contains("$(", StringComparison.Ordinal)
+                )
+                .ToList();
         }
         catch (Exception)
         {
             // Every failure, deliberately: unreadable, unauthorised, malformed, anything. This runs before
-            // a project is scanned, so throwing here would abort the whole analysis over one project the
-            // scanners are equipped to report as an incomplete scan and carry on past. The project
-            // directory is the right key for every project that does not redirect its intermediate output,
-            // which is nearly all of them.
+            // the project is scanned, so throwing would abort the whole analysis over one project the
+            // scanners are equipped to report as an incomplete scan and carry on past.
+            yield break;
         }
 
-        return directory;
+        foreach (var value in declared)
+        {
+            yield return Path.GetFullPath(value, directory);
+        }
     }
 
-    private static string? Declared(List<XElement> properties, string name)
-    {
-        return properties
-            .Where(element =>
-                string.Equals(element.Name.LocalName, name, StringComparison.Ordinal)
-            )
-            .Select(element => element.Value.Trim())
-            .FirstOrDefault(value =>
-                !string.IsNullOrEmpty(value) && !value.Contains("$(", StringComparison.Ordinal)
-            );
-    }
-
-    private sealed class Holder(SemaphoreSlim gate) : IDisposable
+    private sealed class Holder(List<SemaphoreSlim> gates) : IDisposable
     {
         private bool _released;
 
@@ -107,7 +113,11 @@ internal static class ProjectDirectoryLock
             }
 
             _released = true;
-            gate.Release();
+
+            foreach (var gate in gates)
+            {
+                gate.Release();
+            }
         }
     }
 }

@@ -154,6 +154,28 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task ProjectsWithConditionalRedirectsThatDoNotApply_StillShareTheirDirectoryLock()
+    {
+        // Cross-review caught this: a conditional redirect cannot be evaluated in this phase, so keying on
+        // its value guessed — and a wrong guess split a lock that should have been shared. These two share a
+        // directory and both declare a redirect behind a condition that is false, so both restores land in
+        // the shared default obj/. Locking every candidate rather than the most likely one covers it.
+        WriteConditionalRedirect("Api.csproj", "13.0.1", "api-only");
+        WriteConditionalRedirect("Lib.csproj", "12.0.3", "lib-only");
+        WriteSolution("Api.csproj", "Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+        var findings = await AnalyzeWith(parallelism: 8);
+
+        findings
+            .Should()
+            .Contain(
+                "VersionInconsistency",
+                "whichever path the restores actually used, they used the same one"
+            );
+    }
+
+    [Fact]
     public async Task AnUnreadableProject_DoesNotAbortTheWholeAnalysis()
     {
         // Cross-review caught this as a regression I introduced: the lock lookup reads the project file
@@ -288,6 +310,29 @@ public class ScanWorkTests : IDisposable
                 <TargetFramework>net10.0</TargetFramework>
                 <BaseIntermediateOutputPath>{basePath}</BaseIntermediateOutputPath>
                 <MSBuildProjectExtensionsPath>{extensionsPath}</MSBuildProjectExtensionsPath>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="{version}" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+    }
+
+    private void WriteConditionalRedirect(string relativePath, string version, string folder)
+    {
+        var fullPath = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        var redirect = Path.Combine(_root, "artifacts", folder) + Path.DirectorySeparatorChar;
+        File.WriteAllText(
+            fullPath,
+            $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+              <PropertyGroup Condition="'$(NeverTrue)' == 'yes'">
+                <BaseIntermediateOutputPath>{redirect}</BaseIntermediateOutputPath>
               </PropertyGroup>
               <ItemGroup>
                 <PackageReference Include="Newtonsoft.Json" Version="{version}" />
