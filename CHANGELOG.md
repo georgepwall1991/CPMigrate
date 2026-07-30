@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.17.1] - 2026-07-30
+
+### Changed
+- **`CommandRouter` dispatch is a table rather than an if/else chain** (the remaining refactor called out in `NEXT_STEPS.md`, and one this release series had made worse by adding branches to it). Behaviour-preserving: all 984 existing tests passed unchanged.
+  - The point is not tidiness. Which mode wins when several flags are present — `--update` with `--interactive`, say — is real CLI behaviour that was decided *implicitly*, by the order statements happened to appear in. As an ordered table that precedence is a single readable list, and `CommandRouterDispatchTests` now asserts it: pure-output commands beat everything, `--update-packages` beats `--interactive`, no mode flags falls through to the default action, and the reporting contract is checked before any mode runs.
+  - Pure-output commands (`--completions`, `--explain`) are grouped behind one guard that documents why they run before anything else: they must not be preceded by anything that writes to stdout, or a documented redirection produces a corrupt file.
+  - Handlers take a single `CommandContext` rather than the union of every handler's parameters.
+
 ## [3.17.0] - 2026-07-30
 
 ### Added

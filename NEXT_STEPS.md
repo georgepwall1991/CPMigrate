@@ -66,7 +66,7 @@ The three "critical" files called out below are **no longer the priority** — t
 
 1. **`SpectreConsoleService.cs` (536 lines)** — split into `TableBuilder` (`WriteConflictsTable`/`WriteSummaryTable`/`WriteAnalyzerResult`/`WriteRollbackPreview`) and `PanelBuilder` (`Banner`/`WritePropsPreview`/`WriteStatusDashboard`). `WriteSummaryTable` (65 lines, inline `Grid`/`Panel` construction) is the worst single method.
 2. **`InteractiveService` dispatch cleanup** — replace `BrowseForPath` emoji-prefix `selection.StartsWith(...)` branches and `ConfigureActionOptions` `action.Contains(...)` branches with enum-keyed dispatch. Fragile and prone to growth.
-3. **`CommandRouter.RouteCommand` dispatch (was 8-way if/else, ~83 lines)** — replace with a `Dictionary`/handler strategy lookup to prevent re-growth now that the class has absorbed JSON output + routing.
+3. ~~**`CommandRouter.RouteCommand` dispatch**~~ — DONE (3.17.1). Replaced with an ordered `CommandMode` table plus a `CommandContext`; precedence is now explicit and asserted by `CommandRouterDispatchTests`.
 4. **`MigrationService.ProcessProjectsWithProgressAsync` + `BuildPackageUsageCounts`** — small residue; collapse quiet/progress loop duplication and use LINQ `GroupBy` for usage counts.
 5. **PropsGenerator.cs (17 levels) / ProjectAnalyzer.cs (16 levels)** — deep-nesting cleanup; lower priority than the above.
 

@@ -75,25 +75,18 @@ internal static class CommandRouter
             services = services.WithConsole(executionConsole);
         }
 
-        // Normally handled in ProgramRunner before the config file is read, so a config notice
-        // cannot land in a redirected script. Repeated here for callers that invoke the router
-        // directly, and placed before the reporting contract for the same reason.
-        if (options.Completions.HasValue)
+        // Pure-output commands run before anything else can write to stdout — including before the
+        // config file is read, since `--completions zsh > _cpmigrate` is a documented redirection and
+        // a "Loaded config from …" notice would land inside the script. ProgramRunner already handles
+        // these; repeated here for callers that invoke the router directly.
+        if (TryRunPureOutputCommand(options, out var pureOutputExitCode))
         {
-            Console.WriteLine(CompletionScriptGenerator.Generate(options.Completions.Value));
-            return ExitCodes.Success;
+            return pureOutputExitCode;
         }
 
-        if (options.Explain is not null)
-        {
-            var (explanation, found) = RuleExplainer.Explain(options.Explain);
-            Console.WriteLine(explanation);
-            return found ? ExitCodes.Success : ExitCodes.ValidationError;
-        }
-
-        // The modes below are dispatched before per-command validation, so the reporting contract
-        // has to be checked here. Otherwise `--update --output Sarif` would run a real self-update
-        // and emit no SARIF, and `--update --write-baseline` would record nothing.
+        // Checked before dispatch, because the modes below run *instead* of an analysis: without this
+        // `--update --output Sarif` would perform a real self-update and emit no SARIF, and
+        // `--update --write-baseline` would record nothing.
         try
         {
             options.ValidateReportingContract();
@@ -104,49 +97,24 @@ internal static class CommandRouter
             return ExitCodes.ValidationError;
         }
 
-        // Handle Update command
-        if (options.Update)
-        {
-            return await RunUpdateModeAsync(executionConsole, services);
-        }
+        var context = new CommandContext(
+            options,
+            consoleService,
+            executionConsole,
+            interactiveService,
+            versionResolver,
+            configService,
+            backupManager,
+            services
+        );
 
-        // Handle Update Packages command
-        if (options.UpdatePackages)
+        // Declarative rather than an if/else chain. The chain had grown to seven branches, and the
+        // property this table makes checkable is precedence: `--update --interactive` has to resolve
+        // the same way every time, and the order here is the whole specification of that.
+        var selected = AlternateModes.FirstOrDefault(mode => mode.Matches(options));
+        if (selected is not null)
         {
-            return await RunUpdatePackagesModeAsync(options, executionConsole, services);
-        }
-
-        // Route to appropriate command handler
-        if (options.Interactive)
-        {
-            return await RunInteractiveModeAsync(
-                consoleService,
-                interactiveService,
-                versionResolver,
-                configService,
-                backupManager
-            );
-        }
-
-        if (options.PruneBackups || options.PruneAll)
-        {
-            return await RunPruneModeAsync(options, executionConsole, backupManager);
-        }
-
-        if (!string.IsNullOrEmpty(options.BatchDir))
-        {
-            return await RunBatchModeAsync(
-                options,
-                executionConsole,
-                versionResolver,
-                backupManager,
-                services
-            );
-        }
-
-        if (options.UnifyProps)
-        {
-            return await RunUnifyPropsModeAsync(options, executionConsole, services);
+            return await selected.RunAsync(context);
         }
 
         // Check for updates in background for standard commands (if not quiet)
@@ -196,6 +164,108 @@ internal static class CommandRouter
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Everything a mode handler might need. Passed as one object so the table's signature does not
+    /// have to be the union of every handler's parameters.
+    /// </summary>
+    /// <param name="Options">Parsed options.</param>
+    /// <param name="Console">The user's console, for messages that must appear even in JSON mode.</param>
+    /// <param name="ExecutionConsole">Silent under a machine-readable format, so notices cannot leak into stdout.</param>
+    /// <param name="Interactive">Wizard prompts.</param>
+    /// <param name="VersionResolver">Version conflict resolution.</param>
+    /// <param name="Config">Config file access.</param>
+    /// <param name="Backups">Backup management.</param>
+    /// <param name="Services">Service factory for the command being run.</param>
+    private sealed record CommandContext(
+        Options Options,
+        IConsoleService Console,
+        IConsoleService ExecutionConsole,
+        IInteractiveService Interactive,
+        VersionResolver VersionResolver,
+        ConfigService Config,
+        IBackupManager Backups,
+        ApplicationServices Services
+    );
+
+    /// <summary>
+    /// One dispatchable mode: what selects it, and what it runs.
+    /// </summary>
+    /// <param name="Matches">Whether the options select this mode.</param>
+    /// <param name="RunAsync">The handler.</param>
+    private sealed record CommandMode(
+        Func<Options, bool> Matches,
+        Func<CommandContext, Task<int>> RunAsync
+    );
+
+    /// <summary>
+    /// Modes that run instead of the default migrate/analyze path, in precedence order.
+    ///
+    /// The order is the specification: when more than one flag is present — <c>--update</c> with
+    /// <c>--interactive</c>, say — this list decides which wins, and it decided that implicitly when
+    /// it was an if/else chain. As a table it can be asserted on, which is what
+    /// <c>CommandRouterDispatchTests</c> does.
+    /// </summary>
+    private static readonly IReadOnlyList<CommandMode> AlternateModes =
+    [
+        new(o => o.Update, c => RunUpdateModeAsync(c.ExecutionConsole, c.Services)),
+        new(
+            o => o.UpdatePackages,
+            c => RunUpdatePackagesModeAsync(c.Options, c.ExecutionConsole, c.Services)
+        ),
+        new(
+            o => o.Interactive,
+            c =>
+                RunInteractiveModeAsync(
+                    c.Console,
+                    c.Interactive,
+                    c.VersionResolver,
+                    c.Config,
+                    c.Backups
+                )
+        ),
+        new(
+            o => o.PruneBackups || o.PruneAll,
+            c => RunPruneModeAsync(c.Options, c.ExecutionConsole, c.Backups)
+        ),
+        new(
+            o => !string.IsNullOrEmpty(o.BatchDir),
+            c =>
+                RunBatchModeAsync(
+                    c.Options,
+                    c.ExecutionConsole,
+                    c.VersionResolver,
+                    c.Backups,
+                    c.Services
+                )
+        ),
+        new(o => o.UnifyProps, c => RunUnifyPropsModeAsync(c.Options, c.ExecutionConsole, c.Services)),
+    ];
+
+    /// <summary>
+    /// Handles the commands that only print something. Returns true when one ran, so the caller stops
+    /// before touching the config file, the network, or the filesystem.
+    /// </summary>
+    private static bool TryRunPureOutputCommand(Options options, out int exitCode)
+    {
+        if (options.Completions.HasValue)
+        {
+            Console.WriteLine(CompletionScriptGenerator.Generate(options.Completions.Value));
+            exitCode = ExitCodes.Success;
+            return true;
+        }
+
+        if (options.Explain is not null)
+        {
+            var (explanation, found) = RuleExplainer.Explain(options.Explain);
+            Console.WriteLine(explanation);
+            exitCode = found ? ExitCodes.Success : ExitCodes.ValidationError;
+            return true;
+        }
+
+        exitCode = ExitCodes.Success;
+        return false;
     }
 
     private static IConsoleService GetExecutionConsole(
