@@ -84,6 +84,13 @@ internal static class CommandRouter
             return ExitCodes.Success;
         }
 
+        if (options.Explain is not null)
+        {
+            var (explanation, found) = RuleExplainer.Explain(options.Explain);
+            Console.WriteLine(explanation);
+            return found ? ExitCodes.Success : ExitCodes.ValidationError;
+        }
+
         // The modes below are dispatched before per-command validation, so the reporting contract
         // has to be checked here. Otherwise `--update --output Sarif` would run a real self-update
         // and emit no SARIF, and `--update --write-baseline` would record nothing.

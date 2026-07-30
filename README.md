@@ -43,7 +43,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.15.0
+dotnet tool install --global CPMigrate --version 3.16.0
 ```
 
 ```bash
@@ -684,6 +684,24 @@ The JSON payload reports the policy alongside the findings, so a consumer never 
 | `--output-file` | | | Write `Json`, `Sarif`, or `Markdown` output to a file |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Enable diagnostic logging to `cpmigrate.log` |
+
+### Explain a rule
+
+| Option | Description |
+|--------|-------------|
+| `--explain <RuleId>` | Print what a rule means, why it matters, and how to resolve it |
+| `--explain all` | List every rule with a one-line summary |
+
+A rule ID in a build log or a SARIF annotation is exactly where someone needs to know what the rule
+means — and exactly where they will not go looking for a docs site. The same IDs appear as
+`issueCode` in JSON and `ruleId` in SARIF, so whatever a report names can be pasted straight back:
+
+```bash
+cpmigrate --explain InlineVersionUnderCpm
+```
+
+A near miss suggests the real rule, and an unrecognised ID exits non-zero so a typo in CI is visible.
+Full reference: [docs/rules.md](docs/rules.md).
 
 ### Shell Completions
 

@@ -55,6 +55,13 @@ public static class ProgramRunner
                         return ExitCodes.Success;
                     }
 
+                    if (options.Explain is not null)
+                    {
+                        var (explanation, found) = RuleExplainer.Explain(options.Explain);
+                        Console.WriteLine(explanation);
+                        return found ? ExitCodes.Success : ExitCodes.ValidationError;
+                    }
+
                     // Merge config file with CLI args (CLI args take precedence)
                     MergeConfigWithCliArgs(
                         options,

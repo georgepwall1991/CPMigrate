@@ -215,6 +215,13 @@ public class Options
     public FailOnSeverity FailOn { get; set; } = FailOnSeverity.Info;
 
     [Option(
+        "explain",
+        HelpText = "Explain a rule and exit: pass a rule ID (e.g. VersionInconsistency) or 'all' to "
+            + "list every rule. Rule IDs appear in JSON issueCode and SARIF ruleId."
+    )]
+    public string? Explain { get; set; }
+
+    [Option(
         "max-parallelism",
         HelpText = "Maximum projects scanned at once. Defaults to the processor count, capped at 8 "
             + "because each scan shells out to 'dotnet package list'. Use 1 to scan serially."
