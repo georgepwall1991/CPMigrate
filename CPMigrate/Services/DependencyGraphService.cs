@@ -237,9 +237,13 @@ public class DependencyGraphService : IDependencyGraphService
     /// so reachability calls the reference redundant — but removing it silently downgrades Serilog to
     /// 4.2.0. The finding would read as a tidy-up and land as a regression.
     ///
-    /// So the highest version any other package requires must be at least the floor the direct reference
-    /// declares — which is what this analyzer's contract has always said, and what reachability quietly
-    /// dropped. Where either version cannot be established the reference is left alone.
+    /// So the question is whether the version that would be resolved *without* this reference — the highest
+    /// any other package requires — still satisfies the range the reference declares. That is asked of the
+    /// range itself rather than by comparing floors, because a floor comparison cannot see the difference
+    /// between <c>[4.3.0, )</c> and <c>(4.3.0, )</c>: both report a minimum of 4.3.0, so a provider
+    /// requiring exactly 4.3.0 looked sufficient for a reference that excludes it. Asking the range also
+    /// gets exact pins and upper bounds right for free. Where the range cannot be established the reference
+    /// is left alone.
     /// </summary>
     private static bool IsSafelyProvidedByAnotherDirectReference(
         string package,
@@ -248,10 +252,9 @@ public class DependencyGraphService : IDependencyGraphService
         Dictionary<string, JsonElement> resolved
     )
     {
-        var declaredFloor = declaredRange?.MinVersion;
-        if (declaredFloor is null)
+        if (declaredRange is null)
         {
-            // No floor to compare against — an open or unparseable range. Nothing safe can be concluded.
+            // An absent or unparseable range. Nothing safe can be concluded.
             return false;
         }
 
@@ -266,8 +269,8 @@ public class DependencyGraphService : IDependencyGraphService
             CollectRequirements(other, resolved, highestRequired);
         }
 
-        return highestRequired.TryGetValue(package, out var providedFloor)
-            && providedFloor >= declaredFloor;
+        return highestRequired.TryGetValue(package, out var wouldResolveTo)
+            && declaredRange.Satisfies(wouldResolveTo);
     }
 
     /// <summary>

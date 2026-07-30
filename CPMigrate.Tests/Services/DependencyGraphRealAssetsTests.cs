@@ -148,6 +148,66 @@ public class DependencyGraphRealAssetsTests : IDisposable
         Redundant().Should().Contain("Serilog");
     }
 
+    [Theory]
+    // Cross-review caught this: a floor comparison cannot tell "[4.3.0, )" from "(4.3.0, )" — both report
+    // a minimum of 4.3.0 — so a provider requiring exactly 4.3.0 looked sufficient for a reference that
+    // excludes it. The question is asked of the range now, which also settles exact pins and upper bounds.
+    [InlineData("[4.3.0, )", "4.3.0", true, "inclusive floor, met exactly")]
+    [InlineData(
+        "(4.3.0, )",
+        "4.3.0",
+        false,
+        "exclusive floor excludes the version that would remain"
+    )]
+    [InlineData("(4.3.0, )", "4.4.0", true, "exclusive floor, exceeded")]
+    [InlineData("[4.3.0]", "4.3.0", true, "exact pin, met")]
+    [InlineData("[4.3.0]", "5.0.0", false, "exact pin: removing the reference would move off it")]
+    [InlineData("[4.3.0, 5.0.0)", "4.9.0", true, "inside the bounded range")]
+    [InlineData("[4.3.0, 5.0.0)", "5.1.0", false, "above the ceiling the reference declares")]
+    public void AsksTheDeclaredRange_RatherThanComparingFloors(
+        string declared,
+        string providedBy,
+        bool expectedRedundant,
+        string why
+    )
+    {
+        WriteAssets(
+            $$"""
+            {
+              "version": 3,
+              "targets": {
+                "net10.0": {
+                  "Provider/1.0.0": {
+                    "type": "package",
+                    "dependencies": { "Serilog": "{{providedBy}}" }
+                  },
+                  "Serilog/{{providedBy}}": { "type": "package" }
+                }
+              },
+              "project": {
+                "frameworks": {
+                  "net10.0": {
+                    "dependencies": {
+                      "Provider": { "target": "Package", "version": "[1.0.0, )" },
+                      "Serilog": { "target": "Package", "version": "{{declared}}" }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        );
+
+        if (expectedRedundant)
+        {
+            Redundant().Should().Contain("Serilog", why);
+        }
+        else
+        {
+            Redundant().Should().BeEmpty(why);
+        }
+    }
+
     [Fact]
     public void TakesTheHighestRequirement_WhenSeveralPackagesRequireTheSameDependency()
     {
