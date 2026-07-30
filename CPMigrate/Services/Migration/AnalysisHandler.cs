@@ -431,21 +431,46 @@ internal sealed class AnalysisHandler
             return;
         }
 
-        for (var index = 0; index < projectPaths.Count; index++)
-        {
-            var directory = IsolatedDirectoryFor(isolationRoot, index);
-            if (directory is null || IsolationHeld(directory))
-            {
-                continue;
-            }
+        var escaped = Enumerable
+            .Range(0, projectPaths.Count)
+            .Where(index => !IsolationHeld(IsolatedDirectoryFor(isolationRoot, index)!))
+            .ToList();
 
-            resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
-                projectPaths[index],
-                options.IncludeTransitive,
-                isolatedIntermediateDirectory: null
-            );
+        if (escaped.Count == 0)
+        {
+            return;
+        }
+
+        // Process-wide, not just serial within this loop. --batch-parallel runs several solutions through
+        // separate scans at once, so a loop that is serial in itself can still be running alongside another
+        // one — and these rescans are precisely the invocations that write to shared locations. One lock for
+        // all unisolated work, held for the whole batch of them: no keys, no predicted paths, nothing to get
+        // subtly wrong. They are rare by construction, so the cost is negligible.
+        await UnisolatedScanLock.WaitAsync();
+        try
+        {
+            foreach (var index in escaped)
+            {
+                resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                    projectPaths[index],
+                    options.IncludeTransitive,
+                    isolatedIntermediateDirectory: null
+                );
+            }
+        }
+        finally
+        {
+            UnisolatedScanLock.Release();
         }
     }
+
+    /// <summary>
+    /// Serialises every restore that could not be isolated, across the whole process.
+    ///
+    /// Static because <c>--batch-parallel</c> gives each solution its own scan, and two of those running at
+    /// once is exactly how an unisolated restore ends up sharing an assets file with another.
+    /// </summary>
+    private static readonly SemaphoreSlim UnisolatedScanLock = new(1, 1);
 
     /// <summary>
     /// Whether the restore actually wrote its assets file where it was told to.
