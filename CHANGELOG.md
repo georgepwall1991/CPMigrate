@@ -6,6 +6,20 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.22.0] - 2026-07-30
+
+### Added
+- **Every analysis rule is now proven end to end — no exemptions left.** 3.21.0's guard exempted four rules (`SecurityVulnerability`, `OutdatedPackage`, `DeprecatedPackage`, `TransitiveConflict`) as needing a live NuGet feed. That is true of the *query* and false of everything after it — and everything after it is precisely where the 3.20.0 defect lived: a parser reading a shape the feed does not produce, reporting nothing, and looking clean. Exempting the rules left that part unexamined.
+  - `RecordedFeedOutputTests` drives all four from JSON **captured from real `dotnet package list` runs**, not written from documentation. That distinction is the point: the 3.20.0 bug survived because its fixtures were plausible rather than real.
+  - Real output does things a hand-written fixture would not, and each is now pinned: the advisory URL key is `advisoryurl`, lower case, unlike every neighbouring key; a project with **no findings has no `frameworks` key at all**, not an empty array; a transitive entry carries `resolvedVersion` and no `requestedVersion`.
+  - The exemption list is empty and a test keeps it that way, so adding one requires a reason that survives the question "could this be driven from recorded output instead?"
+
+### Fixed
+- **A `--transitive` scan invented duplicate-reference findings.** Found immediately by the above. When the declared-reference list is unavailable the resolved list stands in, and under `--transitive` that list holds the same package twice — once as a direct reference, once as a transitive of something else. `RedundantReference` read that as the project declaring it twice, reporting a defect in a project with one perfectly ordinary reference. A transitive entry is not a declaration; nobody wrote it in the project file.
+
+### Testing
+- 8 new tests. 1085 pass. One of them documents a wrong turn worth recording: the first `TransitiveConflict` test asserted a direct-versus-transitive version difference, which no rule claims to report and NuGet resolves on its own. A test asserting the wrong contract is one of the ways a rule ends up looking covered when it is not.
+
 ## [3.21.0] - 2026-07-30
 
 ### Added
