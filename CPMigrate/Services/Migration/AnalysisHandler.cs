@@ -239,16 +239,20 @@ internal sealed class AnalysisHandler
             return;
         }
 
-        var parallelOptions = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = options.ResolveScanParallelism(),
-        };
+        var maxConcurrency = options.ResolveScanParallelism();
+        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency };
 
         await Parallel.ForEachAsync(
             Enumerable.Range(0, projectPaths.Count),
             parallelOptions,
             async (index, _) =>
             {
+                // The ceiling has to hold across the whole process, not per scan: --batch-parallel
+                // runs several solutions at once, and a per-scan limit would multiply the advertised
+                // cap by the number of solutions — producing the feed rate-limiting the cap exists to
+                // avoid.
+                using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
+
                 var vulnerabilities = new List<VulnerabilityInfo>();
                 var outdated = new List<OutdatedPackageInfo>();
                 var deprecated = new List<DeprecatedPackageInfo>();
