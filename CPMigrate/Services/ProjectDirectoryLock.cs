@@ -86,20 +86,24 @@ internal static class ProjectDirectoryLock
             // declared path may be conditional and not apply, in which case this is where the file goes.
             keys.Add(Path.Combine(directory, "obj"));
 
-            var declared = XDocument
-                .Load(fullPath)
-                .Descendants()
-                .Where(element =>
-                    element.Name.LocalName
-                        is "MSBuildProjectExtensionsPath"
-                            or "BaseIntermediateOutputPath"
-                )
-                .Select(element => element.Value.Trim())
-                .Where(value => !string.IsNullOrEmpty(value));
-
-            foreach (var value in declared)
+            foreach (var value in DeclaredPaths(fullPath))
             {
                 keys.Add(Normalise(value, directory));
+            }
+
+            // A repo-wide artifacts/obj is usually set once in a Directory.Build.props, not in each
+            // project — so an XML-only look at the project file alone saw nothing and every project got
+            // its own default key while all of them wrote to one place. The props files are walked here
+            // for the same two properties. Relative values in a props file resolve against the project
+            // at evaluation time, but a repo-wide setting is normally rooted or property-based, and an
+            // extra candidate only ever over-locks.
+            foreach (var propsFile in BuildPropsFiles(directory))
+            {
+                foreach (var value in DeclaredPaths(propsFile))
+                {
+                    keys.Add(Normalise(value, directory));
+                    keys.Add(Normalise(value, Path.GetDirectoryName(propsFile) ?? directory));
+                }
             }
         }
         catch (Exception)
@@ -113,6 +117,52 @@ internal static class ProjectDirectoryLock
         }
 
         return keys;
+    }
+
+
+    /// <summary>The two intermediate-output properties declared in one XML file, conditional or not.</summary>
+    private static List<string> DeclaredPaths(string xmlFile)
+    {
+        try
+        {
+            return XDocument
+                .Load(xmlFile)
+                .Descendants()
+                .Where(element =>
+                    element.Name.LocalName
+                        is "MSBuildProjectExtensionsPath"
+                            or "BaseIntermediateOutputPath"
+                )
+                .Select(element => element.Value.Trim())
+                .Where(value => !string.IsNullOrEmpty(value))
+                .ToList();
+        }
+        catch (Exception)
+        {
+            // A props file that cannot be read tells us nothing; it must not stop the scan.
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// The <c>Directory.Build.props</c> files above a project, nearest first. MSBuild stops at the first
+    /// one it finds, but that file may import others, so all of them are considered — an extra candidate
+    /// only over-locks, while a missed one is a silent race.
+    /// </summary>
+    private static IEnumerable<string> BuildPropsFiles(string projectDirectory)
+    {
+        var current = new DirectoryInfo(projectDirectory);
+
+        while (current is not null)
+        {
+            var candidate = Path.Combine(current.FullName, "Directory.Build.props");
+            if (File.Exists(candidate))
+            {
+                yield return candidate;
+            }
+
+            current = current.Parent;
+        }
     }
 
     /// <summary>

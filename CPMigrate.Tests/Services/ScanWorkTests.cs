@@ -226,6 +226,37 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task ARepoWideIntermediatePathFromDirectoryBuildProps_IsHonoured()
+    {
+        // Cross-review caught this, and it is the case I had documented as a known limit rather than closed:
+        // a repo-wide artifacts/obj is normally set once in a Directory.Build.props, so looking only at the
+        // project files saw nothing and every project got its own default key while all of them wrote to one
+        // place. Common enough to be worth closing, and still only XML.
+        File.WriteAllText(
+            Path.Combine(_root, "Directory.Build.props"),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <BaseIntermediateOutputPath>{Path.Combine(_root, "artifacts", "obj") + Path.DirectorySeparatorChar}</BaseIntermediateOutputPath>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteProject("src/Lib/Lib.csproj", "12.0.3");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8))
+            .Should()
+            .Contain(
+                "VersionInconsistency",
+                "both projects restore into the same imported intermediate directory"
+            );
+    }
+
+    [Fact]
     public async Task AnUnreadableProject_DoesNotAbortTheWholeAnalysis()
     {
         // Cross-review caught this as a regression I introduced: the lock lookup reads the project file
