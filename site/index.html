@@ -10,7 +10,13 @@
   <meta property="og:description" content="Use CPMigrate to migrate to Directory.Packages.props, analyze NuGet dependency health, and update packages safely with rollback." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://georgepwall1991.github.io/CPMigrate/" />
-  <meta property="og:image" content="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/banner.png" />
+  <meta property="og:image" content="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/site/assets/social-card.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:video" content="https://github.com/georgepwall1991/CPMigrate/raw/main/assets/video/cpmigrate-hero.mp4" />
+  <meta property="og:video:type" content="video/mp4" />
+  <meta property="og:video:width" content="1920" />
+  <meta property="og:video:height" content="1080" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="NuGet Central Package Management Migration Tool for .NET Teams" />
   <meta name="twitter:description" content="Migrate .NET solutions to NuGet Central Package Management and update packages safely with rollback." />
@@ -31,6 +37,79 @@
         "price": "0",
         "priceCurrency": "USD"
       }
+    }
+  </script>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "VideoObject",
+      "name": "CPMigrate — NuGet Central Package Management migration for .NET",
+      "description": "CPMigrate migrating a .NET solution to Directory.Packages.props, scoring migration risk, and bisecting NuGet package updates to keep tests green.",
+      "thumbnailUrl": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/video/cpmigrate-hero-poster.png",
+      "contentUrl": "https://github.com/georgepwall1991/CPMigrate/raw/main/assets/video/cpmigrate-hero.mp4",
+      "uploadDate": "2026-07-30",
+      "duration": "PT20S",
+      "publisher": {
+        "@type": "Organization",
+        "name": "CPMigrate",
+        "url": "https://georgepwall1991.github.io/CPMigrate/"
+      }
+    }
+  </script>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I migrate a .NET solution to Central Package Management?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Run cpmigrate -s ./MySolution.sln --dry-run to preview, then cpmigrate -s ./MySolution.sln to apply. CPMigrate extracts every PackageReference from your project files, resolves version conflicts, generates Directory.Packages.props, and strips inline Version attributes — with a timestamped backup you can roll back to."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is Directory.Packages.props?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It is the file NuGet Central Package Management (CPM) reads package versions from, so every project in a solution shares one version per package instead of declaring its own. CPMigrate generates and maintains it for you."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can CPMigrate roll back a bad package update?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. --update-packages runs dotnet test after applying updates and rolls back automatically on failure. --update-packages --bisect keeps the largest subset that stays green and names the packages it held back. Migrations get timestamped backups restorable with cpmigrate --rollback."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does CPMigrate work in CI/CD?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. --output Json --quiet gives strict JSON-only stdout against a published schema, --output Sarif uploads to GitHub code scanning as PR annotations, and --output Markdown drops a verdict-first report into the GitHub step summary. Exit codes are contract-level: 5 means findings, 8 means the scan did not complete."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does CPMigrate support .slnx and monorepos?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. CPMigrate reads classic .sln and Visual Studio 17.10+ .slnx solutions, and --batch recursively discovers every solution in a monorepo — optionally in parallel and continuing past failures — with an isolated backup directory per solution."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can it gate on security vulnerabilities without failing on existing debt?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. --audit scans direct and transitive dependencies for known CVEs, --fail-on High narrows the exit-code gate while still reporting everything, and --write-baseline records today's findings once so CI fails only on new debt. Baselined findings stay visible in every report."
+          }
+        }
+      ]
     }
   </script>
 </head>
@@ -81,7 +160,10 @@
 
     <section class="section">
       <div class="image-frame">
-        <img src="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-demo.gif" alt="CPMigrate previewing a Central Package Management migration" />
+        <video autoplay muted loop playsinline preload="metadata"
+          poster="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/video/cpmigrate-hero-poster.png"
+          src="https://github.com/georgepwall1991/CPMigrate/raw/main/assets/video/cpmigrate-hero.mp4"
+          aria-label="CPMigrate demo video — migrating a .NET solution to Directory.Packages.props, scoring migration risk, and bisecting package updates to keep tests green"></video>
       </div>
     </section>
 

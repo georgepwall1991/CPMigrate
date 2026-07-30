@@ -1,0 +1,20 @@
+{
+  "name": "cpmigrate-hero-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion source for the CPMigrate hero video, README poster frame, and social card",
+  "scripts": {
+    "dev": "remotion studio",
+    "render": "./render.sh"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.502",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "remotion": "4.0.502"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "^5.9.0"
+  }
+}

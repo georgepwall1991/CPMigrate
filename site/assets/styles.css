@@ -41,7 +41,8 @@ a:hover {
   text-decoration: underline;
 }
 
-img {
+img,
+video {
   max-width: 100%;
   border-radius: 18px;
 }
