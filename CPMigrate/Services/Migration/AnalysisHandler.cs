@@ -245,8 +245,10 @@ internal sealed class AnalysisHandler
     }
 
     /// <summary>
-    /// Reads references serially, then runs the package queries with bounded concurrency. Each task
-    /// owns its own slot and its own collections, so nothing is shared between them.
+    /// Gathers references, then runs the opt-in package queries with bounded concurrency.
+    ///
+    /// The reference pass is serial in both halves, for two different reasons — see the notes inside. The
+    /// opt-in queries are the part that is safe to parallelise, and they are.
     /// </summary>
     private async Task ScanProjectsAsync(
         Options options,
@@ -258,12 +260,45 @@ internal sealed class AnalysisHandler
         var deepScansRequested =
             options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated;
 
-        // Serial, and deliberately so: see the note on PerformAnalysisScanAsync.
+        var maxConcurrency = options.ResolveScanParallelism();
+        var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
+
+        // Phase one: the subprocess per project. Serial.
+        //
+        // This was concurrent for a while — it is a separate process per project that spends most of its
+        // half-second waiting, and parallelising it made a 60-project scan two to four times faster. It was
+        // reverted, and the reasoning is worth keeping because the speedup is tempting.
+        //
+        // `dotnet package list` restores, and two restores that write the same project.assets.json race on
+        // it: the loser comes back reporting the other project's packages, so two projects with different
+        // versions of a package report the same one and the version-inconsistency finding disappears —
+        // cleanly, with a successful exit code. Knowing whether two projects share that file means knowing
+        // where it goes, and eight rounds of review found eight distinct routes to a shared one: a
+        // conditional property, an imported Directory.Build.props, a path built from $(…), an import
+        // reaching a child directory, MSBuildProjectExtensionsPath outranking BaseIntermediateOutputPath,
+        // ProjectAssetsFile naming the file outright, one project redirected into another's default obj, and
+        // --batch-parallel putting two solutions' projects in flight at once. Every fix was correct and the
+        // next round found another.
+        //
+        // The answer is only available from full MSBuild evaluation — which is exactly what this phase
+        // cannot do, because MSBuild's object model is not thread-safe. So the concurrency cannot be made
+        // safe here at any reasonable cost, and a scan that silently reports fewer findings is a worse
+        // product than a slow one. ScanWorkTests pins the properties any future attempt has to hold.
         for (var index = 0; index < projectPaths.Count; index++)
         {
-            var (references, scanned, declared) = await ScanProjectReferencesAsync(
+            resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                projectPaths[index],
+                options.IncludeTransitive
+            );
+        }
+
+        // Phase two: MSBuild. Serial, and deliberately so — see above.
+        for (var index = 0; index < projectPaths.Count; index++)
+        {
+            var (references, scanned, declared) = ReadProjectFileParts(
                 options,
-                projectPaths[index]
+                projectPaths[index],
+                resolved[index]
             );
             CacheScanResults(projectPaths[index], references);
 
@@ -280,7 +315,6 @@ internal sealed class AnalysisHandler
             return;
         }
 
-        var maxConcurrency = options.ResolveScanParallelism();
         var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency };
 
         await Parallel.ForEachAsync(
@@ -334,16 +368,22 @@ internal sealed class AnalysisHandler
         List<PackageReference>? DeclaredReferences
     );
 
-    private async Task<(
+    /// <summary>
+    /// The MSBuild half of the reference pass: the XML fallback when the resolved scan failed, and the
+    /// declaration read. Kept separate from the subprocess so that only this part has to be serialised.
+    /// </summary>
+    private (
         List<PackageReference> References,
         bool Success,
         List<PackageReference>? Declared
-    )> ScanProjectReferencesAsync(Options options, string projectPath)
+    ) ReadProjectFileParts(
+        Options options,
+        string projectPath,
+        (List<PackageReference> References, bool Success) resolved
+    )
     {
-        var (references, success) = await _projectAnalyzer.ScanResolvedPackagesAsync(
-            projectPath,
-            options.IncludeTransitive
-        );
+        var (references, success) = resolved;
+
         if (!success)
         {
             if (options.IncludeTransitive)
@@ -358,9 +398,10 @@ internal sealed class AnalysisHandler
 
             // Not reused as the declared list, even though it also comes from the project file: this scan
             // exists to stand in for a resolved one, so it drops versionless items — every reference under
-            // central package management — and records no conditions. Handing it over would miss duplicates
-            // for most users and report a framework-conditional pair as a fixable duplicate the fixer then
-            // refuses to touch.
+            // central package management — and never records a Condition. Handing it over missed duplicates
+            // for most users, and reported a framework-conditional pin as an ordinary one, so the version
+            // fixer unified everything to it. Reintroduced by a refactor and caught by the test that was
+            // written for it the first time.
             var (fallbackDeclared, fallbackRead) = _projectAnalyzer.ScanDeclaredPackages(projectPath);
             return (references, success, fallbackRead ? fallbackDeclared : null);
         }

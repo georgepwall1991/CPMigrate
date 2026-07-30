@@ -6,6 +6,26 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.24.0] - 2026-07-30
+
+### Added
+- **`ScanWorkTests`: the properties any change to the scan's scheduling has to hold.** Not a duration — a timing assertion in CI is a flake generator, and it would not catch what actually goes wrong here. Every performance change to this scan has had the same failure mode available to it: parallelism that silently *erases* findings, producing a clean report with a successful exit code. What is pinned instead: findings do not depend on `--max-parallelism`; a solution whose projects share one directory still reports its inconsistency; layouts that redirect their intermediate output — directly, via `Directory.Build.props`, through an import chain, or into another project's `obj` — still report theirs; and the same solution produces the same report twice, so merging results in completion order rather than project order would fail.
+
+### Fixed
+- **A `--fix` regression from 3.23.0's fallback path.** Reworking the reference pass dropped the fix that stopped `ScanProjectPackages` output being reused as the declared-reference list. That scan records no `Condition`, so a framework-conditional pin read as an ordinary one and `--fix` unified every other project to it — `Serilog 99.0.0` written into two projects that wanted `2.0.0`. Caught by the test written for this exact bug one release earlier, and reproduced outside the suite before fixing. Second time this line has needed it.
+
+### Not shipped: concurrent package resolution
+An attempt to parallelise the `dotnet package list` phase was written, measured at **two to four times faster** on 60 projects (39s → 9.6s idle, 46s → 19s loaded), reviewed, and **abandoned**. It is recorded here because the speedup is tempting and the reasoning is the useful part.
+
+`dotnet package list` restores, and two restores writing the same `project.assets.json` race on it: the loser reports the other project's packages, so two projects with different versions of a package report the same one and the version-inconsistency finding disappears. Silently, exit code 0.
+
+Whether two projects share that file means knowing where it goes. Eight rounds of review found eight distinct routes to a shared one: a conditional property; one set in an imported `Directory.Build.props`; one built from `$(…)`; an import reaching a *child* directory; `MSBuildProjectExtensionsPath` outranking `BaseIntermediateOutputPath`; `ProjectAssetsFile` naming the file outright; one project redirected into another's default `obj`; and `--batch-parallel` putting two solutions' projects in flight at once. Every fix was correct and the next round found another — which is the signal that the approach was wrong rather than unfinished. The answer is only available from full MSBuild evaluation, and evaluation is precisely what that phase cannot do, because MSBuild's object model is not thread-safe.
+
+So the speedup stays unshipped. A scan that silently reports fewer findings is a worse product than a slow one, and this release series exists to remove exactly that failure mode. The reasoning is preserved in `AnalysisHandler.ScanProjectsAsync`, and the tests above are what a future attempt has to satisfy.
+
+### Testing
+- 8 new tests. 1103 pass.
+
 ## [3.23.0] - 2026-07-30
 
 ### Fixed
