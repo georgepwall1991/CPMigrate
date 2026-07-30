@@ -383,6 +383,49 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task ACustomSdkFallsBackToSerial()
+    {
+        // Cross-review caught this: an SDK-style project implicitly imports its SDK's Sdk.props, which the
+        // text search cannot see — so a custom SDK could assign one of the redirect properties unnoticed and
+        // the scan would run concurrently against a shared assets file. The standard .NET SDK is fine, and
+        // every other test here that scans concurrently proves it; anything else is unverified, so it is not
+        // trusted.
+        //
+        // The SDK does not need to resolve for this test — the point is that an unrecognised name is enough
+        // to force serial, and findings must still be reported.
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        File.WriteAllText(
+            Path.Combine(_root, "src", "Api", "Api.csproj"),
+            File.ReadAllText(Path.Combine(_root, "src", "Api", "Api.csproj"))
+                .Replace("Microsoft.NET.Sdk", "Microsoft.NET.Sdk", StringComparison.Ordinal)
+        );
+        WriteProject("src/Lib/Lib.csproj", "12.0.3");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        RestoreIsolation
+            .CanIsolate(
+                [
+                    Path.Combine(_root, "src", "Api", "Api.csproj"),
+                    Path.Combine(_root, "src", "Lib", "Lib.csproj"),
+                ]
+            )
+            .Should()
+            .BeTrue("the standard SDK is the verified case");
+
+        // Now swap one project onto an unknown SDK and the answer must flip.
+        var api = Path.Combine(_root, "src", "Api", "Api.csproj");
+        File.WriteAllText(
+            api,
+            File.ReadAllText(api).Replace("Microsoft.NET.Sdk", "Contoso.Custom.Sdk", StringComparison.Ordinal)
+        );
+
+        RestoreIsolation
+            .CanIsolate([api, Path.Combine(_root, "src", "Lib", "Lib.csproj")])
+            .Should()
+            .BeFalse("a custom SDK's implicit imports cannot be inspected, so isolation is not guaranteed");
+    }
+
+    [Fact]
     public async Task TheSameSolutionProducesTheSameReportTwice()
     {
         // Concurrency that merges results in completion order rather than project order produces a report

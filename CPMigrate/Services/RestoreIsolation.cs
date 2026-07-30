@@ -56,12 +56,36 @@ internal static class RestoreIsolation
         return projectPaths.All(CanIsolate);
     }
 
+    /// <summary>
+    /// SDKs whose implicit imports are known not to override the redirection.
+    ///
+    /// An SDK-style project implicitly imports its SDK's <c>Sdk.props</c> and <c>Sdk.targets</c>, which the
+    /// text search cannot see — so a custom SDK could assign one of the three properties unnoticed. The
+    /// standard .NET SDK assigns <c>BaseIntermediateOutputPath</c> only when it is empty, which is precisely
+    /// why the environment value survives; that is verified by every test in this suite that scans a real
+    /// project concurrently. Nothing else is verified, so nothing else is trusted. **Found in cross-review.**
+    /// </summary>
+    private static readonly string[] KnownSafeSdks =
+    [
+        "Microsoft.NET.Sdk",
+        "Microsoft.NET.Sdk.Web",
+        "Microsoft.NET.Sdk.Worker",
+        "Microsoft.NET.Sdk.Razor",
+        "Microsoft.NET.Sdk.BlazorWebAssembly",
+        "Microsoft.NET.Sdk.WindowsDesktop",
+    ];
+
     private static bool CanIsolate(string projectPath)
     {
         try
         {
             var fullPath = Path.GetFullPath(projectPath);
             var directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
+
+            if (!UsesOnlyKnownSafeSdks(fullPath))
+            {
+                return false;
+            }
 
             HashSet<string> visited = new(StringComparer.Ordinal);
             Queue<string> pending = new();
@@ -120,6 +144,61 @@ internal static class RestoreIsolation
             // incomplete scan and carry on past it.
             return false;
         }
+    }
+
+
+    /// <summary>
+    /// Whether every SDK this project pulls in is one whose implicit imports are known not to override the
+    /// redirection — covering the <c>Sdk</c> attribute on <c>&lt;Project&gt;</c>, <c>&lt;Sdk Name="…"&gt;</c>
+    /// elements, and <c>&lt;Import Sdk="…"&gt;</c>. A version suffix (<c>Name/1.2.3</c>) is ignored; the name
+    /// is what determines the behaviour.
+    /// </summary>
+    private static bool UsesOnlyKnownSafeSdks(string projectPath)
+    {
+        XDocument document;
+        try
+        {
+            document = XDocument.Load(projectPath);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        List<string> declared = [];
+
+        if (document.Root?.Attribute("Sdk")?.Value is { Length: > 0 } rootSdk)
+        {
+            declared.AddRange(rootSdk.Split(';', StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        foreach (var element in document.Descendants())
+        {
+            if (string.Equals(element.Name.LocalName, "Sdk", StringComparison.Ordinal))
+            {
+                if (element.Attribute("Name")?.Value is { Length: > 0 } named)
+                {
+                    declared.Add(named);
+                }
+            }
+            else if (element.Attribute("Sdk")?.Value is { Length: > 0 } imported)
+            {
+                declared.AddRange(imported.Split(';', StringSplitOptions.RemoveEmptyEntries));
+            }
+        }
+
+        if (declared.Count == 0)
+        {
+            // No SDK at all — a plain MSBuild project with no implicit imports to worry about.
+            return true;
+        }
+
+        return declared.All(sdk =>
+        {
+            var name = sdk.Trim().Split('/')[0].Trim();
+
+            return KnownSafeSdks.Contains(name, StringComparer.OrdinalIgnoreCase);
+        });
     }
 
     /// <summary>
