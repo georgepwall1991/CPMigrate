@@ -535,23 +535,37 @@ public class PropsGenerator
         var index = 0;
         while (index < items.Count)
         {
-            var name = GetPackageName(items[index]);
-
-            // A commented entry immediately followed by one that sorts before it is the displacement
-            // this class creates. Undo it, and consume both.
-            if (
-                documentedByComment.Contains(items[index])
-                && index + 1 < items.Count
-                && PackageIdOrder.Compare(name, GetPackageName(items[index + 1])) > 0
-            )
+            // AddNewPackageVersion walks past *every* consecutive commented entry, so a pin can be
+            // displaced by more than one slot and the whole run has to be undone together. Reversing only
+            // the last step would leave the sequence out of order and classify this class's own output as
+            // hand-arranged, which is the degradation the exemption exists to prevent.
+            var runEnd = index;
+            while (runEnd < items.Count && documentedByComment.Contains(items[runEnd]))
             {
-                normalized.Add(GetPackageName(items[index + 1]));
-                normalized.Add(name);
-                index += 2;
+                runEnd++;
+            }
+
+            var displaced =
+                runEnd > index
+                && runEnd < items.Count
+                && PackageIdOrder.Compare(
+                    GetPackageName(items[index]),
+                    GetPackageName(items[runEnd])
+                ) > 0;
+
+            if (displaced)
+            {
+                normalized.Add(GetPackageName(items[runEnd]));
+                for (var inRun = index; inRun < runEnd; inRun++)
+                {
+                    normalized.Add(GetPackageName(items[inRun]));
+                }
+
+                index = runEnd + 1;
                 continue;
             }
 
-            normalized.Add(name);
+            normalized.Add(GetPackageName(items[index]));
             index++;
         }
 

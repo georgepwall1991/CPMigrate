@@ -269,6 +269,46 @@ public class PropsOrganizationTests : IDisposable
     }
 
     [Fact]
+    public void MergeExisting_KeepsSortingWhenAPinWasPushedPastSeveralCommentsAtOnce()
+    {
+        // Cross-review caught this: a pin whose sorted position sits before *two or more* consecutive
+        // commented entries is moved past all of them, so undoing only the last step left the sequence
+        // out of order and the next merge read this code's own output as hand-arranged — appending
+        // everything from then on.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Alpha" Version="1.0.0" />
+                <!-- why Charlie -->
+                <PackageVersion Include="Charlie" Version="1.0.0" />
+                <!-- why Delta -->
+                <PackageVersion Include="Delta" Version="1.0.0" />
+                <PackageVersion Include="Zulu" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var generator = new PropsGenerator();
+        var (first, _, _, _) = generator.MergeExisting(propsPath, Packages(("Bravo", "2.0.0")));
+        PackageIdsInOrder(first).Should().Equal("Alpha", "Charlie", "Delta", "Bravo", "Zulu");
+        File.WriteAllText(propsPath, first);
+
+        // Both comments still describe their own pins, and the file is still treated as ordered.
+        var lines = SignificantLines(first);
+        lines[lines.FindIndex(l => l.Contains("why Charlie")) + 1].Should().Contain("Charlie");
+        lines[lines.FindIndex(l => l.Contains("why Delta")) + 1].Should().Contain("Delta");
+
+        var (second, added, _, _) = generator.MergeExisting(propsPath, Packages(("Echo", "3.0.0")));
+
+        added.Should().Be(1);
+        PackageIdsInOrder(second)
+            .Should()
+            .Equal("Alpha", "Charlie", "Delta", "Bravo", "Echo", "Zulu");
+    }
+
+    [Fact]
     public void MergeExisting_DoesNotMistakeADocumentingCommentForAHeader_WhenAnotherItemOpensTheGroup()
     {
         // Cross-review caught this: the header exemption keyed off "first PackageVersion" rather than
