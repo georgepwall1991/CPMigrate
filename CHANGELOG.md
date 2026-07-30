@@ -6,6 +6,16 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.25.1] - 2026-07-30
+
+### Changed
+- **Refreshed the dependencies bundled into the tool.** `Serilog` 4.3.0 → 4.4.0, `NuGet.Versioning` 7.0.1 → 7.6.0, `Microsoft.Extensions.Logging(.Abstractions)` 10.0.2 → 10.0.10, plus `FluentAssertions` 8.10.0 and `Microsoft.NET.Test.Sdk` 18.8.1 for the test project. These landed on `main` after 3.25.0 was tagged, so the published 3.25.0 was still carrying the older assemblies — this is a `PackAsTool` package, which bundles its dependencies rather than declaring them for consumers to restore.
+- No behaviour change, hence a patch. Each update was verified against the full suite; `Microsoft.Build` 18.8.2 was held back because it breaks 20 tests, and `Buildalyzer` 9, `coverlet` 10, `Spectre.Console` 0.57 and `SonarAnalyzer` 10.31 remain outstanding work items — see 3.24.0's notes and the closed Dependabot PRs for the detail.
+
+### Testing
+- No new tests. 1107 pass.
+
+
 ## [3.25.0] - 2026-07-30
 
 ### Added
