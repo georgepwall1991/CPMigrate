@@ -22,25 +22,45 @@ public partial class ProjectAnalyzer
         return _packageQueryService.ScanTransitivePackagesAsync(projectFilePath);
     }
 
-    public Task<(List<VulnerabilityInfo> Vulnerabilities, bool Success)> ScanVulnerabilitiesAsync(string projectFilePath)
+    public Task<(List<VulnerabilityInfo> Vulnerabilities, bool Success)> ScanVulnerabilitiesAsync(
+        string projectFilePath,
+        string? isolatedIntermediateDirectory = null
+    )
     {
-        return _packageQueryService.ScanVulnerabilitiesAsync(projectFilePath);
+        return _packageQueryService.ScanVulnerabilitiesAsync(
+            projectFilePath,
+            isolatedIntermediateDirectory
+        );
     }
 
     public Task<(List<OutdatedPackageInfo> Packages, bool Success)> ScanOutdatedPackagesAsync(
         string projectFilePath,
         bool includeTransitive,
-        bool includePrerelease = false)
+        bool includePrerelease = false,
+        string? isolatedIntermediateDirectory = null
+    )
     {
-        return _packageQueryService.ScanOutdatedPackagesAsync(projectFilePath, includeTransitive, includePrerelease);
+        return _packageQueryService.ScanOutdatedPackagesAsync(
+            projectFilePath,
+            includeTransitive,
+            includePrerelease,
+            isolatedIntermediateDirectory
+        );
     }
 
     public Task<(List<DeprecatedPackageInfo> Packages, bool Success)> ScanDeprecatedPackagesAsync(
         string projectFilePath,
         bool includeTransitive,
-        bool includePrerelease = false)
+        bool includePrerelease = false,
+        string? isolatedIntermediateDirectory = null
+    )
     {
-        return _packageQueryService.ScanDeprecatedPackagesAsync(projectFilePath, includeTransitive, includePrerelease);
+        return _packageQueryService.ScanDeprecatedPackagesAsync(
+            projectFilePath,
+            includeTransitive,
+            includePrerelease,
+            isolatedIntermediateDirectory
+        );
     }
 
     internal static List<PackageReference> ParsePackageReferencesFromJson(

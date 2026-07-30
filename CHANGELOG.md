@@ -6,6 +6,18 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.28.0] - 2026-07-30
+
+### Fixed
+- **`--audit` could report the wrong project's vulnerabilities — including reporting a vulnerable project as clean.** Present since 3.15.0, and named but not fixed in 3.26.0.
+  - The opt-in deep scans (`--audit`, `--outdated`, `--deprecated`) shell out to `dotnet package list`, which **restores**. Two projects sharing a `project.assets.json` therefore corrupt each other's results, exactly as in the resolved-package scan — but here the corruption is security-relevant rather than merely wrong.
+  - Demonstrated before fixing: two projects in one directory, one pinned to `Newtonsoft.Json` 9.0.1 (a version carrying a known high-severity advisory) and one to 13.0.1 (clean), queried concurrently. **The clean project came back reported as carrying 9.0.1.** The race runs the other way just as easily, which is a genuinely vulnerable project reported clean — and nothing in the output would indicate it.
+  - Each deep scan now reuses the isolated directory its project's resolved scan **proved** usable. Where that scan escaped its isolation, there is nowhere safe for the deep scan either, so it takes the exclusive restore lock and waits for every other restore in the process.
+  - Verified end to end: with the two projects above in one directory at `--max-parallelism 8`, the vulnerability is attributed to the vulnerable project alone.
+
+### Testing
+- `DeepScanIsolationTests` (2 new) pins the mechanism: a deep scan receives the directory its resolved scan proved usable, and receives none when that scan escaped. Verified non-vacuous by running them against the unfixed code, where the first fails. 1127 pass.
+
 ## [3.27.0] - 2026-07-30
 
 ### Changed

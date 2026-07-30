@@ -294,6 +294,7 @@ internal sealed class AnalysisHandler
         var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
         var isolationRoot = requestedConcurrency > 1 ? CreateIsolationRoot() : null;
         var maxConcurrency = ResolveSafeConcurrency(requestedConcurrency, isolationRoot);
+        var isolatedDirectories = new string?[projectPaths.Count];
 
         try
         {
@@ -321,10 +322,20 @@ internal sealed class AnalysisHandler
             // Anything whose restore escaped its isolated directory was potentially racing with another
             // project, so its result is discarded and taken again one at a time.
             await RescanUnisolatedAsync(options, projectPaths, resolved, isolationRoot);
+
+            // Kept for the deep-scan phase: a directory that held for the resolved scan will hold for these
+            // too, and where it did not there is nowhere safe to put them either.
+            for (var index = 0; index < projectPaths.Count; index++)
+            {
+                var candidate = IsolatedDirectoryFor(isolationRoot, index);
+                isolatedDirectories[index] =
+                    candidate is not null && IsolationHeld(candidate) ? candidate : null;
+            }
         }
-        finally
+        catch
         {
             DeleteIsolationRoot(isolationRoot);
+            throw;
         }
 
         // Phase two: MSBuild. Serial, and deliberately so — see above.
@@ -347,6 +358,7 @@ internal sealed class AnalysisHandler
 
         if (!deepScansRequested)
         {
+            DeleteIsolationRoot(isolationRoot);
             return;
         }
 
@@ -363,12 +375,20 @@ internal sealed class AnalysisHandler
                 // avoid.
                 using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
 
-                // Shared, because these also shell out to `dotnet package list` and so also restore. They
-                // are not isolated — that is a separate change, and their own mutual race predates this one
-                // — but they must still participate, or the "exclusive" retake in the resolved-package phase
-                // is not exclusive at all: --batch-parallel would have another solution's deep scans
-                // restoring against the same path while a retake was being trusted.
-                using var restoreSlot = await RestoreScanLock.AcquireSharedAsync();
+                // These also shell out to `dotnet package list`, so they also restore — and two projects
+                // sharing an assets file corrupt each other here exactly as they do in the resolved phase.
+                // Demonstrated: two projects in one directory queried concurrently for vulnerabilities, one
+                // pinned to a version with a known advisory and one to a clean version, and the clean
+                // project was reported carrying the vulnerable version. It runs the other way just as
+                // easily, which is a vulnerable project reported clean.
+                //
+                // The directory this project's resolved scan proved usable is reused. Where that scan
+                // escaped its isolation, there is nowhere safe to put this one either, so it takes the
+                // exclusive side and waits for every other restore in the process.
+                var deepDirectory = isolatedDirectories[index];
+                using var restoreSlot = deepDirectory is null
+                    ? await RestoreScanLock.AcquireExclusiveAsync()
+                    : await RestoreScanLock.AcquireSharedAsync();
 
                 var vulnerabilities = new List<VulnerabilityInfo>();
                 var outdated = new List<OutdatedPackageInfo>();
@@ -377,6 +397,7 @@ internal sealed class AnalysisHandler
                 var failures = await RunDeepScansAsync(
                     options,
                     projectPaths[index],
+                    deepDirectory,
                     task: null,
                     vulnerabilities,
                     outdated,
@@ -394,6 +415,10 @@ internal sealed class AnalysisHandler
                 progress?.Increment(1);
             }
         );
+
+        // After the deep scans, not before them: they reuse the same directories, so the earlier `finally`
+        // was deleting the isolation out from under them.
+        DeleteIsolationRoot(isolationRoot);
     }
 
     /// <summary>
@@ -621,6 +646,7 @@ internal sealed class AnalysisHandler
     private async Task<int> RunDeepScansAsync(
         Options options,
         string projectPath,
+        string? isolatedIntermediateDirectory,
         ProgressTask? task,
         List<VulnerabilityInfo> allVulnerabilities,
         List<OutdatedPackageInfo> allOutdatedPackages,
@@ -637,7 +663,11 @@ internal sealed class AnalysisHandler
 
         if (
             options.AuditSecurity
-            && !await ScanVulnerabilitiesAsync(projectPath, allVulnerabilities)
+            && !await ScanVulnerabilitiesAsync(
+                projectPath,
+                isolatedIntermediateDirectory,
+                allVulnerabilities
+            )
         )
         {
             failures++;
@@ -645,7 +675,12 @@ internal sealed class AnalysisHandler
 
         if (
             options.AnalyzeOutdated
-            && !await ScanOutdatedPackagesAsync(options, projectPath, allOutdatedPackages)
+            && !await ScanOutdatedPackagesAsync(
+                options,
+                projectPath,
+                isolatedIntermediateDirectory,
+                allOutdatedPackages
+            )
         )
         {
             failures++;
@@ -653,7 +688,12 @@ internal sealed class AnalysisHandler
 
         if (
             options.AnalyzeDeprecated
-            && !await ScanDeprecatedPackagesAsync(options, projectPath, allDeprecatedPackages)
+            && !await ScanDeprecatedPackagesAsync(
+                options,
+                projectPath,
+                isolatedIntermediateDirectory,
+                allDeprecatedPackages
+            )
         )
         {
             failures++;
@@ -664,11 +704,13 @@ internal sealed class AnalysisHandler
 
     private async Task<bool> ScanVulnerabilitiesAsync(
         string projectPath,
+        string? isolatedIntermediateDirectory,
         List<VulnerabilityInfo> allVulnerabilities
     )
     {
         var (vulnerabilities, auditSuccess) = await _projectAnalyzer.ScanVulnerabilitiesAsync(
-            projectPath
+            projectPath,
+            isolatedIntermediateDirectory
         );
         if (auditSuccess)
         {
@@ -681,13 +723,15 @@ internal sealed class AnalysisHandler
     private async Task<bool> ScanOutdatedPackagesAsync(
         Options options,
         string projectPath,
+        string? isolatedIntermediateDirectory,
         List<OutdatedPackageInfo> allOutdatedPackages
     )
     {
         var (outdated, outdatedSuccess) = await _projectAnalyzer.ScanOutdatedPackagesAsync(
             projectPath,
             options.IncludeTransitive,
-            options.IncludePrerelease
+            options.IncludePrerelease,
+            isolatedIntermediateDirectory
         );
         if (outdatedSuccess)
         {
@@ -700,13 +744,15 @@ internal sealed class AnalysisHandler
     private async Task<bool> ScanDeprecatedPackagesAsync(
         Options options,
         string projectPath,
+        string? isolatedIntermediateDirectory,
         List<DeprecatedPackageInfo> allDeprecatedPackages
     )
     {
         var (deprecated, deprecatedSuccess) = await _projectAnalyzer.ScanDeprecatedPackagesAsync(
             projectPath,
             options.IncludeTransitive,
-            options.IncludePrerelease
+            options.IncludePrerelease,
+            isolatedIntermediateDirectory
         );
         if (deprecatedSuccess)
         {
