@@ -325,6 +325,63 @@ public class PropsOrganizationTests : IDisposable
     }
 
     [Fact]
+    public void MergeExisting_MatchesAConsistentlyElementFormFile_RatherThanImposingAttributes()
+    {
+        // Cross-review caught this: writing new pins as attributes unconditionally recreates the same
+        // mixture, only in the other direction. A file written consistently in element form has expressed
+        // an opinion, and a merge is not the place to overrule it.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Alpha">
+                  <Version>1.0.0</Version>
+                </PackageVersion>
+                <PackageVersion Include="Zulu">
+                  <Version>1.0.0</Version>
+                </PackageVersion>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var (content, added, _, _) = new PropsGenerator().MergeExisting(
+            propsPath,
+            Packages(("Bravo", "2.0.0"))
+        );
+
+        added.Should().Be(1);
+        content.Should().Contain("<Version>2.0.0</Version>");
+        content.Should().NotContain("""Include="Bravo" Version=""");
+    }
+
+    [Fact]
+    public void MergeExisting_UsesAttributeForm_WhenTheFileAlreadyMixesBothStyles()
+    {
+        // A file with no consistent style has no opinion to honour, so new pins take the form Generate
+        // produces and NuGet's own documentation uses.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Alpha">
+                  <Version>1.0.0</Version>
+                </PackageVersion>
+                <PackageVersion Include="Zulu" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var (content, _, _, _) = new PropsGenerator().MergeExisting(
+            propsPath,
+            Packages(("Bravo", "2.0.0"))
+        );
+
+        content.Should().Contain("""<PackageVersion Include="Bravo" Version="2.0.0" />""");
+    }
+
+    [Fact]
     public void MergeExisting_LeavesAnExistingElementFormPinInElementForm()
     {
         // Rewriting an entry someone wrote as a child element into attribute form would be a diff they

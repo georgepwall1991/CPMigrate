@@ -179,7 +179,8 @@ public class PropsGenerator
             itemsByPackage,
             targetItemGroup,
             keepOrdered: IsOrdered(targetItemGroup, documentedByComment),
-            documentedByComment
+            documentedByComment,
+            expressVersionAsAttribute: PrefersAttributeForm(targetItemGroup)
         );
 
         return (projectRoot.RawXml, addedCount, updatedCount, hasConditionalPackageVersions);
@@ -251,7 +252,8 @@ public class PropsGenerator
         Dictionary<string, List<ProjectItemElement>> itemsByPackage,
         ProjectItemGroupElement targetItemGroup,
         bool keepOrdered,
-        HashSet<ProjectItemElement> documentedByComment
+        HashSet<ProjectItemElement> documentedByComment,
+        bool expressVersionAsAttribute
     )
     {
         var addedCount = 0;
@@ -271,7 +273,8 @@ public class PropsGenerator
                 itemsByPackage,
                 targetItemGroup,
                 keepOrdered,
-                documentedByComment
+                documentedByComment,
+                expressVersionAsAttribute
             );
             addedCount += added;
             updatedCount += updated;
@@ -287,7 +290,8 @@ public class PropsGenerator
         Dictionary<string, List<ProjectItemElement>> itemsByPackage,
         ProjectItemGroupElement targetItemGroup,
         bool keepOrdered,
-        HashSet<ProjectItemElement> documentedByComment
+        HashSet<ProjectItemElement> documentedByComment,
+        bool expressVersionAsAttribute
     )
     {
         var resolvedVersion = ResolvePackageVersion(versions, strategy);
@@ -307,7 +311,8 @@ public class PropsGenerator
             packageName,
             resolvedVersion,
             keepOrdered,
-            documentedByComment
+            documentedByComment,
+            expressVersionAsAttribute
         );
         return (1, 0);
     }
@@ -371,7 +376,8 @@ public class PropsGenerator
         string packageName,
         string version,
         bool keepOrdered,
-        HashSet<ProjectItemElement> documentedByComment
+        HashSet<ProjectItemElement> documentedByComment,
+        bool expressVersionAsAttribute
     )
     {
         var newItem = targetItemGroup.ContainingProject.CreateItemElement(
@@ -389,7 +395,7 @@ public class PropsGenerator
             // would produce a diff far larger than the change that was asked for, and would move
             // comments away from what they document. The new pin goes at the end.
             targetItemGroup.AppendChild(newItem);
-            SetMetadataValue(newItem, VersionMetadataName, version);
+            SetMetadataValue(newItem, VersionMetadataName, version, expressVersionAsAttribute);
             return;
         }
 
@@ -426,7 +432,7 @@ public class PropsGenerator
             targetItemGroup.AppendChild(newItem);
         }
 
-        SetMetadataValue(newItem, VersionMetadataName, version);
+        SetMetadataValue(newItem, VersionMetadataName, version, expressVersionAsAttribute);
     }
 
     /// <summary>
@@ -552,23 +558,53 @@ public class PropsGenerator
         return metadata?.Value;
     }
 
-    private static void SetMetadataValue(ProjectItemElement item, string name, string value)
+    private static void SetMetadataValue(
+        ProjectItemElement item,
+        string name,
+        string value,
+        bool expressAsAttribute = true
+    )
     {
         var metadata = item.Metadata.FirstOrDefault(m =>
             string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)
         );
         if (metadata != null)
         {
+            // Updated in place, keeping whatever style it was written in. Rewriting an entry someone
+            // formatted deliberately would be a diff they did not ask for.
             metadata.Value = value;
+            return;
         }
-        else
-        {
-            // As an attribute, not a child element. AddMetadata defaults to element form, so a merge
-            // wrote new pins as <PackageVersion Include="X"><Version>1.0</Version></PackageVersion>
-            // while every entry around them — and everything Generate produces — used Version="1.0".
-            // One file, two styles for the same thing, and a three-line diff for a one-line addition.
-            // Existing element-form metadata is left alone: it updates in place without being rewritten.
-            item.AddMetadata(name, value, expressAsAttribute: true);
-        }
+
+        // AddMetadata defaults to writing the version as a child element regardless of what the file
+        // around it looks like, so a merge produced new pins in that form next to entries carrying a
+        // Version attribute: one file, two styles for the same thing, and a three-line diff for a
+        // one-line addition. The caller passes the style the file actually uses.
+        item.AddMetadata(name, value, expressAsAttribute);
+    }
+
+    /// <summary>
+    /// Whether new pins should write their version as an attribute, decided by what the group already
+    /// does rather than by our preference.
+    ///
+    /// Attribute form for an empty group, and for a group that already mixes the two — that is what
+    /// <see cref="Generate"/> emits and what NuGet's own documentation uses, so it is the right default
+    /// when the file expresses no opinion. But a group written *consistently* in element form has an
+    /// opinion, and adding attribute-form entries to it would recreate exactly the mixture this is meant
+    /// to avoid, only in the other direction.
+    /// </summary>
+    private static bool PrefersAttributeForm(ProjectItemGroupElement itemGroup)
+    {
+        var versions = itemGroup
+            .Items.Where(item => item.ItemType == PackageVersionItemType)
+            .Select(item =>
+                item.Metadata.FirstOrDefault(m =>
+                    string.Equals(m.Name, VersionMetadataName, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            .Where(metadata => metadata is not null)
+            .ToList();
+
+        return versions.Count == 0 || versions.Any(metadata => metadata!.ExpressedAsAttribute);
     }
 }
