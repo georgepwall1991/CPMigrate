@@ -127,6 +127,59 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task MSBuildProjectExtensionsPathDecidesTheLock_WhenBothPropertiesAreSet()
+    {
+        // Cross-review caught this: MSBuildProjectExtensionsPath is the property that decides where
+        // project.assets.json goes, so two projects with *different* base paths but a shared extensions
+        // path share the file. Taking whichever appeared first in the XML gave them separate locks.
+        var shared = Path.Combine(_root, "artifacts", "ext") + Path.DirectorySeparatorChar;
+        WriteProjectWithBothPaths(
+            "src/Api/Api.csproj",
+            "13.0.1",
+            basePath: Path.Combine(_root, "artifacts", "api-base") + Path.DirectorySeparatorChar,
+            extensionsPath: shared
+        );
+        WriteProjectWithBothPaths(
+            "src/Lib/Lib.csproj",
+            "12.0.3",
+            basePath: Path.Combine(_root, "artifacts", "lib-base") + Path.DirectorySeparatorChar,
+            extensionsPath: shared
+        );
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+        var findings = await AnalyzeWith(parallelism: 8);
+
+        findings.Should().Contain("VersionInconsistency");
+    }
+
+    [Fact]
+    public async Task AnUnreadableProject_DoesNotAbortTheWholeAnalysis()
+    {
+        // Cross-review caught this as a regression I introduced: the lock lookup reads the project file
+        // before it is scanned, so an exception there took down the entire run — where the scanners are
+        // equipped to report that one project as an incomplete scan and carry on past it.
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteProject("src/Lib/Lib.csproj", "12.0.3");
+        var unreadable = Path.Combine(_root, "src", "Broken", "Broken.csproj");
+        Directory.CreateDirectory(Path.GetDirectoryName(unreadable)!);
+        File.WriteAllText(unreadable, "<Project><NotClosed>");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj", "src/Broken/Broken.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        var act = async () => await AnalyzeWith(parallelism: 8);
+
+        await act.Should().NotThrowAsync();
+        (await AnalyzeWith(parallelism: 8))
+            .Should()
+            .Contain(
+                "VersionInconsistency",
+                "the readable projects must still be analysed and reported"
+            );
+    }
+
+    [Fact]
     public async Task TheSameSolutionProducesTheSameReportTwice()
     {
         // Concurrency that merges results in completion order rather than project order produces a report
@@ -209,6 +262,32 @@ public class ScanWorkTests : IDisposable
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
                 <TargetFramework>net10.0</TargetFramework>{redirect}
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="{version}" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+    }
+
+    private void WriteProjectWithBothPaths(
+        string relativePath,
+        string version,
+        string basePath,
+        string extensionsPath
+    )
+    {
+        var fullPath = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        File.WriteAllText(
+            fullPath,
+            $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <BaseIntermediateOutputPath>{basePath}</BaseIntermediateOutputPath>
+                <MSBuildProjectExtensionsPath>{extensionsPath}</MSBuildProjectExtensionsPath>
               </PropertyGroup>
               <ItemGroup>
                 <PackageReference Include="Newtonsoft.Json" Version="{version}" />

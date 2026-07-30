@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Xml;
 using System.Xml.Linq;
 
 namespace CPMigrate.Services;
@@ -58,30 +57,42 @@ internal static class ProjectDirectoryLock
 
         try
         {
-            var declared = XDocument
-                .Load(fullPath)
-                .Descendants()
-                .Where(element =>
-                    element.Name.LocalName is "BaseIntermediateOutputPath"
-                        or "MSBuildProjectExtensionsPath"
-                )
-                .Select(element => element.Value.Trim())
-                .FirstOrDefault(value =>
-                    !string.IsNullOrEmpty(value) && !value.Contains("$(", StringComparison.Ordinal)
-                );
+            var properties = XDocument.Load(fullPath).Descendants().ToList();
+
+            // MSBuildProjectExtensionsPath wins where both are set: it is the one that decides where
+            // project.assets.json goes, so two projects with different base paths but a shared extensions
+            // path share the file. Taking whichever appeared first in the XML gave them separate locks.
+            var declared =
+                Declared(properties, "MSBuildProjectExtensionsPath")
+                ?? Declared(properties, "BaseIntermediateOutputPath");
 
             if (declared is not null)
             {
                 return Path.GetFullPath(declared, directory);
             }
         }
-        catch (Exception exception) when (exception is IOException or XmlException)
+        catch (Exception)
         {
-            // Unreadable or malformed. The project directory is the right answer for every project that
-            // does not redirect its intermediate output, which is nearly all of them.
+            // Every failure, deliberately: unreadable, unauthorised, malformed, anything. This runs before
+            // a project is scanned, so throwing here would abort the whole analysis over one project the
+            // scanners are equipped to report as an incomplete scan and carry on past. The project
+            // directory is the right key for every project that does not redirect its intermediate output,
+            // which is nearly all of them.
         }
 
         return directory;
+    }
+
+    private static string? Declared(List<XElement> properties, string name)
+    {
+        return properties
+            .Where(element =>
+                string.Equals(element.Name.LocalName, name, StringComparison.Ordinal)
+            )
+            .Select(element => element.Value.Trim())
+            .FirstOrDefault(value =>
+                !string.IsNullOrEmpty(value) && !value.Contains("$(", StringComparison.Ordinal)
+            );
     }
 
     private sealed class Holder(SemaphoreSlim gate) : IDisposable
