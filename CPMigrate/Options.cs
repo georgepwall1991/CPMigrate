@@ -373,6 +373,13 @@ public class Options
     [Option("force", Default = false, HelpText = "Force operations without confirmation prompts.")]
     public bool Force { get; set; }
 
+    [Option(
+        "doctor",
+        Default = false,
+        HelpText = "Diagnose your environment: SDK version, NuGet connectivity, workspace, config, and git status."
+    )]
+    public bool Doctor { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Analysis & Auto-Fix
     // ═══════════════════════════════════════════════════════════════════════
@@ -557,6 +564,7 @@ public class Options
                 new Options { BatchDir = Path.Combine("path", "to", "repo") }
             ),
             new("Analyze and auto-fix issues", new Options { Analyze = true, Fix = true }),
+            new("Diagnose your environment", new Options { Doctor = true }),
             new(
                 "Analyze and include outdated/deprecated package checks",
                 new Options

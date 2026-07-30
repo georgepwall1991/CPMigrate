@@ -103,6 +103,22 @@ public class CommandRouterDispatchTests : IDisposable
     }
 
     [Fact]
+    public async Task Doctor_RunsBeforeTheDefaultMigration()
+    {
+        var console = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--doctor", "-s", _testDirectory },
+            console
+        );
+
+        exitCode.Should().BeOneOf(ExitCodes.Success, ExitCodes.UnexpectedError);
+        File.Exists(Path.Combine(_testDirectory, "Directory.Packages.props"))
+            .Should()
+            .BeFalse("doctor must not write any files");
+    }
+
+    [Fact]
     public async Task ReportingContractIsCheckedBeforeAnyModeRuns()
     {
         // The modes run instead of an analysis, so a contract enforced afterwards would be bypassed:
