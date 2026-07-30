@@ -6,6 +6,25 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.18.0] - 2026-07-30
+
+### Fixed
+- **The interactive wizard could answer its own questions.** Every prompt worked out what an answer meant by reading its label back — `choice.StartsWith("Yes")`, an exact match against the display string, `selection[3..].TrimEnd('/')` to recover a directory name, or a dictionary lookup ending in a permissive default. Each of those had a silent wrong answer waiting behind it, and none of them failed loudly:
+  - An answer matching nothing **fell through to a default**. In the mission menu that default was `CustomMigration`, so an unrecognised selection began rewriting project files — the worst possible outcome for a choice nobody made. In the conflict prompt the `_ => Highest` arm meant an unmatched label took the highest version of every conflict without being asked to.
+  - **Wording was load-bearing without saying so.** Rewording "Yes" to "Include them" silently flipped an option to `false`, and nothing anywhere would have caught it.
+  - Recovering a directory name by slicing three characters off the label assumed the first three were the decoration the wizard itself added. A directory literally named `📁 src` sliced back correctly only by luck of the emoji's byte width.
+
+  Answers now carry their values, so no caller interprets a string, and **an answer that was not offered throws** rather than resolving to something plausible. The distinction matters because a wizard that quietly proceeds with an option the user did not choose is indistinguishable, downstream, from them having chosen it.
+
+- **A CPM root whose projects live in subdirectories could not be selected.** A repository with `Directory.Packages.props` at the top and projects under `src/` is the ordinary shape of a migrated solution, and exactly what `--analyze` is pointed at — but the browser gated "use current directory" on solutions or projects being present in that directory itself, leaving no way to accept the root. The only exits were to descend into a single project or type the path by hand. This had been broken for as long as the option existed and was invisible precisely *because* of the bug above: selecting an option that had not been offered fell through to returning the current directory anyway, so the missing option appeared to work.
+
+### Changed
+- `InteractiveService` prompt handling is a single `AskChoice<T>` mechanism (the last refactor listed in `NEXT_STEPS.md`). Thirteen prompts, the mission menu, the conflict strategy, the backup options, and the directory browser all route through it.
+
+### Testing
+- `InteractivePromptRoutingTests` pins the invariant rather than the wording: every conflict answer maps to its own strategy (only two of the four were previously distinguishable from a miss), an unoffered answer throws, navigation lands where the user pointed, a directory named like the browser's own decoration still resolves, and a nested CPM root is selectable.
+- **Five existing wizard tests were asserting less than they appeared to**, and the throw exposed it — their queued answers did not line up with the prompts actually asked. `RunWizard_AnalyzeMode_ReturnsCorrectOptions` was four answers short, so `AuditSecurity` came out `true` without being chosen and the later prompts took whatever the fake console returned by default; `RunWizard_MigrationMode_ReturnsCorrectOptions` named the clean migration path but ran `CustomMigration`, because with no project in the test directory that action was never in the menu. All five now match the real prompt sequence and assert the options they produce. 1002 tests pass.
+
 ## [3.17.1] - 2026-07-30
 
 ### Changed
