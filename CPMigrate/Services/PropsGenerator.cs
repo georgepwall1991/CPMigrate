@@ -472,16 +472,22 @@ public class PropsGenerator
 
         var items = itemGroup.Items.Where(item => item.ItemType == PackageVersionItemType).ToList();
 
-        for (var index = 0; index < items.Count; index++)
+        // The group's first *child*, not its first PackageVersion. A group can open with something else
+        // — a GlobalPackageReference, say — and a comment below that is documenting the pin it sits above
+        // rather than heading the group, so treating the first pin as the header case regardless would
+        // hand that explanation to a new entry.
+        var firstChild = itemGroup.Children.FirstOrDefault();
+
+        foreach (var item in items)
         {
-            // Location.Line is 1-based, and the first entry's comment is the group header case above.
-            var above = items[index].Location.Line - 2;
+            // Location.Line is 1-based.
+            var above = item.Location.Line - 2;
             while (above >= 0 && string.IsNullOrWhiteSpace(lines[above]))
             {
                 above--;
             }
 
-            if (above < 0 || index == 0)
+            if (above < 0 || ReferenceEquals(item, firstChild))
             {
                 continue;
             }
@@ -492,7 +498,7 @@ public class PropsGenerator
                 || text.EndsWith("-->", StringComparison.Ordinal)
             )
             {
-                documented.Add(items[index]);
+                documented.Add(item);
             }
         }
 

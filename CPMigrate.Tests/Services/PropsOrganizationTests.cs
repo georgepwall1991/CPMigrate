@@ -269,6 +269,41 @@ public class PropsOrganizationTests : IDisposable
     }
 
     [Fact]
+    public void MergeExisting_DoesNotMistakeADocumentingCommentForAHeader_WhenAnotherItemOpensTheGroup()
+    {
+        // Cross-review caught this: the header exemption keyed off "first PackageVersion" rather than
+        // "first child of the group". A group can open with something else — a GlobalPackageReference,
+        // here — and the comment below it documents the pin it sits above, so treating the first pin as
+        // the header case handed that explanation to the new entry.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.6.0" />
+                <!-- Pinned: why Charlie is held back -->
+                <PackageVersion Include="Charlie" Version="1.9.0" />
+                <PackageVersion Include="Zulu" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var (content, _, _, _) = new PropsGenerator().MergeExisting(
+            propsPath,
+            Packages(("Bravo", "2.0.0"))
+        );
+
+        var lines = SignificantLines(content);
+        lines[lines.FindIndex(l => l.Contains("why Charlie is held back")) + 1]
+            .Should()
+            .Contain(
+                "Charlie",
+                "the comment documents Charlie, not whatever gets inserted above it"
+            );
+        PackageIdsInOrder(content).Should().Equal("Charlie", "Bravo", "Zulu");
+    }
+
+    [Fact]
     public void MergeExisting_StillTreatsAHandArrangedFileAsUnordered_WhenAnInversionIsUnrelatedToAComment()
     {
         // Cross-review caught this: exempting *any* inversion that follows a commented entry hid
