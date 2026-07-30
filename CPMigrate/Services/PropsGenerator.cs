@@ -503,11 +503,20 @@ public class PropsGenerator
     /// Whether the group's existing pins are in <see cref="PackageIdOrder"/>, and so whether a new pin
     /// should be sorted into place or appended.
     ///
-    /// An entry sitting immediately after a commented one is not counted as out of order, because that
-    /// is exactly where <see cref="AddNewPackageVersion"/> puts an entry whose sorted position a comment
-    /// was occupying. Without this, honouring one comment would cost the file its ordered status for
-    /// good: the next merge would read the position it had itself just forced as evidence the file was
-    /// unsorted, and append everything from then on.
+    /// Honouring a comment costs one entry its exact position, so a plain ordering check would read the
+    /// position <see cref="AddNewPackageVersion"/> had itself just forced as evidence the file was
+    /// unsorted, give up, and append everything from then on — one comment would permanently degrade the
+    /// file. The exemption is therefore not "ignore any inversion after a commented entry", which would
+    /// hide inversions that have nothing to do with a comment and treat a hand-arranged file as sorted.
+    /// Instead the sequence is normalised by undoing exactly the displacement this class creates — moving
+    /// a pin back in front of the single commented entry it was pushed past — and the result must then be
+    /// ordered with no exceptions at all.
+    ///
+    /// One case is genuinely undecidable: <c>Alpha, &lt;!--why--&gt; Zulu, Bravo</c> is byte-identical to
+    /// what inserting Bravo into <c>Alpha, &lt;!--why--&gt; Zulu</c> produces, so no rule can tell a
+    /// hand-written file of that shape from this class's own output. It is read as ordered, which is the
+    /// benign reading: the worst outcome is that a later pin is sorted into a file whose author did not
+    /// ask for sorting.
     /// </summary>
     private static bool IsOrdered(
         ProjectItemGroupElement itemGroup,
@@ -515,15 +524,34 @@ public class PropsGenerator
     )
     {
         var items = itemGroup.Items.Where(item => item.ItemType == PackageVersionItemType).ToList();
+        List<string> normalized = [];
 
-        for (var i = 1; i < items.Count; i++)
+        var index = 0;
+        while (index < items.Count)
         {
-            if (documentedByComment.Contains(items[i - 1]))
+            var name = GetPackageName(items[index]);
+
+            // A commented entry immediately followed by one that sorts before it is the displacement
+            // this class creates. Undo it, and consume both.
+            if (
+                documentedByComment.Contains(items[index])
+                && index + 1 < items.Count
+                && PackageIdOrder.Compare(name, GetPackageName(items[index + 1])) > 0
+            )
             {
+                normalized.Add(GetPackageName(items[index + 1]));
+                normalized.Add(name);
+                index += 2;
                 continue;
             }
 
-            if (PackageIdOrder.Compare(GetPackageName(items[i - 1]), GetPackageName(items[i])) > 0)
+            normalized.Add(name);
+            index++;
+        }
+
+        for (var i = 1; i < normalized.Count; i++)
+        {
+            if (PackageIdOrder.Compare(normalized[i - 1], normalized[i]) > 0)
             {
                 return false;
             }

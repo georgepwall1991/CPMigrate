@@ -269,6 +269,94 @@ public class PropsOrganizationTests : IDisposable
     }
 
     [Fact]
+    public void MergeExisting_StillTreatsAHandArrangedFileAsUnordered_WhenAnInversionIsUnrelatedToAComment()
+    {
+        // Cross-review caught this: exempting *any* inversion that follows a commented entry hid
+        // inversions a comment had nothing to do with, so a hand-arranged file was read as sorted and its
+        // arrangement was overridden. The exemption undoes only the specific displacement this class
+        // creates — a pin pushed past one commented entry — and the result must then be ordered outright.
+        // Here Mike > Bravo cannot be that: undoing it gives Alpha, Bravo, Mike, Charlie, which is still
+        // out of order at Mike > Charlie.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Alpha" Version="1.0.0" />
+                <!-- some reason -->
+                <PackageVersion Include="Mike" Version="1.0.0" />
+                <PackageVersion Include="Bravo" Version="1.0.0" />
+                <PackageVersion Include="Charlie" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var (content, _, _, _) = new PropsGenerator().MergeExisting(
+            propsPath,
+            Packages(("Delta", "2.0.0"))
+        );
+
+        PackageIdsInOrder(content).Should().Equal("Alpha", "Mike", "Bravo", "Charlie", "Delta");
+    }
+
+    [Fact]
+    public void MergeExisting_TreatsAnInversionBeforeACommentAsUnordered()
+    {
+        // The commented entry is the *second* of the inverted pair, so no displacement of this class
+        // could have produced it. Nothing is exempted.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Zulu" Version="1.0.0" />
+                <!-- some reason -->
+                <PackageVersion Include="Alpha" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var (content, _, _, _) = new PropsGenerator().MergeExisting(
+            propsPath,
+            Packages(("Bravo", "2.0.0"))
+        );
+
+        PackageIdsInOrder(content).Should().Equal("Zulu", "Alpha", "Bravo");
+    }
+
+    [Fact]
+    public void MergeExisting_KeepsSortingAcrossSeveralCommentForcedPositions()
+    {
+        // More than one comment must not accumulate into "this file is unsorted".
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Alpha" Version="1.0.0" />
+                <!-- why Charlie -->
+                <PackageVersion Include="Charlie" Version="1.0.0" />
+                <PackageVersion Include="Bravo" Version="1.0.0" />
+                <!-- why Golf -->
+                <PackageVersion Include="Golf" Version="1.0.0" />
+                <PackageVersion Include="Echo" Version="1.0.0" />
+                <PackageVersion Include="Zulu" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var (content, added, _, _) = new PropsGenerator().MergeExisting(
+            propsPath,
+            Packages(("Hotel", "2.0.0"))
+        );
+
+        added.Should().Be(1);
+        PackageIdsInOrder(content)
+            .Should()
+            .Equal("Alpha", "Charlie", "Bravo", "Golf", "Echo", "Hotel", "Zulu");
+    }
+
+    [Fact]
     public void MergeExisting_TreatsALeadingCommentAsAGroupHeader_AndKeepsItAtTheTop()
     {
         // A comment that is the group's first child reads as a header for the group, not for whatever
