@@ -45,12 +45,17 @@ public class InteractiveService : IInteractiveService
     public InteractiveService(
         IConsoleService console,
         string? workingDirectory = null,
-        ISolutionDiscovery? solutionDiscovery = null)
+        ISolutionDiscovery? solutionDiscovery = null
+    )
     {
         _console = console;
         _workingDirectory = workingDirectory;
         _solutionDiscovery = solutionDiscovery ?? new SolutionDiscovery(console);
-        _environmentAnalyzer = new EnvironmentAnalyzer(console, workingDirectory, _solutionDiscovery);
+        _environmentAnalyzer = new EnvironmentAnalyzer(
+            console,
+            workingDirectory,
+            _solutionDiscovery
+        );
     }
 
     /// <inheritdoc />
@@ -60,7 +65,14 @@ public class InteractiveService : IInteractiveService
         {
             _console.WriteHeader();
             var context = _environmentAnalyzer.Analyze();
-            _console.WriteStatusDashboard(context.Directory, context.Solutions, context.Backups, context.IsGitRepo, context.HasUnstaged, context.TargetFrameworks);
+            _console.WriteStatusDashboard(
+                context.Directory,
+                context.Solutions,
+                context.Backups,
+                context.IsGitRepo,
+                context.HasUnstaged,
+                context.TargetFrameworks
+            );
 
             if (context.ConflictCount > 0 || context.ProjectCount > 0)
             {
@@ -108,7 +120,8 @@ public class InteractiveService : IInteractiveService
                 AskUpdatePackagesOptions(options);
             }
             else if (options.UnifyProps)
-            { /* No extra options for unify currently */ }
+            { /* No extra options for unify currently */
+            }
             else if (string.IsNullOrEmpty(options.BatchDir) && !options.InteractiveConflicts)
             {
                 AskMigrationOptions(options);
@@ -150,31 +163,45 @@ public class InteractiveService : IInteractiveService
         {
             if (ctx.ConflictCount > 0)
             {
-                AddAction(migrationActions,
+                AddAction(
+                    migrationActions,
                     $"🚀 Fast-Track Migration (Auto-resolve {ctx.ConflictCount} conflicts)",
-                    WizardAction.FastTrackMigrate);
-                AddAction(migrationActions,
+                    WizardAction.FastTrackMigrate
+                );
+                AddAction(
+                    migrationActions,
                     "🛠  Migrate & Review Conflicts Individually",
-                    WizardAction.MigrateReviewConflicts);
+                    WizardAction.MigrateReviewConflicts
+                );
             }
             else
             {
-                AddAction(migrationActions,
+                AddAction(
+                    migrationActions,
                     "⚡️ Migrate to Central Package Management (Clean Path)",
-                    WizardAction.MigrateCleanPath);
+                    WizardAction.MigrateCleanPath
+                );
             }
         }
         else if (ctx.IsCpm)
         {
-            AddAction(migrationActions,
+            AddAction(
+                migrationActions,
                 "🔍 Analyze current CPM setup for issues",
-                WizardAction.Analyze);
-            AddAction(migrationActions,
+                WizardAction.Analyze
+            );
+            AddAction(
+                migrationActions,
                 "🛡  Security Audit (Scan for vulnerabilities)",
-                WizardAction.SecurityAudit);
+                WizardAction.SecurityAudit
+            );
         }
 
-        AddAction(migrationActions, "⚙️  Custom Migration (Manual Setup)", WizardAction.CustomMigration);
+        AddAction(
+            migrationActions,
+            "⚙️  Custom Migration (Manual Setup)",
+            WizardAction.CustomMigration
+        );
 
         // 2. Maintenance Actions
         if (ctx.IsCpm)
@@ -187,7 +214,11 @@ public class InteractiveService : IInteractiveService
 
         if (ctx.Backups.Count > 0)
         {
-            AddAction(maintenanceActions, "↩️  Rollback to a previous state", WizardAction.Rollback);
+            AddAction(
+                maintenanceActions,
+                "↩️  Rollback to a previous state",
+                WizardAction.Rollback
+            );
         }
 
         AddAction(maintenanceActions, "💾 Manage Backups", WizardAction.ManageBackups);
@@ -200,13 +231,22 @@ public class InteractiveService : IInteractiveService
         {
             ["MIGRATION ACTIONS"] = migrationActions,
             ["REPOSITORY MAINTENANCE"] = maintenanceActions,
-            ["SYSTEM"] = systemActions
+            ["SYSTEM"] = systemActions,
         };
 
         var selection = _console.AskGroupedSelection("What's the mission?", groups);
-        return labelToAction.TryGetValue(selection, out var action)
-            ? action
-            : WizardAction.CustomMigration;
+
+        if (!labelToAction.TryGetValue(selection, out var action))
+        {
+            // Defaulting to CustomMigration here meant an unrecognised answer started a migration the
+            // user never asked for — and looked exactly like them choosing it. Every offered label is
+            // registered by AddAction, so a miss is a bug in the prompt, not a user choice.
+            throw new InvalidOperationException(
+                $"Mission \"{selection}\" is not one of the offered actions."
+            );
+        }
+
+        return action;
     }
 
     private string? AskSolutionPath()
@@ -215,123 +255,225 @@ public class InteractiveService : IInteractiveService
         return BrowseForPath(currentDir, "Select a solution, project, or directory to migrate");
     }
 
+    /// <summary>
+    /// Where a browser entry leads. The destination travels with the entry rather than being parsed
+    /// back out of its label: <c>selection[3..].TrimEnd('/')</c> made the emoji prefix and the trailing
+    /// slash load-bearing, so a directory literally named "📁 src" — or a decorator change — navigated
+    /// somewhere other than where the user pointed.
+    /// </summary>
+    private enum BrowseAction
+    {
+        /// <summary>Take the directory currently being browsed as the answer.</summary>
+        Accept,
+        GoUp,
+        Descend,
+        EnterManually,
+    }
+
+    private sealed record BrowseChoice(BrowseAction Action, string? Destination = null);
+
     private string? BrowseForPath(string rootPath, string title)
     {
         while (true)
         {
-            var solutions = _solutionDiscovery.GetSolutionFiles(rootPath)
-                .Select(Path.GetFileName).Cast<string>().ToList();
-
-            var projects = Directory.GetFiles(rootPath, "*.*proj", SearchOption.TopDirectoryOnly)
-                .Where(f => !f.EndsWith(".props") && !f.EndsWith(".targets"))
-                .Select(Path.GetFileName).Cast<string>().ToList();
-
-            var directories = Directory.GetDirectories(rootPath)
-                .Select(d => Path.GetFileName(d) + "/")
-                .Where(d => !BatchService.DefaultExcludedDirectories.Contains(d.TrimEnd('/')))
-                .OrderBy(d => d)
+            var solutions = _solutionDiscovery
+                .GetSolutionFiles(rootPath)
+                .Select(Path.GetFileName)
+                .Cast<string>()
                 .ToList();
 
-            var choices = new List<string>();
+            var projects = Directory
+                .GetFiles(rootPath, "*.*proj", SearchOption.TopDirectoryOnly)
+                .Where(f => !f.EndsWith(".props") && !f.EndsWith(".targets"))
+                .Select(Path.GetFileName)
+                .Cast<string>()
+                .ToList();
 
-            // Add current directory as a choice if it contains projects or solutions
-            if (solutions.Count > 0 || projects.Count > 0)
+            var directories = Directory
+                .GetDirectories(rootPath)
+                .Where(d => !BatchService.DefaultExcludedDirectories.Contains(Path.GetFileName(d)))
+                .OrderBy(d => Path.GetFileName(d), StringComparer.Ordinal)
+                .ToList();
+
+            var choices = new List<(string Label, BrowseChoice Choice)>();
+            var accept = new BrowseChoice(BrowseAction.Accept);
+
+            // A directory holding only Directory.Packages.props is a CPM root whose projects live in
+            // subdirectories — the exact thing --analyze is pointed at. Gating solely on solutions and
+            // projects left that root unselectable: the only way out of the browser was to descend into
+            // a single project or type the path by hand. The gap was invisible because selecting an
+            // option that had not been offered fell through to "return the current directory" anyway.
+            var isCpmRoot = File.Exists(Path.Combine(rootPath, "Directory.Packages.props"));
+
+            if (solutions.Count > 0 || projects.Count > 0 || isCpmRoot)
             {
-                choices.Add($"🎯 Use current directory: {Path.GetFileName(rootPath) ?? rootPath}");
+                choices.Add(
+                    ($"🎯 Use current directory: {Path.GetFileName(rootPath) ?? rootPath}", accept)
+                );
             }
 
-            // Add solutions and projects
-            choices.AddRange(solutions.Select(s => $"🟦 Solution: {s}"));
-            choices.AddRange(projects.Select(p => $"📗 Project: {p}"));
+            // A solution or project listing identifies the directory to migrate, not a distinct
+            // target — selecting either accepts the directory being browsed.
+            choices.AddRange(solutions.Select(s => ($"🟦 Solution: {s}", accept)));
+            choices.AddRange(projects.Select(p => ($"📗 Project: {p}", accept)));
 
-            // Add "Go Up" if not at root
             var parent = Directory.GetParent(rootPath);
             if (parent != null)
             {
-                choices.Add("⬅️  Go up to parent directory");
+                choices.Add(
+                    (
+                        "⬅️  Go up to parent directory",
+                        new BrowseChoice(BrowseAction.GoUp, parent.FullName)
+                    )
+                );
             }
 
-            // Add subdirectories
-            choices.AddRange(directories.Select(d => $"📁 {d}"));
-            choices.Add(EnterPathManually);
+            choices.AddRange(
+                directories.Select(d =>
+                    ($"📁 {Path.GetFileName(d)}/", new BrowseChoice(BrowseAction.Descend, d))
+                )
+            );
+            choices.Add((EnterPathManually, new BrowseChoice(BrowseAction.EnterManually)));
 
-            var selection = _console.AskSelection(title, choices);
+            var selected = AskChoice(title, choices.ToArray());
 
-            if (selection == EnterPathManually)
+            switch (selected.Action)
             {
-                var path = _console.AskText("Enter path manually (or leave empty to cancel)", ".");
-                if (string.IsNullOrWhiteSpace(path) || path == ".")
-                {
-                    return null;
-                }
+                case BrowseAction.EnterManually:
+                    var path = _console.AskText(
+                        "Enter path manually (or leave empty to cancel)",
+                        "."
+                    );
+                    if (string.IsNullOrWhiteSpace(path) || path == ".")
+                    {
+                        return null;
+                    }
 
-                return Path.GetFullPath(path, _workingDirectory ?? Directory.GetCurrentDirectory());
+                    return Path.GetFullPath(
+                        path,
+                        _workingDirectory ?? Directory.GetCurrentDirectory()
+                    );
+
+                case BrowseAction.GoUp:
+                case BrowseAction.Descend:
+                    rootPath = selected.Destination!;
+                    continue;
+
+                default:
+                    return rootPath;
             }
-
-            if (selection == "⬅️  Go up to parent directory")
-            {
-                rootPath = parent!.FullName;
-                continue;
-            }
-
-            if (selection.StartsWith("📁 "))
-            {
-                var dirName = selection[3..].TrimEnd('/');
-                rootPath = Path.Combine(rootPath, dirName);
-                continue;
-            }
-
-            // Remaining choices ("🎯 Use current directory", "🟦 Solution:", "📗 Project:")
-            // all resolve to the current rootPath being browsed.
-            return rootPath;
         }
+    }
+
+    /// <summary>
+    /// What the wizard should do about the issues it finds. An enum rather than three booleans
+    /// derived from label text, so "apply" and "dry run" cannot both end up set.
+    /// </summary>
+    private enum FixMode
+    {
+        Report,
+        Apply,
+        DryRun,
+    }
+
+    /// <summary>
+    /// Asks a question whose answers carry values, and returns the chosen value.
+    ///
+    /// Every one of these prompts previously re-derived its answer from the label —
+    /// <c>choice.StartsWith("Yes")</c>, or an exact match against the display string. That makes the
+    /// wording load-bearing: rewording "Yes" to "Include them" silently flips the option to false, and
+    /// nothing fails. Pairing each label with its value keeps the wording free to change.
+    /// </summary>
+    /// <typeparam name="T">The value type.</typeparam>
+    /// <param name="question">Prompt text.</param>
+    /// <param name="choices">Label/value pairs, in display order.</param>
+    private T AskChoice<T>(string question, params (string Label, T Value)[] choices)
+    {
+        var selection = _console.AskSelection(question, choices.Select(c => c.Label).ToList());
+
+        // Identity on the label is safe here because the labels are the ones just offered; the point
+        // is that no caller has to interpret the string.
+        var match = choices.FirstOrDefault(c =>
+            string.Equals(c.Label, selection, StringComparison.Ordinal)
+        );
+
+        if (match.Label is null)
+        {
+            // Quietly falling back to the first option would answer the question for the user, and
+            // would be indistinguishable from them having chosen it. The prompt contract is that
+            // AskSelection returns one of the labels it was given, so this is a bug, not an input.
+            throw new InvalidOperationException(
+                $"Prompt \"{question}\" was answered with \"{selection}\", which was not offered."
+            );
+        }
+
+        return match.Value;
+    }
+
+    /// <summary>
+    /// A yes/no question, with the wording of each answer independent of its meaning.
+    /// </summary>
+    private bool AskYesNo(string question, string noLabel, string yesLabel)
+    {
+        return AskChoice(question, (noLabel, false), (yesLabel, true));
     }
 
     private void AskAnalyzeOptions(Options options)
     {
-        var transitiveChoice = _console.AskSelection(
+        options.IncludeTransitive = AskYesNo(
             "Include transitive dependencies in analysis?",
-            new[] { "No - direct references only (faster)", "Yes - full dependency tree (requires dotnet restore)" });
+            "No - direct references only (faster)",
+            "Yes - full dependency tree (requires dotnet restore)"
+        );
 
-        options.IncludeTransitive = transitiveChoice.StartsWith("Yes");
-
-        var auditChoice = _console.AskSelection(
+        options.AuditSecurity = AskYesNo(
             "Include vulnerability auditing?",
-            new[] { "No", "Yes - run security vulnerability checks" });
-        options.AuditSecurity = auditChoice.StartsWith("Yes");
+            "No",
+            "Yes - run security vulnerability checks"
+        );
 
-        var outdatedChoice = _console.AskSelection(
+        options.AnalyzeOutdated = AskYesNo(
             "Include outdated package checks?",
-            new[] { "No", "Yes - detect available newer versions" });
-        options.AnalyzeOutdated = outdatedChoice.StartsWith("Yes");
+            "No",
+            "Yes - detect available newer versions"
+        );
 
-        var deprecatedChoice = _console.AskSelection(
+        options.AnalyzeDeprecated = AskYesNo(
             "Include deprecated package checks?",
-            new[] { "No", "Yes - detect deprecated packages and alternatives" });
-        options.AnalyzeDeprecated = deprecatedChoice.StartsWith("Yes");
+            "No",
+            "Yes - detect deprecated packages and alternatives"
+        );
 
-        var fixChoice = _console.AskSelection(
+        var fixMode = AskChoice(
             "Would you like to automatically fix issues?",
-            new[] { "No - just report", "Yes - apply fixes", "Dry run - show proposed fixes" });
+            ("No - just report", FixMode.Report),
+            ("Yes - apply fixes", FixMode.Apply),
+            ("Dry run - show proposed fixes", FixMode.DryRun)
+        );
 
-        options.Fix = fixChoice == "Yes - apply fixes";
-        options.FixDryRun = fixChoice == "Dry run - show proposed fixes";
+        options.Fix = fixMode == FixMode.Apply;
+        options.FixDryRun = fixMode == FixMode.DryRun;
     }
 
     private void AskBatchOptions(Options options)
     {
         _console.Info("Scanning for a directory to batch process...");
-        options.BatchDir = BrowseForPath(_workingDirectory ?? Directory.GetCurrentDirectory(), "Select the root directory for batch processing");
+        options.BatchDir = BrowseForPath(
+            _workingDirectory ?? Directory.GetCurrentDirectory(),
+            "Select the root directory for batch processing"
+        );
 
-        var parallel = _console.AskSelection(
+        options.BatchParallel = AskYesNo(
             "Process solutions in parallel?",
-            new[] { "No - sequential (safer)", "Yes - parallel (faster)" });
-        options.BatchParallel = parallel.StartsWith("Yes");
+            "No - sequential (safer)",
+            "Yes - parallel (faster)"
+        );
 
-        var continueOnError = _console.AskSelection(
+        options.BatchContinue = AskChoice(
             "Continue if a solution fails?",
-            new[] { "Yes", "No - stop on first error" });
-        options.BatchContinue = continueOnError == "Yes";
+            ("Yes", true),
+            ("No - stop on first error", false)
+        );
 
         // Migration options for batch
         AskMigrationOptions(options);
@@ -341,7 +483,14 @@ public class InteractiveService : IInteractiveService
     {
         var action = _console.AskSelection(
             "Backup Management",
-            new[] { "📊 List all backups", "🧹 Prune old backups", "🗑️  Delete ALL backups", "↩️  Back to main menu" });
+            new[]
+            {
+                "📊 List all backups",
+                "🧹 Prune old backups",
+                "🗑️  Delete ALL backups",
+                "↩️  Back to main menu",
+            }
+        );
 
         switch (action)
         {
@@ -366,117 +515,140 @@ public class InteractiveService : IInteractiveService
             "Run as dry-run first?",
             "Yes - preview changes without modifying files",
             "No - make changes immediately",
-            yesFirst: true);
+            yesFirst: true
+        );
         options.KeepAttributes = AskYesNoSelection(
             "Keep version attributes in project files?",
             "Yes - keep alongside CPM",
-            "No - remove them (recommended for clean CPM)");
+            "No - remove them (recommended for clean CPM)"
+        );
         options.IncludeTransitive = AskYesNoSelection(
             "Pin transitive dependencies centrally?",
             "Yes - pin all transitive packages (prevents version drift)",
-            "No (recommended for clean CPM)");
+            "No (recommended for clean CPM)"
+        );
         AskMergeExistingOption(options);
     }
 
+    /// <summary>
+    /// A conflict answer, as the two things it actually sets. The <c>_ => Highest</c> default the switch
+    /// used to end with meant an unmatched label silently picked the most permissive strategy — it took
+    /// the highest version of every conflict without being asked to.
+    /// </summary>
+    private sealed record ConflictAnswer(ConflictStrategy Strategy, bool ReviewIndividually = false);
+
     private void AskConflictStrategy(Options options)
     {
-        var conflictChoice = _console.AskSelection(
+        var answer = AskChoice(
             "Conflict resolution strategy?",
-            new[] { ConflictHighest, ConflictLowest, ConflictInteractive, ConflictFail });
+            (ConflictHighest, new ConflictAnswer(ConflictStrategy.Highest)),
+            (ConflictLowest, new ConflictAnswer(ConflictStrategy.Lowest)),
+            // Reviewing each conflict still needs a strategy behind it, for anything the user skips.
+            (ConflictInteractive, new ConflictAnswer(ConflictStrategy.Highest, true)),
+            (ConflictFail, new ConflictAnswer(ConflictStrategy.Fail))
+        );
 
-        if (conflictChoice == ConflictInteractive)
-        {
-            options.InteractiveConflicts = true;
-            options.ConflictStrategy = ConflictStrategy.Highest;
-        }
-        else
-        {
-            options.ConflictStrategy = conflictChoice switch
-            {
-                ConflictLowest => ConflictStrategy.Lowest,
-                ConflictFail => ConflictStrategy.Fail,
-                _ => ConflictStrategy.Highest
-            };
-        }
+        options.ConflictStrategy = answer.Strategy;
+        options.InteractiveConflicts = answer.ReviewIndividually;
     }
 
     private void AskBackupOptions(Options options)
     {
-        var createBackup = _console.AskSelection(
+        options.NoBackup = !AskChoice(
             "Create backup before migration?",
-            new[] { "Yes (recommended)", "No" });
-
-        options.NoBackup = createBackup == "No";
+            ("Yes (recommended)", true),
+            ("No", false)
+        );
 
         if (options.NoBackup)
         {
             return;
         }
 
-        var backupLoc = _console.AskSelection(
+        var backupHere = AskChoice(
             "Where should the backup directory be created?",
-            new[] { "Current directory (./.cpmigrate_backup)", "Choose a different directory" });
+            ("Current directory (./.cpmigrate_backup)", true),
+            ("Choose a different directory", false)
+        );
 
-        options.BackupDir = backupLoc == "Current directory (./.cpmigrate_backup)"
+        options.BackupDir = backupHere
             ? "."
-            : BrowseForPath(_workingDirectory ?? Directory.GetCurrentDirectory(), "Select backup parent directory") ?? ".";
+            : BrowseForPath(
+                _workingDirectory ?? Directory.GetCurrentDirectory(),
+                "Select backup parent directory"
+            ) ?? ".";
 
         options.AddBackupToGitignore = AskYesNoSelection(
             "Add backup directory to .gitignore?",
             "Yes",
             "No",
-            yesFirst: true);
+            yesFirst: true
+        );
         if (options.AddBackupToGitignore)
         {
             options.GitignoreDir = ".";
         }
     }
 
-    private bool AskYesNoSelection(string title, string yesOption, string noOption, bool yesFirst = false)
+    private bool AskYesNoSelection(
+        string title,
+        string yesOption,
+        string noOption,
+        bool yesFirst = false
+    )
     {
-        var choices = yesFirst ? new[] { yesOption, noOption } : new[] { noOption, yesOption };
-        var choice = _console.AskSelection(title, choices);
-        return choice == yesOption;
+        return yesFirst
+            ? AskChoice(title, (yesOption, true), (noOption, false))
+            : AskYesNo(title, noOption, yesOption);
     }
 
     private void AskMergeExistingOption(Options options)
     {
-        var propsRoot = options.HasExplicitSolutionPath ? options.SolutionFileDir : options.GetDiscoveryTargetPath();
+        var propsRoot = options.HasExplicitSolutionPath
+            ? options.SolutionFileDir
+            : options.GetDiscoveryTargetPath();
         var propsFilePath = Path.Combine(Path.GetFullPath(propsRoot), "Directory.Packages.props");
         if (!File.Exists(propsFilePath))
         {
             return;
         }
 
-        var mergeChoice = _console.AskSelection(
+        options.MergeExisting = AskYesNo(
             "Directory.Packages.props already exists. How should CPMigrate proceed?",
-            new[] { "Fail (recommended)", "Merge into existing file" });
-
-        options.MergeExisting = mergeChoice.StartsWith("Merge");
+            "Fail (recommended)",
+            "Merge into existing file"
+        );
     }
 
     private void AskUpdatePackagesOptions(Options options)
     {
-        var transitive = _console.AskSelection(
+        options.IncludeTransitive = AskYesNo(
             "Include transitive dependencies?",
-            new[] { "No - direct packages only", "Yes - include transitive dependencies" });
-        options.IncludeTransitive = transitive.StartsWith("Yes");
+            "No - direct packages only",
+            "Yes - include transitive dependencies"
+        );
 
-        var prerelease = _console.AskSelection(
+        options.IncludePrerelease = AskYesNo(
             "Include pre-release versions?",
-            new[] { "No - stable versions only", "Yes - include pre-release versions" });
-        options.IncludePrerelease = prerelease.StartsWith("Yes");
+            "No - stable versions only",
+            "Yes - include pre-release versions"
+        );
 
-        var dryRun = _console.AskSelection(
+        options.DryRun = AskChoice(
             "Run as dry-run first?",
-            new[] { "Yes - preview changes without modifying files", "No - make changes immediately" });
-        options.DryRun = dryRun.StartsWith("Yes");
+            ("Yes - preview changes without modifying files", true),
+            ("No - make changes immediately", false)
+        );
     }
 
     private void AskRollbackOptions(Options options)
     {
         _console.Info("Locating backup directory for rollback...");
-        options.BackupDir = BrowseForPath(_workingDirectory ?? Directory.GetCurrentDirectory(), "Select the directory containing .cpmigrate_backup") ?? ".";
+        options.BackupDir =
+            BrowseForPath(
+                _workingDirectory ?? Directory.GetCurrentDirectory(),
+                "Select the directory containing .cpmigrate_backup"
+            ) ?? ".";
     }
 
     private void ShowSummary(Options options, WizardAction action)
@@ -491,7 +663,7 @@ public class InteractiveService : IInteractiveService
             Header = new PanelHeader($"[deeppink1]READY TO {modeLabel}[/]", Justify.Center),
             Border = BoxBorder.Rounded,
             BorderStyle = new Style(Color.DeepPink1),
-            Padding = new Padding(1, 1)
+            Padding = new Padding(1, 1),
         };
 
         AnsiConsole.Write(panel);
@@ -502,7 +674,10 @@ public class InteractiveService : IInteractiveService
     {
         return action switch
         {
-            WizardAction.FastTrackMigrate or WizardAction.MigrateCleanPath or WizardAction.MigrateReviewConflicts or WizardAction.CustomMigration => "MIGRATE",
+            WizardAction.FastTrackMigrate
+            or WizardAction.MigrateCleanPath
+            or WizardAction.MigrateReviewConflicts
+            or WizardAction.CustomMigration => "MIGRATE",
             WizardAction.Analyze or WizardAction.SecurityAudit => "ANALYZE",
             WizardAction.Batch => "BATCH MIGRATE",
             WizardAction.Rollback => "ROLLBACK",
@@ -510,7 +685,7 @@ public class InteractiveService : IInteractiveService
             WizardAction.ManageBackups when options.PruneBackups => "PRUNE",
             WizardAction.UpdatePackages => "UPDATE PACKAGES",
             WizardAction.UnifyProps => "UNIFY PROPS",
-            _ => "UNKNOWN"
+            _ => "UNKNOWN",
         };
     }
 
@@ -534,11 +709,17 @@ public class InteractiveService : IInteractiveService
         }
         else if (options.HasExplicitSolutionPath)
         {
-            grid.AddRow("[white]Solution/Project[/]", $"[cyan1]{EscapeMarkup(options.SolutionFileDir)}[/]");
+            grid.AddRow(
+                "[white]Solution/Project[/]",
+                $"[cyan1]{EscapeMarkup(options.SolutionFileDir)}[/]"
+            );
         }
         else if (options.HasExplicitProjectPath)
         {
-            grid.AddRow("[white]Solution/Project[/]", $"[cyan1]{EscapeMarkup(options.ProjectFileDir)}[/]");
+            grid.AddRow(
+                "[white]Solution/Project[/]",
+                $"[cyan1]{EscapeMarkup(options.ProjectFileDir)}[/]"
+            );
         }
     }
 
@@ -574,11 +755,23 @@ public class InteractiveService : IInteractiveService
 
     private static void AddMigrationRows(Grid grid, Options options)
     {
-        grid.AddRow("[white]Conflict Strategy[/]", $"[cyan1]{(options.InteractiveConflicts ? "Interactive" : options.ConflictStrategy)}[/]");
-        grid.AddRow("[white]Backup[/]", $"[cyan1]{(options.NoBackup ? "No" : $"Yes ({options.BackupDir})")}[/]");
+        grid.AddRow(
+            "[white]Conflict Strategy[/]",
+            $"[cyan1]{(options.InteractiveConflicts ? "Interactive" : options.ConflictStrategy)}[/]"
+        );
+        grid.AddRow(
+            "[white]Backup[/]",
+            $"[cyan1]{(options.NoBackup ? "No" : $"Yes ({options.BackupDir})")}[/]"
+        );
         grid.AddRow("[white]Dry Run[/]", $"[cyan1]{(options.DryRun ? "Yes" : "No")}[/]");
-        grid.AddRow("[white]Keep Version Attrs[/]", $"[cyan1]{(options.KeepAttributes ? "Yes" : "No")}[/]");
-        grid.AddRow("[white]Pin Transitive[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
+        grid.AddRow(
+            "[white]Keep Version Attrs[/]",
+            $"[cyan1]{(options.KeepAttributes ? "Yes" : "No")}[/]"
+        );
+        grid.AddRow(
+            "[white]Pin Transitive[/]",
+            $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]"
+        );
 
         if (options.MergeExisting)
         {
@@ -588,10 +781,16 @@ public class InteractiveService : IInteractiveService
 
     private static void AddAnalyzeRows(Grid grid, Options options)
     {
-        grid.AddRow("[white]Transitive Deps[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
+        grid.AddRow(
+            "[white]Transitive Deps[/]",
+            $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]"
+        );
         grid.AddRow("[white]Audit[/]", $"[cyan1]{(options.AuditSecurity ? "Yes" : "No")}[/]");
         grid.AddRow("[white]Outdated[/]", $"[cyan1]{(options.AnalyzeOutdated ? "Yes" : "No")}[/]");
-        grid.AddRow("[white]Deprecated[/]", $"[cyan1]{(options.AnalyzeDeprecated ? "Yes" : "No")}[/]");
+        grid.AddRow(
+            "[white]Deprecated[/]",
+            $"[cyan1]{(options.AnalyzeDeprecated ? "Yes" : "No")}[/]"
+        );
         var autoFixStatus = GetAutoFixStatus(options);
         grid.AddRow("[white]Auto-Fix[/]", $"[cyan1]{autoFixStatus}[/]");
     }
@@ -630,14 +829,23 @@ public class InteractiveService : IInteractiveService
 
     private static void AddUpdatePackagesRows(Grid grid, Options options)
     {
-        grid.AddRow("[white]Transitive Deps[/]", $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]");
-        grid.AddRow("[white]Pre-release[/]", $"[cyan1]{(options.IncludePrerelease ? "Yes" : "No")}[/]");
+        grid.AddRow(
+            "[white]Transitive Deps[/]",
+            $"[cyan1]{(options.IncludeTransitive ? "Yes" : "No")}[/]"
+        );
+        grid.AddRow(
+            "[white]Pre-release[/]",
+            $"[cyan1]{(options.IncludePrerelease ? "Yes" : "No")}[/]"
+        );
         grid.AddRow("[white]Dry Run[/]", $"[cyan1]{(options.DryRun ? "Yes" : "No")}[/]");
     }
 
     private static void AddUnifyPropsRows(Grid grid)
     {
-        grid.AddRow("[white]Operation[/]", "[cyan1]Unify Directory.Build.props (Properties & Usings)[/]");
+        grid.AddRow(
+            "[white]Operation[/]",
+            "[cyan1]Unify Directory.Build.props (Properties & Usings)[/]"
+        );
     }
 
     private bool AskConfirmation()
@@ -651,7 +859,8 @@ public class InteractiveService : IInteractiveService
     private (bool NeedsPath, bool EarlyReturn) ConfigureActionOptions(
         WizardAction action,
         EnvironmentContext context,
-        Options options)
+        Options options
+    )
     {
         switch (action)
         {

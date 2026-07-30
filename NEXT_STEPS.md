@@ -60,12 +60,12 @@ The three "critical" files called out below are **no longer the priority** — t
 
 - **Program.cs** — DONE. 388 → 81 lines; routing moved to `CommandRouter`, parsing to `CliArgumentParser`.
 - **MigrationService.cs** — DONE. Split into `AnalysisHandler`, `RollbackHandler`, `ListBackupsHandler`, `BackupCoordinator`, `MigrationRuntime`, `MigrationValidator`, `MigrationDisplay`, `MigrationProgressReporter` under `Services/Migration/`. `ExecuteAsync` is now a thin router. Direct unit tests added for `ListBackupsHandler` and `RollbackHandler`.
-- **InteractiveService.cs** — PARTIAL. `EnvironmentAnalyzer` extracted; menu `Ask*` methods and `ConfigureActionOptions` brittle `Contains()`-based action routing (688 lines, still growing) remain.
+- **InteractiveService.cs** — PARTIAL. `EnvironmentAnalyzer` extracted; prompt routing consolidated onto `AskChoice<T>` in 3.18.0. Remaining: the file is still ~830 lines and `ShowSummary` builds its grid inline; splitting the `Ask*` groups into their own types is the next step, and is cosmetic rather than a correctness concern now.
 
 ### Highest-impact remaining refactors
 
 1. **`SpectreConsoleService.cs` (536 lines)** — split into `TableBuilder` (`WriteConflictsTable`/`WriteSummaryTable`/`WriteAnalyzerResult`/`WriteRollbackPreview`) and `PanelBuilder` (`Banner`/`WritePropsPreview`/`WriteStatusDashboard`). `WriteSummaryTable` (65 lines, inline `Grid`/`Panel` construction) is the worst single method.
-2. **`InteractiveService` dispatch cleanup** — replace `BrowseForPath` emoji-prefix `selection.StartsWith(...)` branches and `ConfigureActionOptions` `action.Contains(...)` branches with enum-keyed dispatch. Fragile and prone to growth.
+2. ~~**`InteractiveService` dispatch cleanup**~~ — DONE (3.18.0). Every prompt routes through one `AskChoice<T>` that pairs each label with its value, so wording is no longer load-bearing, and an answer that was not offered throws instead of falling through to a default. `BrowseForPath` entries carry their destination rather than having it sliced back out of the label. `ConfigureActionOptions` was already enum-keyed via `WizardAction`; the brittle part was `AskQuickAction`'s dictionary lookup defaulting to `CustomMigration`, which meant an unrecognised answer started a migration. Asserted by `InteractivePromptRoutingTests`.
 3. ~~**`CommandRouter.RouteCommand` dispatch**~~ — DONE (3.17.1). Replaced with an ordered `CommandMode` table plus a `CommandContext`; precedence is now explicit and asserted by `CommandRouterDispatchTests`.
 4. **`MigrationService.ProcessProjectsWithProgressAsync` + `BuildPackageUsageCounts`** — small residue; collapse quiet/progress loop duplication and use LINQ `GroupBy` for usage counts.
 5. **PropsGenerator.cs (17 levels) / ProjectAnalyzer.cs (16 levels)** — deep-nesting cleanup; lower priority than the above.

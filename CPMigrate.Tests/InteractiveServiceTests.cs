@@ -24,6 +24,29 @@ public class InteractiveServiceTests : IDisposable
         Directory.CreateDirectory(_testDirectory);
     }
 
+    /// <summary>
+    /// The label the browser offers for accepting the directory being browsed. Built the same way the
+    /// wizard builds it, because a queued answer that was never offered is now an error rather than a
+    /// silent fallthrough — which is the whole point of the change these tests cover.
+    /// </summary>
+    private string UseCurrentDirectory => "🎯 Use current directory: " + Path.GetFileName(_testDirectory);
+
+    /// <summary>Writes a project so the wizard sees something migratable in the directory.</summary>
+    private void CreateProject(string name = "App.csproj", string version = "13.0.1")
+    {
+        File.WriteAllText(
+            Path.Combine(_testDirectory, name),
+            $@"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include=""Newtonsoft.Json"" Version=""{version}"" />
+  </ItemGroup>
+</Project>"
+        );
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_testDirectory))
@@ -35,13 +58,22 @@ public class InteractiveServiceTests : IDisposable
     [Fact]
     public void RunWizard_MigrationMode_ReturnsCorrectOptions()
     {
-        // Arrange
+        // A project has to exist for the clean-path action to be offered at all. Without one the label
+        // below is absent from the menu, and this test used to pass anyway: an unmatched selection fell
+        // back to CustomMigration, so it asserted nothing about the migration path it named.
+        CreateProject();
+
         var fakeConsole = new FakeConsoleService();
-        // The quick action label when no CPM is detected
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
             "⚡️ Migrate to Central Package Management (Clean Path)",
-            "Yes" // Confirmation
+            ConflictHighest,
+            "Yes (recommended)",                                 // create backup
+            "Current directory (./.cpmigrate_backup)",            // backup location
+            "Yes",                                               // add to .gitignore
+            "No - make changes immediately",                      // dry run
+            "No - remove them (recommended for clean CPM)",       // keep version attributes
+            "No (recommended for clean CPM)"                      // pin transitive
         });
         fakeConsole.ConfirmationResponse = true;
 
@@ -50,8 +82,11 @@ public class InteractiveServiceTests : IDisposable
 
         options.Should().NotBeNull();
         options!.Analyze.Should().BeFalse();
-        // Since test dir is empty, it uses the directory we passed
         options.SolutionFileDir.Should().NotBeEmpty();
+        options.ConflictStrategy.Should().Be(ConflictStrategy.Highest);
+        options.DryRun.Should().BeFalse();
+        options.KeepAttributes.Should().BeFalse();
+        options.IncludeTransitive.Should().BeFalse();
     }
 
     [Fact]
@@ -65,9 +100,12 @@ public class InteractiveServiceTests : IDisposable
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
             "🔍 Analyze current CPM setup for issues",
-            "🎯 Use current directory: " + Path.GetFileName(_testDirectory),
-            "No - just report",
-            "Yes" // Confirmation
+            UseCurrentDirectory,
+            "No - direct references only (faster)",   // transitive
+            "No",                                     // vulnerability audit
+            "No",                                     // outdated
+            "No",                                     // deprecated
+            "No - just report"                        // fix mode
         });
         fakeConsole.ConfirmationResponse = true;
 
@@ -76,6 +114,14 @@ public class InteractiveServiceTests : IDisposable
 
         options.Should().NotBeNull();
         options!.Analyze.Should().BeTrue();
+        // Previously the queue was four answers short of the prompts asked, so these landed on
+        // whatever happened to be next in line — AuditSecurity came out true without being chosen.
+        options.IncludeTransitive.Should().BeFalse();
+        options.AuditSecurity.Should().BeFalse();
+        options.AnalyzeOutdated.Should().BeFalse();
+        options.AnalyzeDeprecated.Should().BeFalse();
+        options.Fix.Should().BeFalse();
+        options.FixDryRun.Should().BeFalse();
     }
 
     [Fact]
@@ -104,13 +150,15 @@ public class InteractiveServiceTests : IDisposable
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
             "⚙️  Custom Migration (Manual Setup)",
-            "✏️  Enter path manually...",
-            "🎯 Use current directory: custom", // Satisfy the browser loop after path entry
-            "⬆️  Highest version (recommended)",
-            "No", // backup
-            "No - make changes immediately",
-            "No - remove them (recommended for clean CPM)",
-            "Yes" // Confirmation
+            EnterPathManually,
+            // Nothing follows the manual entry — it returns straight out of the browser. The extra
+            // "use current directory" answer this queue used to carry was consumed by the *conflict*
+            // prompt instead, shifting every later answer by one.
+            ConflictHighest,
+            "No",                                             // create backup
+            "No - make changes immediately",                   // dry run
+            "No - remove them (recommended for clean CPM)",    // keep version attributes
+            "No (recommended for clean CPM)"                   // pin transitive
         });
         fakeConsole.TextResponses = new Queue<string>(new[] { manualPath });
         fakeConsole.ConfirmationResponse = true;
@@ -126,20 +174,20 @@ public class InteractiveServiceTests : IDisposable
     [Fact]
     public void RunWizard_CustomMigrationWithBackup_ConfiguresBackupCorrectly()
     {
-        // Arrange
+        CreateProject();
+
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
             "⚙️  Custom Migration (Manual Setup)",
-            "🎯 Use current directory: " + Path.GetFileName(_testDirectory),
-            "⬆️  Highest version (recommended)", // Conflict Strategy
-            "Yes (recommended)", // Create Backup
-            "Current directory (./.cpmigrate_backup)", // Backup Location
-            "Yes", // Add to gitignore
-            "No - make changes immediately", // Dry Run
-            "No - remove them (recommended for clean CPM)", // Keep Attrs
-            "No (recommended for clean CPM)", // Transitive
-            "Yes" // Confirmation
+            UseCurrentDirectory,
+            ConflictHighest,                                   // conflict strategy
+            "Yes (recommended)",                               // create backup
+            "Current directory (./.cpmigrate_backup)",          // backup location
+            "Yes",                                             // add to .gitignore
+            "No - make changes immediately",                    // dry run
+            "No - remove them (recommended for clean CPM)",     // keep version attributes
+            "No (recommended for clean CPM)"                    // pin transitive
         });
         fakeConsole.ConfirmationResponse = true;
 
@@ -155,13 +203,13 @@ public class InteractiveServiceTests : IDisposable
     [Fact]
     public void RunWizard_UnifyPropsMode_ReturnsCorrectOptions()
     {
-        // Arrange
+        CreateProject();
+
         var fakeConsole = new FakeConsoleService();
         fakeConsole.SelectionResponses = new Queue<string>(new[]
         {
             "🏗  Unify Directory.Build.props (Clean Architecture)",
-            "🎯 Use current directory: " + Path.GetFileName(_testDirectory),
-            "Yes" // Confirmation
+            UseCurrentDirectory
         });
         fakeConsole.ConfirmationResponse = true;
 
