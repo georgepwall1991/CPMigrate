@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.38.0] - 2026-07-30
+
+### Changed
+- **Richer `--help` examples.** Five new contextual examples added: `--status` dashboard, `--tree` with transitive deps, `--dry-run --diff` preview, `--update-packages --bisect`, and `--fail-on High` CI gating. The help output now covers every major workflow a new user would reach for.
+
 ## [3.37.0] - 2026-07-30
 
 ### Added
