@@ -8,6 +8,16 @@ namespace CPMigrate.Services;
 public interface INuGetVersionLookupService : IDisposable
 {
     /// <summary>
+    /// Packages whose version could not be determined this run, after retries.
+    ///
+    /// A null result from the lookup methods means "no newer version" *or* "could not ask", and those
+    /// are very different answers: the first is a clean result, the second means the run silently
+    /// skipped a package. Callers report this so an incomplete update is visible.
+    /// </summary>
+    /// <returns>Package IDs whose version could not be determined.</returns>
+    IReadOnlyCollection<string> GetFailedLookups();
+
+    /// <summary>
     /// Gets the latest version of a NuGet package.
     /// </summary>
     /// <param name="packageId">The NuGet package ID.</param>

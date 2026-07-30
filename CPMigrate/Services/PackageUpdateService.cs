@@ -54,10 +54,24 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         _consoleService.Info($"Checking {load.CurrentVersions.Count} packages for updates...");
         var (updates, transitiveFound) = await QueryAllUpdatesAsync(load.CurrentVersions, load.ProjectPaths, request);
 
+        ReportFailedLookups();
+
         var availableUpdates = ApplyOnlyFilter(FilterAvailableUpdates(updates), request);
         if (availableUpdates.Count == 0)
         {
-            _consoleService.Success("Everything up to date!");
+            // Deliberately not "Everything up to date!" when a lookup failed: that claim would be
+            // false, and it is the claim a user acts on.
+            if (_nuGetLookup.GetFailedLookups().Count > 0)
+            {
+                _consoleService.Warning(
+                    "No updates found, but some packages could not be checked — see above."
+                );
+            }
+            else
+            {
+                _consoleService.Success("Everything up to date!");
+            }
+
             return BuildNoUpdatesResult(load.CurrentVersions.Count, transitiveFound);
         }
 
@@ -542,6 +556,26 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         {
             semaphore.Release();
         }
+    }
+
+    /// <summary>
+    /// Names the packages whose version could not be determined. A failed lookup returns the same
+    /// "no newer version" as a package that is genuinely current, so without this the run reports a
+    /// silently incomplete result as a clean one.
+    /// </summary>
+    private void ReportFailedLookups()
+    {
+        var failed = _nuGetLookup.GetFailedLookups();
+        if (failed.Count == 0)
+        {
+            return;
+        }
+
+        _consoleService.Warning(
+            $"Could not check {failed.Count} package(s) after retries: "
+                + string.Join(", ", failed.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+        );
+        _consoleService.Dim("These are reported as unchanged, not as up to date.");
     }
 
     private void ShowUpdatesTable(List<PackageUpdateEntry> updates)
