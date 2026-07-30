@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.42.0] - 2026-07-30
+
+### Changed
+- **`--explain` richer output.** Each rule explanation now includes an "Example" line with the exact command that surfaces the finding, and a "How to fix" section with concrete resolution steps. Covers all 12 rule codes.
+
 ## [3.41.0] - 2026-07-30
 
 ### Changed
