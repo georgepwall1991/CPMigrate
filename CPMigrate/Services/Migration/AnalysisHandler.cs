@@ -261,7 +261,6 @@ internal sealed class AnalysisHandler
         var deepScansRequested =
             options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated;
 
-
         // Phase one: the subprocess per project, concurrent.
         //
         // `dotnet package list` restores, and its assets file goes in the project's obj. Two projects in one
@@ -297,16 +296,24 @@ internal sealed class AnalysisHandler
         // entirely — nothing ever waits for a directory, because only one project from it is ever in flight.
         var groups = Enumerable
             .Range(0, projectPaths.Count)
-            .GroupBy(index => DirectoryKeyFor(projectPaths[index]), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(
+                index => ProjectDirectoryScanLock.DirectoryKeyFor(projectPaths[index]),
+                StringComparer.OrdinalIgnoreCase
+            )
             .ToList();
 
         // A solution that redirects intermediate output somewhere shared cannot be grouped by directory at
         // all, because the sharing is not visible in the paths. Those run one project at a time and, since
         // --batch-parallel has other solutions running too, hold a process-wide lock while they do.
+        //
+        // Ordinary scans take the shared side of a second lock; a scan that might redirect takes it
+        // exclusively. Excluding only other redirecting scans was not enough — a redirect aimed at an
+        // ordinary project's directory races that project's restore, and directory keys cannot see it,
+        // because the sharing is not in the paths.
         var mightRedirect = ProjectDirectoryScanLock.MightRedirectIntermediateOutput(projectPaths);
         using var redirectLock = mightRedirect
-            ? await ProjectDirectoryScanLock.AcquireGlobalAsync()
-            : null;
+            ? await ProjectDirectoryScanLock.AcquireRedirectingAsync()
+            : await ProjectDirectoryScanLock.AcquireOrdinaryAsync();
 
         await Parallel.ForEachAsync(
             groups,
@@ -316,6 +323,12 @@ internal sealed class AnalysisHandler
                 foreach (var index in group)
                 {
                     using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
+
+                    // Grouping keeps one solution's same-directory projects in sequence; this keeps them in
+                    // sequence against other solutions', which --batch-parallel runs at the same time.
+                    using var directorySlot = await ProjectDirectoryScanLock.AcquireDirectoryAsync(
+                        projectPaths[index]
+                    );
 
                     resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
                         projectPaths[index],
@@ -350,64 +363,58 @@ internal sealed class AnalysisHandler
 
         var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency };
 
+        // Grouped exactly as the resolved scan is: these restore too, so two projects in one directory
+        // corrupt each other here as well — and here the consequence is a vulnerability attributed to the
+        // wrong project, or a vulnerable one reported clean.
+        var deepGroups = Enumerable
+            .Range(0, projectPaths.Count)
+            .GroupBy(
+                index => ProjectDirectoryScanLock.DirectoryKeyFor(projectPaths[index]),
+                StringComparer.OrdinalIgnoreCase
+            )
+            .ToList();
+
         await Parallel.ForEachAsync(
-            Enumerable.Range(0, projectPaths.Count),
+            deepGroups,
             parallelOptions,
-            async (index, _) =>
+            async (group, _) =>
             {
-                // The ceiling has to hold across the whole process, not per scan: --batch-parallel
-                // runs several solutions at once, and a per-scan limit would multiply the advertised
-                // cap by the number of solutions — producing the feed rate-limiting the cap exists to
-                // avoid.
-                using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
-
-                var vulnerabilities = new List<VulnerabilityInfo>();
-                var outdated = new List<OutdatedPackageInfo>();
-                var deprecated = new List<DeprecatedPackageInfo>();
-
-                var failures = await RunDeepScansAsync(
-                    options,
-                    projectPaths[index],
-                    task: null,
-                    vulnerabilities,
-                    outdated,
-                    deprecated
-                );
-
-                results[index] = results[index] with
+                foreach (var index in group)
                 {
-                    DeepScanFailures = failures,
-                    Vulnerabilities = vulnerabilities,
-                    Outdated = outdated,
-                    Deprecated = deprecated,
-                };
+                    // The ceiling has to hold across the whole process, not per scan: --batch-parallel
+                    // runs several solutions at once, and a per-scan limit would multiply the advertised
+                    // cap by the number of solutions — producing the feed rate-limiting the cap exists to
+                    // avoid.
+                    using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
+                    using var directorySlot = await ProjectDirectoryScanLock.AcquireDirectoryAsync(
+                        projectPaths[index]
+                    );
 
-                progress?.Increment(1);
+                    var vulnerabilities = new List<VulnerabilityInfo>();
+                    var outdated = new List<OutdatedPackageInfo>();
+                    var deprecated = new List<DeprecatedPackageInfo>();
+
+                    var failures = await RunDeepScansAsync(
+                        options,
+                        projectPaths[index],
+                        task: null,
+                        vulnerabilities,
+                        outdated,
+                        deprecated
+                    );
+
+                    results[index] = results[index] with
+                    {
+                        DeepScanFailures = failures,
+                        Vulnerabilities = vulnerabilities,
+                        Outdated = outdated,
+                        Deprecated = deprecated,
+                    };
+
+                    progress?.Increment(1);
+                }
             }
         );
-    }
-
-
-    /// <summary>
-    /// The key two projects must share before they are made to take turns: the directory their
-    /// <c>obj</c> would go in.
-    ///
-    /// Case-insensitive, because macOS and Windows treat <c>src/Api</c> and <c>src/api</c> as one directory
-    /// and two projects the comparison split apart would be exactly the pair that needs sequencing. On a
-    /// case-sensitive filesystem this is merely conservative.
-    /// </summary>
-    private static string DirectoryKeyFor(string projectPath)
-    {
-        try
-        {
-            return Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? projectPath;
-        }
-        catch (Exception)
-        {
-            // An unusable path groups with nothing, which is the safe answer — and throwing here would
-            // pre-empt the scanner, which is the thing equipped to report it as a failed project.
-            return projectPath;
-        }
     }
 
     /// <summary>
@@ -424,10 +431,6 @@ internal sealed class AnalysisHandler
         List<PackageReference>? DeclaredReferences
     );
 
-
-
-
-
     /// <summary>
     /// Re-runs, one at a time, any project whose restore did not land where it was told to.
     ///
@@ -439,9 +442,6 @@ internal sealed class AnalysisHandler
     /// Serially and without isolation, which is what the scan did before any of this: correct, just slower,
     /// and only for the projects that actually need it.
     /// </summary>
-
-
-
     /// <summary>
     /// The MSBuild half of the reference pass: the XML fallback when the resolved scan failed, and the
     /// declaration read. Kept separate from the subprocess so that only this part has to be serialised.
@@ -492,7 +492,9 @@ internal sealed class AnalysisHandler
             // for most users, and reported a framework-conditional pin as an ordinary one, so the version
             // fixer unified everything to it. Reintroduced by a refactor and caught by the test that was
             // written for it the first time.
-            var (fallbackDeclared, fallbackRead) = _projectAnalyzer.ScanDeclaredPackages(projectPath);
+            var (fallbackDeclared, fallbackRead) = _projectAnalyzer.ScanDeclaredPackages(
+                projectPath
+            );
             return (references, success, fallbackRead ? fallbackDeclared : null);
         }
 
@@ -539,10 +541,7 @@ internal sealed class AnalysisHandler
 
         if (
             options.AuditSecurity
-            && !await ScanVulnerabilitiesAsync(
-                projectPath,
-                allVulnerabilities
-            )
+            && !await ScanVulnerabilitiesAsync(projectPath, allVulnerabilities)
         )
         {
             failures++;
@@ -550,11 +549,7 @@ internal sealed class AnalysisHandler
 
         if (
             options.AnalyzeOutdated
-            && !await ScanOutdatedPackagesAsync(
-                options,
-                projectPath,
-                allOutdatedPackages
-            )
+            && !await ScanOutdatedPackagesAsync(options, projectPath, allOutdatedPackages)
         )
         {
             failures++;
@@ -562,11 +557,7 @@ internal sealed class AnalysisHandler
 
         if (
             options.AnalyzeDeprecated
-            && !await ScanDeprecatedPackagesAsync(
-                options,
-                projectPath,
-                allDeprecatedPackages
-            )
+            && !await ScanDeprecatedPackagesAsync(options, projectPath, allDeprecatedPackages)
         )
         {
             failures++;

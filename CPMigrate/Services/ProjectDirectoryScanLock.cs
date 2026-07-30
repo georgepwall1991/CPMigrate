@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Xml.Linq;
 
 namespace CPMigrate.Services;
@@ -29,21 +30,87 @@ namespace CPMigrate.Services;
 internal static class ProjectDirectoryScanLock
 {
     /// <summary>
-    /// Held for the whole of a scan whose projects might redirect their intermediate output somewhere
-    /// shared.
+    /// Taken for each project scanned, so that two restores in the same directory never overlap.
     ///
-    /// Process-wide because <c>--batch-parallel</c> runs several solutions at once. Those scans cannot be
-    /// grouped by directory — the sharing is not visible in the paths — so the only safe arrangement is one
-    /// such scan at a time, and no other scan alongside it.
+    /// Process-wide, because <c>--batch-parallel</c> runs several solutions at once and two of them can
+    /// hold projects in the same directory — or the same project. Grouping within a scan is what keeps this
+    /// from blocking: only one project per directory is ever in flight from a given solution, so the wait
+    /// here is for another solution, which is rare.
     /// </summary>
-    public static async Task<IDisposable> AcquireGlobalAsync()
+    public static async Task<IDisposable> AcquireDirectoryAsync(string projectPath)
     {
-        await Global.WaitAsync();
+        var gate = Directories.GetOrAdd(DirectoryKeyFor(projectPath), _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
 
-        return new Release(Global);
+        return new Release(gate);
     }
 
-    private static readonly SemaphoreSlim Global = new(1, 1);
+    /// <summary>
+    /// The key two projects must share before they take turns: the directory their <c>obj</c> goes in.
+    ///
+    /// Case-insensitive, because macOS and Windows treat <c>src/Api</c> and <c>src/api</c> as one directory
+    /// and two projects the comparison split apart would be exactly the pair that needs sequencing.
+    /// </summary>
+    public static string DirectoryKeyFor(string projectPath)
+    {
+        try
+        {
+            return Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? projectPath;
+        }
+        catch (Exception)
+        {
+            return projectPath;
+        }
+    }
+
+    /// <summary>
+    /// Taken by an ordinary scan. Excludes scans that might redirect their output, and nothing else.
+    /// </summary>
+    public static async Task<IDisposable> AcquireOrdinaryAsync()
+    {
+        await Redirects.WaitAsync();
+
+        return new Release(Redirects, permits: 1);
+    }
+
+    /// <summary>
+    /// Taken for the whole of a scan whose projects might redirect their intermediate output somewhere
+    /// shared.
+    ///
+    /// Exclusive against every scan in the process, not merely against other redirecting ones — a redirect
+    /// aimed at an ordinary project's directory races that project's restore, and directory keys cannot see
+    /// it because the sharing is not in the paths. Draining is guarded so two of these cannot each take a
+    /// subset of the permits and wait forever on the other.
+    /// </summary>
+    public static async Task<IDisposable> AcquireRedirectingAsync()
+    {
+        await RedirectEntry.WaitAsync();
+
+        try
+        {
+            for (var i = 0; i < OrdinaryPermits; i++)
+            {
+                await Redirects.WaitAsync();
+            }
+        }
+        catch
+        {
+            RedirectEntry.Release();
+            throw;
+        }
+
+        return new Release(Redirects, OrdinaryPermits, RedirectEntry);
+    }
+
+    private const int OrdinaryPermits = 1024;
+
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> Directories = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+
+    private static readonly SemaphoreSlim Redirects = new(OrdinaryPermits, OrdinaryPermits);
+
+    private static readonly SemaphoreSlim RedirectEntry = new(1, 1);
 
     /// <summary>
     /// The properties that can move a project's <c>obj</c> somewhere another project also writes.
@@ -242,7 +309,8 @@ internal static class ProjectDirectoryScanLock
         }
     }
 
-    private sealed class Release(SemaphoreSlim gate) : IDisposable
+    private sealed class Release(SemaphoreSlim gate, int permits = 1, SemaphoreSlim? entry = null)
+        : IDisposable
     {
         private bool _released;
 
@@ -254,7 +322,8 @@ internal static class ProjectDirectoryScanLock
             }
 
             _released = true;
-            gate.Release();
+            gate.Release(permits);
+            entry?.Release();
         }
     }
 }
