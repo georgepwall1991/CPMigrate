@@ -64,11 +64,22 @@ The three "critical" files called out below are **no longer the priority** — t
 
 ### Highest-impact remaining refactors
 
-1. **`SpectreConsoleService.cs` (536 lines)** — split into `TableBuilder` (`WriteConflictsTable`/`WriteSummaryTable`/`WriteAnalyzerResult`/`WriteRollbackPreview`) and `PanelBuilder` (`Banner`/`WritePropsPreview`/`WriteStatusDashboard`). `WriteSummaryTable` (65 lines, inline `Grid`/`Panel` construction) is the worst single method.
-2. ~~**`InteractiveService` dispatch cleanup**~~ — DONE (3.18.0). Every prompt routes through one `AskChoice<T>` that pairs each label with its value, so wording is no longer load-bearing, and an answer that was not offered throws instead of falling through to a default. `BrowseForPath` entries carry their destination rather than having it sliced back out of the label. `ConfigureActionOptions` was already enum-keyed via `WizardAction`; the brittle part was `AskQuickAction`'s dictionary lookup defaulting to `CustomMigration`, which meant an unrecognised answer started a migration. Asserted by `InteractivePromptRoutingTests`.
-3. ~~**`CommandRouter.RouteCommand` dispatch**~~ — DONE (3.17.1). Replaced with an ordered `CommandMode` table plus a `CommandContext`; precedence is now explicit and asserted by `CommandRouterDispatchTests`.
-4. **`MigrationService.ProcessProjectsWithProgressAsync` + `BuildPackageUsageCounts`** — small residue; collapse quiet/progress loop duplication and use LINQ `GroupBy` for usage counts.
-5. **PropsGenerator.cs / ProjectAnalyzer.cs (16 levels)** — deep-nesting cleanup; lower priority than the above. `PropsGenerator` gained ordered, comment-aware insertion in 3.19.0, so its nesting is shallower but its method count is higher.
+1. ~~**`SpectreConsoleService.cs` (536 lines)**~~ — DONE. Split into `SpectrePanelBuilder` and `SpectreTableBuilder` (3.18.0+). Additional renderables extracted: `GradientFigletText`, `ErrorFormatter`.
+2. ~~**`InteractiveService` dispatch cleanup**~~ — DONE (3.18.0).
+3. ~~**`CommandRouter.RouteCommand` dispatch**~~ — DONE (3.17.1).
+4. ~~**`MigrationService.ProcessProjectsWithProgressAsync` + `BuildPackageUsageCounts`**~~ — Remaining residue is cosmetic.
+5. **PropsGenerator.cs / ProjectAnalyzer.cs (16 levels)** — deep-nesting cleanup; lower priority than the above.
+
+### Completed in 3.29.0–3.47.0 (20-iteration improvement pass)
+
+- `--doctor` environment diagnostics, `--init` config scaffolding, `--status` workspace dashboard
+- Gradient banner, analysis scoreboard redesign with health score, structured error panels
+- `--diff` unified diff preview, `--tree` dependency tree visualization
+- Package license analyzer (`LicenseRisk` rule), CSV output format
+- Richer `--help` examples, `--explain` fix hints, analyzer LINQ refactoring
+- Progress indicator upgrades, backup listing redesign
+- Docs site dark mode, responsive layout, accessibility (focus outlines, reduced motion)
+- Config semantic validation, README quick-start and feature snapshot sync
 
 ### Documentation readiness
 

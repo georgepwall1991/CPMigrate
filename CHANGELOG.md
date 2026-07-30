@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.48.0] - 2026-07-31
+
+### Changed
+- **Final doc sync.** `docs/rules.md` gains the `LicenseRisk` rule entry. `NEXT_STEPS.md` updated: SpectreConsoleService split marked done, 20-iteration improvement pass (3.29.0–3.47.0) summarised with every surface listed.
+
 ## [3.47.0] - 2026-07-30
 
 ### Changed
