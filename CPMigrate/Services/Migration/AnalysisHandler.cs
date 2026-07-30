@@ -134,39 +134,34 @@ internal sealed class AnalysisHandler
         );
     }
 
+    /// <summary>
+    /// Scans every project: references first, sequentially, then the opt-in package queries
+    /// concurrently.
+    ///
+    /// The split is not arbitrary. Reading references goes through MSBuild's object model, whose
+    /// static caches are not thread-safe — running it concurrently produced projects reporting each
+    /// other's package versions, which silently *erased* version-inconsistency findings rather than
+    /// crashing. That is the worst possible failure for an analyzer, so that pass stays serial.
+    ///
+    /// The expensive part is the other one: <c>--audit</c>, <c>--outdated</c>, and
+    /// <c>--deprecated</c> each shell out to <c>dotnet package list</c> and wait on the network, once
+    /// per project. Those are separate processes with no shared state, and they dominate the wall
+    /// clock on any solution large enough to care — so that is where the concurrency goes.
+    ///
+    /// Results are merged in project order regardless of completion order, so the report is identical
+    /// run to run.
+    /// </summary>
     private async Task<(
         ProjectPackageInfo PackageInfo,
         int ScanFailures,
         int DeepScanFailures
     )> PerformAnalysisScanAsync(Options options, List<string> projectPaths, string basePath)
     {
-        var allReferences = new List<PackageReference>();
-        var allVulnerabilities = new List<VulnerabilityInfo>();
-        var allOutdatedPackages = new List<OutdatedPackageInfo>();
-        var allDeprecatedPackages = new List<DeprecatedPackageInfo>();
-        var scanFailures = 0;
-        var deepScanFailures = 0;
+        var results = new ProjectScanResult[projectPaths.Count];
 
         if (_quietMode)
         {
-            foreach (var projectPath in projectPaths)
-            {
-                var (success, deepFailures) = await ScanSingleProjectForAnalysisAsync(
-                    options,
-                    projectPath,
-                    null,
-                    allReferences,
-                    allVulnerabilities,
-                    allOutdatedPackages,
-                    allDeprecatedPackages
-                );
-
-                deepScanFailures += deepFailures;
-                if (!success)
-                {
-                    scanFailures++;
-                }
-            }
+            await ScanProjectsAsync(options, projectPaths, results, progress: null);
         }
         else
         {
@@ -184,35 +179,11 @@ internal sealed class AnalysisHandler
                 .StartAsync(async ctx =>
                 {
                     var task = ctx.AddTask(
-                        "[cyan]Scanning packages[/]",
+                        $"[cyan]Scanning {projectPaths.Count} project(s)[/]",
                         maxValue: projectPaths.Count
                     );
 
-                    foreach (var projectPath in projectPaths)
-                    {
-                        var projectName = Path.GetFileName(projectPath);
-                        task.Description =
-                            $"[cyan]Scanning[/] [white]{Markup.Escape(projectName)}[/]";
-
-                        var (success, deepFailures) = await ScanSingleProjectForAnalysisAsync(
-                            options,
-                            projectPath,
-                            task,
-                            allReferences,
-                            allVulnerabilities,
-                            allOutdatedPackages,
-                            allDeprecatedPackages
-                        );
-
-                        deepScanFailures += deepFailures;
-                        if (!success)
-                        {
-                            scanFailures++;
-                        }
-
-                        task.Increment(1);
-                        await Task.Delay(30);
-                    }
+                    await ScanProjectsAsync(options, projectPaths, results, task);
 
                     task.Description = "[green]Scan complete[/]";
                 });
@@ -220,50 +191,102 @@ internal sealed class AnalysisHandler
 
         return (
             new ProjectPackageInfo(
-                allReferences,
-                allVulnerabilities,
-                allOutdatedPackages,
-                allDeprecatedPackages,
+                results.SelectMany(r => r.References).ToList(),
+                results.SelectMany(r => r.Vulnerabilities).ToList(),
+                results.SelectMany(r => r.Outdated).ToList(),
+                results.SelectMany(r => r.Deprecated).ToList(),
                 basePath,
                 projectPaths
             ),
-            scanFailures,
-            deepScanFailures
+            results.Count(r => !r.ReferencesScanned),
+            results.Sum(r => r.DeepScanFailures)
         );
     }
 
-    private async Task<(
-        bool ReferencesScanned,
-        int DeepScanFailures
-    )> ScanSingleProjectForAnalysisAsync(
+    /// <summary>
+    /// Reads references serially, then runs the package queries with bounded concurrency. Each task
+    /// owns its own slot and its own collections, so nothing is shared between them.
+    /// </summary>
+    private async Task ScanProjectsAsync(
         Options options,
-        string projectPath,
-        ProgressTask? task,
-        List<PackageReference> allReferences,
-        List<VulnerabilityInfo> allVulnerabilities,
-        List<OutdatedPackageInfo> allOutdatedPackages,
-        List<DeprecatedPackageInfo> allDeprecatedPackages
+        List<string> projectPaths,
+        ProjectScanResult[] results,
+        ProgressTask? progress
     )
     {
-        var (references, success) = await ScanProjectReferencesAsync(options, projectPath);
-        allReferences.AddRange(references);
-        CacheScanResults(projectPath, references);
+        var deepScansRequested =
+            options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated;
 
-        var deepScanFailures = 0;
-        if (options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated)
+        // Serial, and deliberately so: see the note on PerformAnalysisScanAsync.
+        for (var index = 0; index < projectPaths.Count; index++)
         {
-            deepScanFailures = await RunDeepScansAsync(
+            var (references, scanned) = await ScanProjectReferencesAsync(
                 options,
-                projectPath,
-                task,
-                allVulnerabilities,
-                allOutdatedPackages,
-                allDeprecatedPackages
+                projectPaths[index]
             );
+            CacheScanResults(projectPaths[index], references);
+
+            results[index] = new ProjectScanResult(scanned, 0, references, [], [], []);
+
+            if (!deepScansRequested)
+            {
+                progress?.Increment(1);
+            }
         }
 
-        return (success, deepScanFailures);
+        if (!deepScansRequested)
+        {
+            return;
+        }
+
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = options.ResolveScanParallelism(),
+        };
+
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, projectPaths.Count),
+            parallelOptions,
+            async (index, _) =>
+            {
+                var vulnerabilities = new List<VulnerabilityInfo>();
+                var outdated = new List<OutdatedPackageInfo>();
+                var deprecated = new List<DeprecatedPackageInfo>();
+
+                var failures = await RunDeepScansAsync(
+                    options,
+                    projectPaths[index],
+                    task: null,
+                    vulnerabilities,
+                    outdated,
+                    deprecated
+                );
+
+                results[index] = results[index] with
+                {
+                    DeepScanFailures = failures,
+                    Vulnerabilities = vulnerabilities,
+                    Outdated = outdated,
+                    Deprecated = deprecated,
+                };
+
+                progress?.Increment(1);
+            }
+        );
     }
+
+    /// <summary>
+    /// One project's scan output, kept separate until every scan has finished so the merge can be
+    /// ordered by project rather than by whichever scan won the race.
+    /// </summary>
+    private sealed record ProjectScanResult(
+        bool ReferencesScanned,
+        int DeepScanFailures,
+        List<PackageReference> References,
+        List<VulnerabilityInfo> Vulnerabilities,
+        List<OutdatedPackageInfo> Outdated,
+        List<DeprecatedPackageInfo> Deprecated
+    );
 
     private async Task<(
         List<PackageReference> References,

@@ -43,7 +43,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.14.0
+dotnet tool install --global CPMigrate --version 3.15.0
 ```
 
 ```bash
@@ -555,6 +555,7 @@ The config file is discovered by walking up from the selected solution/project p
 | `--fix` | | `false` | Apply auto-fixes (requires `--analyze`) |
 | `--fix-dry-run` | | `false` | Preview auto-fixes without applying |
 | `--fail-on` | | `Info` | Lowest severity that fails the build: `Info`, `Low`, `Moderate`, `High`, `Critical`, or `Never` |
+| `--max-parallelism` | | processors (max 8) | Projects queried at once during `--audit` / `--outdated` / `--deprecated` |
 | `--baseline` | | | Path to a file of accepted findings; they are reported but do not fail the build |
 | `--write-baseline` | | `false` | Record current findings as the accepted baseline, then exit |
 

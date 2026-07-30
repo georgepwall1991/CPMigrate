@@ -6,6 +6,13 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.15.0] - 2026-07-30
+
+### Changed
+- **`--audit`, `--outdated`, and `--deprecated` now query projects concurrently.** Each of those shells out to `dotnet package list` once per project and then waits on the network, so the scan scaled linearly with solution size for no reason — a large solution spent nearly all of its wall clock idle. Measured on 10 projects with `--outdated`: **12s → 6s**. Bounded by `--max-parallelism`, defaulting to the processor count capped at 8, because past that the feed starts rate-limiting and the scan gets slower and noisier rather than faster.
+  - **Reading package references stays serial, deliberately.** That pass goes through MSBuild's object model, whose static caches are not thread-safe; running it concurrently produced projects reporting each other's package versions, which *erased* version-inconsistency findings rather than crashing. A parallel analyzer that silently reports fewer problems is worse than a slow one, so only the process-isolated queries are parallelized.
+  - Results are merged in project order rather than completion order, so a report is identical run to run — verified at parallelism 1, 2, 8, and 16.
+
 ## [3.14.0] - 2026-07-30
 
 ### Fixed

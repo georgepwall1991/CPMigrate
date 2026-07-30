@@ -215,6 +215,13 @@ public class Options
     public FailOnSeverity FailOn { get; set; } = FailOnSeverity.Info;
 
     [Option(
+        "max-parallelism",
+        HelpText = "Maximum projects scanned at once. Defaults to the processor count, capped at 8 "
+            + "because each scan shells out to 'dotnet package list'. Use 1 to scan serially."
+    )]
+    public int? MaxParallelism { get; set; }
+
+    [Option(
         "completions",
         HelpText = "Print a shell completion script and exit: Bash, Zsh, Fish, or PowerShell. "
             + "Generated from the option list, so it cannot go stale."
@@ -586,6 +593,26 @@ public class Options
     /// never looked for any. Copy-then-override fails safe: a new option propagates unless someone
     /// deliberately excludes it.
     /// </summary>
+    /// <summary>
+    /// How many projects to scan at once.
+    ///
+    /// Each project scan shells out to <c>dotnet package list</c>, so the useful range is bounded by
+    /// what the machine and the feed will tolerate rather than by CPU: the work is almost entirely
+    /// waiting. Capped at 8 by default because beyond that the NuGet feed starts rate-limiting, which
+    /// makes the scan slower and noisier rather than faster.
+    /// </summary>
+    public int ResolveScanParallelism()
+    {
+        const int defaultCap = 8;
+
+        if (MaxParallelism.HasValue)
+        {
+            return Math.Max(1, MaxParallelism.Value);
+        }
+
+        return Math.Clamp(Environment.ProcessorCount, 1, defaultCap);
+    }
+
     /// <param name="solutionDir">Directory of the solution being processed.</param>
     /// <param name="backupDirName">Per-solution backup directory name, so parallel runs cannot collide.</param>
     internal Options CloneForBatchSolution(string solutionDir, string backupDirName)
