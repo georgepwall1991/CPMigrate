@@ -10,9 +10,9 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ### Added
 - **`DocumentationDriftTests`: the documentation is now held to the tool.** A flag that exists and is undocumented is invisible to most users; one that is documented and no longer exists is worse, because someone writes it into a CI script and finds out from an exit code. Neither failure shows up in a build, a test run, or a review of the code that changed — the docs are a different file, and nothing was checking them. This release series added eleven options and a rule, and one option had already slipped through undocumented (`--gitignore-dir`), which is the argument for asserting it rather than remembering it.
-  - Every `[Option]` long name appears in the README reference, and **every option documented there still exists** — the direction that costs someone an afternoon. Only the options tables are scanned, so prose mentioning `dotnet`'s own flags cannot confuse it.
+  - Every `[Option]` long name appears in the README **reference table**, and **every option documented there still exists**. Both directions read the table rather than the whole file: searching everywhere let an option mentioned only in an example count as documented, and the reverse check cannot catch that because it validates only rows that already exist. **Found in cross-review** — the direction that costs someone an afternoon. Only the options tables are scanned, so prose mentioning `dotnet`'s own flags cannot confuse it.
   - Every exit code appears in the exit-code table **under its own name**, so the number and the meaning cannot drift apart. That table is the contract a CI script is written against and the one thing a script cannot discover by trying.
-  - Every rule in `AnalysisIssueCode` has a page in `docs/rules.md` — the page a SARIF annotation's help link points at.
+  - Every rule in `AnalysisIssueCode` has **a section of its own** in `docs/rules.md` — the page a SARIF annotation's help link points at. Matched on the heading structure, not on the name appearing somewhere: a rule whose section was deleted but which is still named in a cross-reference would otherwise pass, which is precisely the drift being guarded against. **Also found in cross-review.**
   - Modelled on `OutputSchemaDriftTests`, which does the same job for the JSON contract.
 
 ### Fixed

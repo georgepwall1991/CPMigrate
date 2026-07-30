@@ -23,13 +23,17 @@ public class DocumentationDriftTests
     [Fact]
     public void EveryCommandLineOption_IsInTheReadmeReference()
     {
-        var undocumented = LongOptionNames()
-            .Where(name => !Readme().Contains($"--{name}", StringComparison.Ordinal))
-            .ToList();
+        // Against the reference table, not the whole file. Searching everywhere let an option mentioned only
+        // in an example count as documented — and the reverse check below cannot catch that, because it only
+        // validates rows that already exist. Cross-review caught it.
+        var documented = DocumentedOptionNames();
 
-        undocumented
+        LongOptionNames()
+            .Where(name => !documented.Contains(name))
             .Should()
-            .BeEmpty("an option nobody can find is an option that does not exist for most users");
+            .BeEmpty(
+                "an option missing from the reference table is one nobody can find, whatever the prose says"
+            );
     }
 
     [Fact]
@@ -38,13 +42,7 @@ public class DocumentationDriftTests
         // The direction that costs someone an afternoon: a flag documented after it was renamed or removed.
         var real = LongOptionNames().ToHashSet(StringComparer.Ordinal);
 
-        // Only the options table is scanned — prose elsewhere legitimately mentions flags of other tools,
-        // and `dotnet` commands of its own.
-        var documented = Regex
-            .Matches(OptionsTables(), @"^\|\s*`--(?<name>[a-z0-9-]+)`", RegexOptions.Multiline)
-            .Select(match => match.Groups["name"].Value)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
+        var documented = DocumentedOptionNames();
 
         documented.Should().NotBeEmpty("the tables must actually have been found");
         documented
@@ -77,13 +75,43 @@ public class DocumentationDriftTests
         // that a SARIF annotation's help link points at.
         var reference = File.ReadAllText(RepositoryFile(Path.Combine("docs", "rules.md")));
 
-        var missing = Enum.GetValues<AnalysisIssueCode>()
+        // Its own section, not a mention anywhere in the file. A rule whose page was deleted but which is
+        // still named in a cross-reference would otherwise pass, which is the drift this exists to catch.
+        // Cross-review caught it.
+        var sections = Regex
+            .Matches(reference, @"^##+\s+(?<rule>\w+)\s*$", RegexOptions.Multiline)
+            .Select(match => match.Groups["rule"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        sections.Should().NotBeEmpty("the rule sections must actually have been found");
+
+        Enum.GetValues<AnalysisIssueCode>()
             .Where(code => code != AnalysisIssueCode.Unknown)
             .Select(code => code.ToString())
-            .Where(name => !reference.Contains(name, StringComparison.Ordinal))
-            .ToList();
+            .Where(name => !sections.Contains(name))
+            .Should()
+            .BeEmpty("a rule with no section of its own cannot be acted on from a help link");
+    }
 
-        missing.Should().BeEmpty("a rule with no published documentation cannot be acted on");
+
+    /// <summary>
+    /// The option names the README's reference tables document — the rows, not the prose. An option
+    /// mentioned only in an example is not documented in the sense that matters: nobody scanning the
+    /// reference for it will find it.
+    /// </summary>
+    private static HashSet<string> DocumentedOptionNames()
+    {
+        // The argument placeholder lives inside the backticks in some rows — `--explain <RuleId>` — so the
+        // name is followed by either the closing backtick or a space. Requiring the backtick made --explain
+        // look undocumented when it is documented perfectly well.
+        return Regex
+            .Matches(
+                OptionsTables(),
+                @"^\|\s*`--(?<name>[a-z0-9-]+)[ `]",
+                RegexOptions.Multiline
+            )
+            .Select(match => match.Groups["name"].Value)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     private static IEnumerable<string> LongOptionNames()
