@@ -43,7 +43,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.24.0
+dotnet tool install --global CPMigrate --version 3.25.0
 ```
 
 ```bash
@@ -675,6 +675,7 @@ The JSON payload reports the policy alongside the findings, so a consumer never 
 | `--prune-all` | | `false` | Delete all backups |
 | `--retention` | | `5` | Number of backups to keep when pruning |
 | `--add-gitignore` | | `false` | Add backup directory to `.gitignore` |
+| `--gitignore-dir` | | `.` | Directory to create `.gitignore` in, when there is not one already |
 
 ### Output & Logging
 

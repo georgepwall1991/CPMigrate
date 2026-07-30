@@ -6,6 +6,24 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.25.0] - 2026-07-30
+
+### Added
+- **`DocumentationDriftTests`: the documentation is now held to the tool.** A flag that exists and is undocumented is invisible to most users; one that is documented and no longer exists is worse, because someone writes it into a CI script and finds out from an exit code. Neither failure shows up in a build, a test run, or a review of the code that changed — the docs are a different file, and nothing was checking them. This release series added eleven options and a rule, and one option had already slipped through undocumented (`--gitignore-dir`), which is the argument for asserting it rather than remembering it.
+  - Every `[Option]` long name appears in the README reference, and **every option documented there still exists** — the direction that costs someone an afternoon. Only the options tables are scanned, so prose mentioning `dotnet`'s own flags cannot confuse it.
+  - Every exit code appears in the exit-code table **under its own name**, so the number and the meaning cannot drift apart. That table is the contract a CI script is written against and the one thing a script cannot discover by trying.
+  - Every rule in `AnalysisIssueCode` has a page in `docs/rules.md` — the page a SARIF annotation's help link points at.
+  - Modelled on `OutputSchemaDriftTests`, which does the same job for the JSON contract.
+
+### Fixed
+- `--gitignore-dir` is documented in the README options reference. It has existed undocumented; the test above is what found it.
+
+### Testing
+- 4 new tests. 1107 pass.
+
+### A note on the version
+This is 3.25.0, not 4.0.0. Nothing in this release series broke a documented contract — the one change that could have, findings identifying projects by relative path rather than file name, shipped in 3.10.0 with a baseline-regeneration instruction and an explicit rejection of old baseline files. A major bump would say something untrue about what upgrading costs.
+
 ## [3.24.0] - 2026-07-30
 
 ### Added
