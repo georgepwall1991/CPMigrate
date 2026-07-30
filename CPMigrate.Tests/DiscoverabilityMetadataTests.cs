@@ -12,7 +12,7 @@ public sealed class DiscoverabilityMetadataTests
     private static string RepositoryRoot =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
 
-    private const string ExpectedVersion = "3.21.0";
+    private const string ExpectedVersion = "3.22.0";
 
     private const string RawBase =
         "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/";

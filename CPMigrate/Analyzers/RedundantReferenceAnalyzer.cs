@@ -27,6 +27,11 @@ public class RedundantReferenceAnalyzer : IAnalyzer
         var projectGroups = packageInfo
             .GetDeclaredReferences()
             .Where(reference => !reference.IsConditional)
+            // A transitive entry is not a declaration — nobody wrote it in the project file. It matters
+            // when the declared list is unavailable and the resolved one stands in: under --transitive that
+            // list holds the same package twice, once directly and once as a transitive of something else,
+            // which read as the project declaring it twice.
+            .Where(reference => !reference.IsTransitive)
             .GroupBy(r => r.ProjectPath);
 
         foreach (var projectGroup in projectGroups)

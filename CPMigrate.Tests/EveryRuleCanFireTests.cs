@@ -43,20 +43,16 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     /// <summary>
-    /// Rules that need a live NuGet feed, with the reason. Kept as data rather than a comment so the
-    /// completeness test below can hold every code to one bucket or the other.
+    /// Rules with no end-to-end case here, and why. Empty, and meant to stay that way.
+    ///
+    /// It once held the four feed-dependent rules — vulnerabilities, outdated, deprecated, and transitive
+    /// conflicts — on the grounds that they need a live NuGet feed. That is true of the *query* but not of
+    /// anything after it, and anything after it is where the 3.20.0 defect lived: a parser reading a shape
+    /// the feed does not produce, reporting nothing, and looking clean. Exempting the rules left exactly
+    /// that part unexamined. <c>RecordedFeedOutputTests</c> drives all four from real recorded
+    /// <c>dotnet package list</c> output instead, so no rule is taken on trust.
     /// </summary>
-    private static readonly Dictionary<AnalysisIssueCode, string> NeedsTheNetwork = new()
-    {
-        [AnalysisIssueCode.SecurityVulnerability] =
-            "--audit queries the feed's vulnerability data; there is nothing on disk to provoke it",
-        [AnalysisIssueCode.OutdatedPackage] =
-            "--outdated compares against the latest published version",
-        [AnalysisIssueCode.DeprecatedPackage] =
-            "--deprecated reads deprecation metadata from the feed",
-        [AnalysisIssueCode.TransitiveConflict] =
-            "--transitive shells out to `dotnet package list --include-transitive`, which restores",
-    };
+    private static readonly Dictionary<AnalysisIssueCode, string> NeedsTheNetwork = [];
 
     [Fact]
     public async Task VersionInconsistency_Fires()
@@ -225,9 +221,20 @@ public class EveryRuleCanFireTests : IDisposable
             .Select(method => method.Name[..^"_Fires".Length])
             .ToHashSet(StringComparer.Ordinal);
 
+        // A rule may be proven here, against files on disk, or in RecordedFeedOutputTests, against real
+        // recorded feed output. Both drive the parse-to-report path; only the process launch differs.
+        var provenFromRecordedOutput = typeof(Services.RecordedFeedOutputTests)
+            .GetMethods()
+            .Where(method =>
+                method.Name.EndsWith("_FiresFromRecordedOutput", StringComparison.Ordinal)
+            )
+            .Select(method => method.Name[..^"_FiresFromRecordedOutput".Length])
+            .ToHashSet(StringComparer.Ordinal);
+
         var unaccounted = Enum.GetValues<AnalysisIssueCode>()
             .Where(code => code != AnalysisIssueCode.Unknown)
             .Where(code => !provenHere.Contains(code.ToString()))
+            .Where(code => !provenFromRecordedOutput.Contains(code.ToString()))
             .Where(code => !NeedsTheNetwork.ContainsKey(code))
             .Select(code => code.ToString())
             .ToList();
@@ -235,8 +242,9 @@ public class EveryRuleCanFireTests : IDisposable
         unaccounted
             .Should()
             .BeEmpty(
-                "every rule needs either a test here proving it fires against real files, or an entry in "
-                    + "NeedsTheNetwork explaining why it cannot have one"
+                "every rule needs a test proving it fires — here against real files, or in "
+                    + "RecordedFeedOutputTests against real recorded feed output — or an entry in "
+                    + "NeedsTheNetwork explaining why it can have neither"
             );
     }
 
@@ -249,6 +257,12 @@ public class EveryRuleCanFireTests : IDisposable
 
         NeedsTheNetwork.Keys.Should().OnlyContain(code => real.Contains(code));
         NeedsTheNetwork.Values.Should().OnlyContain(reason => reason.Length > 20);
+        NeedsTheNetwork
+            .Should()
+            .BeEmpty(
+                "every rule is currently proven end to end; an addition here needs a reason that "
+                    + "survives the question 'could this be driven from recorded output instead?'"
+            );
     }
 
     [Fact]
