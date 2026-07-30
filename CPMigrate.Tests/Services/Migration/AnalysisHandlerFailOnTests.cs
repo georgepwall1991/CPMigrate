@@ -238,6 +238,13 @@ public class AnalysisHandlerFailOnTests : IDisposable
     private AnalysisHandler CreateHandlerCore(bool referenceScanSucceeds, AnalysisIssue[] issues)
     {
         var projectAnalyzer = new Mock<IProjectAnalyzer>();
+
+        // The declaration scan feeds the rules that read the project file rather than the
+        // resolved graph. Unstubbed it answers "could not read", which is now counted as
+        // incomplete coverage.
+        projectAnalyzer
+            .Setup(a => a.ScanDeclaredPackages(It.IsAny<string>()))
+            .Returns((new List<PackageReference>(), true));
         projectAnalyzer
             .Setup(a => a.ScanResolvedPackagesAsync(_projectPath, It.IsAny<bool>()))
             .ReturnsAsync(

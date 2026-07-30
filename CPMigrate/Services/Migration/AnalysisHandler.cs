@@ -199,7 +199,11 @@ internal sealed class AnalysisHandler
                 projectPaths,
                 CollectDeclaredReferences(results)
             ),
-            results.Count(r => !r.ReferencesScanned),
+            // A project whose declarations could not be read was not fully examined — RedundantReference
+            // could not run against it. Counting only resolved-scan failures let that pass as a clean,
+            // complete report with a success exit code, which is the failure mode this release is about.
+            // Counted once per project, not twice, when both reads failed.
+            results.Count(r => !r.ReferencesScanned || r.DeclaredReferences is null),
             results.Sum(r => r.DeepScanFailures)
         );
     }
@@ -217,19 +221,21 @@ internal sealed class AnalysisHandler
     {
         var unread = results.Count(result => result.DeclaredReferences is null);
 
-        if (unread == results.Length)
-        {
-            // Nothing could be read at all. GetDeclaredReferences falls back to the resolved list, which
-            // is the pre-3.21.0 behaviour: duplicates stay invisible rather than being misreported.
-            return null;
-        }
-
         if (unread > 0)
         {
             _consoleService.Warning(
                 $"Could not read package declarations from {unread} of {results.Length} project file(s); "
                     + "those projects were not checked for duplicate references."
             );
+        }
+
+        if (unread == results.Length)
+        {
+            // Nothing could be read at all. GetDeclaredReferences falls back to the resolved list, which
+            // is the pre-3.21.0 behaviour: duplicates stay invisible rather than being misreported. The
+            // warning above is emitted first — returning early used to skip it, which is the silence this
+            // release exists to remove.
+            return null;
         }
 
         return results

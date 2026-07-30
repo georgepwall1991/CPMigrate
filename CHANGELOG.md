@@ -34,6 +34,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 - **The fallback path reads declarations properly too.** When `dotnet package list` fails, the stand-in scan that replaces it is *not* reused as the declaration list: it drops versionless items — every reference under central package management — and records no conditions, so reusing it missed duplicates for most users and could report a framework-conditional pair as a fixable duplicate the fixer then refuses to touch. **Found in cross-review.**
 
+- **A declaration-read failure is an incomplete analysis, and exits 8.** When the resolved scan succeeded but a project file could not be read, `RedundantReference` was not evaluated for that project — yet the run reported a clean, complete result with a success exit code, so neither a JSON consumer nor a CI job could tell that from "nothing found". Declaration failures now count towards the existing incomplete-analysis accounting, once per project rather than twice when both reads failed. **Found in cross-review**, and it is the exact failure mode this release exists to close.
+
 - **A project whose declarations could not be read is named, not silently skipped.** A partial failure cannot be covered by falling back to the resolved list for the missing projects, because that list has already collapsed the duplicates declarations exist to reveal. Those projects are simply not checked — which is honest only if it is said out loud, since otherwise "no duplicates found" is indistinguishable from "we could not look". **Also found in cross-review.**
 
 - **A successful declaration scan that finds nothing is an answer, not missing data.** The fallback to the resolved list now triggers only when the project files could not be read at all. Otherwise, with `--transitive` on a multi-targeted project, the resolved parser listing the same transitive package once per framework would read as duplicate *declarations* of a package the project never declares. **Found in cross-review**, on a fallback flagged for scrutiny in the PR description.
@@ -41,7 +43,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **`RedundantReference` now fires under central package management.** Also found in cross-review. The first fix read declarations through a scan that drops `PackageReference` items with no `Version` — and under CPM a reference normally *has* no version, so for the majority of this tool's users the rule still could not fire, having just been "fixed". A dedicated declaration scan keeps versionless items, and records whether each was conditional.
 
 ### Testing
-- 22 new tests. 1077 pass.
+- 23 new tests. 1078 pass.
 
 ## [3.20.0] - 2026-07-30
 
