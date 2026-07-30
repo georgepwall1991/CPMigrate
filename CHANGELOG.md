@@ -27,6 +27,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - Fixing that exposed the same flaw in `VersionInconsistency`, which reads the *resolved* list where conditions no longer exist. It saw `4.0.0` and `4.3.0` in one multi-targeted project, called them inconsistent, and — being fixable — unified them to `4.3.0`, breaking the `net8.0` target. A per-framework pin is now excluded from the comparison, and the fixer refuses to rewrite a conditional declaration even if something else reports one.
   - A condition is detected anywhere in the ancestor chain, not just on the item and its group: a declaration inside `<Choose><When Condition=…><ItemGroup>` carries none on either, so checking two levels read a mutually exclusive pair as duplicates of each other. **Found in cross-review.**
   - The fixer refuses to remove a conditional declaration even when real unconditional duplicates exist alongside one — otherwise a project with two duplicates *and* a framework-specific pin had the pin deleted, which is precisely what the analyzer's filter exists to prevent. **Also found in cross-review**, and asserted on the file.
+  - A conditional pin does not decide the version other projects are unified to. The analyzer excluded it from the comparison while the fixer still drew its target from every reference, so a framework-conditional `99.0.0` would drag unconditional `1.0.0` and `2.0.0` up to `99.0.0` — on the strength of a finding that mentioned only `1.0.0` and `2.0.0`. Not writing *to* a conditional declaration is not enough if it still decides what gets written elsewhere. **Found in cross-review.**
   - Reporting a finding a fixer then declines to act on is its own kind of wrong — the same "no changes were needed" over an unrepaired finding as above — so the finding is suppressed rather than merely made unfixable.
 
 - **The fallback path reads declarations properly too.** When `dotnet package list` fails, the stand-in scan that replaces it is *not* reused as the declaration list: it drops versionless items — every reference under central package management — and records no conditions, so reusing it missed duplicates for most users and could report a framework-conditional pair as a fixable duplicate the fixer then refuses to touch. **Found in cross-review.**
@@ -38,7 +39,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **`RedundantReference` now fires under central package management.** Also found in cross-review. The first fix read declarations through a scan that drops `PackageReference` items with no `Version` — and under CPM a reference normally *has* no version, so for the majority of this tool's users the rule still could not fire, having just been "fixed". A dedicated declaration scan keeps versionless items, and records whether each was conditional.
 
 ### Testing
-- 19 new tests. 1074 pass.
+- 20 new tests. 1075 pass.
 
 ## [3.20.0] - 2026-07-30
 

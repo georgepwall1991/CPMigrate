@@ -385,6 +385,49 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     [Fact]
+    public async Task AConditionalPinDoesNotDecideTheVersionOtherProjectsAreUnifiedTo()
+    {
+        // Cross-review caught this: the analyzer excludes a conditional pin from the *comparison*, but the
+        // fixer still drew its target version from every reference. A framework-conditional 99.0 in one
+        // project would drag unconditional 1.0.0 and 2.0.0 in others up to 99.0 — on the strength of a
+        // finding that only mentioned 1.0.0 and 2.0.0. Not writing to a conditional declaration is not
+        // enough if it still decides what gets written elsewhere.
+        WriteProject("src/Api/Api.csproj", ("Serilog", "1.0.0"));
+        WriteProject("src/Worker/Worker.csproj", ("Serilog", "2.0.0"));
+        WriteFile(
+            "src/Legacy/Legacy.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+              </PropertyGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" Version="99.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj", "src/Worker/Worker.csproj", "src/Legacy/Legacy.csproj");
+
+        await ProgramRunner.RunAsync(
+            ["--analyze", "--fix", "--no-backup", "--quiet", "-s", _root],
+            new FakeConsoleService()
+        );
+
+        var api = await File.ReadAllTextAsync(Path.Combine(_root, "src", "Api", "Api.csproj"));
+        var worker = await File.ReadAllTextAsync(
+            Path.Combine(_root, "src", "Worker", "Worker.csproj")
+        );
+        var legacy = await File.ReadAllTextAsync(
+            Path.Combine(_root, "src", "Legacy", "Legacy.csproj")
+        );
+
+        api.Should().Contain("2.0.0").And.NotContain("99.0.0");
+        worker.Should().Contain("2.0.0").And.NotContain("99.0.0");
+        legacy.Should().Contain("99.0.0", "the conditional pin itself is untouched");
+    }
+
+    [Fact]
     public async Task ADeclarationInsideChooseWhen_CountsAsConditional()
     {
         // Cross-review caught this: <Choose><When Condition=…><ItemGroup> puts no condition on the item or

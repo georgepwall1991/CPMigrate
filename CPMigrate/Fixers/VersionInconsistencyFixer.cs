@@ -25,9 +25,14 @@ public class VersionInconsistencyFixer : IFixer
 
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, FixRequest request)
     {
-        // Find all references for this package
+        // Find all references for this package, excluding conditional pins by the same rule the analyzer
+        // uses. Without that, the version chosen here is drawn from references the *finding* never
+        // compared: a framework-conditional 99.0 in one project would drag unconditional 1.0 and 2.0 in
+        // others up to 99.0, on the strength of a report that only mentioned 1.0 and 2.0. Skipping the
+        // conditional declaration when writing is not enough if it still decides what gets written.
         var references = packageInfo.References
             .Where(r => r.PackageName.Equals(issue.PackageName, StringComparison.OrdinalIgnoreCase))
+            .Where(r => !packageInfo.IsConditionallyDeclared(r.ProjectPath, r.PackageName))
             .ToList();
 
         if (references.Count == 0)
