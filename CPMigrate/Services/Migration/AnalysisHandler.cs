@@ -196,11 +196,52 @@ internal sealed class AnalysisHandler
                 results.SelectMany(r => r.Outdated).ToList(),
                 results.SelectMany(r => r.Deprecated).ToList(),
                 basePath,
-                projectPaths
+                projectPaths,
+                CollectDeclaredReferences(results)
             ),
-            results.Count(r => !r.ReferencesScanned),
+            // A project whose declarations could not be read was not fully examined — RedundantReference
+            // could not run against it. Counting only resolved-scan failures let that pass as a clean,
+            // complete report with a success exit code, which is the failure mode this release is about.
+            // Counted once per project, not twice, when both reads failed.
+            results.Count(r => !r.ReferencesScanned || r.DeclaredReferences is null),
             results.Sum(r => r.DeepScanFailures)
         );
+    }
+
+    /// <summary>
+    /// Merges the per-project declaration scans, and says so when some of them failed.
+    ///
+    /// A partial failure cannot be papered over by falling back to the resolved list for the missing
+    /// projects: the resolved list has already collapsed the duplicates the declarations exist to reveal,
+    /// so substituting it would answer a question it cannot answer. The affected projects are simply not
+    /// examined for duplicate declarations — which is the honest outcome, but only if it is said out loud.
+    /// Left silent, "no duplicates found" would be indistinguishable from "we could not look".
+    /// </summary>
+    private List<PackageReference>? CollectDeclaredReferences(ProjectScanResult[] results)
+    {
+        var unread = results.Count(result => result.DeclaredReferences is null);
+
+        if (unread > 0)
+        {
+            _consoleService.Warning(
+                $"Could not read package declarations from {unread} of {results.Length} project file(s); "
+                    + "those projects were not checked for duplicate references."
+            );
+        }
+
+        if (unread == results.Length)
+        {
+            // Nothing could be read at all. GetDeclaredReferences falls back to the resolved list, which
+            // is the pre-3.21.0 behaviour: duplicates stay invisible rather than being misreported. The
+            // warning above is emitted first — returning early used to skip it, which is the silence this
+            // release exists to remove.
+            return null;
+        }
+
+        return results
+            .Where(result => result.DeclaredReferences is not null)
+            .SelectMany(result => result.DeclaredReferences!)
+            .ToList();
     }
 
     /// <summary>
@@ -220,13 +261,13 @@ internal sealed class AnalysisHandler
         // Serial, and deliberately so: see the note on PerformAnalysisScanAsync.
         for (var index = 0; index < projectPaths.Count; index++)
         {
-            var (references, scanned) = await ScanProjectReferencesAsync(
+            var (references, scanned, declared) = await ScanProjectReferencesAsync(
                 options,
                 projectPaths[index]
             );
             CacheScanResults(projectPaths[index], references);
 
-            results[index] = new ProjectScanResult(scanned, 0, references, [], [], []);
+            results[index] = new ProjectScanResult(scanned, 0, references, [], [], [], declared);
 
             if (!deepScansRequested)
             {
@@ -289,24 +330,50 @@ internal sealed class AnalysisHandler
         List<PackageReference> References,
         List<VulnerabilityInfo> Vulnerabilities,
         List<OutdatedPackageInfo> Outdated,
-        List<DeprecatedPackageInfo> Deprecated
+        List<DeprecatedPackageInfo> Deprecated,
+        List<PackageReference>? DeclaredReferences
     );
 
     private async Task<(
         List<PackageReference> References,
-        bool Success
+        bool Success,
+        List<PackageReference>? Declared
     )> ScanProjectReferencesAsync(Options options, string projectPath)
     {
         var (references, success) = await _projectAnalyzer.ScanResolvedPackagesAsync(
             projectPath,
             options.IncludeTransitive
         );
-        if (!success && !options.IncludeTransitive)
+        if (!success)
         {
+            if (options.IncludeTransitive)
+            {
+                // Deliberately does not touch the project XML. That scan cannot see transitive packages,
+                // so standing in for a failed --transitive scan would turn "we could not look" into "there
+                // is nothing there". The run reports an incomplete analysis instead.
+                return (references, false, null);
+            }
+
             (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
+
+            // Not reused as the declared list, even though it also comes from the project file: this scan
+            // exists to stand in for a resolved one, so it drops versionless items — every reference under
+            // central package management — and records no conditions. Handing it over would miss duplicates
+            // for most users and report a framework-conditional pair as a fixable duplicate the fixer then
+            // refuses to touch.
+            var (fallbackDeclared, fallbackRead) = _projectAnalyzer.ScanDeclaredPackages(projectPath);
+            return (references, success, fallbackRead ? fallbackDeclared : null);
         }
 
-        return (references, success);
+        // Read the project file as well. The resolved list cannot answer questions about what the file
+        // says — resolution collapses duplicate PackageReference items — and this is a local XML parse,
+        // not another process, so it costs a fraction of the scan it accompanies. ScanDeclaredPackages
+        // rather than ScanProjectPackages: the latter drops versionless items, which is how central
+        // package management writes every reference, so it would return nothing for most users of this
+        // tool.
+        var (declared, declaredRead) = _projectAnalyzer.ScanDeclaredPackages(projectPath);
+
+        return (references, success, declaredRead ? declared : null);
     }
 
     private void CacheScanResults(string projectPath, List<PackageReference> references)

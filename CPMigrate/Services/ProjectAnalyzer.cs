@@ -96,6 +96,11 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
         return _projectFileScanner.ScanProjectPackages(projectFilePath);
     }
 
+    /// <inheritdoc />
+    public (List<PackageReference> References, bool Success) ScanDeclaredPackages(
+        string projectFilePath
+    ) => _projectFileScanner.ScanDeclaredPackages(projectFilePath);
+
     public static string[] GetSolutionFiles(string directory, SearchOption searchOption = SearchOption.TopDirectoryOnly)
     {
         return new SolutionDiscovery(SilentConsoleService.Instance).GetSolutionFiles(directory, searchOption);

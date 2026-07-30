@@ -6,6 +6,45 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.21.0] - 2026-07-30
+
+### Added
+- **An end-to-end guard that every rule can actually fire.** 3.20.0 found an analyzer that had never produced a finding on any real project while its unit tests passed throughout — because those tests hand-authored an input the pipeline never delivers. Every analyzer here has unit tests; unit tests prove the analyzer's logic, not that what reaches it has the shape the logic expects. Nothing was asking the question end to end.
+  - `EveryRuleCanFireTests` builds real projects, solutions, props files, and an assets file on disk, runs the actual CLI through `ProgramRunner`, and reads the findings back out of the JSON a consumer would parse. Nine rules are provoked this way.
+  - **Every member of `AnalysisIssueCode` must be accounted for**: either a test proving it fires, or an entry in a list of rules that need a live feed, with the reason. A rule added with neither fails the build, so this cannot fall behind the analyzers the way the unit tests did. A companion test rejects an exemption for a rule that no longer exists.
+  - A negative case asserts a healthy solution produces no findings, so none of the above can be satisfied by an analyzer that reports unconditionally.
+
+### Fixed
+- **`RedundantReference` could not fire.** It reads package references from `dotnet package list`, which reports the **resolved** graph — and resolution collapses two `PackageReference` items with the same `Include` into one. Confirmed directly: a project declaring `Newtonsoft.Json` twice yields exactly one entry in that output. So the duplicate the rule exists to find was gone before the analyzer saw it, and the rule only ever worked on the XML fallback path used when the resolved scan *fails*.
+  - `ProjectPackageInfo` now also carries the references **as declared**, read from the project files, and rules about what a file says use those. The resolved list stays authoritative for everything about what restore produced.
+  - The project files are read on the success path only. When a `--transitive` scan fails the XML scan is deliberately not consulted, because it cannot see transitive packages and standing in for the failed scan would turn "we could not look" into "there is nothing there".
+
+- **The `RedundantReference` fixer could not fix.** It resolved each affected project by matching `ProjectName`, but findings have identified projects by **path relative to the scan root** since 3.10.0 — file names were dropped as identifiers because two projects can share one. So the match never succeeded, the fixer found no project, and it returned "no fix needed". `--analyze --fix` printed **"No changes were needed"** over an unrepaired finding: two statements each true and jointly misleading.
+  - `ProjectPackageInfo.ResolveProjectPath` does the reverse lookup, so no caller has to know how a finding's project entry maps back to disk.
+  - Verified on a real project: the duplicate reference is now removed from the file, and a test asserts it on the file rather than on the exit code.
+
+- **Conditional declarations are no longer mistaken for defects — by any rule or fixer.** Found in cross-review, and the most serious item here: declaring a package once per target framework behind a `Condition` is how multi-targeting is written, and making `RedundantReference` fire turned a rule that quietly reported nothing into one that would have had `--fix` **delete the declaration another framework depends on**. MSBuild conditions cannot be evaluated outside a build, so overlap is not guessed at: a duplicate is reported only among declarations that always apply.
+  - Fixing that exposed the same flaw in `VersionInconsistency`, which reads the *resolved* list where conditions no longer exist. It saw `4.0.0` and `4.3.0` in one multi-targeted project, called them inconsistent, and — being fixable — unified them to `4.3.0`, breaking the `net8.0` target. A per-framework pin is now excluded from the comparison, and the fixer refuses to rewrite a conditional declaration even if something else reports one.
+  - A condition is detected anywhere in the ancestor chain, not just on the item and its group: a declaration inside `<Choose><When Condition=…><ItemGroup>` carries none on either, so checking two levels read a mutually exclusive pair as duplicates of each other. **Found in cross-review.**
+  - The fixer refuses to remove a conditional declaration even when real unconditional duplicates exist alongside one — otherwise a project with two duplicates *and* a framework-specific pin had the pin deleted, which is precisely what the analyzer's filter exists to prevent. **Also found in cross-review**, and asserted on the file.
+  - A conditional pin does not decide the version other projects are unified to. The analyzer excluded it from the comparison while the fixer still drew its target from every reference, so a framework-conditional `99.0.0` would drag unconditional `1.0.0` and `2.0.0` up to `99.0.0` — on the strength of a finding that mentioned only `1.0.0` and `2.0.0`. Not writing *to* a conditional declaration is not enough if it still decides what gets written elsewhere. **Found in cross-review.**
+  - An `<Otherwise>` branch counts as conditional. It carries no `Condition` attribute but applies exactly when no sibling `<When>` did, so reading it as unconditional made the fallback branch a deletion or rewrite candidate once real duplicates existed elsewhere in the file. **Found in cross-review**, and it showed the `<Choose><When>` test was passing for the wrong reason.
+  - A project that pins a package unconditionally *and* overrides it for one framework still reports a genuine inconsistency against another project, while the override stays out of the comparison. The question is asked **per version**, not per package: asking per package either hid the unconditional pin from comparison or left the conditional override in it, where the `Highest` strategy would pick the override and rewrite every other project to a version meant for one framework. **Both halves found in cross-review**, one round apart.
+  - Reporting a finding a fixer then declines to act on is its own kind of wrong — the same "no changes were needed" over an unrepaired finding as above — so the finding is suppressed rather than merely made unfixable.
+
+- **The fallback path reads declarations properly too.** When `dotnet package list` fails, the stand-in scan that replaces it is *not* reused as the declaration list: it drops versionless items — every reference under central package management — and records no conditions, so reusing it missed duplicates for most users and could report a framework-conditional pair as a fixable duplicate the fixer then refuses to touch. **Found in cross-review.**
+
+- **A declaration-read failure is an incomplete analysis, and exits 8.** When the resolved scan succeeded but a project file could not be read, `RedundantReference` was not evaluated for that project — yet the run reported a clean, complete result with a success exit code, so neither a JSON consumer nor a CI job could tell that from "nothing found". Declaration failures now count towards the existing incomplete-analysis accounting, once per project rather than twice when both reads failed. **Found in cross-review**, and it is the exact failure mode this release exists to close.
+
+- **A project whose declarations could not be read is named, not silently skipped.** A partial failure cannot be covered by falling back to the resolved list for the missing projects, because that list has already collapsed the duplicates declarations exist to reveal. Those projects are simply not checked — which is honest only if it is said out loud, since otherwise "no duplicates found" is indistinguishable from "we could not look". **Also found in cross-review.**
+
+- **A successful declaration scan that finds nothing is an answer, not missing data.** The fallback to the resolved list now triggers only when the project files could not be read at all. Otherwise, with `--transitive` on a multi-targeted project, the resolved parser listing the same transitive package once per framework would read as duplicate *declarations* of a package the project never declares. **Found in cross-review**, on a fallback flagged for scrutiny in the PR description.
+
+- **`RedundantReference` now fires under central package management.** Also found in cross-review. The first fix read declarations through a scan that drops `PackageReference` items with no `Version` — and under CPM a reference normally *has* no version, so for the majority of this tool's users the rule still could not fire, having just been "fixed". A dedicated declaration scan keeps versionless items, and records whether each was conditional.
+
+### Testing
+- 23 new tests. 1078 pass.
+
 ## [3.20.0] - 2026-07-30
 
 ### Fixed

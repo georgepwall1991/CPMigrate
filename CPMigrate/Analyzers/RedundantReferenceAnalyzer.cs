@@ -14,8 +14,19 @@ public class RedundantReferenceAnalyzer : IAnalyzer
     {
         List<AnalysisIssue> issues = [];
 
-        // Group by project, then by package name (case-insensitive)
-        var projectGroups = packageInfo.References
+        // Grouped from the references as *declared*, not as resolved. Resolution collapses two
+        // PackageReference items with the same Include into one, so reading the resolved list meant this
+        // rule could never see a duplicate and never reported one.
+        //
+        // Conditional declarations are excluded. Declaring a package once per target framework, each
+        // behind a Condition, is how multi-targeting is written — and since this finding is fixable,
+        // calling it a duplicate would have the fixer delete the declaration another framework depends on.
+        // A rule that quietly reported nothing became a rule that breaks a build, which is the worse of
+        // the two. MSBuild conditions cannot be evaluated reliably outside a build, so overlap is not
+        // guessed at: a duplicate is reported only among declarations that always apply.
+        var projectGroups = packageInfo
+            .GetDeclaredReferences()
+            .Where(reference => !reference.IsConditional)
             .GroupBy(r => r.ProjectPath);
 
         foreach (var projectGroup in projectGroups)

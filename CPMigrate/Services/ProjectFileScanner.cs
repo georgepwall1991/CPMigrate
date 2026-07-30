@@ -81,6 +81,93 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
     }
 
+    /// <summary>
+    /// Whether a declaration sits under any <c>Condition</c> at all.
+    ///
+    /// The whole ancestor chain, not the item and its group: a valid declaration inside
+    /// <c>&lt;Choose&gt;&lt;When Condition=…&gt;&lt;ItemGroup&gt;</c> has no condition on either, so
+    /// checking two levels reported it as unconditional — and two mutually exclusive declarations then read
+    /// as duplicates of each other.
+    /// </summary>
+    private static bool HasConditionalAncestor(ProjectElement element)
+    {
+        for (
+            ProjectElement? current = element;
+            current is not null;
+            current = current.Parent
+        )
+        {
+            if (!string.IsNullOrEmpty(current.Condition))
+            {
+                return true;
+            }
+
+            // <Otherwise> has no Condition of its own but applies exactly when no sibling <When> did.
+            if (current is ProjectOtherwiseElement)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <inheritdoc />
+    public (List<PackageReference> References, bool Success) ScanDeclaredPackages(
+        string projectFilePath
+    )
+    {
+        var projectName = Path.GetFileName(projectFilePath);
+        List<PackageReference> references = [];
+
+        try
+        {
+            using var projectCollection = new ProjectCollection();
+            var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
+
+            try
+            {
+                foreach (var item in projectRoot.Items)
+                {
+                    if (item.ItemType != "PackageReference")
+                    {
+                        continue;
+                    }
+
+                    var version =
+                        item.Metadata.FirstOrDefault(m => m.Name == "Version")?.Value ?? string.Empty;
+
+                    // Kept rather than filtered, because "this package is declared twice, both times
+                    // conditionally" is a different fact from "this package is declared twice" and only
+                    // the caller knows which one it needs.
+                    var isConditional = HasConditionalAncestor(item);
+
+                    references.Add(
+                        new PackageReference(
+                            item.Include,
+                            version,
+                            projectFilePath,
+                            projectName,
+                            IsTransitive: false,
+                            IsConditional: isConditional
+                        )
+                    );
+                }
+
+                return (references, true);
+            }
+            finally
+            {
+                projectCollection.UnloadAllProjects();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not read declarations from {Project}", projectName);
+            return ([], false);
+        }
+    }
+
     public (List<PackageReference> References, bool Success) ScanProjectPackages(string projectFilePath)
     {
         var references = new List<PackageReference>();

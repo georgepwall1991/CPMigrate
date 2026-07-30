@@ -15,7 +15,16 @@ public class VersionInconsistencyAnalyzer : IAnalyzer
         var issues = new List<AnalysisIssue>();
 
         // Group by package name (case-insensitive) to find all versions
-        var packageGroups = packageInfo.References
+        var packageGroups = packageInfo
+            .References
+            // A version pinned behind a Condition is deliberate — a multi-targeted project saying the
+            // newer package does not support the older framework. Comparing it against the others reads
+            // that as an inconsistency, and since the finding is fixable it would be "corrected" by
+            // unifying to the highest version, breaking the target that needed the older one. Reporting a
+            // finding the fixer then refuses to act on is its own kind of wrong, so it is not reported.
+            .Where(reference =>
+                !packageInfo.IsConditionallyDeclared(reference.ProjectPath, reference.PackageName, reference.Version)
+            )
             .GroupBy(r => r.PackageName, StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Select(r => r.Version).Distinct().Count() > 1);
 

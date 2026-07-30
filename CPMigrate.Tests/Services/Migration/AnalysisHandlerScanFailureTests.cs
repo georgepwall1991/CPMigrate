@@ -129,9 +129,44 @@ public class AnalysisHandlerScanFailureTests : IDisposable
         };
     }
 
-    private AnalysisHandler CreateHandler(bool auditSucceeds, bool referenceScanSucceeds)
+    [Fact]
+    public async Task ExecuteAsync_DeclarationScanFails_ReportsAnIncompleteAnalysis()
+    {
+        // Cross-review caught this, and it is the failure mode this release is about: when the resolved
+        // scan succeeds but the project file cannot be read, RedundantReference was not evaluated for that
+        // project — yet the run reported a clean, complete result with a success exit code. A consumer
+        // parsing the JSON, or a CI job reading the exit code, could not tell that from "nothing found".
+        var handler = CreateHandler(
+            auditSucceeds: true,
+            referenceScanSucceeds: true,
+            declarationScanSucceeds: false
+        );
+
+        var result = await handler.ExecuteAsync(AuditOptions());
+
+        result.ScanFailures.Should().Be(1, "the project's declarations were never read");
+        result
+            .ExitCode.Should()
+            .Be(
+                ExitCodes.IncompleteAnalysis,
+                "an unevaluated rule must not be reported as a clean result"
+            );
+    }
+
+    private AnalysisHandler CreateHandler(
+        bool auditSucceeds,
+        bool referenceScanSucceeds,
+        bool declarationScanSucceeds = true
+    )
     {
         var projectAnalyzer = new Mock<IProjectAnalyzer>();
+
+        // The declaration scan feeds the rules that read the project file rather than the
+        // resolved graph. Unstubbed it answers "could not read", which is now counted as
+        // incomplete coverage.
+        projectAnalyzer
+            .Setup(a => a.ScanDeclaredPackages(It.IsAny<string>()))
+            .Returns((new List<PackageReference>(), declarationScanSucceeds));
 
         projectAnalyzer
             .Setup(a => a.ScanResolvedPackagesAsync(_projectPath, It.IsAny<bool>()))

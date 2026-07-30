@@ -24,6 +24,13 @@ public class MigrationServiceCoverageTests
         // These tests drive the prompt-bearing paths, so the console must look like a TTY.
         _mockConsole.SetupGet(c => c.IsInteractive).Returns(true);
         _mockAnalyzer = new Mock<IProjectAnalyzer>();
+
+        // The declaration scan feeds the rules that read the project file rather than the
+        // resolved graph. Unstubbed it answers "could not read", which is now counted as
+        // incomplete coverage.
+        _mockAnalyzer
+            .Setup(a => a.ScanDeclaredPackages(It.IsAny<string>()))
+            .Returns((new List<PackageReference>(), true));
         _mockAnalysis = new Mock<IAnalysisService>();
         _mockFix = new Mock<IFixService>();
         _backupManager = new BackupManager();
