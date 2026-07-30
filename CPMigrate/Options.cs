@@ -387,6 +387,13 @@ public class Options
     )]
     public bool Init { get; set; }
 
+    [Option(
+        "diff",
+        Default = false,
+        HelpText = "Show a unified diff of file changes during --dry-run instead of the default preview."
+    )]
+    public bool Diff { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Analysis & Auto-Fix
     // ═══════════════════════════════════════════════════════════════════════

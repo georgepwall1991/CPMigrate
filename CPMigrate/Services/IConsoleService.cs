@@ -24,6 +24,7 @@ public interface IConsoleService
     void WriteSummaryTable(int projectCount, int packageCount, int conflictCount, string propsFilePath, string? backupPath, bool wasDryRun);
     void WriteProjectTree(List<string> projectPaths, string basePath);
     void WritePropsPreview(string content);
+    void WriteDiff(string diff);
     void WriteMarkup(string message);
     void WriteLine(string message = "");
     void WriteStatusDashboard(string directory, List<string> solutions, List<BackupSetInfo> backups, bool isGitRepo, bool hasUnstaged, Dictionary<string, int> targetFrameworks);

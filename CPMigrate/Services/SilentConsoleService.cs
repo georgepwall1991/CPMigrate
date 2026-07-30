@@ -72,6 +72,10 @@ public sealed class SilentConsoleService : IConsoleService
     {
     }
 
+    public void WriteDiff(string diff)
+    {
+    }
+
     public void WriteMarkup(string message)
     {
     }
