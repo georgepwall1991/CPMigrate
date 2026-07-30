@@ -43,11 +43,13 @@ internal sealed class ListBackupsHandler
 
         var table = new Table()
             .Border(TableBorder.Rounded)
-            .AddColumn(new TableColumn("[cyan]#[/]").Centered())
-            .AddColumn(new TableColumn("[cyan]Timestamp[/]"))
-            .AddColumn(new TableColumn("[cyan]Date/Time[/]"))
-            .AddColumn(new TableColumn("[cyan]Files[/]").RightAligned())
-            .AddColumn(new TableColumn("[cyan]Size[/]").RightAligned());
+            .BorderColor(SpectrePalette.CyberColors.Dim)
+            .Title($"[{SpectrePalette.Ink.Muted}] BACKUP HISTORY [/]")
+            .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]#[/]").Centered())
+            .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]Date/Time[/]"))
+            .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]Age[/]"))
+            .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]Files[/]").RightAligned())
+            .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]Size[/]").RightAligned());
 
         var (totalSize, totalFiles) = PopulateBackupTable(table, backups);
 
@@ -117,13 +119,42 @@ internal sealed class ListBackupsHandler
     private static void AddBackupTableRow(Table table, int index, BackupSetInfo backup,
         string displayTime, long backupSize)
     {
+        var age = FormatRelativeAge(backup.ParsedTimestamp);
+
         table.AddRow(
-            $"[cyan]{index}[/]",
-            $"[dim]{backup.Timestamp}[/]",
-            $"[white]{displayTime}[/]",
-            $"[yellow]{backup.Files.Count}[/]",
-            $"[green]{FormatFileSize(backupSize)}[/]"
+            $"[{SpectrePalette.Ink.Secondary}]{index}[/]",
+            $"[{SpectrePalette.Ink.Text}]{displayTime}[/]",
+            $"[{SpectrePalette.Ink.Dim}]{age}[/]",
+            $"[{SpectrePalette.Ink.Accent}]{backup.Files.Count}[/]",
+            $"[{SpectrePalette.Ink.Success}]{FormatFileSize(backupSize)}[/]"
         );
+    }
+
+    private static string FormatRelativeAge(DateTime? timestamp)
+    {
+        if (timestamp is null)
+        {
+            return "unknown";
+        }
+
+        var span = DateTime.UtcNow - timestamp.Value;
+
+        if (span.TotalMinutes < 1)
+        {
+            return "just now";
+        }
+
+        if (span.TotalMinutes < 60)
+        {
+            return $"{(int)span.TotalMinutes}m ago";
+        }
+
+        if (span.TotalHours < 24)
+        {
+            return $"{(int)span.TotalHours}h ago";
+        }
+
+        return $"{(int)span.TotalDays}d ago";
     }
 
     private static string FormatFileSize(long bytes)

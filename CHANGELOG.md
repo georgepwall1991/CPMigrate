@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.46.0] - 2026-07-30
+
+### Changed
+- **Backup listing redesigned.** The `--list-backups` table uses the palette color scheme, drops the raw timestamp column in favour of a human-readable "Age" column ("2h ago", "3d ago"), and gains a table title. Rows use palette inks instead of hardcoded color names.
+
 ## [3.45.0] - 2026-07-30
 
 ### Changed
