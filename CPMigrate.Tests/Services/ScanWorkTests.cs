@@ -383,60 +383,48 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
-    public async Task ACustomSdkFallsBackToSerial()
+    public async Task ACustomSdkStillReportsItsFindings()
     {
-        // Cross-review caught this: an SDK-style project implicitly imports its SDK's Sdk.props, which the
-        // text search cannot see — so a custom SDK could assign one of the redirect properties unnoticed and
-        // the scan would run concurrently against a shared assets file. The standard .NET SDK is fine, and
-        // every other test here that scans concurrently proves it; anything else is unverified, so it is not
-        // trusted.
+        // Previously asserted through a predictor that tried to decide up front whether isolation would
+        // hold. That predictor is gone: four review rounds each found another MSBuild mechanism it missed —
+        // Directory.Packages.props, custom SDKs, semicolon-separated imports, DirectoryPackagesPropsPath —
+        // because there are more ways to redirect a path than a static reading can enumerate.
         //
-        // The SDK does not need to resolve for this test — the point is that an unrecognised name is enough
-        // to force serial, and findings must still be reported.
+        // The scan now checks afterwards whether the assets file landed where it was told, and re-runs
+        // serially whatever escaped. So the thing to assert is the outcome, which is what a user cares
+        // about, and which holds regardless of the mechanism: an unresolvable SDK must not cost us the
+        // finding.
         WriteProject("src/Api/Api.csproj", "13.0.1");
-        File.WriteAllText(
-            Path.Combine(_root, "src", "Api", "Api.csproj"),
-            File.ReadAllText(Path.Combine(_root, "src", "Api", "Api.csproj"))
-                .Replace("Microsoft.NET.Sdk", "Microsoft.NET.Sdk", StringComparison.Ordinal)
-        );
         WriteProject("src/Lib/Lib.csproj", "12.0.3");
-        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
-
-        RestoreIsolation
-            .CanIsolate(
-                [
-                    Path.Combine(_root, "src", "Api", "Api.csproj"),
-                    Path.Combine(_root, "src", "Lib", "Lib.csproj"),
-                ]
-            )
-            .Should()
-            .BeTrue("the standard SDK is the verified case");
-
-        // Now swap one project onto an unknown SDK and the answer must flip.
         var api = Path.Combine(_root, "src", "Api", "Api.csproj");
         File.WriteAllText(
             api,
-            File.ReadAllText(api).Replace("Microsoft.NET.Sdk", "Contoso.Custom.Sdk", StringComparison.Ordinal)
+            File.ReadAllText(api)
+                .Replace("Microsoft.NET.Sdk", "Contoso.Custom.Sdk", StringComparison.Ordinal)
         );
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
-        RestoreIsolation
-            .CanIsolate([api, Path.Combine(_root, "src", "Lib", "Lib.csproj")])
-            .Should()
-            .BeFalse("a custom SDK's implicit imports cannot be inspected, so isolation is not guaranteed");
+        ScanConcurrencyGate.ResetForTests();
+
+        // The custom SDK does not resolve, so Api cannot be read — but Lib must still be scanned, and the
+        // run must not claim a clean result for a solution it could not fully examine.
+        var act = async () => await AnalyzeWith(parallelism: 8);
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
-    public async Task ADirectoryPackagesPropsAssigningTheIsolationPropertyFallsBackToSerial()
+    public async Task ADirectoryPackagesPropsRedirectingTheAssetsFileStillReportsItsFindings()
     {
-        // Cross-review caught this: Directory.Packages.props is imported implicitly during restore just as
-        // Directory.Build.props is, and it is the file this tool's users are most likely to have — so leaving
-        // it out of the check made a conservative guard quietly non-conservative.
+        // The case that defeats isolation outright: Directory.Packages.props is imported implicitly during
+        // restore and assigns the property, so the environment redirection is overridden and both projects
+        // write to one shared assets file. Detected after the fact — the assets file is not in the isolated
+        // directory — and those projects are re-scanned serially, so the finding survives.
         File.WriteAllText(
             Path.Combine(_root, "Directory.Packages.props"),
             $"""
             <Project>
               <PropertyGroup>
-                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
                 <MSBuildProjectExtensionsPath>{Path.Combine(_root, "shared-ext") + Path.DirectorySeparatorChar}</MSBuildProjectExtensionsPath>
               </PropertyGroup>
             </Project>
@@ -444,17 +432,19 @@ public class ScanWorkTests : IDisposable
         );
         WriteProject("src/Api/Api.csproj", "13.0.1");
         WriteProject("src/Lib/Lib.csproj", "12.0.3");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
 
-        RestoreIsolation
-            .CanIsolate(
-                [
-                    Path.Combine(_root, "src", "Api", "Api.csproj"),
-                    Path.Combine(_root, "src", "Lib", "Lib.csproj"),
-                ]
-            )
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8))
             .Should()
-            .BeFalse("a Directory.Packages.props assigning the property overrides the redirection");
+            .Contain(
+                "VersionInconsistency",
+                "the redirection was overridden, so those projects are re-scanned serially rather than "
+                    + "trusted"
+            );
     }
+
 
     [Fact]
     public async Task TheSameSolutionProducesTheSameReportTwice()
