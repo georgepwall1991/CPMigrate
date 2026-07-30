@@ -6,6 +6,15 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.17.0] - 2026-07-30
+
+### Added
+- **A published JSON Schema for the `--output Json` payload**, at `schemas/cpmigrate-output.schema.json`. The contract has been versioned since 1.0.0 but never described, so a consumer had to infer the shape from example output — which means inferring it wrong at the edges, where the fields that matter live (`success` being true with findings present, counters that are absent rather than zero).
+  - Documents every field of every object, including *why* rather than only *what*: that `success: true` does not mean "no findings" when they were below the `--fail-on` threshold or accepted by a baseline, that an absent `summary` counter means the command did not produce it rather than producing zero, and that `affectedProjects` holds scan-relative paths as of schema 1.3.0.
+  - `additionalProperties: false` throughout, so validating a payload catches a misspelled field rather than silently accepting it.
+  - **Both payload shapes are modelled.** `--batch` serializes a different type entirely — one result per solution, with no top-level `exitCode` or `summary` — so a single root schema would have rejected valid batch output. The root is a `oneOf`, and a consumer distinguishes the two by `operation` or by the presence of `solutions`.
+  - **Guarded against drift by reflection**, not by a new dependency: `OutputSchemaDriftTests` compares the schema's properties against the model's `[JsonPropertyName]` attributes for all ten payload types (honouring `[JsonIgnore]`, since `BatchResult` derives an exit code it never serializes), checks the `severity` and `failOnSeverity` enums against the C# enums, and asserts the serializer emits nothing the schema does not document. A field added without updating the schema fails the build — the same approach that already caught the config schema missing `Sarif`.
+
 ## [3.16.0] - 2026-07-30
 
 ### Added
