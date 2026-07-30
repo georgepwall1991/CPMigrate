@@ -14,6 +14,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - 3.24.0 tried to *detect* which projects shared an assets file and serialise only those, and abandoned it after eight review rounds each found another route to a shared file. That was the right call — the answer needs full MSBuild evaluation, which this phase cannot do, since MSBuild's object model not being thread-safe is the whole reason the phase exists.
   - **Each invocation now gets its own MSBuild intermediate directory instead**, which makes the collision impossible rather than answerable. Every one of those eight cases dissolves: it no longer matters where a project *would* have put its assets file.
   - It costs a cold restore per project rather than reusing an existing `obj`, and still wins by a wide margin. Packages come from the shared global cache, so the temporary directories hold about 60 KB each and are removed when the scan ends.
+  - **No isolation, no concurrency.** If the temp directory cannot be created there is nowhere to put each invocation's assets file, so the scan drops to one project at a time rather than running concurrently without it. Found by re-reading the change before shipping: the first version *claimed* this in a comment on the method that creates the directory, while the caller ran concurrently regardless. A comment asserting a safety property the code does not implement is the exact failure this release series exists to remove, so the decision is now an extracted function with tests on it.
   - Isolation is applied only when actually running concurrently. A single-threaded scan cannot collide, so it reuses the project's own `obj` and a warm restore stays warm.
   - **Reading project files stays serial**, deliberately and unchanged: that pass goes through MSBuild's object model, whose static caches are not thread-safe — concurrent reads once had projects reporting each other's versions, which is the same class of silent finding-erasure.
 
@@ -21,7 +22,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - A null reference list from the resolved scan surfaced as a `NullReferenceException` inside a LINQ merge two frames away. The real service never returns one, but a stub can, and that is a poor way to learn a scan returned nothing.
 
 ### Testing
-- `ScanWorkTests` needed no new cases: it was written in 3.24.0 as what any future attempt at this would have to satisfy, and it is what verified this one — including the three redirected-intermediate-path layouts that a first attempt at isolation still got wrong. 1107 pass.
+- `ScanConcurrencySafetyTests` (10 new) pins that concurrency is only ever enabled when isolation is available. `ScanWorkTests` needed no new cases: it was written in 3.24.0 as what any future attempt at this would have to satisfy, and it is what verified this one — including the three redirected-intermediate-path layouts that a first attempt at isolation still got wrong. 1117 pass.
 
 ## [3.25.1] - 2026-07-30
 

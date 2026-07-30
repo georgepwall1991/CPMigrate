@@ -1,3 +1,4 @@
+using System.Globalization;
 using CPMigrate.Fixers;
 using CPMigrate.Models;
 using Spectre.Console;
@@ -280,9 +281,11 @@ internal sealed class AnalysisHandler
         // It costs a cold restore per project rather than reusing an existing obj, and still wins: measured
         // on 60 projects, 91s warm-and-serial against 42s isolated-and-concurrent. Packages come from the
         // shared global cache, so the temp directories hold ~60K each.
-        var maxConcurrency = options.ResolveScanParallelism();
+        var requestedConcurrency = options.ResolveScanParallelism();
         var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
-        var isolationRoot = maxConcurrency > 1 ? CreateIsolationRoot() : null;
+        var isolationRoot = requestedConcurrency > 1 ? CreateIsolationRoot() : null;
+
+        var maxConcurrency = ResolveSafeConcurrency(requestedConcurrency, isolationRoot);
 
         try
         {
@@ -300,7 +303,7 @@ internal sealed class AnalysisHandler
                         // obj is reused and a warm restore stays warm.
                         isolationRoot is null
                             ? null
-                            : Path.Combine(isolationRoot, index.ToString())
+                            : Path.Combine(isolationRoot, index.ToString(CultureInfo.InvariantCulture))
                     );
                 }
             );
@@ -387,6 +390,30 @@ internal sealed class AnalysisHandler
     );
 
 
+
+    /// <summary>
+    /// How many resolved-package queries may run at once, given whether isolation is available.
+    ///
+    /// No isolation means no concurrency. Without a temp directory there is nowhere to put each
+    /// invocation's assets file, so running them at once is the collision this whole arrangement exists to
+    /// prevent — two projects report the same package version and an inconsistency disappears with a clean
+    /// exit code. One at a time is slower and correct; the alternative is fast and silently wrong.
+    ///
+    /// Extracted and tested rather than inlined because the first version of this only *claimed* the
+    /// property, in a comment on <see cref="CreateIsolationRoot"/>, while the caller went on running
+    /// concurrently regardless. A comment asserting a safety property the code does not implement is the
+    /// exact failure this release series has spent its time removing.
+    /// </summary>
+    internal static int ResolveSafeConcurrency(int requestedConcurrency, string? isolationRoot)
+    {
+        if (requestedConcurrency <= 1)
+        {
+            return 1;
+        }
+
+        return isolationRoot is null ? 1 : requestedConcurrency;
+    }
+
     /// <summary>
     /// A directory to hold one intermediate-output directory per project, for the duration of the scan.
     /// </summary>
@@ -404,9 +431,9 @@ internal sealed class AnalysisHandler
         }
         catch (Exception)
         {
-            // Without a writable temp directory the scan still has to run. Returning null falls back to the
-            // projects' own obj directories, which is correct as long as nothing is concurrent — so the
-            // caller drops to one at a time rather than risking the collision.
+            // Without a writable temp directory there is nowhere to isolate to. Returning null makes the
+            // caller drop to one project at a time — which it does, checked rather than assumed, because a
+            // concurrent scan without isolation is exactly the collision this guards against.
             return null;
         }
     }
