@@ -219,41 +219,42 @@ public class CompletionScriptGeneratorTests
         string interpreter
     )
     {
-        // Structural assertions cannot catch an unbalanced quote or a missing `esac`. Asking the
-        // shell itself can. Skipped where the interpreter is unavailable rather than failing, since
-        // that says nothing about the generator.
+        // Structural assertions cannot catch an unbalanced quote or a missing `esac`. Asking the shell
+        // itself can. Piped through stdin rather than written to a temp file, because Git Bash on
+        // Windows cannot open a Windows path — which failed the test for a reason that had nothing to
+        // do with the generated script.
         var script = CompletionScriptGenerator.Generate(shell);
-        var path = Path.Combine(Path.GetTempPath(), $"cpmigrate-completion-{Guid.NewGuid():N}");
-        File.WriteAllText(path, script);
 
+        System.Diagnostics.Process? process;
         try
         {
-            var process = System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo(interpreter, ["-n", path])
+            process = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(interpreter, ["-n"])
                 {
+                    RedirectStandardInput = true,
                     RedirectStandardError = true,
                     RedirectStandardOutput = true,
                 }
             );
-
-            if (process is null)
-            {
-                return;
-            }
-
-            process.WaitForExit(milliseconds: 20_000);
-            var stderr = process.StandardError.ReadToEnd();
-
-            process.ExitCode.Should().Be(0, $"{interpreter} rejected the generated script: {stderr}");
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            // Interpreter not installed on this machine.
+            // Interpreter not installed here, which says nothing about the generator.
+            return;
         }
-        finally
+
+        if (process is null)
         {
-            File.Delete(path);
+            return;
         }
+
+        process.StandardInput.Write(script);
+        process.StandardInput.Close();
+
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit(milliseconds: 30_000);
+
+        process.ExitCode.Should().Be(0, $"{interpreter} rejected the generated script: {stderr}");
     }
 
     [Fact]
