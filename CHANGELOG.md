@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.31.0] - 2026-07-30
+
+### Changed
+- **Gradient banner.** The startup figlet text now renders with a horizontal colour gradient (deeppink → cyan) instead of a single flat colour. The subtitle rule is split into two tones. The info line uses the palette's dim ink consistently instead of a hardcoded `deepskyblue1`.
+
 ## [3.30.0] - 2026-07-30
 
 ### Added
