@@ -29,6 +29,7 @@ internal static class CliVerbGuard
         ["migrate"] = [], // migration is the default action — no flag needed
         ["doctor"] = ["--doctor"],
         ["init"] = ["--init"],
+        ["status"] = ["--status"],
     };
 
     /// <summary>

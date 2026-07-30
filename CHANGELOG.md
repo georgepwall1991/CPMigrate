@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.35.0] - 2026-07-30
+
+### Added
+- **`--status` workspace health dashboard.** One command shows solutions, CPM status (with managed package count), config file presence, git status, backup sets, target framework distribution, and project counts — without entering the interactive wizard. `cpmigrate status` (bare word) is caught by the verb guard.
+
 ## [3.34.0] - 2026-07-30
 
 ### Changed
