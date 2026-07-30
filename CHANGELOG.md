@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.47.0] - 2026-07-30
+
+### Changed
+- **Docs site responsive + accessibility.** Mobile tables scroll horizontally, CTA buttons stack full-width, focus-visible outlines use the accent color, and `prefers-reduced-motion` disables animations and smooth scrolling.
+
 ## [3.46.0] - 2026-07-30
 
 ### Changed
