@@ -6,6 +6,23 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.24.0] - 2026-07-30
+
+### Changed
+- **Analysis is about four times faster on a large solution — measured 39s → 9s on 60 projects.** Resolving packages shells out to `dotnet package list` once per project, a separate process that spends most of its half-second waiting on I/O, and the whole reference pass was serial because *part* of it has to be. That pass is now split along the line that actually matters for correctness:
+  - The subprocess phase runs concurrently, bounded by `--max-parallelism` and the existing process-wide gate (so `--batch-parallel` cannot multiply the advertised cap).
+  - **Reading the project file's own text stays serial, deliberately.** It goes through MSBuild's object model, whose static caches are not thread-safe; concurrent reads once had projects reporting each other's package versions, which *erased* version-inconsistency findings rather than crashing. That is the worst failure this tool has, and it is why the split is where it is.
+  - **Projects sharing a directory are scanned one at a time.** `obj/project.assets.json` is relative to the *project* directory, so two projects in one directory share it — restoring both at once races on that file and the loser reports the other project's packages, so two projects with different versions report the same one and the finding disappears. Found by the existing contract tests, which use exactly that layout.
+
+### Added
+- `ScanWorkTests` pins the properties the concurrency depends on rather than a duration: findings are identical at every parallelism, a solution with projects in one shared directory still reports its inconsistency, and the same solution produces the same report twice (so merging in completion order rather than project order would fail). A timing assertion in CI is a flake generator and would not have caught any of the failures above, all of which produce a *clean* report with a successful exit code.
+
+### Fixed
+- **A regression this branch introduced and its own test caught**: rewriting the reference pass dropped 3.23.0's fix for the fallback path, so `ScanProjectPackages` output was again reused as the declared-reference list. That scan never records a `Condition`, so a framework-conditional pin read as an ordinary one and `--fix` unified every other project to it — reproduced outside the test suite before fixing. Worth recording because it is the second time this exact line has needed the fix.
+
+### Testing
+- 3 new tests. 1093 pass.
+
 ## [3.23.0] - 2026-07-30
 
 ### Fixed

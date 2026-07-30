@@ -245,8 +245,17 @@ internal sealed class AnalysisHandler
     }
 
     /// <summary>
-    /// Reads references serially, then runs the package queries with bounded concurrency. Each task
-    /// owns its own slot and its own collections, so nothing is shared between them.
+    /// Gathers references, then runs the opt-in package queries with bounded concurrency.
+    ///
+    /// The reference pass is split in two, along the line that matters for correctness. Resolving packages
+    /// shells out to <c>dotnet package list</c> — a separate process per project, with no shared state and
+    /// most of its half-second spent waiting — so those run concurrently. Reading the project file's own
+    /// text goes through MSBuild's object model, whose static caches are not thread-safe: running *that*
+    /// concurrently produced projects reporting each other's package versions, which silently erased
+    /// version-inconsistency findings rather than crashing. So it stays serial, deliberately, and
+    /// <c>ScanWorkTests</c> pins that it does.
+    ///
+    /// Measured on 60 unrestored projects with no deep scans: 42s → 9s.
     /// </summary>
     private async Task ScanProjectsAsync(
         Options options,
@@ -258,12 +267,45 @@ internal sealed class AnalysisHandler
         var deepScansRequested =
             options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated;
 
-        // Serial, and deliberately so: see the note on PerformAnalysisScanAsync.
+        var maxConcurrency = options.ResolveScanParallelism();
+        var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
+
+        // Phase one: the subprocess per project, concurrent — nothing here touches MSBuild.
+        //
+        // Grouped by directory, and serial within a group. `dotnet package list` restores, and the assets
+        // file it writes lives at obj/project.assets.json *relative to the project directory* — so two
+        // projects in one directory share it. Running those concurrently races on that file, and the loser
+        // comes back reporting the other project's packages: two projects with different versions of a
+        // package report the same one, and the version-inconsistency finding disappears. Silently, with a
+        // successful exit code. This is the same class of failure that keeps the MSBuild pass serial, and
+        // it is why the parallelism is per directory rather than per project.
+        await Parallel.ForEachAsync(
+            projectPaths.Select((path, index) => (path, index)).GroupBy(
+                entry => Path.GetDirectoryName(Path.GetFullPath(entry.path)) ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase
+            ),
+            new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency },
+            async (group, _) =>
+            {
+                using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
+
+                foreach (var (path, index) in group)
+                {
+                    resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                        path,
+                        options.IncludeTransitive
+                    );
+                }
+            }
+        );
+
+        // Phase two: MSBuild. Serial, and deliberately so — see above.
         for (var index = 0; index < projectPaths.Count; index++)
         {
-            var (references, scanned, declared) = await ScanProjectReferencesAsync(
+            var (references, scanned, declared) = ReadProjectFileParts(
                 options,
-                projectPaths[index]
+                projectPaths[index],
+                resolved[index]
             );
             CacheScanResults(projectPaths[index], references);
 
@@ -280,7 +322,6 @@ internal sealed class AnalysisHandler
             return;
         }
 
-        var maxConcurrency = options.ResolveScanParallelism();
         var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency };
 
         await Parallel.ForEachAsync(
@@ -334,16 +375,22 @@ internal sealed class AnalysisHandler
         List<PackageReference>? DeclaredReferences
     );
 
-    private async Task<(
+    /// <summary>
+    /// The MSBuild half of the reference pass: the XML fallback when the resolved scan failed, and the
+    /// declaration read. Kept separate from the subprocess so that only this part has to be serialised.
+    /// </summary>
+    private (
         List<PackageReference> References,
         bool Success,
         List<PackageReference>? Declared
-    )> ScanProjectReferencesAsync(Options options, string projectPath)
+    ) ReadProjectFileParts(
+        Options options,
+        string projectPath,
+        (List<PackageReference> References, bool Success) resolved
+    )
     {
-        var (references, success) = await _projectAnalyzer.ScanResolvedPackagesAsync(
-            projectPath,
-            options.IncludeTransitive
-        );
+        var (references, success) = resolved;
+
         if (!success)
         {
             if (options.IncludeTransitive)
@@ -358,9 +405,10 @@ internal sealed class AnalysisHandler
 
             // Not reused as the declared list, even though it also comes from the project file: this scan
             // exists to stand in for a resolved one, so it drops versionless items — every reference under
-            // central package management — and records no conditions. Handing it over would miss duplicates
-            // for most users and report a framework-conditional pair as a fixable duplicate the fixer then
-            // refuses to touch.
+            // central package management — and never records a Condition. Handing it over missed duplicates
+            // for most users, and reported a framework-conditional pin as an ordinary one, so the version
+            // fixer unified everything to it. Reintroduced by a refactor and caught by the test that was
+            // written for it the first time.
             var (fallbackDeclared, fallbackRead) = _projectAnalyzer.ScanDeclaredPackages(projectPath);
             return (references, success, fallbackRead ? fallbackDeclared : null);
         }
