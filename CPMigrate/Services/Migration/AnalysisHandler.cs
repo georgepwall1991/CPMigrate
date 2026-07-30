@@ -272,30 +272,25 @@ internal sealed class AnalysisHandler
 
         // Phase one: the subprocess per project, concurrent — nothing here touches MSBuild.
         //
-        // Grouped by directory, and serial within a group. `dotnet package list` restores, and the assets
-        // file it writes lives at obj/project.assets.json *relative to the project directory* — so two
-        // projects in one directory share it. Running those concurrently races on that file, and the loser
-        // comes back reporting the other project's packages: two projects with different versions of a
-        // package report the same one, and the version-inconsistency finding disappears. Silently, with a
-        // successful exit code. This is the same class of failure that keeps the MSBuild pass serial, and
-        // it is why the parallelism is per directory rather than per project.
+        // Two gates: ScanConcurrencyGate bounds the total number of queries in flight, and
+        // ProjectDirectoryLock keeps two of them from being aimed at the same directory — see the note on
+        // that type for why sharing one is a silent finding-eraser.
         await Parallel.ForEachAsync(
-            projectPaths.Select((path, index) => (path, index)).GroupBy(
-                entry => Path.GetDirectoryName(Path.GetFullPath(entry.path)) ?? string.Empty,
-                StringComparer.OrdinalIgnoreCase
-            ),
+            Enumerable.Range(0, projectPaths.Count),
             new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency },
-            async (group, _) =>
+            async (index, _) =>
             {
                 using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
 
-                foreach (var (path, index) in group)
-                {
-                    resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
-                        path,
-                        options.IncludeTransitive
-                    );
-                }
+                // Exclusive on the project's directory, process-wide — grouping within this scan would not
+                // help, because --batch-parallel runs several solutions at once and two of them can
+                // reference projects in the same directory.
+                using var directory = await ProjectDirectoryLock.AcquireAsync(projectPaths[index]);
+
+                resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                    projectPaths[index],
+                    options.IncludeTransitive
+                );
             }
         );
 

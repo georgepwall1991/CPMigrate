@@ -33,6 +33,9 @@ public class ScanWorkTests : IDisposable
 
     public void Dispose()
     {
+        // The gate is process-wide; a test that resizes it must not leave that for the next one.
+        ScanConcurrencyGate.ResetForTests();
+
         if (Directory.Exists(_root))
         {
             Directory.Delete(_root, recursive: true);
@@ -53,8 +56,18 @@ public class ScanWorkTests : IDisposable
 
         WriteSolution(Enumerable.Range(0, 8).Select(i => $"src/P{i}/P{i}.csproj").ToArray());
 
+        // The gate is sized once per process and ignores later requests for a different limit, so without a
+        // reset between runs the second scan inherits the first's single permit — and this test would pass
+        // while never running anything concurrently. Cross-review caught that, which is the same
+        // green-for-the-wrong-reason this suite exists to prevent.
         var serial = await AnalyzeWith(parallelism: 1);
+        ScanConcurrencyGate.Permits.Should().Be(1, "the serial run must actually have been serial");
+
+        ScanConcurrencyGate.ResetForTests();
         var parallel = await AnalyzeWith(parallelism: 8);
+        ScanConcurrencyGate
+            .Permits.Should()
+            .Be(8, "otherwise the comparison below proves nothing about concurrency");
 
         parallel
             .Should()
@@ -78,7 +91,9 @@ public class ScanWorkTests : IDisposable
         WriteProject("Lib.csproj", "12.0.3");
         WriteSolution("Api.csproj", "Lib.csproj");
 
+        ScanConcurrencyGate.ResetForTests();
         var findings = await AnalyzeWith(parallelism: 8);
+        ScanConcurrencyGate.Permits.Should().Be(8, "the race only appears under real concurrency");
 
         findings
             .Should()
@@ -100,7 +115,9 @@ public class ScanWorkTests : IDisposable
 
         WriteSolution(Enumerable.Range(0, 6).Select(i => $"src/P{i}/P{i}.csproj").ToArray());
 
+        ScanConcurrencyGate.ResetForTests();
         var first = await AnalyzeRaw(parallelism: 4);
+        ScanConcurrencyGate.Permits.Should().Be(4);
         var second = await AnalyzeRaw(parallelism: 4);
 
         StripTimestamp(second).Should().Be(StripTimestamp(first));
