@@ -93,10 +93,18 @@ public class FixService : IFixService
             WriteFixResult(result, request.DryRun);
             return result;
         }
+        catch (FixWriteException ex)
+        {
+            // The file could not be changed. Reported with its cause rather than as a generic exception,
+            // because "access to the path is denied" is the whole answer and a stack-trace-flavoured prefix
+            // just buries it.
+            _console.Error($"Could not fix {issue.PackageName}: {ex.Message}");
+            return FixResult.Failed(ex.Message);
+        }
         catch (Exception ex)
         {
             _console.Error($"Error fixing {issue.PackageName}: {ex.Message}");
-            return FixResult.Failed($"Exception: {ex.Message}");
+            return FixResult.Failed($"{issue.PackageName}: {ex.Message}");
         }
     }
 
@@ -135,15 +143,26 @@ public class FixService : IFixService
                 _console.Info("Run with --fix (without --fix-dry-run) to apply these changes.");
             }
         }
-        else
+        var failedFixes = report.GetFailedFixes();
+
+        if (!report.HasChanges && failedFixes.Count == 0)
         {
+            // Only when nothing changed *and* nothing failed. Printed unconditionally, this sat directly
+            // above "1 issue(s) could not be fixed automatically" — two lines contradicting each other, the
+            // reassuring one first.
             _console.Info("No changes were needed.");
         }
 
-        var failedFixes = report.GetFailedFixes();
         if (failedFixes.Count > 0)
         {
-            _console.Warning($"{failedFixes.Count} issue(s) could not be fixed automatically.");
+            _console.Warning(
+                $"{failedFixes.Count} issue(s) could not be fixed automatically; they are still present."
+            );
+
+            foreach (var failure in failedFixes)
+            {
+                _console.Warning($"  {failure.Description}");
+            }
         }
     }
 }
