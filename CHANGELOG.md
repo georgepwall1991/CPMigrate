@@ -6,6 +6,19 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.14.0] - 2026-07-30
+
+### Fixed
+- **A failed version lookup was reported as "up to date".** `GetLatestVersionAsync` returned `null` both for "this package is current" and for "the request failed", so a single 503 or timeout during `--update-packages` silently dropped that package from the update set — and the run finished with **"Everything up to date!"**. On a slow connection or a rate-limited feed, a large solution could skip most of its updates and say nothing.
+  - Transient failures are now **retried** three times with exponential backoff and jitter, honouring a server-provided `Retry-After` up to a 5-second cap so the CLI cannot appear to hang.
+  - `404` is treated as definitive — a package that does not exist will not start existing, and three waits per missing package is pure latency. A malformed response body is likewise not retried, since retrying will not make it parse.
+  - Whatever still fails is **named**, and the run no longer claims everything is current: "Could not check N package(s) after retries: …", followed by "These are reported as unchanged, not as up to date."
+  - `TaskCanceledException` from an `HttpClient` timeout is retried, but the same exception from real cancellation is not — retrying a Ctrl-C would ignore the user.
+
+### Changed
+- **Version lookups are cached per run.** A solution referencing one package from thirty projects previously issued thirty identical requests. Cached per instance rather than statically, because the lifetime of a CLI invocation is exactly the window in which a cached version cannot be stale. Transient failures are deliberately *not* cached — one bad moment must not become the run's settled view of a package.
+- `INuGetVersionLookupService` exposes `FailedLookups`, so a caller can distinguish a clean result from a silently incomplete one.
+
 ## [3.13.0] - 2026-07-30
 
 ### Added

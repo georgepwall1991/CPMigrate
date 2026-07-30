@@ -16,7 +16,17 @@ public class PackageUpdateServiceBisectTests : IDisposable
     private readonly string _testDirectory;
     private readonly FakeConsoleService _console = new();
     private readonly Mock<IProjectAnalyzer> _projectAnalyzer = new();
-    private readonly Mock<INuGetVersionLookupService> _nuGet = new();
+    private readonly Mock<INuGetVersionLookupService> _nuGet = CreateLookupMock();
+
+    /// <summary>
+    /// The interface promises a non-null FailedLookups; Moq would return null for it.
+    /// </summary>
+    private static Mock<INuGetVersionLookupService> CreateLookupMock()
+    {
+        var mock = new Mock<INuGetVersionLookupService>();
+        mock.SetupGet(x => x.FailedLookups).Returns(Array.Empty<string>());
+        return mock;
+    }
     private readonly Mock<IDotNetCliService> _cli = new();
     private readonly PackageUpdateService _sut;
     private readonly string _propsPath;

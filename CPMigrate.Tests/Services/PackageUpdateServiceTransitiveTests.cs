@@ -26,6 +26,7 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
         _consoleService = new FakeConsoleService();
         _projectAnalyzerMock = new Mock<IProjectAnalyzer>();
         _nuGetLookupMock = new Mock<INuGetVersionLookupService>();
+        _nuGetLookupMock.SetupGet(x => x.FailedLookups).Returns(Array.Empty<string>());
         _dotNetCliMock = new Mock<IDotNetCliService>();
         _backupManagerMock = new Mock<IBackupManager>();
         _propsGenerator = new PropsGenerator();
