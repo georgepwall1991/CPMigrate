@@ -104,6 +104,29 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task ProjectsRedirectedToOneIntermediateDirectoryDoNotLoseFindings()
+    {
+        // Cross-review caught this: two projects in *different* directories that both redirect
+        // BaseIntermediateOutputPath to the same place share an assets file just as surely as two in one
+        // directory do — and a lock keyed on the project directory gives them different locks.
+        var shared = Path.Combine(_root, "artifacts", "obj") + Path.DirectorySeparatorChar;
+        WriteProject("src/Api/Api.csproj", "13.0.1", intermediatePath: shared);
+        WriteProject("src/Lib/Lib.csproj", "12.0.3", intermediatePath: shared);
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+        var findings = await AnalyzeWith(parallelism: 8);
+        ScanConcurrencyGate.Permits.Should().Be(8);
+
+        findings
+            .Should()
+            .Contain(
+                "VersionInconsistency",
+                "the two versions differ however their intermediate output is arranged"
+            );
+    }
+
+    [Fact]
     public async Task TheSameSolutionProducesTheSameReportTwice()
     {
         // Concurrency that merges results in completion order rather than project order produces a report
@@ -173,16 +196,19 @@ public class ScanWorkTests : IDisposable
         return await File.ReadAllTextAsync(outputPath);
     }
 
-    private void WriteProject(string relativePath, string version)
+    private void WriteProject(string relativePath, string version, string? intermediatePath = null)
     {
         var fullPath = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        var redirect = intermediatePath is null
+            ? string.Empty
+            : $"\n    <BaseIntermediateOutputPath>{intermediatePath}</BaseIntermediateOutputPath>";
         File.WriteAllText(
             fullPath,
             $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
-                <TargetFramework>net10.0</TargetFramework>
+                <TargetFramework>net10.0</TargetFramework>{redirect}
               </PropertyGroup>
               <ItemGroup>
                 <PackageReference Include="Newtonsoft.Json" Version="{version}" />
