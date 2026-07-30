@@ -176,6 +176,56 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task ProjectsSharingAnUnresolvableIntermediatePath_StillShareALock()
+    {
+        // Cross-review caught this: a path built from MSBuild properties cannot be resolved here, and
+        // discarding it left two projects that write to the same place holding only their own directory
+        // locks. Two projects declaring the same text almost certainly mean the same place, so the text is
+        // the key.
+        WriteRedirect("src/Api/Api.csproj", "13.0.1", "$(MSBuildThisFileDirectory)../../artifacts/obj/");
+        WriteRedirect("src/Lib/Lib.csproj", "12.0.3", "$(MSBuildThisFileDirectory)../../artifacts/obj/");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8)).Should().Contain("VersionInconsistency");
+    }
+
+    [Fact]
+    public async Task AProjectRedirectedIntoAnotherProjectsObj_SharesThatLock()
+    {
+        // Cross-review caught this: the default candidate was the project directory while declared ones were
+        // the obj path, so ProjectA and a project redirected into ProjectA/obj got different keys for the
+        // same file.
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteRedirect(
+            "src/Lib/Lib.csproj",
+            "12.0.3",
+            Path.Combine(_root, "src", "Api", "obj") + Path.DirectorySeparatorChar
+        );
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8)).Should().Contain("VersionInconsistency");
+    }
+
+    [Fact]
+    public async Task AnInvalidDeclaredPath_DoesNotAbortTheAnalysis()
+    {
+        // Cross-review caught this: path normalisation sat outside the protected region, so a declared value
+        // containing an invalid character took the whole run down.
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteRedirect("src/Lib/Lib.csproj", "12.0.3", "obj\0bad|path");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+        var act = async () => await AnalyzeWith(parallelism: 8);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task AnUnreadableProject_DoesNotAbortTheWholeAnalysis()
     {
         // Cross-review caught this as a regression I introduced: the lock lookup reads the project file
@@ -333,6 +383,26 @@ public class ScanWorkTests : IDisposable
               </PropertyGroup>
               <PropertyGroup Condition="'$(NeverTrue)' == 'yes'">
                 <BaseIntermediateOutputPath>{redirect}</BaseIntermediateOutputPath>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="{version}" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+    }
+
+    private void WriteRedirect(string relativePath, string version, string intermediatePath)
+    {
+        var fullPath = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        File.WriteAllText(
+            fullPath,
+            $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <BaseIntermediateOutputPath>{intermediatePath}</BaseIntermediateOutputPath>
               </PropertyGroup>
               <ItemGroup>
                 <PackageReference Include="Newtonsoft.Json" Version="{version}" />

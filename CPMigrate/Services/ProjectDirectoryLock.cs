@@ -58,22 +58,35 @@ internal static class ProjectDirectoryLock
     }
 
     /// <summary>
-    /// Every place this project's assets file could plausibly land: its own directory, plus any
-    /// intermediate path the project file declares, conditional or not.
+    /// Every place this project's assets file could plausibly land, as comparable keys.
+    ///
+    /// Three things this has to get right, each of which was wrong in an earlier attempt:
+    /// <list type="bullet">
+    ///   <item>the default candidate is the <c>obj</c> directory, not the project directory — otherwise a
+    ///   project that explicitly redirects into <c>OtherProject/obj</c> gets a different key from the
+    ///   project that owns it;</item>
+    ///   <item>a path built from MSBuild properties, <c>$(RepoRoot)artifacts/obj/</c>, cannot be resolved
+    ///   here — but two projects declaring the same text almost certainly mean the same place, so the
+    ///   unresolved text itself becomes a shared key rather than being discarded;</item>
+    ///   <item>nothing in here may throw, including path normalisation on a declared value containing an
+    ///   invalid character. This runs before the project is scanned, so an exception would abort the whole
+    ///   analysis over one project the scanners can report as incomplete and carry on past.</item>
+    /// </list>
     /// </summary>
-    private static IEnumerable<string> AssetsKeys(string projectPath)
+    private static List<string> AssetsKeys(string projectPath)
     {
-        var fullPath = Path.GetFullPath(projectPath);
-        var directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
+        List<string> keys = [];
 
-        // Always. A declared path may be conditional and not apply, in which case obj/ under here is where
-        // the file goes.
-        yield return directory;
-
-        List<string> declared;
         try
         {
-            declared = XDocument
+            var fullPath = Path.GetFullPath(projectPath);
+            var directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
+
+            // Always, and as the obj directory so it is comparable with a declared path pointing at it. A
+            // declared path may be conditional and not apply, in which case this is where the file goes.
+            keys.Add(Path.Combine(directory, "obj"));
+
+            var declared = XDocument
                 .Load(fullPath)
                 .Descendants()
                 .Where(element =>
@@ -82,22 +95,48 @@ internal static class ProjectDirectoryLock
                             or "BaseIntermediateOutputPath"
                 )
                 .Select(element => element.Value.Trim())
-                .Where(value =>
-                    !string.IsNullOrEmpty(value) && !value.Contains("$(", StringComparison.Ordinal)
-                )
-                .ToList();
+                .Where(value => !string.IsNullOrEmpty(value));
+
+            foreach (var value in declared)
+            {
+                keys.Add(Normalise(value, directory));
+            }
         }
         catch (Exception)
         {
-            // Every failure, deliberately: unreadable, unauthorised, malformed, anything. This runs before
-            // the project is scanned, so throwing would abort the whole analysis over one project the
-            // scanners are equipped to report as an incomplete scan and carry on past.
-            yield break;
+            // Every failure, deliberately: unreadable, unauthorised, malformed XML, an invalid path. The
+            // project directory is a safe key on its own, and aborting the run is not an option.
+            if (keys.Count == 0)
+            {
+                keys.Add(projectPath);
+            }
         }
 
-        foreach (var value in declared)
+        return keys;
+    }
+
+    /// <summary>
+    /// A declared path as a comparable key. Unresolvable values keep their literal text, prefixed so they
+    /// cannot collide with a real directory: two projects declaring the same unresolved path share a key,
+    /// which is the outcome that matters.
+    /// </summary>
+    private static string Normalise(string declared, string projectDirectory)
+    {
+        if (declared.Contains("$(", StringComparison.Ordinal))
         {
-            yield return Path.GetFullPath(value, directory);
+            return $"unresolved:{declared.Replace('\\', '/').TrimEnd('/')}";
+        }
+
+        try
+        {
+            return Path.GetFullPath(declared, projectDirectory).TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar
+            );
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            return $"unresolved:{declared.Replace('\\', '/').TrimEnd('/')}";
         }
     }
 
