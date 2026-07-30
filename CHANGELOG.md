@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.45.0] - 2026-07-30
+
+### Changed
+- **Config validation improved.** `.cpmigrate.json` parsing now reports the exact line and position on JSON errors, detects null deserialization, and runs semantic validation: warns on `maxBackups <= 0`, `addGitignore` without `backup`, and `baseline` with `failOn: Never`.
+
 ## [3.44.0] - 2026-07-30
 
 ### Changed
