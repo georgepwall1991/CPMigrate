@@ -260,36 +260,54 @@ internal sealed class AnalysisHandler
         var deepScansRequested =
             options.AuditSecurity || options.AnalyzeOutdated || options.AnalyzeDeprecated;
 
+
+        // Phase one: the subprocess per project, concurrent.
+        //
+        // Each invocation gets its own MSBuild intermediate directory, which is what makes the concurrency
+        // safe. `dotnet package list` restores, and the assets file it writes lives under that directory —
+        // so two projects sharing one cannot be queried at the same time: the loser comes back reporting
+        // the other project's packages, and a version-inconsistency finding vanishes with a clean exit
+        // code. Verified directly: two projects in one directory queried concurrently against a shared obj
+        // both reported 13.0.1, when one of them is pinned to 12.0.3.
+        //
+        // An earlier attempt tried to *detect* whether two projects shared an assets file and serialise
+        // only those. That cannot be done here — the answer depends on conditions, imported
+        // Directory.Build.props, $(…) paths, ProjectAssetsFile and MSBuildProjectExtensionsPath, which
+        // means evaluating the project, which is the one thing this phase must not do (MSBuild's object
+        // model is not thread-safe, hence phase two). Eight review rounds each found another route to a
+        // shared file. Isolation makes the question unnecessary instead of answerable.
+        //
+        // It costs a cold restore per project rather than reusing an existing obj, and still wins: measured
+        // on 60 projects, 91s warm-and-serial against 42s isolated-and-concurrent. Packages come from the
+        // shared global cache, so the temp directories hold ~60K each.
         var maxConcurrency = options.ResolveScanParallelism();
         var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
+        var isolationRoot = maxConcurrency > 1 ? CreateIsolationRoot() : null;
 
-        // Phase one: the subprocess per project. Serial.
-        //
-        // This was concurrent for a while — it is a separate process per project that spends most of its
-        // half-second waiting, and parallelising it made a 60-project scan two to four times faster. It was
-        // reverted, and the reasoning is worth keeping because the speedup is tempting.
-        //
-        // `dotnet package list` restores, and two restores that write the same project.assets.json race on
-        // it: the loser comes back reporting the other project's packages, so two projects with different
-        // versions of a package report the same one and the version-inconsistency finding disappears —
-        // cleanly, with a successful exit code. Knowing whether two projects share that file means knowing
-        // where it goes, and eight rounds of review found eight distinct routes to a shared one: a
-        // conditional property, an imported Directory.Build.props, a path built from $(…), an import
-        // reaching a child directory, MSBuildProjectExtensionsPath outranking BaseIntermediateOutputPath,
-        // ProjectAssetsFile naming the file outright, one project redirected into another's default obj, and
-        // --batch-parallel putting two solutions' projects in flight at once. Every fix was correct and the
-        // next round found another.
-        //
-        // The answer is only available from full MSBuild evaluation — which is exactly what this phase
-        // cannot do, because MSBuild's object model is not thread-safe. So the concurrency cannot be made
-        // safe here at any reasonable cost, and a scan that silently reports fewer findings is a worse
-        // product than a slow one. ScanWorkTests pins the properties any future attempt has to hold.
-        for (var index = 0; index < projectPaths.Count; index++)
+        try
         {
-            resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
-                projectPaths[index],
-                options.IncludeTransitive
+            await Parallel.ForEachAsync(
+                Enumerable.Range(0, projectPaths.Count),
+                new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency },
+                async (index, _) =>
+                {
+                    using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
+
+                    resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                        projectPaths[index],
+                        options.IncludeTransitive,
+                        // Null when running one at a time: nothing can collide, so the project's existing
+                        // obj is reused and a warm restore stays warm.
+                        isolationRoot is null
+                            ? null
+                            : Path.Combine(isolationRoot, index.ToString())
+                    );
+                }
             );
+        }
+        finally
+        {
+            DeleteIsolationRoot(isolationRoot);
         }
 
         // Phase two: MSBuild. Serial, and deliberately so — see above.
@@ -368,6 +386,49 @@ internal sealed class AnalysisHandler
         List<PackageReference>? DeclaredReferences
     );
 
+
+    /// <summary>
+    /// A directory to hold one intermediate-output directory per project, for the duration of the scan.
+    /// </summary>
+    private static string? CreateIsolationRoot()
+    {
+        try
+        {
+            var root = Path.Combine(
+                Path.GetTempPath(),
+                $"cpmigrate-scan-{Guid.NewGuid():N}"
+            );
+            Directory.CreateDirectory(root);
+
+            return root;
+        }
+        catch (Exception)
+        {
+            // Without a writable temp directory the scan still has to run. Returning null falls back to the
+            // projects' own obj directories, which is correct as long as nothing is concurrent — so the
+            // caller drops to one at a time rather than risking the collision.
+            return null;
+        }
+    }
+
+    private static void DeleteIsolationRoot(string? root)
+    {
+        if (root is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        catch (Exception)
+        {
+            // Temp files under the OS temp directory. Failing the run over a cleanup problem would be worse
+            // than leaving them for the OS to reap.
+        }
+    }
+
     /// <summary>
     /// The MSBuild half of the reference pass: the XML fallback when the resolved scan failed, and the
     /// declaration read. Kept separate from the subprocess so that only this part has to be serialised.
@@ -382,7 +443,9 @@ internal sealed class AnalysisHandler
         (List<PackageReference> References, bool Success) resolved
     )
     {
-        var (references, success) = resolved;
+        // Never null in practice — but a null list here surfaced as a NullReferenceException inside a LINQ
+        // merge two frames away, which is a poor way to learn that a scan returned nothing.
+        var (references, success) = (resolved.References ?? [], resolved.Success);
 
         if (!success)
         {

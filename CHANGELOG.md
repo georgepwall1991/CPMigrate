@@ -6,6 +6,23 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.26.0] - 2026-07-30
+
+### Changed
+- **Analysis is about four times faster on a large solution — measured 200s → 50s on 60 projects, with byte-identical findings.** Resolving packages shells out to `dotnet package list` once per project, a separate process that spends most of its half-second waiting on I/O, and that pass was serial.
+  - It was serial for a real reason. `dotnet package list` **restores**, and two projects sharing a `project.assets.json` cannot be queried concurrently: the loser comes back reporting the other project's packages, so two projects with different versions of a package report the same one and the version-inconsistency finding disappears — cleanly, with a successful exit code. Reproduced directly: two projects in one directory, one pinned to 13.0.1 and one to 12.0.3, both reported 13.0.1.
+  - 3.24.0 tried to *detect* which projects shared an assets file and serialise only those, and abandoned it after eight review rounds each found another route to a shared file. That was the right call — the answer needs full MSBuild evaluation, which this phase cannot do, since MSBuild's object model not being thread-safe is the whole reason the phase exists.
+  - **Each invocation now gets its own MSBuild intermediate directory instead**, which makes the collision impossible rather than answerable. Every one of those eight cases dissolves: it no longer matters where a project *would* have put its assets file.
+  - It costs a cold restore per project rather than reusing an existing `obj`, and still wins by a wide margin. Packages come from the shared global cache, so the temporary directories hold about 60 KB each and are removed when the scan ends.
+  - Isolation is applied only when actually running concurrently. A single-threaded scan cannot collide, so it reuses the project's own `obj` and a warm restore stays warm.
+  - **Reading project files stays serial**, deliberately and unchanged: that pass goes through MSBuild's object model, whose static caches are not thread-safe — concurrent reads once had projects reporting each other's versions, which is the same class of silent finding-erasure.
+
+### Fixed
+- A null reference list from the resolved scan surfaced as a `NullReferenceException` inside a LINQ merge two frames away. The real service never returns one, but a stub can, and that is a poor way to learn a scan returned nothing.
+
+### Testing
+- `ScanWorkTests` needed no new cases: it was written in 3.24.0 as what any future attempt at this would have to satisfy, and it is what verified this one — including the three redirected-intermediate-path layouts that a first attempt at isolation still got wrong. 1107 pass.
+
 ## [3.25.1] - 2026-07-30
 
 ### Changed
