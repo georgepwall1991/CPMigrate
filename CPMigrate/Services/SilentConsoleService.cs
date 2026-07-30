@@ -76,6 +76,10 @@ public sealed class SilentConsoleService : IConsoleService
     {
     }
 
+    public void WriteStructuredError(string title, string detail, string? suggestion = null, string? docsUrl = null)
+    {
+    }
+
     public void WriteMarkup(string message)
     {
     }

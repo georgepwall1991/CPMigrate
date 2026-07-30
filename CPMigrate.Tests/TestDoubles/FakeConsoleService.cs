@@ -28,6 +28,7 @@ public class FakeConsoleService : IConsoleService
     public void WriteProjectTree(List<string> projectPaths, string basePath) { }
     public void WritePropsPreview(string content) { }
     public void WriteDiff(string diff) { OutputMessages.Add(diff); }
+    public void WriteStructuredError(string title, string detail, string? suggestion = null, string? docsUrl = null) { ErrorMessages.Add($"{title}: {detail}"); }
     public void WriteMarkup(string message) { OutputMessages.Add(message); }
     public void WriteLine(string message = "") { OutputMessages.Add(message); }
     public void WriteStatusDashboard(string directory, List<string> solutions, List<BackupSetInfo> backups, bool isGitRepo, bool hasUnstaged, Dictionary<string, int> targetFrameworks) { }
