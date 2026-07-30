@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.41.0] - 2026-07-30
+
+### Changed
+- **Docs site dark mode.** The site CSS gains a `prefers-color-scheme: dark` media query with a full dark palette: dark backgrounds, teal accents, adjusted panels, tables, code blocks, and gradient overlays. Follows the OS setting automatically with no JavaScript.
+
 ## [3.40.0] - 2026-07-30
 
 ### Changed
