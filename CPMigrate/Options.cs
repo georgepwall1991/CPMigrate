@@ -601,6 +601,17 @@ public class Options
             new("Analyze and auto-fix issues", new Options { Analyze = true, Fix = true }),
             new("Diagnose your environment", new Options { Doctor = true }),
             new("Create a .cpmigrate.json config", new Options { Init = true }),
+            new("Show workspace health dashboard", new Options { Status = true }),
+            new("Render dependency tree", new Options { Tree = true, IncludeTransitive = true }),
+            new("Preview migration as a unified diff", new Options { DryRun = true, Diff = true }),
+            new(
+                "Update packages, keep the largest green subset on failure",
+                new Options { UpdatePackages = true, Bisect = true }
+            ),
+            new(
+                "Gate CI on High+ findings only",
+                new Options { Analyze = true, AuditSecurity = true, FailOn = FailOnSeverity.High }
+            ),
             new(
                 "Analyze and include outdated/deprecated package checks",
                 new Options
