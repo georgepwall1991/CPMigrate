@@ -6,6 +6,16 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.16.0] - 2026-07-30
+
+### Added
+- **`--explain <RuleId>`: rule documentation from the terminal that produced the finding.** A rule ID in a build log or a SARIF annotation is the moment someone needs to know what the rule means, and the moment they are least likely to go looking for a docs site. The catalog is already in the binary; this makes it reachable. `--explain all` lists every rule.
+  - Case- and whitespace-insensitive, because nobody types `VersionInconsistency` correctly from memory every time.
+  - A near miss suggests the real rule, matched by bounded edit distance rather than substring: `--explain VersionInconsistncy` still finds `VersionInconsistency`, which is the case the feature exists for. The distance budget scales with query length, so something unrelated suggests nothing — a list containing every rule is no more useful than silence.
+  - An unrecognised ID exits non-zero, so a typo in a CI script is visible rather than silently printing nothing useful.
+  - Prose is wrapped rather than left to the terminal, and the output states that the same ID appears as `issueCode` in JSON and `ruleId` in SARIF — which is the link between a report and this text.
+  - A test asserts every rule in the catalog is explainable, so a rule added without documentation fails the build.
+
 ## [3.15.0] - 2026-07-30
 
 ### Changed
