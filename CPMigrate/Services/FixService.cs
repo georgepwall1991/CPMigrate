@@ -87,16 +87,32 @@ public class FixService : IFixService
             if (!result.Success)
             {
                 _console.Error($"Failed to fix {issue.PackageName}: {result.Description}");
+
+                // A partial failure still changed files, and those changes have to be shown — under a dry
+                // run they are the entire output. Only the "nothing worked" case has nothing to display.
+                if (result.Changes.Count > 0)
+                {
+                    WriteFixResult(result, request.DryRun);
+                }
+
                 return result;
             }
 
             WriteFixResult(result, request.DryRun);
             return result;
         }
+        catch (FixWriteException ex)
+        {
+            // The file could not be changed. Reported with its cause rather than as a generic exception,
+            // because "access to the path is denied" is the whole answer and a stack-trace-flavoured prefix
+            // just buries it.
+            _console.Error($"Could not fix {issue.PackageName}: {ex.Message}");
+            return FixResult.Failed(ex.Message);
+        }
         catch (Exception ex)
         {
             _console.Error($"Error fixing {issue.PackageName}: {ex.Message}");
-            return FixResult.Failed($"Exception: {ex.Message}");
+            return FixResult.Failed($"{issue.PackageName}: {ex.Message}");
         }
     }
 
@@ -107,8 +123,18 @@ public class FixService : IFixService
             return;
         }
 
-        var prefix = dryRun ? "[DRY RUN] Would fix" : "Fixed";
-        _console.Success($"{prefix}: {result.Description}");
+        if (result.Success)
+        {
+            var prefix = dryRun ? "[DRY RUN] Would fix" : "Fixed";
+            _console.Success($"{prefix}: {result.Description}");
+        }
+        else
+        {
+            // A partial result changed files but did not finish the job. Rendering it at success level put
+            // a green "Fixed: …" immediately below the error explaining what had failed.
+            var prefix = dryRun ? "[DRY RUN] Would partially fix" : "Partially fixed";
+            _console.Info($"{prefix}: {result.Description}");
+        }
 
         foreach (var change in result.Changes)
         {
@@ -135,15 +161,26 @@ public class FixService : IFixService
                 _console.Info("Run with --fix (without --fix-dry-run) to apply these changes.");
             }
         }
-        else
+        var failedFixes = report.GetFailedFixes();
+
+        if (!report.HasChanges && failedFixes.Count == 0)
         {
+            // Only when nothing changed *and* nothing failed. Printed unconditionally, this sat directly
+            // above "1 issue(s) could not be fixed automatically" — two lines contradicting each other, the
+            // reassuring one first.
             _console.Info("No changes were needed.");
         }
 
-        var failedFixes = report.GetFailedFixes();
         if (failedFixes.Count > 0)
         {
-            _console.Warning($"{failedFixes.Count} issue(s) could not be fixed automatically.");
+            _console.Warning(
+                $"{failedFixes.Count} issue(s) could not be fixed automatically; they are still present."
+            );
+
+            foreach (var failure in failedFixes)
+            {
+                _console.Warning($"  {failure.Description}");
+            }
         }
     }
 }

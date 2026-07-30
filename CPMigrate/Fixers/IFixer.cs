@@ -45,6 +45,17 @@ public record FixResult(
     /// </summary>
     public static FixResult NoFixNeeded(string reason)
         => new(true, reason, Array.Empty<FileChange>());
+
+    /// <summary>
+    /// Creates a result for a fix that changed some files but could not change others.
+    ///
+    /// Not <see cref="Succeeded"/>: an issue spanning several projects where one write failed is still
+    /// present, so counting it as fixed hides the remainder — <see cref="FixReport.GetFailedFixes"/> would
+    /// omit it and the summary would say nothing. Not <see cref="Failed"/> with the changes dropped either,
+    /// because the files that *were* changed have to be reported and, under a dry run, previewed.
+    /// </summary>
+    public static FixResult PartiallyApplied(string reason, IReadOnlyList<FileChange> changes)
+        => new(false, reason, changes);
 }
 
 /// <summary>
@@ -53,7 +64,14 @@ public record FixResult(
 public class FixReport
 {
     public List<FixResult> Results { get; } = new();
-    public int TotalFixesApplied => Results.Count(r => r.Success && r.Changes.Count > 0);
+    /// <summary>
+    /// Issues whose fix changed at least one file, whether or not it finished.
+    ///
+    /// Counting only successful results printed "Applied 0 fix(es) affecting 1 file(s)" for a partial
+    /// outcome — a file had demonstrably been modified. Whether the issue is fully resolved is a separate
+    /// question, answered by <see cref="GetFailedFixes"/> and the warning that follows the summary.
+    /// </summary>
+    public int TotalFixesApplied => Results.Count(r => r.Changes.Count > 0);
     public int TotalFileChanges => Results.Sum(r => r.Changes.Count);
     public bool HasChanges => TotalFileChanges > 0;
 

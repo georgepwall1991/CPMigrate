@@ -6,6 +6,20 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.23.0] - 2026-07-30
+
+### Fixed
+- **`--fix` said "No changes were needed" when it could not change anything.** Both fixers that edit project XML caught every exception and returned `null`, and the caller could only read `null` as "there was nothing to change". So on a read-only, locked, or malformed project file the run printed that reassuring line **directly above** "1 issue(s) could not be fixed automatically" — two statements contradicting each other, the comforting one first — and discarded the actual cause.
+  - **The exit code was already correct.** The post-fix rescan finds the surviving finding and gates on it, so `--analyze --fix --fail-on …` in CI never passed on unrepaired work. What was wrong was everything a human reads: someone running it interactively was told the finding needed no action, with no hint that a permission problem existed.
+  - A failure now carries its reason and names the file: `Could not modify Api.csproj: Access to the path … is denied.`
+  - **One file that cannot be read still does not stop the others.** That behaviour was deliberate and is kept — a malformed project in a large solution should not block fixing the rest — but the skipped files are now listed rather than passed over in silence.
+  - "No changes were needed" is printed only when nothing changed *and* nothing failed.
+  - A partial result is rendered as *partially* fixed rather than at success level, and the summary counts issues whose fix changed at least one file. Reported at success level, a green `Fixed: …` sat directly under the error explaining what had failed; counted only when successful, the summary printed `Applied 0 fix(es) affecting 1 file(s)` after a file had demonstrably been modified. **Both found in cross-review**, one round after the change that introduced them.
+  - **A partial failure is not a success.** An issue spanning several projects where one write succeeds and another fails used to be reported as fixed, so the summary said nothing about the half still broken. It is now reported as unfinished while keeping the changes it did make — those still have to be listed, and under `--fix-dry-run` they are the entire output. **Found in cross-review.**
+
+### Testing
+- `FixFailureReportingTests` (5 new) drives the real CLI against a read-only project file and asserts what the user is told, that the file is left byte-identical, that a successful run still reports success and says nothing about failures, that the message survives for the case where it is true, and that a fix which changes one file but not another is not counted as fixed. 1090 pass.
+
 ## [3.22.0] - 2026-07-30
 
 ### Added

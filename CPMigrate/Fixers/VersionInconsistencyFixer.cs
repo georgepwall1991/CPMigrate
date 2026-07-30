@@ -54,28 +54,53 @@ public class VersionInconsistencyFixer : IFixer
         }
 
         var changes = new List<FileChange>();
+        List<string> failures = [];
 
         // Group by project file to process each file once
         var projectGroups = references
             .Where(r => r.Version != targetVersion)
             .GroupBy(r => r.ProjectPath);
 
-        var projectResults = projectGroups
-            .Select(group => UpdateProjectVersions(group.Key, issue.PackageName, targetVersion, request.DryRun))
-            .Where(result => result != null)
-            .Cast<FileChange>();
+        foreach (var group in projectGroups)
+        {
+            try
+            {
+                var result = UpdateProjectVersions(
+                    group.Key,
+                    issue.PackageName,
+                    targetVersion,
+                    request.DryRun);
 
-        changes.AddRange(projectResults);
+                if (result != null)
+                {
+                    changes.Add(result);
+                }
+            }
+            catch (FixWriteException ex)
+            {
+                // One file that cannot be read or written must not stop the others — but it must not pass
+                // for "already at the target version" either, which is what swallowing it did.
+                failures.Add(ex.Message);
+            }
+        }
 
         if (changes.Count == 0)
         {
-            return FixResult.NoFixNeeded($"All references already at {targetVersion}");
+            return failures.Count > 0
+                ? FixResult.Failed(string.Join("; ", failures))
+                : FixResult.NoFixNeeded($"All references already at {targetVersion}");
         }
 
-        return FixResult.Succeeded(
-            $"Standardized {issue.PackageName} to version {targetVersion} in {changes.Count} project(s)",
-            changes
-        );
+        var description =
+            $"Standardized {issue.PackageName} to version {targetVersion} in {changes.Count} project(s)";
+
+        // A partial outcome is not a success: the issue survives in the files that could not be changed.
+        return failures.Count > 0
+            ? FixResult.PartiallyApplied(
+                $"{description}, but could not change {failures.Count} other file(s): {string.Join("; ", failures)}",
+                changes
+            )
+            : FixResult.Succeeded(description, changes);
     }
 
     private static string? ResolveVersion(List<string> versions, ConflictStrategy strategy)
@@ -186,10 +211,14 @@ public class VersionInconsistencyFixer : IFixer
                 $"Version: {targetVersion}"
             );
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // File may be locked, inaccessible, or contain invalid XML
-            return null;
+            // Swallowed, this returned null — which the caller could only read as "nothing to change", so
+            // a project file that was read-only, locked, or malformed produced "No changes were needed"
+            // over a finding that had just been reported as fixable. The exit code still gated on the
+            // rescan, but the message stated the opposite of what happened and hid the real problem: a
+            // permission or parse error nobody was told about.
+            throw new FixWriteException(projectPath, ex);
         }
     }
 }
