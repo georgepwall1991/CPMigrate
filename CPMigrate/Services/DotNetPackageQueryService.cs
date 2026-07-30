@@ -36,6 +36,25 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
                 return ([], false);
             }
 
+            // A project that reports no frameworks at all did not resolve, whatever its exit code says. That
+            // is distinguishable from a project with no packages, which reports its frameworks with empty
+            // package lists — checked against a real package-free project, not assumed.
+            //
+            // This mattered more than it looks. When a restore was broken, every caller downstream saw a
+            // successful scan that happened to find nothing, so the project vanished from the report with
+            // `scanFailures: 0` and no warning. That is how 3.26.0 silently lost three of Serilog's six
+            // projects for a whole release: the breakage was visible in the output all along, and nothing
+            // was looking at it.
+            if (!DescribesAnyFramework(output))
+            {
+                _consoleService.Warning(
+                    $"Could not scan packages for {projectName}: the project reported no frameworks, "
+                        + "which means its restore did not complete."
+                );
+
+                return ([], false);
+            }
+
             return (ParsePackageReferencesFromJson(output, projectFilePath, projectName, includeTransitive), true);
         }
         catch (Exception ex)
@@ -144,6 +163,50 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         {
             _consoleService.Warning($"Could not scan deprecated packages for {projectName}: {ex.Message}");
             return ([], false);
+        }
+    }
+
+
+    /// <summary>
+    /// Whether the output describes at least one framework for at least one project.
+    ///
+    /// The signal that a restore actually produced something. A project with no packages still reports its
+    /// frameworks, with empty package lists — so an absent or empty frameworks array means the query failed
+    /// rather than that there was nothing to find.
+    /// </summary>
+    internal static bool DescribesAnyFramework(string output)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(output);
+
+            if (
+                !TryGetPropertyCaseInsensitive(doc.RootElement, "projects", out var projectsNode)
+                || projectsNode.ValueKind != JsonValueKind.Array
+            )
+            {
+                return false;
+            }
+
+            foreach (var project in projectsNode.EnumerateArray())
+            {
+                if (
+                    TryGetPropertyCaseInsensitive(project, "frameworks", out var frameworks)
+                    && frameworks.ValueKind == JsonValueKind.Array
+                    && frameworks.GetArrayLength() > 0
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (JsonException)
+        {
+            // Unparseable output is handled by the existing parse path, which reports it properly. Saying
+            // "no frameworks" here would replace a specific error with a vaguer one.
+            return true;
         }
     }
 

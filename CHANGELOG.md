@@ -6,6 +6,23 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.28.1] - 2026-07-30
+
+### Fixed — upgrade from 3.26.0, 3.27.0 or 3.28.0
+- **Those three versions silently dropped projects from `--analyze`.** Found by running the tool against a real repository, which no fixture in this suite had done.
+  - 3.26.0 gave each scan its own MSBuild intermediate directory to stop two projects sharing a `project.assets.json`. The redirection had to be passed as **environment variables**, because `dotnet package list` rejects `-p:` arguments — and an environment property applies to **every project in the build graph**, not just the one being queried.
+  - So restoring anything with a `ProjectReference` told its referenced projects to write into the same directory. They collided inside a single invocation, the query returned no frameworks, and the scan counted that as *success with zero packages*. The project then vanished from the report entirely, because the project count is derived from the references collected.
+  - Net effect: **`scanFailures: 0`, no warning, no error, and a project missing.** On Serilog, three of six projects were lost, and the count varied between runs. It reproduced with **no concurrency at all** — the redirection alone was enough.
+  - Projects sharing a directory are now serialised against each other, and nothing else is. A project's own directory is a fact rather than a prediction, which is the difference between this and the two attempts that failed.
+- **A project reporting no frameworks is now a scan failure, not a silent empty result.** This is what made the above invisible for three releases: the breakage was in the output the whole time and nothing looked at it. A genuinely package-free project reports its frameworks with empty package lists, so the two are distinguishable — verified against a real package-free project rather than assumed.
+
+### Known limitation, stated rather than implied
+Projects that redirect their `obj` to a shared location are handled by a **heuristic**, not a guarantee: the three redirecting property names are looked for in each project, its nearest implicitly-imported ancestor files, and the imports of those. If any is found, the whole scan runs serially. MSBuild can still hide a redirect behind a custom SDK's implicit `Sdk.props` or a computed path, and a miss leaves the scan exactly as concurrent as every release before 3.26.0 was. Predicting this precisely needs full MSBuild evaluation; 3.24.0 spent eight review rounds failing at it, and the earlier form of this check lost four more.
+
+### Testing
+- `FrameworklessScanTests` (5 new) pins the success/failure distinction, including that a package-free project stays a success. `ScanWorkTests` gains a `ProjectReference` case — the shape every existing fixture lacked, and the reason this survived three releases. 1117 pass.
+- Validated against two real repositories (`serilog`, `serilog-sinks-console`): identical findings at `--max-parallelism` 1 and 8, across repeated runs.
+
 ## [3.28.0] - 2026-07-30
 
 ### Fixed

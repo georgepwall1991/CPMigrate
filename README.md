@@ -43,7 +43,7 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.28.0
+dotnet tool install --global CPMigrate --version 3.28.1
 ```
 
 ```bash
