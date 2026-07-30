@@ -3,12 +3,12 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Buildalyzer" Version="8.0.0" />
+    <PackageVersion Include="Buildalyzer" Version="9.0.0" />
     <PackageVersion Include="Castle.Core">
       <Version>5.2.1</Version>
     </PackageVersion>
     <PackageVersion Include="CommandLineParser" Version="2.9.1" />
-    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="FluentAssertions" Version="8.10.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers">
       <Version>4.14.0</Version>
@@ -40,9 +40,9 @@
     <PackageVersion Include="Serilog" Version="4.4.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
-    <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.19.0.132793" />
-    <PackageVersion Include="Spectre.Console" Version="0.54.0" />
-    <PackageVersion Include="Spectre.Console.Testing" Version="0.54.0" />
+    <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.31.0.145097" />
+    <PackageVersion Include="Spectre.Console" Version="0.57.2" />
+    <PackageVersion Include="Spectre.Console.Testing" Version="0.57.2" />
     <PackageVersion Include="System.CodeDom">
       <Version>10.0.10</Version>
     </PackageVersion>
@@ -77,8 +77,8 @@
     </PackageVersion>
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- Override transitive dependencies to resolve CVE-2025-55247 and CVE-2025-26646 vulnerabilities -->
-    <PackageVersion Include="Microsoft.Build" Version="18.0.2" />
-    <PackageVersion Include="Microsoft.Build.Tasks.Core" Version="18.0.2" />
-    <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="18.0.2" />
+    <PackageVersion Include="Microsoft.Build" Version="18.8.2" />
+    <PackageVersion Include="Microsoft.Build.Tasks.Core" Version="18.8.2" />
+    <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="18.8.2" />
   </ItemGroup>
 </Project>

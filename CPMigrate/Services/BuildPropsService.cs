@@ -95,7 +95,7 @@ public class BuildPropsService
             .Select(g =>
             {
                 var mostCommon = g.MaxBy(kv => kv.Value.Count);
-                return new PropertyCandidate(mostCommon!.Value[0], mostCommon.Value.Count);
+                return new PropertyCandidate(mostCommon.Value[0], mostCommon.Value.Count);
             })
             .Where(x => x.Count >= threshold)
             .OrderBy(x => x.Property.Name)
@@ -109,7 +109,7 @@ public class BuildPropsService
             .Select(g =>
             {
                 var mostCommon = g.MaxBy(kv => kv.Value.Count);
-                return new ItemCandidate(mostCommon!.Value[0], mostCommon.Value.Count);
+                return new ItemCandidate(mostCommon.Value[0], mostCommon.Value.Count);
             })
             .Where(x => x.Count >= threshold)
             .OrderBy(x => x.Item.ItemType).ThenBy(x => x.Item.Include)

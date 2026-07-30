@@ -162,7 +162,9 @@ public sealed class UpdateService : IUpdateService, IDisposable
                 {
                     var startInfo = new ProcessStartInfo
                     {
+#pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses dotnet from PATH
                         FileName = "dotnet",
+#pragma warning restore S4036
                         Arguments = $"tool update -g {PackageId}",
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,

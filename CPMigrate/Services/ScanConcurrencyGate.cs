@@ -66,7 +66,7 @@ internal static class ScanConcurrencyGate
                 Volatile.Write(ref _gate, new SemaphoreSlim(maxConcurrency, maxConcurrency));
             }
 
-            return _gate!;
+            return _gate;
         }
     }
 

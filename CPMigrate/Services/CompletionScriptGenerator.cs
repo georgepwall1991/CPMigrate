@@ -66,7 +66,7 @@ public static class CompletionScriptGenerator
                 (Property: property, Attribute: property.GetCustomAttribute<OptionAttribute>())
             )
             .Where(entry =>
-                entry.Attribute is not null && !string.IsNullOrEmpty(entry.Attribute!.LongName)
+                entry.Attribute is not null && !string.IsNullOrEmpty(entry.Attribute.LongName)
             )
             .Select(entry => new CompletionOption(
                 $"--{entry.Attribute!.LongName}",

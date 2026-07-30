@@ -718,7 +718,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 return highest.Ref;
             })
             .Where(r => r != null)
-            .Select(r => r!)
+            .Select(r => r)
             .ToList();
 
         var totalFound = deduplicated.Count;
