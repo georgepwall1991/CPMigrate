@@ -86,6 +86,11 @@ public static class ProgramRunner
                         return await statusService.RunAsync(options.GetDiscoveryTargetPath());
                     }
 
+                    if (options.Tree)
+                    {
+                        return await RunTreeModeAsync(options, services);
+                    }
+
                     // Merge config file with CLI args (CLI args take precedence)
                     MergeConfigWithCliArgs(
                         options,
@@ -132,6 +137,36 @@ public static class ProgramRunner
                     return Task.FromResult(ExitCodes.ValidationError);
                 }
             );
+    }
+
+    private static async Task<int> RunTreeModeAsync(Options options, ApplicationServices services)
+    {
+        try
+        {
+            var projectAnalyzer = services.ProjectAnalyzer;
+            var targetPath = options.GetDiscoveryTargetPath();
+            var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(targetPath);
+
+            var allReferences = new List<Models.PackageReference>();
+            foreach (var projectPath in projectPaths)
+            {
+                var (references, success) = await projectAnalyzer.ScanResolvedPackagesAsync(
+                    projectPath, options.IncludeTransitive);
+                if (success)
+                {
+                    allReferences.AddRange(references);
+                }
+            }
+
+            var packageInfo = new Models.ProjectPackageInfo(allReferences, BasePath: basePath);
+            var treeService = new DependencyTreeService(services.ConsoleService);
+            return await treeService.RunAsync(packageInfo);
+        }
+        catch (Exception ex)
+        {
+            services.ConsoleService.Error($"Failed to build dependency tree: {ex.Message}");
+            return ExitCodes.UnexpectedError;
+        }
     }
 
     /// <summary>

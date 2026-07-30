@@ -408,6 +408,13 @@ public class Options
     )]
     public bool AnalyzeLicenses { get; set; }
 
+    [Option(
+        "tree",
+        Default = false,
+        HelpText = "Render an ASCII dependency tree per project: direct and transitive packages with versions."
+    )]
+    public bool Tree { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Analysis & Auto-Fix
     // ═══════════════════════════════════════════════════════════════════════

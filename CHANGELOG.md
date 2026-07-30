@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.37.0] - 2026-07-30
+
+### Added
+- **`--tree` dependency tree visualization.** Renders an ASCII tree per project showing direct and transitive packages with versions. Transitive lists cap at 20 entries with an overflow count. Uses Spectre.Console's Tree renderable with line guides.
+
 ## [3.36.0] - 2026-07-30
 
 ### Added
