@@ -121,13 +121,15 @@ public record ProjectPackageInfo(
     /// instead. Reading the resolved list is why <c>RedundantReference</c> could not fire: by the time
     /// the duplicate reached the analyzer there was only ever one of it.
     ///
-    /// Falls back to the resolved list when the project files could not be read. That degrades to the
-    /// old behaviour — duplicates simply stay invisible — which is the honest outcome when the raw text
-    /// is unavailable, rather than a silent substitution of different data.
+    /// Falls back to the resolved list only when the project files could not be read *at all* — a null,
+    /// not an empty list. A successful scan that found no declarations is an answer: with --transitive on a
+    /// multi-targeted project, the resolved parser lists the same transitive package once per framework, so
+    /// treating "none declared" as "no data" would have those read as duplicate declarations of a package
+    /// the project never declares.
     /// </summary>
     public IReadOnlyList<PackageReference> GetDeclaredReferences()
     {
-        return DeclaredReferences is { Count: > 0 } declared ? declared : References;
+        return DeclaredReferences ?? References;
     }
 
     /// <summary>

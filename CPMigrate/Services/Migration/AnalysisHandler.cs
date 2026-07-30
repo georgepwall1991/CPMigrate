@@ -197,7 +197,12 @@ internal sealed class AnalysisHandler
                 results.SelectMany(r => r.Deprecated).ToList(),
                 basePath,
                 projectPaths,
-                results.SelectMany(r => r.DeclaredReferences).ToList()
+                results.All(r => r.DeclaredReferences is null)
+                    ? null
+                    : results
+                        .Where(r => r.DeclaredReferences is not null)
+                        .SelectMany(r => r.DeclaredReferences!)
+                        .ToList()
             ),
             results.Count(r => !r.ReferencesScanned),
             results.Sum(r => r.DeepScanFailures)
@@ -291,13 +296,13 @@ internal sealed class AnalysisHandler
         List<VulnerabilityInfo> Vulnerabilities,
         List<OutdatedPackageInfo> Outdated,
         List<DeprecatedPackageInfo> Deprecated,
-        List<PackageReference> DeclaredReferences
+        List<PackageReference>? DeclaredReferences
     );
 
     private async Task<(
         List<PackageReference> References,
         bool Success,
-        List<PackageReference> Declared
+        List<PackageReference>? Declared
     )> ScanProjectReferencesAsync(Options options, string projectPath)
     {
         var (references, success) = await _projectAnalyzer.ScanResolvedPackagesAsync(
@@ -311,7 +316,7 @@ internal sealed class AnalysisHandler
                 // Deliberately does not touch the project XML. That scan cannot see transitive packages,
                 // so standing in for a failed --transitive scan would turn "we could not look" into "there
                 // is nothing there". The run reports an incomplete analysis instead.
-                return (references, false, []);
+                return (references, false, null);
             }
 
             (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
@@ -327,7 +332,7 @@ internal sealed class AnalysisHandler
         // tool.
         var (declared, declaredRead) = _projectAnalyzer.ScanDeclaredPackages(projectPath);
 
-        return (references, success, declaredRead ? declared : []);
+        return (references, success, declaredRead ? declared : null);
     }
 
     private void CacheScanResults(string projectPath, List<PackageReference> references)

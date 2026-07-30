@@ -55,6 +55,23 @@ public class RedundantReferenceFixer : IFixer
         );
     }
 
+    /// <summary>
+    /// Whether a declaration sits under any <c>Condition</c>. The whole ancestor chain, because a
+    /// declaration inside <c>&lt;Choose&gt;&lt;When Condition=…&gt;</c> has none on itself or its group.
+    /// </summary>
+    private static bool IsConditional(XElement element)
+    {
+        for (var current = element; current is not null; current = current.Parent)
+        {
+            if (!string.IsNullOrEmpty(current.Attribute("Condition")?.Value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static FileChange? RemoveDuplicateReferences(string projectPath, string packageName, bool dryRun)
     {
         try
@@ -65,6 +82,11 @@ public class RedundantReferenceFixer : IFixer
             var packageRefs = doc.Descendants("PackageReference")
                 .Where(e => e.Attribute("Include")?.Value
                     .Equals(packageName, StringComparison.OrdinalIgnoreCase) == true)
+                // Conditional declarations are not candidates for removal, whatever else the file
+                // contains. A project can hold two unconditional duplicates *and* a framework-specific
+                // declaration; removing everything after the first would then delete the very thing the
+                // analyzer's condition filter exists to protect, and the fix would read as a tidy-up.
+                .Where(e => !IsConditional(e))
                 .ToList();
 
             if (packageRefs.Count <= 1)
@@ -72,7 +94,7 @@ public class RedundantReferenceFixer : IFixer
                 return null;
             }
 
-            // Keep the first reference, remove duplicates
+            // Keep the first reference, remove the unconditional duplicates behind it.
             var toRemove = packageRefs.Skip(1).ToList();
             var removedCount = 0;
 

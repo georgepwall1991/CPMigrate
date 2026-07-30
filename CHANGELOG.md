@@ -25,12 +25,16 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 - **Conditional declarations are no longer mistaken for defects — by any rule or fixer.** Found in cross-review, and the most serious item here: declaring a package once per target framework behind a `Condition` is how multi-targeting is written, and making `RedundantReference` fire turned a rule that quietly reported nothing into one that would have had `--fix` **delete the declaration another framework depends on**. MSBuild conditions cannot be evaluated outside a build, so overlap is not guessed at: a duplicate is reported only among declarations that always apply.
   - Fixing that exposed the same flaw in `VersionInconsistency`, which reads the *resolved* list where conditions no longer exist. It saw `4.0.0` and `4.3.0` in one multi-targeted project, called them inconsistent, and — being fixable — unified them to `4.3.0`, breaking the `net8.0` target. A per-framework pin is now excluded from the comparison, and the fixer refuses to rewrite a conditional declaration even if something else reports one.
+  - A condition is detected anywhere in the ancestor chain, not just on the item and its group: a declaration inside `<Choose><When Condition=…><ItemGroup>` carries none on either, so checking two levels read a mutually exclusive pair as duplicates of each other. **Found in cross-review.**
+  - The fixer refuses to remove a conditional declaration even when real unconditional duplicates exist alongside one — otherwise a project with two duplicates *and* a framework-specific pin had the pin deleted, which is precisely what the analyzer's filter exists to prevent. **Also found in cross-review**, and asserted on the file.
   - Reporting a finding a fixer then declines to act on is its own kind of wrong — the same "no changes were needed" over an unrepaired finding as above — so the finding is suppressed rather than merely made unfixable.
+
+- **A successful declaration scan that finds nothing is an answer, not missing data.** The fallback to the resolved list now triggers only when the project files could not be read at all. Otherwise, with `--transitive` on a multi-targeted project, the resolved parser listing the same transitive package once per framework would read as duplicate *declarations* of a package the project never declares. **Found in cross-review**, on a fallback flagged for scrutiny in the PR description.
 
 - **`RedundantReference` now fires under central package management.** Also found in cross-review. The first fix read declarations through a scan that drops `PackageReference` items with no `Version` — and under CPM a reference normally *has* no version, so for the majority of this tool's users the rule still could not fire, having just been "fixed". A dedicated declaration scan keeps versionless items, and records whether each was conditional.
 
 ### Testing
-- 17 new tests. 1072 pass.
+- 19 new tests. 1074 pass.
 
 ## [3.20.0] - 2026-07-30
 

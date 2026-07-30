@@ -81,6 +81,31 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
     }
 
+    /// <summary>
+    /// Whether a declaration sits under any <c>Condition</c> at all.
+    ///
+    /// The whole ancestor chain, not the item and its group: a valid declaration inside
+    /// <c>&lt;Choose&gt;&lt;When Condition=…&gt;&lt;ItemGroup&gt;</c> has no condition on either, so
+    /// checking two levels reported it as unconditional — and two mutually exclusive declarations then read
+    /// as duplicates of each other.
+    /// </summary>
+    private static bool HasConditionalAncestor(ProjectElement element)
+    {
+        for (
+            ProjectElement? current = element;
+            current is not null;
+            current = current.Parent
+        )
+        {
+            if (!string.IsNullOrEmpty(current.Condition))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <inheritdoc />
     public (List<PackageReference> References, bool Success) ScanDeclaredPackages(
         string projectFilePath
@@ -106,12 +131,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     var version =
                         item.Metadata.FirstOrDefault(m => m.Name == "Version")?.Value ?? string.Empty;
 
-                    // A condition on the item or on its group. Kept rather than filtered, because "this
-                    // package is declared twice, both times conditionally" is a different fact from "this
-                    // package is declared twice" and only the caller knows which one it needs.
-                    var isConditional =
-                        !string.IsNullOrEmpty(item.Condition)
-                        || !string.IsNullOrEmpty(item.Parent?.Condition);
+                    // Kept rather than filtered, because "this package is declared twice, both times
+                    // conditionally" is a different fact from "this package is declared twice" and only
+                    // the caller knows which one it needs.
+                    var isConditional = HasConditionalAncestor(item);
 
                     references.Add(
                         new PackageReference(

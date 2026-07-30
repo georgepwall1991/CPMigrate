@@ -346,6 +346,86 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     [Fact]
+    public async Task Fix_RemovesTheUnconditionalDuplicatesAndKeepsTheConditionalOne()
+    {
+        // Cross-review caught this: a project can hold two unconditional duplicates *and* a
+        // framework-specific declaration. The analyzer's condition filter correctly still reports the real
+        // duplicate, but the fixer removed everything after the first match without checking conditions —
+        // deleting the very declaration that filter exists to protect, and calling it a tidy-up.
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="4.3.0" />
+                <PackageReference Include="Serilog" Version="4.3.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj");
+        var projectFile = Path.Combine(_root, "src", "Api", "Api.csproj");
+
+        await ProgramRunner.RunAsync(
+            ["--analyze", "--fix", "--no-backup", "--quiet", "-s", _root],
+            new FakeConsoleService()
+        );
+
+        var content = await File.ReadAllTextAsync(projectFile);
+        content.Should().Contain("4.0.0", "the net8.0 declaration must survive");
+        (content.Split("<PackageReference").Length - 1)
+            .Should()
+            .Be(2, "one unconditional duplicate removed, the conditional one kept");
+    }
+
+    [Fact]
+    public async Task ADeclarationInsideChooseWhen_CountsAsConditional()
+    {
+        // Cross-review caught this: <Choose><When Condition=…><ItemGroup> puts no condition on the item or
+        // its group, so checking only those two levels read a mutually exclusive pair as duplicates of each
+        // other — and the fixer would have deleted one branch.
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+              </PropertyGroup>
+              <Choose>
+                <When Condition="'$(TargetFramework)' == 'net8.0'">
+                  <ItemGroup>
+                    <PackageReference Include="Serilog" Version="4.0.0" />
+                  </ItemGroup>
+                </When>
+                <Otherwise>
+                  <ItemGroup>
+                    <PackageReference Include="Serilog" Version="4.3.0" />
+                  </ItemGroup>
+                </Otherwise>
+              </Choose>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj");
+        var projectFile = Path.Combine(_root, "src", "Api", "Api.csproj");
+
+        await ProgramRunner.RunAsync(
+            ["--analyze", "--fix", "--no-backup", "--quiet", "-s", _root],
+            new FakeConsoleService()
+        );
+
+        var content = await File.ReadAllTextAsync(projectFile);
+        content.Should().Contain("4.0.0", "the When branch must survive");
+        content.Should().Contain("4.3.0", "the Otherwise branch must survive");
+    }
+
+    [Fact]
     public async Task AFixableFinding_IsActuallyRepairedByFix()
     {
         // Reporting a finding as fixable and then not fixing it is its own silent failure, and this rule had
