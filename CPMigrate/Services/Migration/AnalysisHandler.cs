@@ -197,16 +197,45 @@ internal sealed class AnalysisHandler
                 results.SelectMany(r => r.Deprecated).ToList(),
                 basePath,
                 projectPaths,
-                results.All(r => r.DeclaredReferences is null)
-                    ? null
-                    : results
-                        .Where(r => r.DeclaredReferences is not null)
-                        .SelectMany(r => r.DeclaredReferences!)
-                        .ToList()
+                CollectDeclaredReferences(results)
             ),
             results.Count(r => !r.ReferencesScanned),
             results.Sum(r => r.DeepScanFailures)
         );
+    }
+
+    /// <summary>
+    /// Merges the per-project declaration scans, and says so when some of them failed.
+    ///
+    /// A partial failure cannot be papered over by falling back to the resolved list for the missing
+    /// projects: the resolved list has already collapsed the duplicates the declarations exist to reveal,
+    /// so substituting it would answer a question it cannot answer. The affected projects are simply not
+    /// examined for duplicate declarations — which is the honest outcome, but only if it is said out loud.
+    /// Left silent, "no duplicates found" would be indistinguishable from "we could not look".
+    /// </summary>
+    private List<PackageReference>? CollectDeclaredReferences(ProjectScanResult[] results)
+    {
+        var unread = results.Count(result => result.DeclaredReferences is null);
+
+        if (unread == results.Length)
+        {
+            // Nothing could be read at all. GetDeclaredReferences falls back to the resolved list, which
+            // is the pre-3.21.0 behaviour: duplicates stay invisible rather than being misreported.
+            return null;
+        }
+
+        if (unread > 0)
+        {
+            _consoleService.Warning(
+                $"Could not read package declarations from {unread} of {results.Length} project file(s); "
+                    + "those projects were not checked for duplicate references."
+            );
+        }
+
+        return results
+            .Where(result => result.DeclaredReferences is not null)
+            .SelectMany(result => result.DeclaredReferences!)
+            .ToList();
     }
 
     /// <summary>
@@ -320,8 +349,14 @@ internal sealed class AnalysisHandler
             }
 
             (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
-            // The fallback already *is* the project file's own text.
-            return (references, success, references);
+
+            // Not reused as the declared list, even though it also comes from the project file: this scan
+            // exists to stand in for a resolved one, so it drops versionless items — every reference under
+            // central package management — and records no conditions. Handing it over would miss duplicates
+            // for most users and report a framework-conditional pair as a fixable duplicate the fixer then
+            // refuses to touch.
+            var (fallbackDeclared, fallbackRead) = _projectAnalyzer.ScanDeclaredPackages(projectPath);
+            return (references, success, fallbackRead ? fallbackDeclared : null);
         }
 
         // Read the project file as well. The resolved list cannot answer questions about what the file
