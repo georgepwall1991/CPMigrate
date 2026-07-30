@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using System.Xml.Linq;
+using System.Text.RegularExpressions;
 
 namespace CPMigrate.Services;
 
@@ -19,178 +19,228 @@ namespace CPMigrate.Services;
 /// </summary>
 internal static class ProjectDirectoryLock
 {
+    /// <summary>
+    /// The properties that can move a project's assets file. If none of the XML reachable from a project
+    /// mentions any of them, the file is at <c>obj/project.assets.json</c> under the project — provably, not
+    /// probably, because these are the only ways to move it.
+    /// </summary>
+    private static readonly string[] RedirectingProperties =
+    [
+        "BaseIntermediateOutputPath",
+        "MSBuildProjectExtensionsPath",
+        "ProjectAssetsFile",
+    ];
+
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> Locks = new(
         StringComparer.OrdinalIgnoreCase
     );
 
     /// <summary>
-    /// Waits for exclusive access to every location this project's assets file might be written to,
-    /// returning a handle that releases them.
+    /// Waits for exclusive access to this project's assets file, returning a handle to release it.
     ///
-    /// <para><b>Every location, not the most likely one.</b> Which path is in force depends on MSBuild
-    /// conditions, on imported <c>Directory.Build.props</c>, and on properties this phase cannot evaluate —
-    /// evaluating them is precisely what it must not do. Picking one candidate therefore means guessing, and
-    /// a wrong guess splits a lock that should have been shared: two projects that do write to the same file
-    /// get separate locks, race, and one comes back reporting the other's packages. So both candidates are
-    /// locked — the project directory, and any intermediate path the file declares — and the cost of being
-    /// wrong is that two projects are serialised when they need not have been. Slower is a strictly better
-    /// error than silently fewer findings.</para>
+    /// <para>Keyed on the project directory, which is where <c>obj/project.assets.json</c> lives — but only
+    /// once <see cref="RedirectsAssetsFile"/> has confirmed nothing redirects it. When something might,
+    /// every project shares a single key and the phase runs serially.</para>
     ///
-    /// <para>Acquired in a fixed order so two callers holding overlapping candidates cannot deadlock.</para>
+    /// <para><b>Why not compute the real path.</b> Successive review rounds each found another route to a
+    /// shared assets file: a conditional property, one set in an imported <c>Directory.Build.props</c>, one
+    /// built from <c>$(…)</c>, <c>MSBuildProjectExtensionsPath</c> outranking
+    /// <c>BaseIntermediateOutputPath</c>, <c>ProjectAssetsFile</c> naming the file outright, an import of an
+    /// import. Each fix was correct and the next round found another, which is the signal that the approach
+    /// was wrong rather than unfinished: knowing where the file really goes means evaluating the project, and
+    /// evaluating the project is the one thing this phase must not do — MSBuild's object model is not
+    /// thread-safe, which is why the phase exists.</para>
+    ///
+    /// <para>So the question asked is not "where does it go" but "could it have moved", which
+    /// <em>is</em> answerable from text: those three property names appear somewhere, or they do not. The
+    /// ordinary layout keeps the full concurrency; anything unusual gets the previous serial behaviour and
+    /// no possibility of a race. A missed redirect can silently erase findings; an unnecessary
+    /// serialisation just costs seconds.</para>
     /// </summary>
     public static async Task<IDisposable> AcquireAsync(string projectPath)
     {
-        var keys = AssetsKeys(projectPath)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var key = RedirectsAssetsFile(projectPath)
+            ? SharedConservativeKey
+            : Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? projectPath;
 
-        List<SemaphoreSlim> held = [];
+        var gate = Locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
 
-        foreach (var key in keys)
-        {
-            var gate = Locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-            await gate.WaitAsync();
-            held.Add(gate);
-        }
-
-        return new Holder(held);
+        return new Holder(gate);
     }
 
-    /// <summary>
-    /// Every place this project's assets file could plausibly land, as comparable keys.
-    ///
-    /// Three things this has to get right, each of which was wrong in an earlier attempt:
-    /// <list type="bullet">
-    ///   <item>the default candidate is the <c>obj</c> directory, not the project directory — otherwise a
-    ///   project that explicitly redirects into <c>OtherProject/obj</c> gets a different key from the
-    ///   project that owns it;</item>
-    ///   <item>a path built from MSBuild properties, <c>$(RepoRoot)artifacts/obj/</c>, cannot be resolved
-    ///   here — but two projects declaring the same text almost certainly mean the same place, so the
-    ///   unresolved text itself becomes a shared key rather than being discarded;</item>
-    ///   <item>nothing in here may throw, including path normalisation on a declared value containing an
-    ///   invalid character. This runs before the project is scanned, so an exception would abort the whole
-    ///   analysis over one project the scanners can report as incomplete and carry on past.</item>
-    /// </list>
-    /// </summary>
-    private static List<string> AssetsKeys(string projectPath)
-    {
-        List<string> keys = [];
+    /// <summary>One lock for every project whose assets file might have been moved.</summary>
+    private const string SharedConservativeKey = "\u0000conservative";
 
+    /// <summary>
+    /// Whether anything reachable from this project could move its assets file.
+    ///
+    /// Searched as text across the project file and every MSBuild file beside or above it, because a
+    /// property name cannot hide from a substring search the way it can from a structural one — an import of
+    /// an import still has to spell it out somewhere. Conservative in both directions that matter: a mention
+    /// inside a comment triggers serial mode, which is harmless.
+    /// </summary>
+    private static bool RedirectsAssetsFile(string projectPath)
+    {
         try
         {
             var fullPath = Path.GetFullPath(projectPath);
             var directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
 
-            // Always, and as the obj directory so it is comparable with a declared path pointing at it. A
-            // declared path may be conditional and not apply, in which case this is where the file goes.
-            keys.Add(Path.Combine(directory, "obj"));
+            HashSet<string> visited = new(StringComparer.OrdinalIgnoreCase);
+            Queue<string> pending = new();
 
-            foreach (var value in DeclaredPaths(fullPath))
+            pending.Enqueue(fullPath);
+            foreach (var file in AncestorBuildFiles(directory))
             {
-                keys.Add(Normalise(value, directory));
+                pending.Enqueue(file);
             }
 
-            // A repo-wide artifacts/obj is usually set once in a Directory.Build.props, not in each
-            // project — so an XML-only look at the project file alone saw nothing and every project got
-            // its own default key while all of them wrote to one place. The props files are walked here
-            // for the same two properties. Relative values in a props file resolve against the project
-            // at evaluation time, but a repo-wide setting is normally rooted or property-based, and an
-            // extra candidate only ever over-locks.
-            foreach (var propsFile in BuildPropsFiles(directory))
+            while (pending.Count > 0)
             {
-                foreach (var value in DeclaredPaths(propsFile))
+                var file = pending.Dequeue();
+                if (!visited.Add(file))
                 {
-                    keys.Add(Normalise(value, directory));
-                    keys.Add(Normalise(value, Path.GetDirectoryName(propsFile) ?? directory));
+                    continue;
+                }
+
+                var text = ReadOrNull(file);
+                if (text is null)
+                {
+                    // Cannot be read, so cannot be ruled out.
+                    return true;
+                }
+
+                if (
+                    RedirectingProperties.Any(property =>
+                        text.Contains(property, StringComparison.OrdinalIgnoreCase)
+                    )
+                )
+                {
+                    return true;
+                }
+
+                // Imports have to be followed, and not only upwards: a Directory.Build.props that imports
+                // build/Paths.props reaches a *child* directory, so searching ancestors alone missed the
+                // declaration entirely and the fast path raced. An import whose path cannot be resolved
+                // here — a property, a wildcard, a missing file — cannot be ruled out either.
+                var imports = ImportedFiles(file, out var unresolvable);
+
+                if (unresolvable)
+                {
+                    return true;
+                }
+
+                foreach (var import in imports)
+                {
+                    pending.Enqueue(import);
                 }
             }
+
+            return false;
         }
         catch (Exception)
         {
-            // Every failure, deliberately: unreadable, unauthorised, malformed XML, an invalid path. The
-            // project directory is a safe key on its own, and aborting the run is not an option.
-            if (keys.Count == 0)
-            {
-                keys.Add(projectPath);
-            }
+            // Unreadable, unauthorised, malformed, too long — anything. Treated as "it might redirect", so
+            // an unanswerable question costs concurrency rather than correctness. Never throws: this runs
+            // before the project is scanned, and the scanners report an unreadable project as an incomplete
+            // scan and carry on.
+            return true;
         }
-
-        return keys;
     }
 
 
-    /// <summary>The two intermediate-output properties declared in one XML file, conditional or not.</summary>
-    private static List<string> DeclaredPaths(string xmlFile)
+
+    /// <summary>
+    /// The files an MSBuild file imports, as resolvable absolute paths. Sets <paramref name="unresolvable"/>
+    /// when an import cannot be followed — a path built from properties, a wildcard, or a file that is not
+    /// there — because an import that cannot be read cannot be ruled out.
+    /// </summary>
+    private static List<string> ImportedFiles(string file, out bool unresolvable)
+    {
+        unresolvable = false;
+        List<string> imports = [];
+
+        var text = ReadOrNull(file);
+        if (text is null)
+        {
+            unresolvable = true;
+            return imports;
+        }
+
+        var directory = Path.GetDirectoryName(Path.GetFullPath(file)) ?? string.Empty;
+
+        foreach (var match in ImportPattern.Matches(text).Cast<Match>())
+        {
+            var declared = match.Groups["path"].Value.Trim();
+
+            if (declared.Contains("$(", StringComparison.Ordinal) || declared.Contains('*'))
+            {
+                unresolvable = true;
+                continue;
+            }
+
+            try
+            {
+                var resolved = Path.GetFullPath(
+                    declared.Replace('\\', Path.DirectorySeparatorChar),
+                    directory
+                );
+
+                if (File.Exists(resolved))
+                {
+                    imports.Add(resolved);
+                }
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+            {
+                unresolvable = true;
+            }
+        }
+
+        return imports;
+    }
+
+    private static readonly Regex ImportPattern = new(
+        "<Import\\s[^>]*Project\\s*=\\s*\"(?<path>[^\"]*)\"",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled
+    );
+
+    private static string? ReadOrNull(string file)
     {
         try
         {
-            return XDocument
-                .Load(xmlFile)
-                .Descendants()
-                .Where(element =>
-                    element.Name.LocalName
-                        is "MSBuildProjectExtensionsPath"
-                            or "BaseIntermediateOutputPath"
-                )
-                .Select(element => element.Value.Trim())
-                .Where(value => !string.IsNullOrEmpty(value))
-                .ToList();
+            return File.ReadAllText(file);
         }
         catch (Exception)
         {
-            // A props file that cannot be read tells us nothing; it must not stop the scan.
-            return [];
+            return null;
         }
     }
 
-    /// <summary>
-    /// The <c>Directory.Build.props</c> files above a project, nearest first. MSBuild stops at the first
-    /// one it finds, but that file may import others, so all of them are considered — an extra candidate
-    /// only over-locks, while a missed one is a silent race.
-    /// </summary>
-    private static IEnumerable<string> BuildPropsFiles(string projectDirectory)
+    /// <summary>Every MSBuild props/targets file beside or above a project directory.</summary>
+    private static IEnumerable<string> AncestorBuildFiles(string directory)
     {
-        var current = new DirectoryInfo(projectDirectory);
-
-        while (current is not null)
+        for (var current = new DirectoryInfo(directory); current is not null; current = current.Parent)
         {
-            var candidate = Path.Combine(current.FullName, "Directory.Build.props");
-            if (File.Exists(candidate))
+            foreach (
+                var file in Directory
+                    .EnumerateFiles(current.FullName, "*.props", SearchOption.TopDirectoryOnly)
+                    .Concat(
+                        Directory.EnumerateFiles(
+                            current.FullName,
+                            "*.targets",
+                            SearchOption.TopDirectoryOnly
+                        )
+                    )
+            )
             {
-                yield return candidate;
+                yield return file;
             }
-
-            current = current.Parent;
         }
     }
 
-    /// <summary>
-    /// A declared path as a comparable key. Unresolvable values keep their literal text, prefixed so they
-    /// cannot collide with a real directory: two projects declaring the same unresolved path share a key,
-    /// which is the outcome that matters.
-    /// </summary>
-    private static string Normalise(string declared, string projectDirectory)
-    {
-        if (declared.Contains("$(", StringComparison.Ordinal))
-        {
-            return $"unresolved:{declared.Replace('\\', '/').TrimEnd('/')}";
-        }
-
-        try
-        {
-            return Path.GetFullPath(declared, projectDirectory).TrimEnd(
-                Path.DirectorySeparatorChar,
-                Path.AltDirectorySeparatorChar
-            );
-        }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
-        {
-            return $"unresolved:{declared.Replace('\\', '/').TrimEnd('/')}";
-        }
-    }
-
-    private sealed class Holder(List<SemaphoreSlim> gates) : IDisposable
+    private sealed class Holder(SemaphoreSlim gate) : IDisposable
     {
         private bool _released;
 
@@ -202,11 +252,7 @@ internal static class ProjectDirectoryLock
             }
 
             _released = true;
-
-            foreach (var gate in gates)
-            {
-                gate.Release();
-            }
+            gate.Release();
         }
     }
 }

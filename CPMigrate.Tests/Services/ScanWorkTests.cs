@@ -257,6 +257,57 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task ProjectAssetsFilePointingAtOneFile_DoesNotLoseFindings()
+    {
+        // Cross-review caught this: ProjectAssetsFile names the assets file outright, and a key-discovery
+        // approach that inspected only the two *directory* properties missed it. Asking "could anything have
+        // moved the file" instead of "where did it go" covers this without knowing about it specifically.
+        var shared = Path.Combine(_root, "artifacts", "project.assets.json");
+        WriteWithProperty("src/Api/Api.csproj", "13.0.1", "ProjectAssetsFile", shared);
+        WriteWithProperty("src/Lib/Lib.csproj", "12.0.3", "ProjectAssetsFile", shared);
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8)).Should().Contain("VersionInconsistency");
+    }
+
+    [Fact]
+    public async Task ARedirectBehindAnImportChain_DoesNotLoseFindings()
+    {
+        // Cross-review caught this too: Directory.Build.props importing another file that declares the path.
+        // Following imports structurally is unbounded — imports of imports, computed paths — so the question
+        // is asked as text across every props/targets file above the project, where a property name cannot
+        // hide.
+        File.WriteAllText(
+            Path.Combine(_root, "Directory.Build.props"),
+            """
+            <Project>
+              <Import Project="build/Paths.props" />
+            </Project>
+            """
+        );
+        Directory.CreateDirectory(Path.Combine(_root, "build"));
+        File.WriteAllText(
+            Path.Combine(_root, "build", "Paths.props"),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <BaseIntermediateOutputPath>{Path.Combine(_root, "artifacts", "obj") + Path.DirectorySeparatorChar}</BaseIntermediateOutputPath>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteProject("src/Lib/Lib.csproj", "12.0.3");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8)).Should().Contain("VersionInconsistency");
+    }
+
+    [Fact]
     public async Task AnUnreadableProject_DoesNotAbortTheWholeAnalysis()
     {
         // Cross-review caught this as a regression I introduced: the lock lookup reads the project file
@@ -434,6 +485,31 @@ public class ScanWorkTests : IDisposable
               <PropertyGroup>
                 <TargetFramework>net10.0</TargetFramework>
                 <BaseIntermediateOutputPath>{intermediatePath}</BaseIntermediateOutputPath>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="{version}" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+    }
+
+    private void WriteWithProperty(
+        string relativePath,
+        string version,
+        string property,
+        string value
+    )
+    {
+        var fullPath = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        File.WriteAllText(
+            fullPath,
+            $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <{property}>{value}</{property}>
               </PropertyGroup>
               <ItemGroup>
                 <PackageReference Include="Newtonsoft.Json" Version="{version}" />
