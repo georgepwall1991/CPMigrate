@@ -329,6 +329,60 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task APropsFileAssigningTheIsolationPropertyFallsBackToSerial()
+    {
+        // Cross-review caught this, and it is the case that defeats isolation outright: the redirection is
+        // passed as environment variables, and a Directory.Build.props assigning
+        // MSBuildProjectExtensionsPath overrides them. Measured — both projects went back to one shared
+        // assets file and the scan failed for both. So when anything reachable could override the
+        // redirection, there is no safe concurrency and the scan runs one project at a time.
+        File.WriteAllText(
+            Path.Combine(_root, "Directory.Build.props"),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <MSBuildProjectExtensionsPath>{Path.Combine(_root, "shared-ext") + Path.DirectorySeparatorChar}</MSBuildProjectExtensionsPath>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteProject("src/Lib/Lib.csproj", "12.0.3");
+        WriteSolution("src/Api/Api.csproj", "src/Lib/Lib.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8))
+            .Should()
+            .Contain(
+                "VersionInconsistency",
+                "the two versions differ, and a layout that cannot be isolated must be scanned serially "
+                    + "rather than concurrently and wrongly"
+            );
+    }
+
+    [Fact]
+    public async Task AnOrdinaryLayoutIsStillIsolatedAndConcurrent()
+    {
+        // The other half: the common case must not be dragged down to serial by the guard above. Nothing
+        // here assigns any of the three properties, so isolation applies.
+        for (var i = 0; i < 6; i++)
+        {
+            WriteProject($"src/P{i}/P{i}.csproj", i % 2 == 0 ? "13.0.1" : "12.0.3");
+        }
+
+        WriteSolution(Enumerable.Range(0, 6).Select(i => $"src/P{i}/P{i}.csproj").ToArray());
+
+        ScanConcurrencyGate.ResetForTests();
+        var findings = await AnalyzeWith(parallelism: 6);
+
+        findings.Should().Contain("VersionInconsistency");
+        ScanConcurrencyGate
+            .Permits.Should()
+            .Be(6, "an isolatable layout keeps the concurrency it asked for");
+    }
+
+    [Fact]
     public async Task TheSameSolutionProducesTheSameReportTwice()
     {
         // Concurrency that merges results in completion order rather than project order produces a report

@@ -283,7 +283,14 @@ internal sealed class AnalysisHandler
         // shared global cache, so the temp directories hold ~60K each.
         var requestedConcurrency = options.ResolveScanParallelism();
         var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
-        var isolationRoot = requestedConcurrency > 1 ? CreateIsolationRoot() : null;
+
+        // Isolation is passed as environment variables, and a project or an imported Directory.Build.props
+        // can assign the same properties and win — measured, not assumed. RestoreIsolation answers whether
+        // any of them does; when one might, there is no safe concurrency and the scan runs serially.
+        var isolationRoot =
+            requestedConcurrency > 1 && RestoreIsolation.CanIsolate(projectPaths)
+                ? CreateIsolationRoot()
+                : null;
 
         var maxConcurrency = ResolveSafeConcurrency(requestedConcurrency, isolationRoot);
 
