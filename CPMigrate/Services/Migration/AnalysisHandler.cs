@@ -363,6 +363,13 @@ internal sealed class AnalysisHandler
                 // avoid.
                 using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
 
+                // Shared, because these also shell out to `dotnet package list` and so also restore. They
+                // are not isolated — that is a separate change, and their own mutual race predates this one
+                // — but they must still participate, or the "exclusive" retake in the resolved-package phase
+                // is not exclusive at all: --batch-parallel would have another solution's deep scans
+                // restoring against the same path while a retake was being trusted.
+                using var restoreSlot = await RestoreScanLock.AcquireSharedAsync();
+
                 var vulnerabilities = new List<VulnerabilityInfo>();
                 var outdated = new List<OutdatedPackageInfo>();
                 var deprecated = new List<DeprecatedPackageInfo>();

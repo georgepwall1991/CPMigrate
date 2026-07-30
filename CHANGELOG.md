@@ -23,8 +23,10 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - Isolation is applied only when actually running concurrently. A single-threaded scan cannot collide, so it reuses the project's own `obj` and a warm restore stays warm.
   - **Reading project files stays serial**, deliberately and unchanged: that pass goes through MSBuild's object model, whose static caches are not thread-safe — concurrent reads once had projects reporting each other's versions, which is the same class of silent finding-erasure.
 
+  - The opt-in deep scans participate in the lock too, on the shared side. They also shell out to `dotnet package list` and so also restore — without that, the "exclusive" retake was not exclusive, since `--batch-parallel` could have another solution's deep scans restoring against the same path while a retake was being trusted. **Found in cross-review.**
+
 ### A pre-existing race worth naming
-The opt-in deep scans — `--audit`, `--outdated`, `--deprecated` — also shell out to `dotnet package list`, which also restores. So they have carried the same shared-assets-file race since 3.15.0 made them concurrent, independently of anything here. This release does not fix it. Isolating those queries too, which would close it while keeping their concurrency, is a separate and separately-reviewable change; it is recorded here so it is not rediscovered as a surprise.
+The opt-in deep scans — `--audit`, `--outdated`, `--deprecated` — also shell out to `dotnet package list`, which also restores. So they have carried the same shared-assets-file race since 3.15.0 made them concurrent, independently of anything here. This release does not fix it — the deep scans now participate in the restore lock, which makes the resolved-phase retake genuinely exclusive, but they are still not isolated from one another. Isolating those queries too, which would close it while keeping their concurrency, is a separate and separately-reviewable change; it is recorded here so it is not rediscovered as a surprise.
 
 ### Fixed
 - A null reference list from the resolved scan surfaced as a `NullReferenceException` inside a LINQ merge two frames away. The real service never returns one, but a stub can, and that is a poor way to learn a scan returned nothing.
