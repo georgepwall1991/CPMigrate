@@ -21,13 +21,19 @@ public class OutputSchemaDriftTests
     public static TheoryData<string, string> DocumentedTypes() =>
         new()
         {
-            { nameof(OperationResult), "" },
+            { nameof(OperationResult), "singleOperation" },
             { nameof(OperationSummary), "summary" },
             { nameof(AnalysisIssueInfo), "analysisIssue" },
             { nameof(FixInfo), "fix" },
             { nameof(PackageUpdateInfo), "packageUpdate" },
             { nameof(PropsFileInfo), "propsFile" },
             { nameof(BackupInfo), "backup" },
+            // --batch serializes BatchResult, a different shape entirely. Omitting these let the
+            // schema require exitCode and summary on a payload that has neither, so valid batch
+            // output failed validation.
+            { nameof(BatchResult), "batchOperation" },
+            { nameof(SolutionResult), "solutionResult" },
+            { nameof(BatchTotals), "batchTotals" },
         };
 
     [Theory]
@@ -90,7 +96,7 @@ public class OutputSchemaDriftTests
         // A consumer switching on `operation` needs the list to be complete, and the names are
         // produced by string literals in the router rather than by an enum — so nothing but a test
         // keeps them in step.
-        var documented = Schema()
+        var documented = Definition("singleOperation")
             .GetProperty("properties")
             .GetProperty("operation")
             .GetProperty("enum")
@@ -107,8 +113,6 @@ public class OutputSchemaDriftTests
                     "migrate",
                     "rollback",
                     "update-packages",
-                    "batch-analyze",
-                    "batch-migrate",
                 }
             );
     }
@@ -116,7 +120,7 @@ public class OutputSchemaDriftTests
     [Fact]
     public void Schema_RequiresTheFieldsEveryPayloadCarries()
     {
-        var required = Schema()
+        var required = Definition("singleOperation")
             .GetProperty("required")
             .EnumerateArray()
             .Select(value => value.GetString())
@@ -194,7 +198,7 @@ public class OutputSchemaDriftTests
         );
 
         using var document = JsonDocument.Parse(json);
-        var documented = SchemaPropertyNames(string.Empty).ToHashSet(StringComparer.Ordinal);
+        var documented = SchemaPropertyNames("singleOperation").ToHashSet(StringComparer.Ordinal);
 
         foreach (var property in document.RootElement.EnumerateObject())
         {
@@ -223,6 +227,9 @@ public class OutputSchemaDriftTests
             ?? throw new InvalidOperationException($"Model type {typeName} not found.");
 
         return type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            // [JsonIgnore] properties are computed conveniences, not part of the payload — BatchResult
+            // derives an ExitCode that is never serialized.
+            .Where(p => p.GetCustomAttribute<JsonIgnoreAttribute>() is null)
             .Select(p => p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name);
     }
 
@@ -236,11 +243,7 @@ public class OutputSchemaDriftTests
 
     private static JsonElement Definition(string definition)
     {
-        var schema = Schema();
-
-        return string.IsNullOrEmpty(definition)
-            ? schema
-            : schema.GetProperty("definitions").GetProperty(definition);
+        return Schema().GetProperty("definitions").GetProperty(definition);
     }
 
     private static JsonElement Schema()
