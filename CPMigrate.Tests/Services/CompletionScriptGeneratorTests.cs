@@ -98,10 +98,26 @@ public class CompletionScriptGeneratorTests
         script.Should().Contain("CompletionResult");
     }
 
+    [Fact]
+    public void Generate_PowerShell_CompletesOptionValuesRatherThanMoreFlags()
+    {
+        // Once the user has chosen --output, offering the flag list again is the least useful thing
+        // the completer could say.
+        var script = CompletionScriptGenerator.Generate(CompletionShell.PowerShell);
+
+        script.Should().Contain("$optionValues");
+        script.Should().Contain("'--output' = @('Terminal', 'Json', 'Sarif', 'Markdown')");
+        script.Should().Contain("ParameterValue");
+        script.Should().Contain("$pathOptions");
+        script.Should().Contain("ProviderItem", "path options should offer files");
+        script.Should().Contain("$commandAst.CommandElements", "the preceding token decides");
+    }
+
     [Theory]
     [InlineData(CompletionShell.Bash)]
     [InlineData(CompletionShell.Zsh)]
     [InlineData(CompletionShell.Fish)]
+    [InlineData(CompletionShell.PowerShell)]
     public void Generate_EnumOptions_OfferTheirValues(CompletionShell shell)
     {
         // Otherwise the user has to remember that it is "Sarif" and not "SARIF".

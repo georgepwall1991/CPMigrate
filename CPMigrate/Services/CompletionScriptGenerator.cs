@@ -241,7 +241,7 @@ public static class CompletionScriptGenerator
         var script = new StringBuilder();
 
         script.AppendLine("# CPMigrate PowerShell completion. Add it to your profile:");
-        script.AppendLine($"#   cpmigrate --completions powershell >> $PROFILE");
+        script.AppendLine("#   cpmigrate --completions powershell >> $PROFILE");
         script.AppendLine();
         script.AppendLine(
             $"Register-ArgumentCompleter -Native -CommandName {CommandName} -ScriptBlock {{"
@@ -258,6 +258,57 @@ public static class CompletionScriptGenerator
         }
 
         script.AppendLine("    )");
+        script.AppendLine();
+
+        // Values a preceding option expects. Without this the completer offers the flag list again,
+        // which is the least useful thing it could say once the user has already chosen an option.
+        script.AppendLine("    $optionValues = @{");
+        foreach (var option in options.Where(o => o.EnumValues.Count > 0))
+        {
+            var values = string.Join(", ", option.EnumValues.Select(v => $"'{v}'"));
+            script.AppendLine($"        '{option.LongName}' = @({values})");
+
+            if (option.ShortName is not null)
+            {
+                script.AppendLine($"        '{option.ShortName}' = @({values})");
+            }
+        }
+        script.AppendLine("    }");
+        script.AppendLine();
+
+        var pathOptions = options.Where(IsPathLike).SelectMany(o => o.AllNames());
+        script.AppendLine(
+            $"    $pathOptions = @({string.Join(", ", pathOptions.Select(name => $"'{name}'"))})"
+        );
+        script.AppendLine();
+        script.AppendLine("    # The token before the cursor decides whether a value or a flag is wanted.");
+        script.AppendLine("    $tokens = $commandAst.CommandElements | ForEach-Object { $_.ToString() }");
+        script.AppendLine("    $previous = if ($wordToComplete) {");
+        script.AppendLine("        if ($tokens.Count -ge 2) { $tokens[$tokens.Count - 2] } else { $null }");
+        script.AppendLine("    } else {");
+        script.AppendLine("        $tokens[$tokens.Count - 1]");
+        script.AppendLine("    }");
+        script.AppendLine();
+        script.AppendLine("    if ($previous -and $optionValues.ContainsKey($previous)) {");
+        script.AppendLine("        return $optionValues[$previous] |");
+        script.AppendLine("            Where-Object { $_ -like \"$wordToComplete*\" } |");
+        script.AppendLine("            ForEach-Object {");
+        script.AppendLine(
+            "                [System.Management.Automation.CompletionResult]::new("
+                + "$_, $_, 'ParameterValue', $_)"
+        );
+        script.AppendLine("            }");
+        script.AppendLine("    }");
+        script.AppendLine();
+        script.AppendLine("    if ($previous -and $pathOptions -contains $previous) {");
+        script.AppendLine("        return Get-ChildItem -Path \"$wordToComplete*\" -ErrorAction SilentlyContinue |");
+        script.AppendLine("            ForEach-Object {");
+        script.AppendLine(
+            "                [System.Management.Automation.CompletionResult]::new("
+                + "$_.Name, $_.Name, 'ProviderItem', $_.FullName)"
+        );
+        script.AppendLine("            }");
+        script.AppendLine("    }");
         script.AppendLine();
         script.AppendLine("    $options |");
         script.AppendLine("        Where-Object { $_.Name -like \"$wordToComplete*\" } |");
