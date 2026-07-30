@@ -202,15 +202,29 @@ internal static class RestoreIsolation
     }
 
     /// <summary>
-    /// The MSBuild files above a project that can contribute properties to it: the nearest
-    /// <c>Directory.Build.props</c> and the nearest <c>Directory.Build.targets</c>.
+    /// The MSBuild files above a project that are imported implicitly, and so can assign properties without
+    /// the project mentioning them.
+    ///
+    /// <c>Directory.Packages.props</c> belongs here as much as <c>Directory.Build.props</c> does — central
+    /// package management pulls it in during restore, and it is a file this tool's users are especially
+    /// likely to have. Missing it was the kind of gap that makes a conservative check quietly
+    /// non-conservative. <c>Directory.Solution.*</c> is included for the same reason.
     ///
     /// The nearest of each, then stop — MSBuild's own rule, and what keeps this affordable. Anything further
     /// up is reached by import from these, and imports are followed.
     /// </summary>
     private static IEnumerable<string> AncestorBuildFiles(string directory)
     {
-        foreach (var name in new[] { "Directory.Build.props", "Directory.Build.targets" })
+        foreach (
+            var name in new[]
+            {
+                "Directory.Build.props",
+                "Directory.Build.targets",
+                "Directory.Packages.props",
+                "Directory.Solution.props",
+                "Directory.Solution.targets",
+            }
+        )
         {
             for (
                 var current = new DirectoryInfo(directory);

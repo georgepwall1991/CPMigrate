@@ -426,6 +426,37 @@ public class ScanWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task ADirectoryPackagesPropsAssigningTheIsolationPropertyFallsBackToSerial()
+    {
+        // Cross-review caught this: Directory.Packages.props is imported implicitly during restore just as
+        // Directory.Build.props is, and it is the file this tool's users are most likely to have — so leaving
+        // it out of the check made a conservative guard quietly non-conservative.
+        File.WriteAllText(
+            Path.Combine(_root, "Directory.Packages.props"),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                <MSBuildProjectExtensionsPath>{Path.Combine(_root, "shared-ext") + Path.DirectorySeparatorChar}</MSBuildProjectExtensionsPath>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        WriteProject("src/Api/Api.csproj", "13.0.1");
+        WriteProject("src/Lib/Lib.csproj", "12.0.3");
+
+        RestoreIsolation
+            .CanIsolate(
+                [
+                    Path.Combine(_root, "src", "Api", "Api.csproj"),
+                    Path.Combine(_root, "src", "Lib", "Lib.csproj"),
+                ]
+            )
+            .Should()
+            .BeFalse("a Directory.Packages.props assigning the property overrides the redirection");
+    }
+
+    [Fact]
     public async Task TheSameSolutionProducesTheSameReportTwice()
     {
         // Concurrency that merges results in completion order rather than project order produces a report
