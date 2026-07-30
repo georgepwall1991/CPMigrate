@@ -64,7 +64,14 @@ public record FixResult(
 public class FixReport
 {
     public List<FixResult> Results { get; } = new();
-    public int TotalFixesApplied => Results.Count(r => r.Success && r.Changes.Count > 0);
+    /// <summary>
+    /// Issues whose fix changed at least one file, whether or not it finished.
+    ///
+    /// Counting only successful results printed "Applied 0 fix(es) affecting 1 file(s)" for a partial
+    /// outcome — a file had demonstrably been modified. Whether the issue is fully resolved is a separate
+    /// question, answered by <see cref="GetFailedFixes"/> and the warning that follows the summary.
+    /// </summary>
+    public int TotalFixesApplied => Results.Count(r => r.Changes.Count > 0);
     public int TotalFileChanges => Results.Sum(r => r.Changes.Count);
     public bool HasChanges => TotalFileChanges > 0;
 

@@ -123,8 +123,18 @@ public class FixService : IFixService
             return;
         }
 
-        var prefix = dryRun ? "[DRY RUN] Would fix" : "Fixed";
-        _console.Success($"{prefix}: {result.Description}");
+        if (result.Success)
+        {
+            var prefix = dryRun ? "[DRY RUN] Would fix" : "Fixed";
+            _console.Success($"{prefix}: {result.Description}");
+        }
+        else
+        {
+            // A partial result changed files but did not finish the job. Rendering it at success level put
+            // a green "Fixed: …" immediately below the error explaining what had failed.
+            var prefix = dryRun ? "[DRY RUN] Would partially fix" : "Partially fixed";
+            _console.Info($"{prefix}: {result.Description}");
+        }
 
         foreach (var change in result.Changes)
         {

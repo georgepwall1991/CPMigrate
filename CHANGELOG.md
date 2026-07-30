@@ -14,6 +14,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - A failure now carries its reason and names the file: `Could not modify Api.csproj: Access to the path … is denied.`
   - **One file that cannot be read still does not stop the others.** That behaviour was deliberate and is kept — a malformed project in a large solution should not block fixing the rest — but the skipped files are now listed rather than passed over in silence.
   - "No changes were needed" is printed only when nothing changed *and* nothing failed.
+  - A partial result is rendered as *partially* fixed rather than at success level, and the summary counts issues whose fix changed at least one file. Reported at success level, a green `Fixed: …` sat directly under the error explaining what had failed; counted only when successful, the summary printed `Applied 0 fix(es) affecting 1 file(s)` after a file had demonstrably been modified. **Both found in cross-review**, one round after the change that introduced them.
   - **A partial failure is not a success.** An issue spanning several projects where one write succeeds and another fails used to be reported as fixed, so the summary said nothing about the half still broken. It is now reported as unfinished while keeping the changes it did make — those still have to be listed, and under `--fix-dry-run` they are the entire output. **Found in cross-review.**
 
 ### Testing

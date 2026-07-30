@@ -178,6 +178,21 @@ public class FixFailureReportingTests : IDisposable
                 "the part that failed has to be reported even though another part succeeded"
             );
         everything.Should().NotContain(message => message.Contains("No changes were needed"));
+
+        // Cross-review round two: the partial result must not also be rendered as a success, and the
+        // summary must not claim zero fixes applied while a file was demonstrably modified.
+        everything
+            .Should()
+            .NotContain(
+                message => message.Contains("Fixed:") && !message.Contains("Partially"),
+                "a green \"Fixed\" line directly under the error explaining the failure reads as a lie"
+            );
+        everything
+            .Should()
+            .NotContain(
+                message => message.Contains("Applied 0 fix(es)"),
+                "a file was changed, so zero is the wrong count"
+            );
     }
 
     [Fact]
