@@ -304,6 +304,12 @@ internal sealed class AnalysisHandler
                 {
                     using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
 
+                    // Shared: this restore is isolated, or its result will be discarded and retaken if it
+                    // turns out not to be. Either way it cannot corrupt a restore that *is* isolated. Held
+                    // so that a retake elsewhere in the process — which is not isolated and does have to be
+                    // trusted — can wait for it.
+                    using var restoreSlot = await RestoreScanLock.AcquireSharedAsync();
+
                     resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
                         projectPaths[index],
                         options.IncludeTransitive,
@@ -441,36 +447,21 @@ internal sealed class AnalysisHandler
             return;
         }
 
-        // Process-wide, not just serial within this loop. --batch-parallel runs several solutions through
-        // separate scans at once, so a loop that is serial in itself can still be running alongside another
-        // one — and these rescans are precisely the invocations that write to shared locations. One lock for
-        // all unisolated work, held for the whole batch of them: no keys, no predicted paths, nothing to get
-        // subtly wrong. They are rare by construction, so the cost is negligible.
-        await UnisolatedScanLock.WaitAsync();
-        try
+        // Exclusive across the whole process, which means it also waits out other scans' first passes —
+        // --batch-parallel has those running concurrently, and an escaped restore writes somewhere shared.
+        // Serialising only the retakes against each other was not enough: another solution's first pass
+        // could still be mid-restore against the same path.
+        using var exclusive = await RestoreScanLock.AcquireExclusiveAsync();
+
+        foreach (var index in escaped)
         {
-            foreach (var index in escaped)
-            {
-                resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
-                    projectPaths[index],
-                    options.IncludeTransitive,
-                    isolatedIntermediateDirectory: null
-                );
-            }
-        }
-        finally
-        {
-            UnisolatedScanLock.Release();
+            resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
+                projectPaths[index],
+                options.IncludeTransitive,
+                isolatedIntermediateDirectory: null
+            );
         }
     }
-
-    /// <summary>
-    /// Serialises every restore that could not be isolated, across the whole process.
-    ///
-    /// Static because <c>--batch-parallel</c> gives each solution its own scan, and two of those running at
-    /// once is exactly how an unisolated restore ends up sharing an assets file with another.
-    /// </summary>
-    private static readonly SemaphoreSlim UnisolatedScanLock = new(1, 1);
 
     /// <summary>
     /// Whether the restore actually wrote its assets file where it was told to.
