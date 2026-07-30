@@ -12,62 +12,41 @@ public class RedundantReferenceAnalyzer : IAnalyzer
 
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
     {
-        List<AnalysisIssue> issues = [];
-
-        // Grouped from the references as *declared*, not as resolved. Resolution collapses two
-        // PackageReference items with the same Include into one, so reading the resolved list meant this
-        // rule could never see a duplicate and never reported one.
-        //
-        // Conditional declarations are excluded. Declaring a package once per target framework, each
-        // behind a Condition, is how multi-targeting is written — and since this finding is fixable,
-        // calling it a duplicate would have the fixer delete the declaration another framework depends on.
-        // A rule that quietly reported nothing became a rule that breaks a build, which is the worse of
-        // the two. MSBuild conditions cannot be evaluated reliably outside a build, so overlap is not
-        // guessed at: a duplicate is reported only among declarations that always apply.
-        var projectGroups = packageInfo
+        var issues = packageInfo
             .GetDeclaredReferences()
             .Where(reference => !reference.IsConditional)
-            // A transitive entry is not a declaration — nobody wrote it in the project file. It matters
-            // when the declared list is unavailable and the resolved one stands in: under --transitive that
-            // list holds the same package twice, once directly and once as a transitive of something else,
-            // which read as the project declaring it twice.
             .Where(reference => !reference.IsTransitive)
-            .GroupBy(r => r.ProjectPath);
-
-        foreach (var projectGroup in projectGroups)
-        {
-            var redundantPackages = projectGroup
-                .GroupBy(r => r.PackageName, StringComparer.OrdinalIgnoreCase)
-                .Where(g => g.Count() > 1);
-
-            foreach (var packageGroup in redundantPackages)
-            {
-                // GroupBy guarantees non-empty groups, but FirstOrDefault is defensive
-                var firstRef = projectGroup.FirstOrDefault();
-                if (firstRef == null)
-                {
-                    continue;
-                }
-
-                var projectName = packageInfo.ProjectId(firstRef.ProjectPath);
-                var count = packageGroup.Count();
-                var versions = packageGroup.Select(r => r.Version).Distinct().ToList();
-
-                var description = versions.Count == 1
-                    ? $"Referenced {count} times with version {versions[0]}"
-                    : $"Referenced {count} times with versions: {string.Join(", ", versions)}";
-
-                issues.Add(new AnalysisIssue(
-                    packageGroup.Key,
-                    description,
-                    [projectName],
-                    AnalysisIssueCode.RedundantReference,
-                    AnalysisSeverity.Low,
-                    Fixable: true
-                ));
-            }
-        }
+            .GroupBy(r => r.ProjectPath)
+            .SelectMany(projectGroup =>
+                projectGroup
+                    .GroupBy(r => r.PackageName, StringComparer.OrdinalIgnoreCase)
+                    .Where(g => g.Count() > 1)
+                    .Select(packageGroup => BuildIssue(packageInfo, projectGroup, packageGroup)))
+            .ToList();
 
         return new AnalyzerResult(Name, issues);
+    }
+
+    private static AnalysisIssue BuildIssue(
+        ProjectPackageInfo packageInfo,
+        IGrouping<string, PackageReference> projectGroup,
+        IGrouping<string, PackageReference> packageGroup)
+    {
+        var firstRef = projectGroup.First();
+        var projectName = packageInfo.ProjectId(firstRef.ProjectPath);
+        var count = packageGroup.Count();
+        var versions = packageGroup.Select(r => r.Version).Distinct().ToList();
+
+        var description = versions.Count == 1
+            ? $"Referenced {count} times with version {versions[0]}"
+            : $"Referenced {count} times with versions: {string.Join(", ", versions)}";
+
+        return new AnalysisIssue(
+            packageGroup.Key,
+            description,
+            [projectName],
+            AnalysisIssueCode.RedundantReference,
+            AnalysisSeverity.Low,
+            Fixable: true);
     }
 }

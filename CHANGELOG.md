@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.40.0] - 2026-07-30
+
+### Changed
+- **Analyzer LINQ refactoring.** `FrameworkAlignmentAnalyzer` replaces manual dictionary building with a single `GroupBy`/`ToDictionary` pipeline. `RedundantReferenceAnalyzer` flattens nested `foreach` into a `SelectMany` chain with a `BuildIssue` helper, removing the defensive null check that `GroupBy` already guarantees against.
+
 ## [3.39.0] - 2026-07-30
 
 ### Changed
