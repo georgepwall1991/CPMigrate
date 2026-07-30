@@ -51,7 +51,9 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         return (references.Where(r => r.IsTransitive).ToList(), success);
     }
 
-    public async Task<(List<VulnerabilityInfo> Vulnerabilities, bool Success)> ScanVulnerabilitiesAsync(string projectFilePath)
+    public async Task<(List<VulnerabilityInfo> Vulnerabilities, bool Success)> ScanVulnerabilitiesAsync(
+        string projectFilePath,
+        string? isolatedIntermediateDirectory = null)
     {
         var projectName = Path.GetFileName(projectFilePath);
 
@@ -60,7 +62,8 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
             var options = new DotNetPackageListOptions
             {
                 IncludeTransitive = true,
-                Vulnerable = true
+                Vulnerable = true,
+                IsolatedIntermediateDirectory = isolatedIntermediateDirectory
             };
 
             var (output, success) = await _dotNetCliService.RunPackageListJsonAsync(projectFilePath, options);
@@ -81,7 +84,8 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
     public async Task<(List<OutdatedPackageInfo> Packages, bool Success)> ScanOutdatedPackagesAsync(
         string projectFilePath,
         bool includeTransitive,
-        bool includePrerelease = false)
+        bool includePrerelease = false,
+        string? isolatedIntermediateDirectory = null)
     {
         var projectName = Path.GetFileName(projectFilePath);
 
@@ -91,7 +95,8 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
             {
                 IncludeTransitive = includeTransitive,
                 Outdated = true,
-                IncludePrerelease = includePrerelease
+                IncludePrerelease = includePrerelease,
+                IsolatedIntermediateDirectory = isolatedIntermediateDirectory
             };
 
             var (output, success) = await _dotNetCliService.RunPackageListJsonAsync(projectFilePath, options);
@@ -112,7 +117,8 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
     public async Task<(List<DeprecatedPackageInfo> Packages, bool Success)> ScanDeprecatedPackagesAsync(
         string projectFilePath,
         bool includeTransitive,
-        bool includePrerelease = false)
+        bool includePrerelease = false,
+        string? isolatedIntermediateDirectory = null)
     {
         var projectName = Path.GetFileName(projectFilePath);
 
@@ -122,7 +128,8 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
             {
                 IncludeTransitive = includeTransitive,
                 Deprecated = true,
-                IncludePrerelease = includePrerelease
+                IncludePrerelease = includePrerelease,
+                IsolatedIntermediateDirectory = isolatedIntermediateDirectory
             };
 
             var (output, success) = await _dotNetCliService.RunPackageListJsonAsync(projectFilePath, options);
