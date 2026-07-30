@@ -167,6 +167,18 @@ indistinguishable from a deliberate one when someone comes to upgrade.
 - Default severity: `Low`
 - Fixable: no
 
+## LicenseRisk
+
+**A package carries a copyleft, proprietary, or unverified license.**
+
+Copyleft licenses (GPL, AGPL) require derivative works to use the same license, which may conflict
+with proprietary distribution. Proprietary licenses may restrict redistribution. Review the license
+terms before shipping.
+
+- Reported when `--licenses` is passed with `--analyze`
+- Default severity: `High` (copyleft), `Moderate` (proprietary), `Low` (unknown)
+- Fixable: no — review the license on the package's NuGet page
+
 ## Unknown
 
 **An analyzer reported a finding without a specific rule code.**
