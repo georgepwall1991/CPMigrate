@@ -40,6 +40,12 @@ public enum OutputFormat
     /// is a person.
     /// </summary>
     Markdown,
+
+    /// <summary>
+    /// Comma-separated values for spreadsheet analysis. One row per finding, with columns for
+    /// rule, severity, package, description, and affected projects.
+    /// </summary>
+    Csv,
 }
 
 /// <summary>
@@ -55,6 +61,6 @@ public static class OutputFormatExtensions
     /// <param name="format">The configured output format.</param>
     public static bool IsMachineReadable(this OutputFormat format)
     {
-        return format is OutputFormat.Json or OutputFormat.Sarif or OutputFormat.Markdown;
+        return format is OutputFormat.Json or OutputFormat.Sarif or OutputFormat.Markdown or OutputFormat.Csv;
     }
 }

@@ -268,8 +268,8 @@ public class Options
         "output",
         Default = OutputFormat.Terminal,
         HelpText = "Output format: Terminal (default), Json for CI/CD integration, Sarif for GitHub "
-            + "code scanning, or Markdown for a CI job summary or PR comment. Sarif and Markdown "
-            + "require --analyze."
+            + "code scanning, Markdown for a CI job summary or PR comment, or Csv for spreadsheet analysis. "
+            + "Sarif, Markdown, and Csv require --analyze."
     )]
     public OutputFormat Output { get; set; }
 
