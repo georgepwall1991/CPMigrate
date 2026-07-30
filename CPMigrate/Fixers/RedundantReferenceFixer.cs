@@ -25,12 +25,12 @@ public class RedundantReferenceFixer : IFixer
     {
         var changes = new List<FileChange>();
 
-        // Process each affected project
-        foreach (var projectName in issue.AffectedProjects)
+        // AffectedProjects carries project ids (paths relative to the scan root), not file names — this
+        // used to match against ProjectName, which never matched, so the fixer silently found nothing to
+        // do on every finding it was handed.
+        foreach (var projectId in issue.AffectedProjects)
         {
-            // Find the full path for this project
-            var projectPath = packageInfo.References
-                .FirstOrDefault(r => r.ProjectName == projectName)?.ProjectPath;
+            var projectPath = packageInfo.ResolveProjectPath(projectId);
 
             if (projectPath == null || !File.Exists(projectPath))
             {

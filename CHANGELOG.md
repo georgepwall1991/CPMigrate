@@ -6,6 +6,26 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.21.0] - 2026-07-30
+
+### Added
+- **An end-to-end guard that every rule can actually fire.** 3.20.0 found an analyzer that had never produced a finding on any real project while its unit tests passed throughout — because those tests hand-authored an input the pipeline never delivers. Every analyzer here has unit tests; unit tests prove the analyzer's logic, not that what reaches it has the shape the logic expects. Nothing was asking the question end to end.
+  - `EveryRuleCanFireTests` builds real projects, solutions, props files, and an assets file on disk, runs the actual CLI through `ProgramRunner`, and reads the findings back out of the JSON a consumer would parse. Nine rules are provoked this way.
+  - **Every member of `AnalysisIssueCode` must be accounted for**: either a test proving it fires, or an entry in a list of rules that need a live feed, with the reason. A rule added with neither fails the build, so this cannot fall behind the analyzers the way the unit tests did. A companion test rejects an exemption for a rule that no longer exists.
+  - A negative case asserts a healthy solution produces no findings, so none of the above can be satisfied by an analyzer that reports unconditionally.
+
+### Fixed
+- **`RedundantReference` could not fire.** It reads package references from `dotnet package list`, which reports the **resolved** graph — and resolution collapses two `PackageReference` items with the same `Include` into one. Confirmed directly: a project declaring `Newtonsoft.Json` twice yields exactly one entry in that output. So the duplicate the rule exists to find was gone before the analyzer saw it, and the rule only ever worked on the XML fallback path used when the resolved scan *fails*.
+  - `ProjectPackageInfo` now also carries the references **as declared**, read from the project files, and rules about what a file says use those. The resolved list stays authoritative for everything about what restore produced.
+  - The project files are read on the success path only. When a `--transitive` scan fails the XML scan is deliberately not consulted, because it cannot see transitive packages and standing in for the failed scan would turn "we could not look" into "there is nothing there".
+
+- **The `RedundantReference` fixer could not fix.** It resolved each affected project by matching `ProjectName`, but findings have identified projects by **path relative to the scan root** since 3.10.0 — file names were dropped as identifiers because two projects can share one. So the match never succeeded, the fixer found no project, and it returned "no fix needed". `--analyze --fix` printed **"No changes were needed"** over an unrepaired finding: two statements each true and jointly misleading.
+  - `ProjectPackageInfo.ResolveProjectPath` does the reverse lookup, so no caller has to know how a finding's project entry maps back to disk.
+  - Verified on a real project: the duplicate reference is now removed from the file, and a test asserts it on the file rather than on the exit code.
+
+### Testing
+- 13 new tests. 1069 pass.
+
 ## [3.20.0] - 2026-07-30
 
 ### Fixed

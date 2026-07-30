@@ -196,7 +196,8 @@ internal sealed class AnalysisHandler
                 results.SelectMany(r => r.Outdated).ToList(),
                 results.SelectMany(r => r.Deprecated).ToList(),
                 basePath,
-                projectPaths
+                projectPaths,
+                results.SelectMany(r => r.DeclaredReferences).ToList()
             ),
             results.Count(r => !r.ReferencesScanned),
             results.Sum(r => r.DeepScanFailures)
@@ -220,13 +221,13 @@ internal sealed class AnalysisHandler
         // Serial, and deliberately so: see the note on PerformAnalysisScanAsync.
         for (var index = 0; index < projectPaths.Count; index++)
         {
-            var (references, scanned) = await ScanProjectReferencesAsync(
+            var (references, scanned, declared) = await ScanProjectReferencesAsync(
                 options,
                 projectPaths[index]
             );
             CacheScanResults(projectPaths[index], references);
 
-            results[index] = new ProjectScanResult(scanned, 0, references, [], [], []);
+            results[index] = new ProjectScanResult(scanned, 0, references, [], [], [], declared);
 
             if (!deepScansRequested)
             {
@@ -289,24 +290,41 @@ internal sealed class AnalysisHandler
         List<PackageReference> References,
         List<VulnerabilityInfo> Vulnerabilities,
         List<OutdatedPackageInfo> Outdated,
-        List<DeprecatedPackageInfo> Deprecated
+        List<DeprecatedPackageInfo> Deprecated,
+        List<PackageReference> DeclaredReferences
     );
 
     private async Task<(
         List<PackageReference> References,
-        bool Success
+        bool Success,
+        List<PackageReference> Declared
     )> ScanProjectReferencesAsync(Options options, string projectPath)
     {
         var (references, success) = await _projectAnalyzer.ScanResolvedPackagesAsync(
             projectPath,
             options.IncludeTransitive
         );
-        if (!success && !options.IncludeTransitive)
+        if (!success)
         {
+            if (options.IncludeTransitive)
+            {
+                // Deliberately does not touch the project XML. That scan cannot see transitive packages,
+                // so standing in for a failed --transitive scan would turn "we could not look" into "there
+                // is nothing there". The run reports an incomplete analysis instead.
+                return (references, false, []);
+            }
+
             (references, success) = _projectAnalyzer.ScanProjectPackages(projectPath);
+            // The fallback already *is* the project file's own text.
+            return (references, success, references);
         }
 
-        return (references, success);
+        // Read the project file as well. The resolved list cannot answer questions about what the file
+        // says — resolution collapses duplicate PackageReference items — and this is a local XML parse,
+        // not another process, so it costs a fraction of the scan it accompanies.
+        var (declared, declaredRead) = _projectAnalyzer.ScanProjectPackages(projectPath);
+
+        return (references, success, declaredRead ? declared : []);
     }
 
     private void CacheScanResults(string projectPath, List<PackageReference> references)

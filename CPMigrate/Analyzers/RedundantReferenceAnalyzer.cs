@@ -14,9 +14,10 @@ public class RedundantReferenceAnalyzer : IAnalyzer
     {
         List<AnalysisIssue> issues = [];
 
-        // Group by project, then by package name (case-insensitive)
-        var projectGroups = packageInfo.References
-            .GroupBy(r => r.ProjectPath);
+        // Grouped from the references as *declared*, not as resolved. Resolution collapses two
+        // PackageReference items with the same Include into one, so reading the resolved list meant this
+        // rule could never see a duplicate and never reported one.
+        var projectGroups = packageInfo.GetDeclaredReferences().GroupBy(r => r.ProjectPath);
 
         foreach (var projectGroup in projectGroups)
         {

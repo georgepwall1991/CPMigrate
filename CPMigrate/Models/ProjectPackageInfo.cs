@@ -59,9 +59,45 @@ public record ProjectPackageInfo(
     IReadOnlyList<OutdatedPackageInfo>? OutdatedPackages = null,
     IReadOnlyList<DeprecatedPackageInfo>? DeprecatedPackages = null,
     string? BasePath = null,
-    IReadOnlyList<string>? ScannedProjects = null
+    IReadOnlyList<string>? ScannedProjects = null,
+    IReadOnlyList<PackageReference>? DeclaredReferences = null
 )
 {
+    /// <summary>
+    /// Turns an <c>AffectedProjects</c> entry back into a path on disk.
+    ///
+    /// Those entries have held a project *id* — the path relative to the scan root — since 3.10.0, when
+    /// file names were dropped as identifiers because two projects can share one. A fixer matching them
+    /// against <c>ProjectName</c> therefore never matches, and a fixer that finds no project reports "no
+    /// fix needed" rather than failing: the finding stays, the run exits reporting nothing to do, and the
+    /// two statements are individually true and jointly misleading.
+    /// </summary>
+    public string? ResolveProjectPath(string projectId)
+    {
+        return GetProjectsScanned()
+            .FirstOrDefault(path =>
+                string.Equals(ProjectId(path), projectId, StringComparison.OrdinalIgnoreCase)
+            );
+    }
+
+    /// <summary>
+    /// The references as the project files declare them, before NuGet resolves anything.
+    ///
+    /// <see cref="References"/> comes from <c>dotnet package list</c>, which reports the *resolved* graph
+    /// — and resolution collapses two <c>PackageReference</c> items with the same Include into one. Any
+    /// rule about what the project file says, rather than about what restore produced, has to read this
+    /// instead. Reading the resolved list is why <c>RedundantReference</c> could not fire: by the time
+    /// the duplicate reached the analyzer there was only ever one of it.
+    ///
+    /// Falls back to the resolved list when the project files could not be read. That degrades to the
+    /// old behaviour — duplicates simply stay invisible — which is the honest outcome when the raw text
+    /// is unavailable, rather than a silent substitution of different data.
+    /// </summary>
+    public IReadOnlyList<PackageReference> GetDeclaredReferences()
+    {
+        return DeclaredReferences is { Count: > 0 } declared ? declared : References;
+    }
+
     /// <summary>
     /// Every project the scan covered, whether or not it contributed a package reference.
     ///
