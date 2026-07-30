@@ -61,11 +61,9 @@ public class SpectreConsoleService : IConsoleService
         _console.Clear();
         _console.WriteLine();
 
-        _console.Write(new FigletText("CPMigrate")
-            .LeftJustified()
-            .Color(SpectrePalette.CyberColors.Primary));
+        WriteGradientFiglet("CPMigrate");
 
-        var rule = new Rule($"[{Ink.Secondary}]CENTRAL PACKAGE MANAGEMENT MIGRATION TOOL[/]")
+        var rule = new Rule($"[{Ink.Primary}]CENTRAL PACKAGE MANAGEMENT[/] [{Ink.Secondary}]MIGRATION TOOL[/]")
         {
             Style = Style.Parse(Ink.Dim),
         };
@@ -75,7 +73,7 @@ public class SpectreConsoleService : IConsoleService
         var runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription;
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "Unknown";
 
-        var separator = $" [deepskyblue1]{Glyphs.Bullet}[/] ";
+        var separator = $" [{Ink.Dim}]{Glyphs.Bullet}[/] ";
         var grid = new Grid();
         grid.AddColumn(new GridColumn().RightAligned());
         grid.AddRow(string.Join(separator,
@@ -85,6 +83,14 @@ public class SpectreConsoleService : IConsoleService
 
         _console.Write(grid);
         _console.WriteLine();
+    }
+
+    private void WriteGradientFiglet(string text)
+    {
+        var startColor = SpectrePalette.CyberColors.Primary;
+        var endColor = SpectrePalette.CyberColors.Secondary;
+
+        _console.Write(new GradientFigletText(text, startColor, endColor));
     }
 
     public void Banner(string message)
