@@ -447,6 +447,49 @@ public class ScanWorkTests : IDisposable
 
 
     [Fact]
+    public async Task AProjectWithAProjectReferenceIsScannedCorrectlyWhenConcurrent()
+    {
+        // The regression 3.26.0 shipped, and the reason real-world validation matters more than fixtures.
+        //
+        // That release gave each invocation a private intermediate directory, passed as environment
+        // variables because `dotnet package list` rejects -p: arguments. An environment property applies to
+        // every project in the build graph, so restoring a project with a ProjectReference told its
+        // references to write to the same directory. They collided inside a single invocation and the query
+        // returned no frameworks at all — which the scan counted as a success with zero packages, so the
+        // project silently disappeared from the report.
+        //
+        // Measured on Serilog: three of six projects lost, `scanFailures: 0`, no warning. Every fixture in
+        // this file missed it because they were all single, standalone projects.
+        WriteProject("src/Lib/Lib.csproj", "13.0.1");
+        Directory.CreateDirectory(Path.Combine(_root, "src", "App"));
+        File.WriteAllText(
+            Path.Combine(_root, "src", "App", "App.csproj"),
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+                <ProjectReference Include="../Lib/Lib.csproj" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Lib/Lib.csproj", "src/App/App.csproj");
+
+        ScanConcurrencyGate.ResetForTests();
+
+        (await AnalyzeWith(parallelism: 8))
+            .Should()
+            .Contain(
+                "VersionInconsistency",
+                "a project that references another must still report its own packages when scanned "
+                    + "concurrently"
+            );
+    }
+
+    [Fact]
     public async Task TheSameSolutionProducesTheSameReportTwice()
     {
         // Concurrency that merges results in completion order rather than project order produces a report

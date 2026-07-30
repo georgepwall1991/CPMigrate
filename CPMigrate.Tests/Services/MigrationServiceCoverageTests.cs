@@ -131,6 +131,19 @@ public class MigrationServiceCoverageTests
         _mockAnalyzer.Setup(a => a.DiscoverProjectFromPath(projectPath))
             .Returns((tempDir, new List<string> { projectPath }));
 
+        // The resolved scan is what a real run uses; this test is about discovery routing, so it needs a
+        // project that actually scans. It previously configured only the XML fallback, returning nothing,
+        // which now reports a failed scan — correctly, since a fallback that finds nothing is not a
+        // substitute for a scan that did not run.
+        _mockAnalyzer.Setup(a =>
+                a.ScanResolvedPackagesAsync(projectPath, It.IsAny<bool>(), It.IsAny<string?>()))
+            .ReturnsAsync((
+                new List<PackageReference>
+                {
+                    new("Newtonsoft.Json", "13.0.1", projectPath, "P1.csproj"),
+                },
+                true));
+
         _mockAnalyzer.Setup(a => a.ScanProjectPackages(projectPath))
             .Returns((new List<PackageReference>(), true));
 
