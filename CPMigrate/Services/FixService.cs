@@ -87,6 +87,14 @@ public class FixService : IFixService
             if (!result.Success)
             {
                 _console.Error($"Failed to fix {issue.PackageName}: {result.Description}");
+
+                // A partial failure still changed files, and those changes have to be shown — under a dry
+                // run they are the entire output. Only the "nothing worked" case has nothing to display.
+                if (result.Changes.Count > 0)
+                {
+                    WriteFixResult(result, request.DryRun);
+                }
+
                 return result;
             }
 

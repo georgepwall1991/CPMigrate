@@ -45,6 +45,17 @@ public record FixResult(
     /// </summary>
     public static FixResult NoFixNeeded(string reason)
         => new(true, reason, Array.Empty<FileChange>());
+
+    /// <summary>
+    /// Creates a result for a fix that changed some files but could not change others.
+    ///
+    /// Not <see cref="Succeeded"/>: an issue spanning several projects where one write failed is still
+    /// present, so counting it as fixed hides the remainder — <see cref="FixReport.GetFailedFixes"/> would
+    /// omit it and the summary would say nothing. Not <see cref="Failed"/> with the changes dropped either,
+    /// because the files that *were* changed have to be reported and, under a dry run, previewed.
+    /// </summary>
+    public static FixResult PartiallyApplied(string reason, IReadOnlyList<FileChange> changes)
+        => new(false, reason, changes);
 }
 
 /// <summary>

@@ -131,6 +131,56 @@ public class FixFailureReportingTests : IDisposable
     }
 
     [Fact]
+    public async Task AFixThatChangesOneFileButNotAnother_IsNotReportedAsFixed()
+    {
+        // Cross-review caught this: an issue spanning several projects where one write succeeds and another
+        // fails returned Succeeded, so the issue counted as fixed, GetFailedFixes omitted it, and the
+        // summary said nothing about the half that is still broken.
+        WriteProject("""<PackageReference Include="Serilog" Version="1.0.0" />""");
+        var second = Path.Combine(_root, "src", "Api", "Worker.csproj");
+        File.WriteAllText(
+            second,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="2.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        File.WriteAllText(
+            Path.Combine(_root, "App.sln"),
+            "Microsoft Visual Studio Solution File, Format Version 12.00\n"
+                + "Project(\"{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}\") = \"Api\", "
+                + "\"src\\Api\\Api.csproj\", \"{11111111-2222-3333-4444-555555555555}\"\nEndProject\n"
+                + "Project(\"{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}\") = \"Worker\", "
+                + "\"src\\Api\\Worker.csproj\", \"{22222222-2222-3333-4444-555555555555}\"\nEndProject\n"
+        );
+
+        // Api holds the version that needs raising to 2.0.0, and it is the one that cannot be written.
+        MakeReadOnly();
+        var console = new FakeConsoleService();
+
+        await ProgramRunner.RunAsync(
+            ["--analyze", "--fix", "--no-backup", "--quiet", "-s", _root],
+            console
+        );
+
+        var everything = console.OutputMessages.Concat(console.ErrorMessages).ToList();
+
+        everything
+            .Should()
+            .Contain(
+                message => message.Contains("could not be fixed automatically"),
+                "the part that failed has to be reported even though another part succeeded"
+            );
+        everything.Should().NotContain(message => message.Contains("No changes were needed"));
+    }
+
+    [Fact]
     public async Task AFindingWithNoFixer_StillSaysNoChangesWereNeeded()
     {
         // The message is not removed, only made conditional — it is the right thing to say when it is true.

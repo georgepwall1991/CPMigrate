@@ -94,12 +94,13 @@ public class VersionInconsistencyFixer : IFixer
         var description =
             $"Standardized {issue.PackageName} to version {targetVersion} in {changes.Count} project(s)";
 
-        return FixResult.Succeeded(
-            failures.Count > 0
-                ? $"{description}. Could not change {failures.Count} other file(s): {string.Join("; ", failures)}"
-                : description,
-            changes
-        );
+        // A partial outcome is not a success: the issue survives in the files that could not be changed.
+        return failures.Count > 0
+            ? FixResult.PartiallyApplied(
+                $"{description}, but could not change {failures.Count} other file(s): {string.Join("; ", failures)}",
+                changes
+            )
+            : FixResult.Succeeded(description, changes);
     }
 
     private static string? ResolveVersion(List<string> versions, ConflictStrategy strategy)

@@ -14,9 +14,10 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - A failure now carries its reason and names the file: `Could not modify Api.csproj: Access to the path … is denied.`
   - **One file that cannot be read still does not stop the others.** That behaviour was deliberate and is kept — a malformed project in a large solution should not block fixing the rest — but the skipped files are now listed rather than passed over in silence.
   - "No changes were needed" is printed only when nothing changed *and* nothing failed.
+  - **A partial failure is not a success.** An issue spanning several projects where one write succeeds and another fails used to be reported as fixed, so the summary said nothing about the half still broken. It is now reported as unfinished while keeping the changes it did make — those still have to be listed, and under `--fix-dry-run` they are the entire output. **Found in cross-review.**
 
 ### Testing
-- `FixFailureReportingTests` (4 new) drives the real CLI against a read-only project file and asserts what the user is told, that the file is left byte-identical, that a successful run still reports success and says nothing about failures, and that the message survives for the case where it is true. 1089 pass.
+- `FixFailureReportingTests` (5 new) drives the real CLI against a read-only project file and asserts what the user is told, that the file is left byte-identical, that a successful run still reports success and says nothing about failures, that the message survives for the case where it is true, and that a fix which changes one file but not another is not counted as fixed. 1090 pass.
 
 ## [3.22.0] - 2026-07-30
 

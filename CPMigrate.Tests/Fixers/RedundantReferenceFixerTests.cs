@@ -287,8 +287,11 @@ public class RedundantReferenceFixerTests : IDisposable
         var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
 
         // Assert
-        result.Success.Should().BeTrue();
-        // Invalid file skipped, only valid file processed
+        // Not a success: the issue survives in the file that could not be parsed, so reporting it as fixed
+        // would hide the remainder. The valid file is still processed — one unreadable project must not
+        // block the rest — and the description names what could not be changed.
+        result.Success.Should().BeFalse();
+        result.Description.Should().Contain("Invalid.csproj");
         result.Changes.Should().HaveCount(1);
         result.Changes[0].FilePath.Should().Be(validPath);
     }
