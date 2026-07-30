@@ -27,6 +27,8 @@ internal static class CliVerbGuard
         ["rollback"] = ["--rollback"],
         ["batch"] = ["--batch"],
         ["migrate"] = [], // migration is the default action — no flag needed
+        ["doctor"] = ["--doctor"],
+        ["init"] = ["--init"],
     };
 
     /// <summary>

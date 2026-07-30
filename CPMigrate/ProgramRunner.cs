@@ -62,6 +62,14 @@ public static class ProgramRunner
                         return found ? ExitCodes.Success : ExitCodes.ValidationError;
                     }
 
+                    if (options.Doctor)
+                    {
+                        var doctorService = new DoctorService(
+                            services.ConsoleService,
+                            new SolutionDiscovery(services.ConsoleService));
+                        return await doctorService.RunAsync(options.GetDiscoveryTargetPath());
+                    }
+
                     // Merge config file with CLI args (CLI args take precedence)
                     MergeConfigWithCliArgs(
                         options,

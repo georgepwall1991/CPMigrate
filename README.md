@@ -477,6 +477,7 @@ The JSON payload reports the policy alongside the findings:
 | Option | Description |
 |--------|-------------|
 | `--explain <RuleId>` | Print what a rule means, why it matters, and how to resolve it (`--explain all` lists every rule) |
+| `--doctor` | Diagnose your environment: SDK version, NuGet connectivity, workspace, config, and git status |
 | `--completions <Shell>` | Print a completion script and exit: `Bash`, `Zsh`, `Fish`, or `PowerShell` |
 | `--update` | Check for and install the latest version of CPMigrate |
 

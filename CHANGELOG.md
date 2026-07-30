@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.29.0] - 2026-07-30
+
+### Added
+- **`--doctor` environment diagnostics.** One command checks your .NET SDK version, CPMigrate version, runtime, NuGet connectivity, workspace (solutions, projects, CPM status), config file, and git status — rendering a table with pass/warn/fail verdicts and actionable hints. Runs before any file I/O, so it never modifies your workspace. `cpmigrate doctor` (bare word) is caught by the verb guard and suggests the flag.
+
 ## [3.28.2] - 2026-07-30
 
 ### Changed
