@@ -275,15 +275,14 @@ public class ScanWorkTests : IDisposable
     [Fact]
     public async Task ARedirectBehindAnImportChain_DoesNotLoseFindings()
     {
-        // Cross-review caught this too: Directory.Build.props importing another file that declares the path.
-        // Following imports structurally is unbounded — imports of imports, computed paths — so the question
-        // is asked as text across every props/targets file above the project, where a property name cannot
-        // hide.
+        // Cross-review caught this twice: first the import itself was never followed, then the regex that
+        // followed it only matched double quotes. Single quotes are just as valid MSBuild, so the fixture uses
+        // them — an import that is not seen is a redirect that is not seen, which is a silent race.
         File.WriteAllText(
             Path.Combine(_root, "Directory.Build.props"),
             """
             <Project>
-              <Import Project="build/Paths.props" />
+              <Import Project='build/Paths.props' />
             </Project>
             """
         );

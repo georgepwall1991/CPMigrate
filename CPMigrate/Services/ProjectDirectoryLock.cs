@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace CPMigrate.Services;
 
@@ -161,21 +161,38 @@ internal static class ProjectDirectoryLock
         unresolvable = false;
         List<string> imports = [];
 
-        var text = ReadOrNull(file);
-        if (text is null)
+        List<string> declaredPaths;
+        try
         {
+            // Parsed, not pattern-matched. A regex over the raw text missed
+            // <Import Project='build/Paths.props' /> — single quotes are just as valid — and would have gone
+            // on missing whatever else an attribute is allowed to look like. An import that is not seen is a
+            // redirect that is not seen, which is a silent race.
+            declaredPaths = XDocument
+                .Load(file)
+                .Descendants()
+                .Where(element =>
+                    string.Equals(element.Name.LocalName, "Import", StringComparison.Ordinal)
+                )
+                .Select(element => element.Attribute("Project")?.Value?.Trim())
+                .Where(value => !string.IsNullOrEmpty(value))
+                .Select(value => value!)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            // Unreadable or not well-formed. Cannot be ruled out.
             unresolvable = true;
             return imports;
         }
 
         var directory = Path.GetDirectoryName(Path.GetFullPath(file)) ?? string.Empty;
 
-        foreach (var match in ImportPattern.Matches(text).Cast<Match>())
+        foreach (var declared in declaredPaths)
         {
-            var declared = match.Groups["path"].Value.Trim();
-
             if (declared.Contains("$(", StringComparison.Ordinal) || declared.Contains('*'))
             {
+                // A path built from properties, or a wildcard. Not resolvable without evaluating.
                 unresolvable = true;
                 continue;
             }
@@ -200,11 +217,6 @@ internal static class ProjectDirectoryLock
 
         return imports;
     }
-
-    private static readonly Regex ImportPattern = new(
-        "<Import\\s[^>]*Project\\s*=\\s*\"(?<path>[^\"]*)\"",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled
-    );
 
     private static string? ReadOrNull(string file)
     {
