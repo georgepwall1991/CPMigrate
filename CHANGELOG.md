@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.39.0] - 2026-07-30
+
+### Changed
+- **Progress indicators upgraded.** Spinners use `Dots12` with the palette's cyan colour. Progress bars render completed segments in green and finished bars in cyan. An elapsed-time column is added alongside the percentage. Task descriptions use the palette text ink.
+
 ## [3.38.0] - 2026-07-30
 
 ### Changed

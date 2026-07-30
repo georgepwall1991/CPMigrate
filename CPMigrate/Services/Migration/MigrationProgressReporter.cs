@@ -19,8 +19,8 @@ internal sealed class MigrationProgressReporter : IMigrationProgressReporter
         }
 
         return await AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(Style.Parse("cyan"))
+            .Spinner(Spinner.Known.Dots12)
+            .SpinnerStyle(new Style(SpectrePalette.CyberColors.Secondary))
             .StartAsync(description, async _ =>
             {
                 await Task.Delay(100);
@@ -42,12 +42,13 @@ internal sealed class MigrationProgressReporter : IMigrationProgressReporter
             .HideCompleted(false)
             .Columns(
                 new TaskDescriptionColumn(),
-                new ProgressBarColumn(),
+                new ProgressBarColumn { CompletedStyle = new Style(SpectrePalette.CyberColors.Success), FinishedStyle = new Style(SpectrePalette.CyberColors.Secondary) },
                 new PercentageColumn(),
-                new SpinnerColumn())
+                new ElapsedTimeColumn(),
+                new SpinnerColumn(Spinner.Known.Dots12) { CompletedStyle = new Style(SpectrePalette.CyberColors.Success) })
             .StartAsync(async ctx =>
             {
-                var task = ctx.AddTask(description, maxValue: total);
+                var task = ctx.AddTask($"[{SpectrePalette.Ink.Text}]{description}[/]", maxValue: total);
                 await action(new SpectreProgressContext(task));
             });
     }
