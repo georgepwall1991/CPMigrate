@@ -1,4 +1,5 @@
 using System.Text.Json;
+using NuGet.Versioning;
 
 namespace CPMigrate.Services;
 
@@ -56,72 +57,147 @@ public class DependencyGraphService : IDependencyGraphService
         return JsonDocument.Parse(json);
     }
 
+    /// <summary>
+    /// What one target framework says about a package: whether the project references it directly there,
+    /// and whether dropping that reference would be safe.
+    /// </summary>
+    private sealed record FrameworkVerdict(
+        HashSet<string> DirectlyReferenced,
+        HashSet<string> SafeToDrop
+    );
+
+    /// <summary>
+    /// Reports a reference only when *every* target framework that references it directly agrees it is
+    /// safe to drop.
+    ///
+    /// Unioning per-framework findings would advise removing a reference that is transitive under
+    /// <c>net10.0</c> but independently required under <c>netstandard2.0</c> — and the advice would look
+    /// just as confident as a correct one. A framework declared by the project but absent from
+    /// <c>targets</c> cannot be judged at all, so a reference it declares is not reported either: the cost
+    /// of staying quiet is a missed finding, and the cost of guessing is a broken restore.
+    /// </summary>
     private static List<string> AnalyzeAssetsDocument(JsonDocument doc)
     {
-        List<string> redundant = [];
-
         if (
             !doc.RootElement.TryGetProperty("project", out var projectNode)
             || !projectNode.TryGetProperty("frameworks", out var frameworksNode)
             || !doc.RootElement.TryGetProperty("targets", out var targetsNode)
         )
         {
-            return redundant;
-        }
-
-        foreach (var framework in frameworksNode.EnumerateObject())
-        {
-            if (targetsNode.TryGetProperty(framework.Name, out var targetNode))
-            {
-                redundant.AddRange(AnalyzeFramework(framework.Value, targetNode));
-            }
-        }
-
-        return redundant.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-    }
-
-    private static List<string> AnalyzeFramework(JsonElement frameworkNode, JsonElement targetNode)
-    {
-        var directPackages = ReadDirectPackages(frameworkNode);
-        if (directPackages.Count < 2)
-        {
-            // One reference cannot be made redundant by another.
             return [];
         }
 
-        var resolved = IndexByPackageName(targetNode);
+        List<FrameworkVerdict> verdicts = [];
 
-        return directPackages
-            .Where(package => IsProvidedByAnotherDirectReference(package, directPackages, resolved))
+        foreach (var framework in frameworksNode.EnumerateObject())
+        {
+            var directPackages = ReadDirectPackages(framework.Value);
+
+            if (!targetsNode.TryGetProperty(framework.Name, out var targetNode))
+            {
+                // Unjudgeable: record what it references so nothing here can be reported.
+                verdicts.Add(new FrameworkVerdict([.. directPackages.Keys], []));
+                continue;
+            }
+
+            verdicts.Add(AnalyzeFramework(directPackages, targetNode));
+        }
+
+        var everywhere = verdicts
+            .SelectMany(verdict => verdict.DirectlyReferenced)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(package =>
+                verdicts
+                    .Where(verdict => verdict.DirectlyReferenced.Contains(package))
+                    .All(verdict => verdict.SafeToDrop.Contains(package))
+            )
             .ToList();
+
+        return everywhere;
+    }
+
+    private static FrameworkVerdict AnalyzeFramework(
+        Dictionary<string, VersionRange?> directPackages,
+        JsonElement targetNode
+    )
+    {
+        HashSet<string> directlyReferenced = new(
+            directPackages.Keys,
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        if (directPackages.Count < 2)
+        {
+            // One reference cannot be made redundant by another.
+            return new FrameworkVerdict(directlyReferenced, []);
+        }
+
+        var resolved = IndexByPackageName(targetNode);
+        HashSet<string> safeToDrop = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (package, declaredRange) in directPackages)
+        {
+            if (
+                IsSafelyProvidedByAnotherDirectReference(
+                    package,
+                    declaredRange,
+                    directPackages,
+                    resolved
+                )
+            )
+            {
+                safeToDrop.Add(package);
+            }
+        }
+
+        return new FrameworkVerdict(directlyReferenced, safeToDrop);
     }
 
     /// <summary>
-    /// The project's own top-level references, package ones only.
+    /// The project's own top-level package references, with the range each one declares.
     ///
     /// A ProjectReference also appears here, with <c>"target": "Project"</c> and no version. Removing one
     /// because another project happens to reference it too is a different question from package
     /// redundancy, and not one this analyzer is entitled to answer.
     /// </summary>
-    private static List<string> ReadDirectPackages(JsonElement frameworkNode)
+    private static Dictionary<string, VersionRange?> ReadDirectPackages(JsonElement frameworkNode)
     {
+        Dictionary<string, VersionRange?> direct = new(StringComparer.OrdinalIgnoreCase);
+
         if (!frameworkNode.TryGetProperty("dependencies", out var dependencies))
         {
-            return [];
+            return direct;
         }
 
-        return dependencies
-            .EnumerateObject()
-            .Where(dependency =>
+        foreach (var dependency in dependencies.EnumerateObject())
+        {
+            var isPackage =
                 !dependency.Value.TryGetProperty("target", out var target)
                 || string.Equals(
                     target.GetString(),
                     PackageTarget,
                     StringComparison.OrdinalIgnoreCase
-                )
-            )
-            .Select(dependency => dependency.Name)
-            .ToList();
+                );
+
+            if (isPackage)
+            {
+                direct[dependency.Name] = ReadRange(dependency.Value);
+            }
+        }
+
+        return direct;
+    }
+
+    private static VersionRange? ReadRange(JsonElement dependencyNode)
+    {
+        if (!dependencyNode.TryGetProperty("version", out var version))
+        {
+            return null;
+        }
+
+        return VersionRange.TryParse(version.GetString() ?? string.Empty, out var parsed)
+            ? parsed
+            : null;
     }
 
     /// <summary>
@@ -135,7 +211,7 @@ public class DependencyGraphService : IDependencyGraphService
     /// ever run against. It looked like a clean result rather than a broken lookup.
     ///
     /// Restore settles on exactly one version per package per target framework, so the name alone
-    /// identifies a node and no version needs parsing, comparing, or reconstructing.
+    /// identifies a node and no version needs reconstructing to find it.
     /// </summary>
     private static Dictionary<string, JsonElement> IndexByPackageName(JsonElement targetNode)
     {
@@ -151,34 +227,58 @@ public class DependencyGraphService : IDependencyGraphService
         return resolved;
     }
 
-    private static bool IsProvidedByAnotherDirectReference(
+    /// <summary>
+    /// Whether another direct reference already brings this package in <em>at a version that satisfies what
+    /// the direct reference asks for</em>.
+    ///
+    /// Reachability alone is not enough, and getting this wrong produces advice that breaks a build. Take
+    /// a project referencing Serilog.Sinks.File 7.0.0 and Serilog 4.3.0 directly: the sink only requires
+    /// Serilog 4.2.0, and restore settled on 4.3.0 *because of the direct reference*. Serilog is reachable,
+    /// so reachability calls the reference redundant — but removing it silently downgrades Serilog to
+    /// 4.2.0. The finding would read as a tidy-up and land as a regression.
+    ///
+    /// So the highest version any other package requires must be at least the floor the direct reference
+    /// declares — which is what this analyzer's contract has always said, and what reachability quietly
+    /// dropped. Where either version cannot be established the reference is left alone.
+    /// </summary>
+    private static bool IsSafelyProvidedByAnotherDirectReference(
         string package,
-        List<string> directPackages,
+        VersionRange? declaredRange,
+        Dictionary<string, VersionRange?> directPackages,
         Dictionary<string, JsonElement> resolved
     )
     {
-        HashSet<string> reachable = new(StringComparer.OrdinalIgnoreCase);
+        var declaredFloor = declaredRange?.MinVersion;
+        if (declaredFloor is null)
+        {
+            // No floor to compare against — an open or unparseable range. Nothing safe can be concluded.
+            return false;
+        }
+
+        Dictionary<string, NuGetVersion> highestRequired = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (
-            var other in directPackages.Where(candidate =>
+            var other in directPackages.Keys.Where(candidate =>
                 !string.Equals(candidate, package, StringComparison.OrdinalIgnoreCase)
             )
         )
         {
-            CollectReachable(other, resolved, reachable);
+            CollectRequirements(other, resolved, highestRequired);
         }
 
-        return reachable.Contains(package);
+        return highestRequired.TryGetValue(package, out var providedFloor)
+            && providedFloor >= declaredFloor;
     }
 
     /// <summary>
-    /// Everything reachable from a package, excluding the package itself. The visited set is the same
-    /// collection, so a cycle — which malformed or mutually-referencing packages do produce — terminates.
+    /// Walks everything reachable from a package, recording the highest version each dependency is
+    /// required at along the way. The recorded set doubles as the visited set, so a cycle — which
+    /// malformed or mutually-referencing packages do produce — terminates.
     /// </summary>
-    private static void CollectReachable(
+    private static void CollectRequirements(
         string package,
         Dictionary<string, JsonElement> resolved,
-        HashSet<string> reachable
+        Dictionary<string, NuGetVersion> highestRequired
     )
     {
         if (
@@ -189,13 +289,34 @@ public class DependencyGraphService : IDependencyGraphService
             return;
         }
 
-        foreach (
-            var dependency in dependencies
-                .EnumerateObject()
-                .Where(dependency => reachable.Add(dependency.Name))
-        )
+        foreach (var dependency in dependencies.EnumerateObject())
         {
-            CollectReachable(dependency.Name, resolved, reachable);
+            var required = VersionRange.TryParse(
+                dependency.Value.GetString() ?? string.Empty,
+                out var range
+            )
+                ? range.MinVersion
+                : null;
+
+            var isNew = !highestRequired.TryGetValue(dependency.Name, out var known);
+
+            if (required is not null && (known is null || required > known))
+            {
+                highestRequired[dependency.Name] = required;
+            }
+
+            // Recurse on first sight only. Revisiting on a raised version would loop on a cycle, and a
+            // package's own dependencies do not change with the version another package asks for.
+            if (isNew)
+            {
+                if (required is null)
+                {
+                    // Still mark it seen, so an unparseable constraint cannot cause repeated traversal.
+                    highestRequired[dependency.Name] = NuGetVersion.Parse("0.0.0");
+                }
+
+                CollectRequirements(dependency.Name, resolved, highestRequired);
+            }
         }
     }
 }

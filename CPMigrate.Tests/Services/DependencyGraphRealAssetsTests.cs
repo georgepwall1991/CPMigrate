@@ -73,6 +73,261 @@ public class DependencyGraphRealAssetsTests : IDisposable
     }
 
     [Fact]
+    public void DoesNotReportAReference_ThatPinsHigherThanAnythingElseRequires()
+    {
+        // Cross-review caught this, and it is the case my own end-to-end check had produced: a real
+        // Serilog.Sinks.File 7.0.0 requires Serilog 4.2.0, while the project asks for 4.3.0 directly.
+        // Restore settled on 4.3.0 *because of* that direct reference, so Serilog is reachable — and
+        // reachability alone calls the reference redundant. Removing it silently downgrades Serilog to
+        // 4.2.0. The finding would read as a tidy-up and land as a regression, which is worse than the
+        // missing finding this release set out to fix.
+        WriteAssets(
+            """
+            {
+              "version": 3,
+              "targets": {
+                "net10.0": {
+                  "Serilog.Sinks.File/7.0.0": {
+                    "type": "package",
+                    "dependencies": { "Serilog": "4.2.0" }
+                  },
+                  "Serilog/4.3.0": { "type": "package" }
+                }
+              },
+              "project": {
+                "frameworks": {
+                  "net10.0": {
+                    "dependencies": {
+                      "Serilog.Sinks.File": { "target": "Package", "version": "[7.0.0, )" },
+                      "Serilog": { "target": "Package", "version": "[4.3.0, )" }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        );
+
+        Redundant()
+            .Should()
+            .BeEmpty("removing the direct reference would downgrade Serilog from 4.3.0 to 4.2.0");
+    }
+
+    [Fact]
+    public void ReportsAReference_WhenTheTransitiveRequirementIsHigherThanThePin()
+    {
+        // The other direction: another package needs Serilog 5.0.0, so the direct 4.3.0 reference
+        // constrains nothing and removing it changes nothing. "Same or higher" is the documented contract.
+        WriteAssets(
+            """
+            {
+              "version": 3,
+              "targets": {
+                "net10.0": {
+                  "Serilog.Sinks.File/7.0.0": {
+                    "type": "package",
+                    "dependencies": { "Serilog": "5.0.0" }
+                  },
+                  "Serilog/5.0.0": { "type": "package" }
+                }
+              },
+              "project": {
+                "frameworks": {
+                  "net10.0": {
+                    "dependencies": {
+                      "Serilog.Sinks.File": { "target": "Package", "version": "[7.0.0, )" },
+                      "Serilog": { "target": "Package", "version": "[4.3.0, )" }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        );
+
+        Redundant().Should().Contain("Serilog");
+    }
+
+    [Fact]
+    public void TakesTheHighestRequirement_WhenSeveralPackagesRequireTheSameDependency()
+    {
+        // One package asking for less must not veto a finding another package's higher requirement
+        // already guarantees.
+        WriteAssets(
+            """
+            {
+              "version": 3,
+              "targets": {
+                "net10.0": {
+                  "Old.Consumer/1.0.0": {
+                    "type": "package",
+                    "dependencies": { "Serilog": "4.0.0" }
+                  },
+                  "New.Consumer/2.0.0": {
+                    "type": "package",
+                    "dependencies": { "Serilog": "4.3.0" }
+                  },
+                  "Serilog/4.3.0": { "type": "package" }
+                }
+              },
+              "project": {
+                "frameworks": {
+                  "net10.0": {
+                    "dependencies": {
+                      "Old.Consumer": { "target": "Package", "version": "[1.0.0, )" },
+                      "New.Consumer": { "target": "Package", "version": "[2.0.0, )" },
+                      "Serilog": { "target": "Package", "version": "[4.3.0, )" }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        );
+
+        Redundant().Should().Contain("Serilog");
+    }
+
+    [Fact]
+    public void DoesNotReportAReference_ThatIsOnlyRedundantUnderOneOfSeveralFrameworks()
+    {
+        // Cross-review caught this too: unioning per-framework findings advises removing a reference that
+        // is transitive under net10.0 but independently required under netstandard2.0 — and the advice
+        // looks exactly as confident as a correct one. Removing it breaks the framework where it was not
+        // transitive.
+        WriteAssets(
+            """
+            {
+              "version": 3,
+              "targets": {
+                "net10.0": {
+                  "Serilog.Sinks.File/7.0.0": {
+                    "type": "package",
+                    "dependencies": { "Serilog": "4.3.0" }
+                  },
+                  "Serilog/4.3.0": { "type": "package" }
+                },
+                "netstandard2.0": {
+                  "Legacy.Helper/1.0.0": { "type": "package" },
+                  "Serilog/4.3.0": { "type": "package" }
+                }
+              },
+              "project": {
+                "frameworks": {
+                  "net10.0": {
+                    "dependencies": {
+                      "Serilog.Sinks.File": { "target": "Package", "version": "[7.0.0, )" },
+                      "Serilog": { "target": "Package", "version": "[4.3.0, )" }
+                    }
+                  },
+                  "netstandard2.0": {
+                    "dependencies": {
+                      "Legacy.Helper": { "target": "Package", "version": "[1.0.0, )" },
+                      "Serilog": { "target": "Package", "version": "[4.3.0, )" }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        );
+
+        Redundant()
+            .Should()
+            .BeEmpty(
+                "Serilog is directly required under netstandard2.0, where nothing provides it"
+            );
+    }
+
+    [Fact]
+    public void ReportsAReference_RedundantUnderEveryFrameworkThatDeclaresIt()
+    {
+        // Multi-targeting must not block a finding that holds everywhere.
+        WriteAssets(
+            """
+            {
+              "version": 3,
+              "targets": {
+                "net10.0": {
+                  "Serilog.Sinks.File/7.0.0": {
+                    "type": "package",
+                    "dependencies": { "Serilog": "4.3.0" }
+                  },
+                  "Serilog/4.3.0": { "type": "package" }
+                },
+                "netstandard2.0": {
+                  "Serilog.Sinks.File/7.0.0": {
+                    "type": "package",
+                    "dependencies": { "Serilog": "4.3.0" }
+                  },
+                  "Serilog/4.3.0": { "type": "package" }
+                }
+              },
+              "project": {
+                "frameworks": {
+                  "net10.0": {
+                    "dependencies": {
+                      "Serilog.Sinks.File": { "target": "Package", "version": "[7.0.0, )" },
+                      "Serilog": { "target": "Package", "version": "[4.3.0, )" }
+                    }
+                  },
+                  "netstandard2.0": {
+                    "dependencies": {
+                      "Serilog.Sinks.File": { "target": "Package", "version": "[7.0.0, )" },
+                      "Serilog": { "target": "Package", "version": "[4.3.0, )" }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        );
+
+        Redundant().Should().Equal("Serilog");
+    }
+
+    [Fact]
+    public void DoesNotReportAReference_DeclaredByAFrameworkThatCannotBeJudged()
+    {
+        // A framework the project declares but that is missing from targets cannot be evaluated. Reporting
+        // anyway would be a guess, and the cost of a wrong guess here is a broken restore while the cost of
+        // silence is one missed finding.
+        WriteAssets(
+            """
+            {
+              "version": 3,
+              "targets": {
+                "net10.0": {
+                  "Serilog.Sinks.File/7.0.0": {
+                    "type": "package",
+                    "dependencies": { "Serilog": "4.3.0" }
+                  },
+                  "Serilog/4.3.0": { "type": "package" }
+                }
+              },
+              "project": {
+                "frameworks": {
+                  "net10.0": {
+                    "dependencies": {
+                      "Serilog.Sinks.File": { "target": "Package", "version": "[7.0.0, )" },
+                      "Serilog": { "target": "Package", "version": "[4.3.0, )" }
+                    }
+                  },
+                  "netstandard2.0": {
+                    "dependencies": {
+                      "Serilog": { "target": "Package", "version": "[4.3.0, )" }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        );
+
+        Redundant().Should().BeEmpty();
+    }
+
+    [Fact]
     public void FindsNothing_WhenNoDirectReferenceIsProvidedTransitively()
     {
         // The negative case, so the fix cannot be "report everything".
