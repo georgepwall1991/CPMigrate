@@ -504,6 +504,24 @@ public class EveryRuleCanFireTests : IDisposable
                 nameof(AnalysisIssueCode.VersionInconsistency),
                 "1.0.0 against 2.0.0 is a real inconsistency, whatever else Api pins conditionally"
             );
+
+        // And the conditional 99.0.0 must not be what everyone gets unified to. Cross-review caught this
+        // as the mirror image of the previous round's fix: asking the question per package hid the
+        // unconditional pin, asking it per version keeps the pin comparable while leaving the override out.
+        await ProgramRunner.RunAsync(
+            ["--analyze", "--fix", "--no-backup", "--quiet", "-s", _root],
+            new FakeConsoleService()
+        );
+
+        var api = await File.ReadAllTextAsync(Path.Combine(_root, "src", "Api", "Api.csproj"));
+        var worker = await File.ReadAllTextAsync(
+            Path.Combine(_root, "src", "Worker", "Worker.csproj")
+        );
+
+        worker.Should().Contain("2.0.0").And.NotContain("99.0.0");
+        api.Should()
+            .Contain("99.0.0", "the conditional override itself is left alone")
+            .And.NotContain("1.0.0", "the unconditional pin is unified to 2.0.0");
     }
 
     [Fact]

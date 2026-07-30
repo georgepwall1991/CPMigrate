@@ -32,7 +32,7 @@ public class VersionInconsistencyFixer : IFixer
         // conditional declaration when writing is not enough if it still decides what gets written.
         var references = packageInfo.References
             .Where(r => r.PackageName.Equals(issue.PackageName, StringComparison.OrdinalIgnoreCase))
-            .Where(r => !packageInfo.IsConditionallyDeclared(r.ProjectPath, r.PackageName))
+            .Where(r => !packageInfo.IsConditionallyDeclared(r.ProjectPath, r.PackageName, r.Version))
             .ToList();
 
         if (references.Count == 0)

@@ -23,7 +23,7 @@ public class VersionInconsistencyAnalyzer : IAnalyzer
             // unifying to the highest version, breaking the target that needed the older one. Reporting a
             // finding the fixer then refuses to act on is its own kind of wrong, so it is not reported.
             .Where(reference =>
-                !packageInfo.IsConditionallyDeclared(reference.ProjectPath, reference.PackageName)
+                !packageInfo.IsConditionallyDeclared(reference.ProjectPath, reference.PackageName, reference.Version)
             )
             .GroupBy(r => r.PackageName, StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Select(r => r.Version).Distinct().Count() > 1);

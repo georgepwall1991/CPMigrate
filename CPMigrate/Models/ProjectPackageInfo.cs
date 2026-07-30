@@ -78,7 +78,7 @@ public record ProjectPackageInfo(
     /// rule comparing versions across projects would read those two pins as an inconsistency and — being
     /// fixable — have them unified to the highest, silently breaking the target that needed the older one.
     /// </summary>
-    public bool IsConditionallyDeclared(string projectPath, string packageName)
+    public bool IsConditionallyDeclared(string projectPath, string packageName, string version)
     {
         if (DeclaredReferences is null)
         {
@@ -100,10 +100,26 @@ public record ProjectPackageInfo(
             )
             .ToList();
 
-        // Every declaration, not any: a project can pin a package unconditionally *and* override it for
-        // one framework. Suppressing the whole project/package pair on the strength of the conditional one
-        // would hide a genuine inconsistency between that unconditional pin and another project's.
-        return declarations.Count > 0 && declarations.TrueForAll(reference => reference.IsConditional);
+        if (declarations.Count == 0)
+        {
+            return false;
+        }
+
+        // Per *version*, not per package. A project can pin a package unconditionally and override it for
+        // one framework, and the two questions have opposite answers: asking about the pair either hid the
+        // unconditional pin from comparison, or left the conditional override in it — where the Highest
+        // strategy would pick the override and rewrite everyone else to a version meant for one framework.
+        var matching = declarations
+            .Where(reference =>
+                string.Equals(reference.Version, version, StringComparison.OrdinalIgnoreCase)
+            )
+            .ToList();
+
+        // No declaration names this version — it came from a central pin, so the package-level answer is
+        // the only one available.
+        return matching.Count > 0
+            ? matching.TrueForAll(reference => reference.IsConditional)
+            : declarations.TrueForAll(reference => reference.IsConditional);
     }
 
     /// <summary>
