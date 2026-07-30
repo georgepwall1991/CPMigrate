@@ -66,7 +66,7 @@ public class CompletionScriptGeneratorTests
         var script = CompletionScriptGenerator.Generate(CompletionShell.Bash);
 
         script.Should().Contain("complete -F _cpmigrate_completions cpmigrate");
-        script.Should().Contain("COMPREPLY=");
+        script.Should().Contain("COMPREPLY");
     }
 
     [Fact]
@@ -167,6 +167,39 @@ public class CompletionScriptGeneratorTests
 
         script.Should().Contain("compgen -f");
         script.Should().Contain("--solution");
+    }
+
+    [Fact]
+    public void Generate_Bash_DoesNotWordSplitCandidates()
+    {
+        // COMPREPLY=($(compgen …)) word-splits, so "with space.sln" arrives as two useless
+        // candidates. mapfile reads a line at a time.
+        var script = CompletionScriptGenerator.Generate(CompletionShell.Bash);
+
+        script.Should().Contain("mapfile -t COMPREPLY < <(compgen");
+        script.Should().NotContain("COMPREPLY=($(compgen", "this form word-splits");
+    }
+
+    [Fact]
+    public void Generate_PowerShell_OffersShortFormsToo()
+    {
+        // `cpmigrate -<Tab>` should suggest -s, -p, -a as the other shells do.
+        var script = CompletionScriptGenerator.Generate(CompletionShell.PowerShell);
+
+        script.Should().Contain("Name = '-s'");
+        script.Should().Contain("Name = '-a'");
+    }
+
+    [Fact]
+    public void Generate_PowerShell_PathCompletionKeepsTheTypedPrefix()
+    {
+        // Returning only the leaf name replaces "src/Ap" with "App.csproj" and silently produces the
+        // wrong path.
+        var script = CompletionScriptGenerator.Generate(CompletionShell.PowerShell);
+
+        script.Should().Contain("$prefix");
+        script.Should().Contain("Split-Path -Parent $wordToComplete");
+        script.Should().Contain("$text = \"$prefix$($_.Name)\"");
     }
 
     [Fact]

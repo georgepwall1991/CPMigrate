@@ -16,6 +16,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   - zsh shows each option's help text inline while completing, which is most of what a zsh completion is for. Brackets and colons in that text are escaped, since both are structural in a zsh spec.
   - Output is deterministic, so a committed script regenerates without a diff.
   - PowerShell completes values and paths too, not just flag names — it inspects the preceding token, so `--output <tab>` offers the formats rather than repeating the flag list.
+  - Paths containing spaces stay a single candidate. `COMPREPLY=($(compgen …))` word-splits, so `with space.sln` arrived as two useless suggestions; bash uses `mapfile` instead. PowerShell keeps the directory prefix already typed, since returning only the leaf name would replace `src/Ap` with `App.csproj` and silently produce the wrong path.
   - Emitted **before the config file is read**. `--completions zsh > _cpmigrate` is a documented redirection, so a "Loaded config from: …" notice would land inside the script, and a configured output format could otherwise make the reporting contract reject the command outright.
   - Verified by asking the shells themselves: the generated bash and zsh scripts are parsed with `-n`, which catches an unbalanced quote or a missing `esac` that no structural assertion would.
 

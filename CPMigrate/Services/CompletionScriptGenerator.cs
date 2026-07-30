@@ -124,7 +124,7 @@ public static class CompletionScriptGenerator
         {
             script.AppendLine($"    {string.Join('|', option.AllNames())})");
             script.AppendLine(
-                $"      COMPREPLY=($(compgen -W \"{string.Join(' ', option.EnumValues)}\" -- \"$current\"))"
+                $"      mapfile -t COMPREPLY < <(compgen -W \"{string.Join(' ', option.EnumValues)}\" -- \"$current\")"
             );
             script.AppendLine("      return 0;;");
         }
@@ -134,13 +134,15 @@ public static class CompletionScriptGenerator
         if (pathOptions.Count > 0)
         {
             script.AppendLine($"    {string.Join('|', pathOptions)})");
-            script.AppendLine("      COMPREPLY=($(compgen -f -- \"$current\"))");
+            // mapfile, not COMPREPLY=($(…)): the command substitution word-splits, turning
+            // "with space.sln" into two useless candidates.
+            script.AppendLine("      mapfile -t COMPREPLY < <(compgen -f -- \"$current\")");
             script.AppendLine("      return 0;;");
         }
 
         script.AppendLine("  esac");
         script.AppendLine();
-        script.AppendLine($"  COMPREPLY=($(compgen -W \"{flags}\" -- \"$current\"))");
+        script.AppendLine($"  mapfile -t COMPREPLY < <(compgen -W \"{flags}\" -- \"$current\")");
         script.AppendLine("}");
         script.AppendLine();
         script.AppendLine($"complete -F _{CommandName}_completions {CommandName}");
@@ -252,9 +254,13 @@ public static class CompletionScriptGenerator
 
         foreach (var option in options)
         {
-            script.AppendLine(
-                $"        @{{ Name = '{option.LongName}'; Tooltip = '{EscapePowerShell(option.HelpText)}' }}"
-            );
+            // Short forms included, so `cpmigrate -<Tab>` suggests -s, -p, -a as the other shells do.
+            foreach (var name in option.AllNames())
+            {
+                script.AppendLine(
+                    $"        @{{ Name = '{name}'; Tooltip = '{EscapePowerShell(option.HelpText)}' }}"
+                );
+            }
         }
 
         script.AppendLine("    )");
@@ -301,11 +307,24 @@ public static class CompletionScriptGenerator
         script.AppendLine("    }");
         script.AppendLine();
         script.AppendLine("    if ($previous -and $pathOptions -contains $previous) {");
-        script.AppendLine("        return Get-ChildItem -Path \"$wordToComplete*\" -ErrorAction SilentlyContinue |");
+        // The completion text has to carry the prefix already typed. Returning only the leaf name
+        // replaces "src/Ap" with "App.csproj" and silently produces the wrong path.
+        script.AppendLine("        $prefix = if ($wordToComplete) {");
+        script.AppendLine("            $parent = Split-Path -Parent $wordToComplete");
+        script.AppendLine(
+            "            if ($parent) { \"$parent$([System.IO.Path]::DirectorySeparatorChar)\" } else { '' }"
+        );
+        script.AppendLine("        } else { '' }");
+        script.AppendLine();
+        script.AppendLine(
+            "        return Get-ChildItem -Path \"$wordToComplete*\" -ErrorAction SilentlyContinue |"
+        );
         script.AppendLine("            ForEach-Object {");
+        script.AppendLine("                $text = \"$prefix$($_.Name)\"");
+        script.AppendLine("                if ($text -match '\\s') { $text = \"'$text'\" }");
         script.AppendLine(
             "                [System.Management.Automation.CompletionResult]::new("
-                + "$_.Name, $_.Name, 'ProviderItem', $_.FullName)"
+                + "$text, $_.Name, 'ProviderItem', $_.FullName)"
         );
         script.AppendLine("            }");
         script.AppendLine("    }");
