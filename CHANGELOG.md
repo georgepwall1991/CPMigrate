@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.28.2] - 2026-07-30
+
+### Changed
+- **README rebuilt around a conversion funnel** — 1046 lines down to 633. The hero is a Remotion-rendered product video, linked through its poster frame so NuGet's sanitizer (which strips `<video>`) still shows the visual and GitHub plays it. Quick Start folds into the 30-second path, Gallery folds into See it work (the interactive wizard GIF previously appeared twice), and a new FAQ targets the long-tail searches in the discoverability keyword map. Every test-held contract survives: section headers, CLI option tables, exit-code table, pinned install line.
+- **All terminal recordings re-recorded at 3.28.x.** The three shipped GIFs showed v3.5.0 or earlier — the interactive one was pre-3.5.0 styling by this changelog's own admission. Regenerated with the committed `scripts/generate-docs-media.sh`; the Remotion source lives at `media/hero-video/` with a one-command `render.sh` for the hero mp4, the README poster, and the social card.
+- **Docs site SEO.** The landing page embeds the hero video and gains `FAQPage` and `VideoObject` JSON-LD alongside the existing `SoftwareApplication`; the migration guide gains `BreadcrumbList`; every `og:image` is now a purpose-rendered 1200×630 social card instead of a square logo or a GIF; the sitemap carries `lastmod` and `priority`.
+
+### Fixed
+- **The nupkg no longer bundles `assets/video/`.** The pack glob `..\assets\**\*` swept the 3.4MB hero video and poster into every package; NuGet renders neither, so they were dead weight. Narrowed to `..\assets\*.svg`, which is what PackageReadmeFile references.
+- `node_modules/` is gitignored — the Remotion project is the repo's first Node toolchain.
+
 ## [3.28.1] - 2026-07-30
 
 ### Fixed — upgrade from 3.26.0, 3.27.0 or 3.28.0

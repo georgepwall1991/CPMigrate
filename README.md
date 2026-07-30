@@ -17,15 +17,21 @@
 
 </div>
 
-**CPMigrate** is a .NET global tool that migrates solutions to [`Directory.Packages.props`](https://learn.microsoft.com/nuget/consume-packages/central-package-management), analyzes NuGet dependency health, auto-fixes common package issues, and updates packages with test verification and rollback.
+<a href="https://github.com/georgepwall1991/CPMigrate/raw/main/assets/video/cpmigrate-hero.mp4">
+  <img src="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/video/cpmigrate-hero-poster.png" alt="CPMigrate in action — migrating a .NET solution to Directory.Packages.props, scoring migration risk, and bisecting NuGet package updates to keep tests green" width="100%" />
+</a>
+
+**CPMigrate** is a .NET global tool that migrates solutions to [`Directory.Packages.props`](https://learn.microsoft.com/nuget/consume-packages/central-package-management), analyzes NuGet dependency health, auto-fixes common package issues, and updates packages with test verification and rollback. One command generates the central props file; one more keeps your packages current without breaking the build.
 
 Docs hub: [georgepwall1991.github.io/CPMigrate](https://georgepwall1991.github.io/CPMigrate/)
+
+**Contents:** [The problem](#the-problem) · [What it catches](#what-it-catches) · [Install](#install) · [30-second path](#30-second-path) · [See it work](#see-it-work) · [Feature snapshot](#feature-snapshot) · [FAQ](#faq) · [Features](#features) · [CLI reference](#cli-reference) · [Exit codes](#exit-codes) · [CI/CD integration](#cicd-integration) · [Compatibility](#compatibility)
 
 ---
 
 ## The problem
 
-Managing NuGet dependencies across large .NET solutions is painful. Version drift, duplicated references, transitive conflicts, and security vulnerabilities accumulate silently until they break your build or compromise your supply chain. Hand-editing every `.csproj` into Central Package Management is slow and easy to get wrong; ad-hoc scripts rarely include dry-run, fixers, or test-backed rollback.
+Managing NuGet dependencies across large .NET solutions is painful. Version drift, duplicated references, transitive conflicts, and security vulnerabilities accumulate silently until they break your build or compromise your supply chain. Hand-editing every `.csproj` into Central Package Management is slow and easy to get wrong — and "update everything and pray" is not a package strategy. CPMigrate replaces both with a dry-run-first migration, a dependency health scoreboard, and updates that roll themselves back when tests fail.
 
 ## What it catches
 
@@ -36,14 +42,14 @@ Managing NuGet dependencies across large .NET solutions is painful. Version drif
 - **Security vulnerabilities** — known CVEs via `--audit` (direct and transitive)
 - **Outdated / deprecated packages** — inventory checks with `--outdated` / `--deprecated`
 - **Scattered versions** — still living in `.csproj` files instead of `Directory.Packages.props`
-- **CPM drift** — after migrating: inline versions that override the central one, references with no version at all, orphaned pins, a props file with central management switched off
+- **CPM drift** — inline versions that override the central one, references with no version at all, orphaned pins, a props file with central management switched off
 
 ## Install
 
 Requires **.NET SDK 8.0** or later. Targets .NET 10 with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.28.1
+dotnet tool install --global CPMigrate --version 3.28.2
 ```
 
 ```bash
@@ -62,26 +68,6 @@ cpmigrate --update
 - From source: `git clone https://github.com/georgepwall1991/CPMigrate.git && dotnet build`
 
 > NuGet indexing may take a few minutes after a new release. If the version is missing: `dotnet nuget locals http-cache --clear`
-
-## See it work
-
-Product-flow diagrams from real CLI output (not stock screenshots). Absolute URLs so NuGet.org and GitHub both render them.
-
-### Dependency analysis scoreboard
-
-![CPMigrate dependency analysis scoreboard — version inconsistencies and health share meters](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/flow-analyze-scoreboard.svg)
-
-### CPM migration before / after
-
-![CPMigrate Central Package Management migration — Directory.Packages.props before and after](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/flow-cpm-migration.svg)
-
-### Safe package updates with --bisect
-
-![CPMigrate package update bisect — keep the largest green update subset with rollback](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/flow-update-bisect.svg)
-
-Terminal recordings (also absolute HTTPS for NuGet PackageReadmeFile):
-
-![CPMigrate Interactive Wizard Mission Control dashboard](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-interactive.gif)
 
 ## 30-second path
 
@@ -102,7 +88,27 @@ cpmigrate --update-packages --dry-run
 cpmigrate --update-packages --bisect
 ```
 
-Interactive first run: `cpmigrate` launches Mission Control (wizard). Single project: `cpmigrate --project ./src/Api/Api.csproj --dry-run`.
+**First run?** Bare `cpmigrate` launches Mission Control, an interactive wizard that guides you through migration, analysis, updates, and rollback. **Single project?** `cpmigrate --project ./src/Api/Api.csproj --dry-run`. **CI?** Add `--output Json --quiet` to any command for strict JSON-only stdout.
+
+## See it work
+
+Product-flow diagrams rendered from real CLI output, plus a recording of the interactive wizard.
+
+### Dependency analysis scoreboard
+
+![CPMigrate dependency analysis scoreboard — version inconsistencies and health share meters](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/flow-analyze-scoreboard.svg)
+
+### CPM migration before / after
+
+![CPMigrate Central Package Management migration — Directory.Packages.props before and after](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/flow-cpm-migration.svg)
+
+### Safe package updates with --bisect
+
+![CPMigrate package update bisect — keep the largest green update subset with rollback](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/flow-update-bisect.svg)
+
+### Mission Control — the interactive wizard
+
+![CPMigrate Interactive Wizard Mission Control dashboard — guided Central Package Management migration, risk assessment, and dependency analysis](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-interactive.gif)
 
 ## Feature snapshot
 
@@ -134,103 +140,37 @@ Interactive first run: `cpmigrate` launches Mission Control (wizard). Single pro
 - Monorepo and multi-solution teams standardizing dependency policy
 - CI/CD maintainers who need machine-readable dependency analysis and safe update workflows
 
-## Compatibility
-
-- **.NET SDK:** 8.0+ (tool targets `net10.0` with `LatestMajor` roll-forward)
-- **Project types:** `.csproj` / `.fsproj` / `.vbproj`
-- **Solutions:** `.sln` and `.slnx`
-- **CPM:** generates and consumes standard NuGet Central Package Management files
-
 ---
 
-## Table of Contents
+## FAQ
 
-- [The problem](#the-problem)
-- [What it catches](#what-it-catches)
-- [Install](#install)
-- [See it work](#see-it-work)
-- [30-second path](#30-second-path)
-- [Feature snapshot](#feature-snapshot)
-- [Compatibility](#compatibility)
-- [Quick Start](#quick-start)
-- [Features](#features)
-  - [CPM Migration](#cpm-migration)
-  - [Dependency Analysis](#dependency-analysis)
-  - [Auto-Fix](#auto-fix)
-  - [Package Updates with Test Verification](#package-updates-with-test-verification)
-  - [Bisecting Updates](#bisecting-updates-v36)
-  - [Directory.Build.props Unification](#directorybuildprops-unification)
-  - [Batch Processing](#batch-processing)
-  - [Backup & Rollback](#backup--rollback)
-  - [Configuration File](#configuration-file)
-- [CLI Reference](#cli-reference)
-- [Exit Codes](#exit-codes)
-- [CI/CD Integration](#cicd-integration)
-- [Examples & Benchmarks](#examples--benchmarks)
-- [Release Cadence](#release-cadence)
-- [Telemetry (Opt-in)](#telemetry-opt-in)
-- [Community Growth](#community-growth)
-- [Gallery](#gallery)
-- [Contributing](#contributing)
-- [License](#license)
+### How do I migrate a .NET solution to Central Package Management?
 
----
+Run `cpmigrate -s ./MySolution.sln --dry-run` to preview, then `cpmigrate -s ./MySolution.sln` to apply. CPMigrate extracts every `<PackageReference>` from your `.csproj` / `.fsproj` / `.vbproj` files, resolves version conflicts with a defined strategy, generates `Directory.Packages.props`, and strips the inline `Version` attributes — with a timestamped backup you can roll back to.
 
-## Quick Start
+### What is Directory.Packages.props?
 
-### Interactive Mode (Recommended for first-time users)
+It is the file NuGet Central Package Management (CPM) reads package versions from, so every project in a solution shares one version per package instead of declaring its own. CPMigrate generates and maintains it for you. [Microsoft's CPM docs](https://learn.microsoft.com/nuget/consume-packages/central-package-management) cover the format itself.
 
-```bash
-cpmigrate
-```
+### Can CPMigrate roll back a bad package update?
 
-Launches the Mission Control dashboard — a step-by-step wizard that guides you through migration, analysis, package updates, rollback, and more. The wizard adapts to your environment: when CPM is already enabled, it offers **Update NuGet Packages** as a quick action with prompts for transitive dependencies, pre-release versions, and dry-run mode.
+Yes, two ways. `--update-packages` runs `dotnet test` after applying updates and automatically rolls back if tests fail. `--update-packages --bisect` goes further: instead of reverting all 38 updates because one broke, it keeps the largest subset that stays green and names the packages it held back. Migrations get timestamped backups restorable with `cpmigrate --rollback`.
 
-### Migrate a solution to CPM
+### Does CPMigrate work in CI/CD?
 
-```bash
-cpmigrate -s ./MySolution.sln
-```
+It is built for it. `--output Json --quiet` gives strict JSON-only stdout against a [published schema](schemas/cpmigrate-output.schema.json); `--output Sarif` uploads to GitHub code scanning as PR annotations; `--output Markdown` drops a verdict-first report into `$GITHUB_STEP_SUMMARY`. Exit codes are contract-level — `5` means findings, `8` means the scan did not complete. See [CI/CD integration](#cicd-integration).
 
-### Preview changes without modifying files
+### Does it support .slnx and monorepos?
 
-```bash
-cpmigrate -s ./MySolution.sln --dry-run
-```
+Yes. CPMigrate reads both classic `.sln` and Visual Studio 17.10+ `.slnx` solutions, and `--batch /path/to/repo` recursively discovers every solution in a monorepo — optionally in parallel (`--batch-parallel`) and continuing past failures (`--batch-continue`). Each solution gets an isolated backup directory.
 
-### Migrate a single project
+### Can it gate on security vulnerabilities without failing on existing debt?
 
-```bash
-cpmigrate --project ./src/Api/Api.csproj --dry-run
-```
+Yes. `--audit` scans direct and transitive dependencies for known CVEs; `--fail-on High` narrows the exit-code gate to severities you care about while still reporting everything; `--write-baseline` records today's findings once, so CI fails only on *new* debt. Baselined findings stay visible in every report — terminal, JSON, and SARIF.
 
-### Analyze dependency health
+### Which .NET versions does CPMigrate support?
 
-```bash
-cpmigrate --analyze
-```
-
-### Update all packages to latest versions
-
-```bash
-cpmigrate --update-packages
-
-# Include transitive dependencies
-cpmigrate --update-packages --transitive
-```
-
-### Use in CI from the first run
-
-```bash
-# JSON-only output for CI parsers
-cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analysis.json
-
-# Safe preview before migration
-cpmigrate -s ./MySolution.sln --dry-run --output Json --quiet > migration-preview.json
-```
-
-Use the dedicated CI guide for GitHub Actions snippets and machine-readable workflows:
-`https://georgepwall1991.github.io/CPMigrate/guides/ci-cd/`
+The tool targets .NET 10 and rolls forward (`LatestMajor`); it runs on any machine with **.NET SDK 8.0+**. Your projects can target anything — CPMigrate edits project XML directly and does not build your solution except when you ask it to verify updates with `dotnet test`.
 
 ---
 
@@ -238,23 +178,14 @@ Use the dedicated CI guide for GitHub Actions snippets and machine-readable work
 
 ### CPM Migration
 
-Scans your `.sln` or `.slnx` file, extracts all `<PackageReference>` entries from `.csproj` / `.fsproj` / `.vbproj` files, resolves version conflicts, and generates a centralized `Directory.Packages.props`.
+Scans your `.sln` or `.slnx`, extracts all `<PackageReference>` entries, resolves version conflicts, and generates a centralized `Directory.Packages.props`.
 
 ```bash
-# Standard migration
-cpmigrate -s ./MySolution.sln
-
-# Merge into an existing Directory.Packages.props
-cpmigrate -s ./MySolution.sln --merge
-
-# Fail if any version conflicts exist (strict mode)
-cpmigrate -s ./MySolution.sln --conflict-strategy Fail
-
-# Prompt for each conflict interactively
-cpmigrate -s ./MySolution.sln --interactive-conflicts
+cpmigrate -s ./MySolution.sln                       # standard migration
+cpmigrate -s ./MySolution.sln --merge               # merge into existing props
+cpmigrate -s ./MySolution.sln --conflict-strategy Fail    # strict mode
+cpmigrate -s ./MySolution.sln --interactive-conflicts     # prompt per conflict
 ```
-
-**Conflict resolution strategies:**
 
 | Strategy | Behavior |
 |----------|----------|
@@ -266,10 +197,13 @@ cpmigrate -s ./MySolution.sln --interactive-conflicts
 
 ### Dependency Analysis
 
-Run 7 built-in analyzers without modifying any files:
+Run the built-in analyzers without modifying any files:
 
 ```bash
-cpmigrate --analyze
+cpmigrate --analyze                                 # core analyzers
+cpmigrate --analyze --transitive                    # + transitive dependencies
+cpmigrate --analyze --audit                         # + security vulnerability scanning
+cpmigrate --analyze --outdated --deprecated         # + outdated / deprecated checks
 ```
 
 | Analyzer | What it detects |
@@ -282,22 +216,7 @@ cpmigrate --analyze
 | **Redundant Direct References** | Explicit references already provided transitively (lifting candidates) |
 | **Security Vulnerabilities** | Known CVEs in direct and transitive dependencies (requires `--audit`) |
 
-```bash
-# Include transitive dependencies in analysis
-cpmigrate --analyze --transitive
-
-# Include security vulnerability scanning
-cpmigrate --analyze --audit
-
-# Full analysis with all checks
-cpmigrate --analyze --transitive --audit
-
-# Include outdated + deprecated checks
-cpmigrate --analyze --outdated --deprecated
-```
-
-Every run ends with a scoreboard tallying each analyzer's findings, so a long scroll of
-individual tables resolves into one scannable summary:
+Every run ends with a scoreboard tallying each analyzer's findings:
 
 ```text
 ────────────────────────── ANALYSIS COMPLETE: 2 ISSUES ──────────────────────────
@@ -316,17 +235,10 @@ individual tables resolves into one scannable summary:
 
 ### Auto-Fix
 
-Automatically fix detected issues:
-
 ```bash
-# Fix all auto-fixable issues
-cpmigrate --analyze --fix
-
-# Preview what fixes would be applied
-cpmigrate --analyze --fix-dry-run
+cpmigrate --analyze --fix                           # fix all auto-fixable issues
+cpmigrate --analyze --fix-dry-run                   # preview what would be fixed
 ```
-
-**Available fixers:**
 
 | Fixer | What it fixes |
 |-------|---------------|
@@ -339,84 +251,30 @@ cpmigrate --analyze --fix-dry-run
 
 ### Package Updates with Test Verification
 
-**New in v3.0.** Update all NuGet packages to their latest versions with automatic test verification and rollback. **v3.2** adds full support in the interactive wizard — run `cpmigrate -i` and select "Update NuGet packages" from the maintenance menu.
+Update all NuGet packages to their latest versions with automatic test verification and rollback. Requires CPM — run `cpmigrate` first if `Directory.Packages.props` does not exist.
 
 ```bash
-# Preview available updates
-cpmigrate --update-packages --dry-run
-
-# Update packages, run tests, rollback on failure
-cpmigrate --update-packages
-
-# Include pre-release versions
-cpmigrate --update-packages --include-prerelease
-
-# Or use the interactive wizard (v3.2+)
-cpmigrate -i
+cpmigrate --update-packages --dry-run               # preview available updates
+cpmigrate --update-packages                         # update, test, rollback on failure
+cpmigrate --update-packages --transitive            # also scan and pin transitive deps
+cpmigrate --update-packages --include-prerelease    # include pre-release versions
 ```
 
-#### Transitive Dependency Pinning (v3.1)
+**How it works:** reads current versions from `Directory.Packages.props`, queries NuGet for latest (8 concurrent lookups), auto-accepts minor/patch bumps and prompts for major ones, backs up the props file, applies updates atomically, then runs `dotnet restore` + `dotnet test`. Tests pass — updates kept. Tests fail — everything rolls back.
 
-**New in v3.1.** Add `--transitive` to also scan and pin transitive (indirect) dependencies:
+With `--transitive`, CPMigrate additionally scans `dotnet list package --include-transitive`, deduplicates across projects (highest resolved version wins), excludes deps already managed directly, and pins accepted transitive updates as new `<PackageVersion>` entries. Per-project scan failures are logged and skipped; if every scan fails it continues direct-only. Transitive scanning requires `dotnet restore` to have run beforehand.
 
-```bash
-# Preview direct + transitive updates
-cpmigrate --update-packages --transitive --dry-run
+#### Bisecting Updates
 
-# Update direct packages and pin transitive deps
-cpmigrate --update-packages --transitive
-
-# With pre-release versions
-cpmigrate --update-packages --transitive --include-prerelease
-```
-
-When `--transitive` is enabled, CPMigrate:
-- Scans all projects via `dotnet list package --include-transitive`
-- Deduplicates across projects (picks the highest resolved version)
-- Excludes transitive deps already managed as direct dependencies
-- Queries NuGet for the latest version of each transitive dep
-- Shows separate **DIRECT UPDATES** and **TRANSITIVE UPDATES** sections
-- Pins accepted transitive updates as new `<PackageVersion>` entries in `Directory.Packages.props`
-
-Per-project scan failures are logged and skipped gracefully. If all scans fail, the tool continues with direct-only updates.
-
-**How it works:**
-
-1. Reads current versions from `Directory.Packages.props`
-2. Queries the NuGet API for latest versions (8 concurrent lookups)
-3. Optionally scans transitive dependencies (`--transitive`)
-4. Shows a table of available updates (separate sections for direct and transitive)
-5. For **major version bumps**, prompts you interactively: accept or skip
-6. Minor/patch updates are auto-accepted
-7. Creates a backup of `Directory.Packages.props`
-8. Applies version updates and transitive pins atomically
-9. Runs `dotnet restore` then `dotnet test`
-10. **Tests pass** — keeps updates, cleans up backup
-11. **Tests fail** — rolls back all changes (including transitive pins) automatically
-
-> Requires CPM to be enabled. If `Directory.Packages.props` doesn't exist, run `cpmigrate` first to migrate.
-> Transitive scanning requires `dotnet restore` to have been run beforehand.
-
-#### Bisecting Updates (v3.6)
-
-**New in v3.6.** Step 11 above is all-or-nothing: one bad package in a set of 38 reverts the other 37 and tells you nothing about which one broke. `--bisect` instead applies the **largest subset that keeps tests green** and names the packages it held back.
+All-or-nothing rollback is blunt: one bad package in a set of 38 reverts the other 37 and tells you nothing about which one broke. `--bisect` applies the **largest subset that keeps tests green** and names the packages it held back.
 
 ```bash
-# Keep what works, hold back what doesn't
 cpmigrate --update-packages --bisect
-
-# Bound the search, and probe against a fast slice of the suite
 cpmigrate --update-packages --bisect --bisect-budget 24 --bisect-test-filter "Category=Unit"
-
-# Follow up on the packages it named
-cpmigrate --update-packages --only Serilog,AutoMapper
+cpmigrate --update-packages --only Serilog,AutoMapper   # follow up on held packages
 ```
 
 ```text
-✔ 38 updates applied → tests FAILED
-  38 update(s) failed together — narrowing...
-  Holding back Serilog 3.1.1 → 4.2.0 (tests failed).
-
 ────────────────────────────── BISECT RESULT ──────────────────────────────
 
   HELD    Serilog: 3.1.1 → 4.2.0 (left at 3.1.1)
@@ -428,18 +286,11 @@ Kept 36/38 update(s) with tests green (9 verification run(s)).
   Investigate with: cpmigrate --update-packages --only AutoMapper,Serilog
 ```
 
-**How the search works:**
+**How the search works.** The whole set is verified first, so a healthy run costs exactly one verification. On failure the set is halved: a clean half is **banked** into the baseline every later probe builds on; a failing half is split again until a single package is held back. Probing against the banked-good set — rather than each package alone — resolves failures that need **two packages together**. If nothing can be kept, the zero-update baseline is verified first, so an already-red suite is reported as such.
 
-- The **whole set is verified first**, so a healthy update run costs exactly one verification and pays no bisection overhead. Only a failure triggers the split.
-- On failure the set is halved. A half that verifies clean is **banked** and becomes part of the baseline every later probe builds on; a half that fails is split again until it is a single package, which is then held back.
-- Probing against the banked-good set — rather than testing each package in isolation — is what lets it resolve failures that need **two packages together** (a library plus its own updated dependency). A plain binary search assumes one independent culprit and gets these wrong.
-- If nothing at all can be kept, CPMigrate verifies the **zero-update baseline** before blaming the packages, so an already-red test suite is reported as such.
+**Cost.** Roughly `2·log₂(n)` restore+test cycles for a single culprit — about 9–12 runs for 40 packages. `--bisect-budget` (default 16) caps it; when the budget runs out, unresolved packages are held back and the banked-good set is **still applied**.
 
-**Cost.** Expect roughly `2·log₂(n)` restore+test cycles for a single culprit — about 9–12 runs for a 40-package set. `--bisect-budget` (default 16) caps it. When the budget runs out, whatever is still unresolved is held back and the banked-good set is **still applied**, so an interrupted search delivers partial progress rather than nothing.
-
-**Exit codes.** `0` when the tree ends green and at least one update was applied — check `summary.packagesHeldBack` in `--output Json` to see whether it was a clean sweep or a partial one. `7` (test failure) when nothing could be applied.
-
-> `--bisect` cannot be combined with `--dry-run`: the search has to observe real test runs.
+**Exit codes.** `0` when the tree ends green and at least one update was applied — check `summary.packagesHeldBack` in `--output Json` to tell a clean sweep from a partial one. `7` when nothing could be applied. `--bisect` cannot be combined with `--dry-run`: the search has to observe real test runs.
 
 ---
 
@@ -448,14 +299,9 @@ Kept 36/38 update(s) with tests green (9 verification run(s)).
 Promote repeated properties and items from individual project files into a shared `Directory.Build.props`:
 
 ```bash
-# Preview what would be unified
-cpmigrate --unify-props --dry-run
-
-# Apply unification
-cpmigrate --unify-props
-
-# Skip confirmation prompt
-cpmigrate --unify-props --force
+cpmigrate --unify-props --dry-run                   # preview
+cpmigrate --unify-props                             # apply
+cpmigrate --unify-props --force                     # skip confirmation
 ```
 
 Identifies properties and items present in at least 60% of projects with the same value (e.g., `TargetFramework`, `ImplicitUsings`, `Nullable`, `Authors`) and migrates them to the root-level file. Individual project files are cleaned up automatically.
@@ -464,16 +310,9 @@ Identifies properties and items present in at least 60% of projects with the sam
 
 ### Batch Processing
 
-Process multiple solutions in a monorepo:
-
 ```bash
-# Sequential processing
-cpmigrate --batch /path/to/repo
-
-# Parallel processing (uses all CPU cores)
-cpmigrate --batch /path/to/repo --batch-parallel
-
-# Continue on failure
+cpmigrate --batch /path/to/repo                     # sequential
+cpmigrate --batch /path/to/repo --batch-parallel    # all CPU cores
 cpmigrate --batch /path/to/repo --batch-parallel --batch-continue
 ```
 
@@ -483,29 +322,22 @@ Recursively discovers `.sln` and `.slnx` files, excluding common non-project dir
 
 ### Backup & Rollback
 
-Every migration creates a timestamped backup. Roll back at any time:
+Every migration creates a timestamped backup in `.cpmigrate_backup/` with a JSON manifest.
 
 ```bash
-# Rollback to previous state
-cpmigrate --rollback
-
-# List all backups
-cpmigrate --list-backups
-
-# Prune old backups, keeping the last 3
-cpmigrate --prune-backups --retention 3
-
-# Delete all backups
-cpmigrate --prune-all
+cpmigrate --rollback                                # restore most recent backup
+cpmigrate --list-backups                            # list all backups
+cpmigrate --prune-backups --retention 3             # keep the last 3
+cpmigrate --prune-all                               # delete all backups
 ```
 
-Backups are stored in `.cpmigrate_backup/` with a JSON manifest for reliable restoration. Use `--add-gitignore` to automatically add the backup directory to `.gitignore`.
+Use `--add-gitignore` to add the backup directory to `.gitignore` automatically.
 
 ---
 
 ### Configuration File
 
-Create a `.cpmigrate.json` in your repository root to set default options:
+Create a `.cpmigrate.json` in your repository root to set team defaults (CLI arguments always win):
 
 ```json
 {
@@ -516,6 +348,8 @@ Create a `.cpmigrate.json` in your repository root to set default options:
   "AddGitignore": true,
   "MergeExisting": false,
   "OutputFormat": "Terminal",
+  "failOn": "High",
+  "baseline": ".cpmigrate-baseline.json",
   "Retention": {
     "Enabled": true,
     "MaxBackups": 5
@@ -523,7 +357,7 @@ Create a `.cpmigrate.json` in your repository root to set default options:
 }
 ```
 
-The config file is discovered by walking up from the selected solution/project path, or from the current directory when no path is provided. CLI arguments always take precedence over config file values.
+The config file is discovered by walking up from the selected solution/project path, or from the current directory when no path is provided.
 
 ---
 
@@ -559,71 +393,23 @@ The config file is discovered by walking up from the selected solution/project p
 | `--baseline` | | | Path to a file of accepted findings; they are reported but do not fail the build |
 | `--write-baseline` | | `false` | Record current findings as the accepted baseline, then exit |
 
-#### Gating on severity with `--fail-on`
-
-By default any finding fails the build. That is unusable for a repository with existing debt: the
-gate fires on every run, so it gets switched off — and the vulnerability you actually cared about
-goes with it. `--fail-on` narrows the gate without narrowing the report.
+**Gating with `--fail-on`.** By default any finding fails the build — unusable on a repo with existing debt, so the gate gets switched off and the vulnerability you cared about goes with it. `--fail-on High` narrows the gate without narrowing the report: sub-threshold findings still appear in terminal, JSON, and SARIF output; only the exit code changes. `--fail-on` **cannot** suppress exit `8` — a severity threshold says which findings matter; it does not make an unexamined project safe.
 
 ```bash
-# Fail only on High and Critical findings; everything else is still reported
 cpmigrate --analyze --audit --outdated --fail-on High
-
-# Report everything, gate on nothing (useful when SARIF upload is the signal)
 cpmigrate --analyze --audit --output Sarif --output-file cpmigrate.sarif --fail-on Never
 ```
 
-Findings below the threshold still appear in terminal, JSON, and SARIF output — only the exit code
-changes. Each rule's default severity is listed in [the rule reference](docs/rules.md).
-
-`--fail-on` **cannot** suppress exit `8` ([IncompleteAnalysis](#exit-codes)). A severity threshold
-says which findings matter; it does not make an unexamined project safe.
-
-#### Adopting a gate on an existing codebase with `--baseline`
-
-Severity is one axis; the other is *which* findings. A repository that already has debt cannot turn
-on a gate that fails on all of it, so record the current state once and gate on what is new:
+**Adopting a gate on an existing codebase with `--baseline`.** Record the current state once on a green branch, then gate on what is new:
 
 ```bash
-# Once, on a green branch — writes .cpmigrate-baseline.json; commit it
-cpmigrate --analyze --audit --outdated --write-baseline
-
-# Every run after that: existing debt is reported, new debt fails
+cpmigrate --analyze --audit --outdated --write-baseline   # writes .cpmigrate-baseline.json; commit it
 cpmigrate --analyze --audit --outdated --baseline .cpmigrate-baseline.json
 ```
 
-`--baseline` needs an explicit path. To apply it to every run without repeating it, set it in
-`.cpmigrate.json` (below).
+Baselined findings **stay in every report** — terminal, JSON (`suppressed: true`), and SARIF (`suppressions` with `kind: "external"`). A finding is identified by rule, package, and affected projects — not by the versions in its description — so a version drifting `13.0.1 → 13.0.2` stays suppressed, while spreading to another project does not. When entries stop matching anything, CPMigrate suggests regenerating. A baseline is never recorded from an incomplete scan: if a project or query fails to scan, `--write-baseline` exits `8` rather than permanently accepting findings nobody looked for. Set both once for the team in `.cpmigrate.json`: `{ "baseline": ".cpmigrate-baseline.json", "failOn": "High" }`.
 
-Baselined findings **stay in every report** — terminal, JSON (`suppressed: true`), and SARIF (as a
-`suppressions` entry with `kind: "external"`). The debt stays visible; it just stops blocking.
-
-A finding is identified by its rule, package, and affected projects — deliberately **not** by the
-versions in its description. A version inconsistency drifting from `13.0.1, 12.0.3` to
-`13.0.2, 12.0.3` is the same unresolved finding, so the suppression holds. Spreading to another
-project is new information, so it does not.
-
-When baseline entries stop matching anything — the findings were fixed — CPMigrate says so and
-suggests regenerating, which is what stops a baseline growing forever and quietly suppressing a
-finding that came back.
-
-A baseline is never recorded from an incomplete scan: if a project fails to scan or an `--audit`
-query fails, `--write-baseline` refuses and exits `8` rather than writing a file that permanently
-accepts findings nobody looked for.
-
-Set the path once for the team in `.cpmigrate.json`:
-
-```json
-{ "baseline": ".cpmigrate-baseline.json", "failOn": "High" }
-```
-
-Set it once for the whole team in `.cpmigrate.json`:
-
-```json
-{ "failOn": "High" }
-```
-
-The JSON payload reports the policy alongside the findings, so a consumer never has to re-derive it:
+The JSON payload reports the policy alongside the findings:
 
 ```json
 "summary": {
@@ -636,17 +422,17 @@ The JSON payload reports the policy alongside the findings, so a consumer never 
 }
 ```
 
-### Package Updates (v3.0+)
+### Package Updates
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--update-packages` | `false` | Update all packages to latest, run tests, rollback on failure |
-| `--transitive` | `false` | Also scan and pin transitive dependencies (v3.1) |
+| `--transitive` | `false` | Also scan and pin transitive dependencies |
 | `--include-prerelease` | `false` | Include pre-release versions when updating |
-| `--bisect` | `false` | On failure, keep the largest subset that stays green instead of reverting everything (v3.6) |
-| `--bisect-budget` | `16` | Max restore+test cycles a bisection may spend (v3.6) |
-| `--bisect-test-filter` | | `dotnet test --filter` expression used for each bisection probe (v3.6) |
-| `--only` | | Comma-separated package IDs to restrict the update to (v3.6) |
+| `--bisect` | `false` | On failure, keep the largest subset that stays green instead of reverting everything |
+| `--bisect-budget` | `16` | Max restore+test cycles a bisection may spend |
+| `--bisect-test-filter` | | `dotnet test --filter` expression used for each bisection probe |
+| `--only` | | Comma-separated package IDs to restrict the update to |
 
 ### Modernization
 
@@ -686,54 +472,22 @@ The JSON payload reports the policy alongside the findings, so a consumer never 
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Enable diagnostic logging to `cpmigrate.log` |
 
-### Explain a rule
+### Rules, Completions & Self-Update
 
 | Option | Description |
 |--------|-------------|
-| `--explain <RuleId>` | Print what a rule means, why it matters, and how to resolve it |
-| `--explain all` | List every rule with a one-line summary |
+| `--explain <RuleId>` | Print what a rule means, why it matters, and how to resolve it (`--explain all` lists every rule) |
+| `--completions <Shell>` | Print a completion script and exit: `Bash`, `Zsh`, `Fish`, or `PowerShell` |
+| `--update` | Check for and install the latest version of CPMigrate |
 
-A rule ID in a build log or a SARIF annotation is exactly where someone needs to know what the rule
-means — and exactly where they will not go looking for a docs site. The same IDs appear as
-`issueCode` in JSON and `ruleId` in SARIF, so whatever a report names can be pasted straight back:
-
-```bash
-cpmigrate --explain InlineVersionUnderCpm
-```
-
-A near miss suggests the real rule, and an unrecognised ID exits non-zero so a typo in CI is visible.
-Full reference: [docs/rules.md](docs/rules.md).
-
-### Shell Completions
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--completions` | | Print a completion script and exit: `Bash`, `Zsh`, `Fish`, or `PowerShell` |
-
-Generated from the option list rather than hand-written, so it cannot drift out of step with the
-CLI — a completion script that suggests flags which no longer exist is worse than none at all.
-Enum-valued options complete their values (`--output` offers `Terminal`, `Json`, `Sarif`, `Markdown`),
-and path options complete filenames.
+Rule IDs from build logs or SARIF annotations (`issueCode` / `ruleId`) paste straight back: `cpmigrate --explain InlineVersionUnderCpm`. A near miss suggests the real rule; an unrecognized ID exits non-zero so a typo in CI is visible. Full reference: [docs/rules.md](docs/rules.md). Completions are generated from the live option list — enum values and paths complete too — so they cannot drift from the CLI.
 
 ```bash
-# bash
 cpmigrate --completions bash > /usr/local/etc/bash_completion.d/cpmigrate
-
-# zsh — into any directory on $fpath
 cpmigrate --completions zsh > "${fpath[1]}/_cpmigrate"
-
-# fish
 cpmigrate --completions fish > ~/.config/fish/completions/cpmigrate.fish
-
-# PowerShell
 cpmigrate --completions powershell >> $PROFILE
 ```
-
-### Self-Update
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--update` | `false` | Check for and install the latest version of CPMigrate |
 
 ---
 
@@ -751,50 +505,31 @@ cpmigrate --completions powershell >> $PROFILE
 | `7` | TestFailure | Tests failed after package update (rollback performed). With `--bisect`, returned only when *no* update could be kept |
 | `8` | IncompleteAnalysis | A requested scan did not finish, so the findings are incomplete — nothing was necessarily found wrong, but part of the solution went unexamined |
 
-**On `8` (IncompleteAnalysis):** if a project fails to scan, or a `--audit` / `--outdated` /
-`--deprecated` query fails, the run produces no findings for the part it could not read. Before
-3.7.0 that exited `0`, which a CI gate reads as "clean" — the one failure mode a security gate
-exists to prevent. Treat `8` as "re-run or investigate", not as "no issues".
+**On `8` (IncompleteAnalysis):** if a project fails to scan, or an `--audit` / `--outdated` / `--deprecated` query fails, the run produces no findings for the part it could not read. Treat `8` as "re-run or investigate", not as "no issues" — it is exactly the failure mode a security gate exists to prevent.
 
 ---
 
 ## CI/CD Integration
 
-### Strict JSON Contract Mode
+### Strict JSON contract mode
 
-Use `--output Json --quiet` to guarantee JSON-only stdout, including when CPMigrate discovers a `.cpmigrate.json` file. That makes it safe for CI parsing without stripping banners, config notices, or other preamble.
+`--output Json --quiet` guarantees JSON-only stdout — safe for CI parsing without stripping banners or config notices:
 
 ```bash
-# analyze
 cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analyze.json
-
-# migrate
 cpmigrate -s ./MySolution.sln --dry-run --output Json --quiet > migrate.json
-
-# rollback
-cpmigrate --rollback --backup-dir . --output Json --quiet > rollback.json
-
-# update-packages
 cpmigrate --update-packages --dry-run --output Json --quiet > update-packages.json
 ```
 
-### Non-Interactive Terminals
+The payload has a **published schema** at [`schemas/cpmigrate-output.schema.json`](schemas/cpmigrate-output.schema.json) — key off `outputSchemaVersion`, not the tool version. Two things before writing a parser: **`success: true` does not mean "no findings"** (check `summary.issuesFound` and `summary.issuesAtOrAboveThreshold`), and **absent fields are meaningful** (a missing `issuesBaselined` means no baseline was used, not zero suppressions).
 
-CPMigrate detects when stdout is redirected — a CI runner, a pipe, `> log.txt` — and never
-attempts a prompt it cannot service:
+### Non-interactive terminals
 
-- Post-migration verification (`dotnet restore`) is skipped rather than prompted for. It is also
-  skipped after `--dry-run`, since nothing was written to verify.
-- `--rollback` declines instead of prompting, and tells you to re-run with `--force` to roll back
-  unattended.
-- Unicode status glyphs (`✔ ✖ ➜ █`) fall back to ASCII equivalents when the terminal reports no
-  Unicode support, so build logs stay readable instead of filling with replacement characters.
+CPMigrate detects redirected stdout — a CI runner, a pipe, `> log.txt` — and never attempts a prompt it cannot service: post-migration verification is skipped rather than prompted for (and after `--dry-run`, since nothing was written); `--rollback` declines and says to re-run with `--force`; Unicode glyphs fall back to ASCII when the terminal reports no Unicode support.
 
-### No Sub-Commands
+### No sub-commands
 
-CPMigrate is flag-driven. There is no `cpmigrate analyze` verb — the analysis command is
-`cpmigrate --analyze`. A leading bare word is rejected rather than ignored, because a discarded
-verb would otherwise fall through to the default action and start a real migration:
+CPMigrate is flag-driven — the analysis command is `cpmigrate --analyze`, not `cpmigrate analyze`. A leading bare word is rejected rather than ignored, because a discarded verb would otherwise fall through to a real migration:
 
 ```text
 ✖ Unrecognized argument 'analyze'. CPMigrate takes flags, not sub-commands.
@@ -803,75 +538,7 @@ verb would otherwise fall through to the default action and start a real migrati
 
 ### SARIF for GitHub code scanning
 
-`--output Sarif` emits a [SARIF 2.1.0](https://docs.github.com/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning)
-log, so findings appear as annotations on the pull request diff instead of buried in build logs.
-Each result points at the project file **and the line declaring the offending `PackageReference`**,
-carries the rule's description and a link to [the rule reference](docs/rules.md), and includes a
-stable fingerprint so code scanning tracks a finding across runs rather than reopening it.
-
-```bash
-cpmigrate --analyze --audit --outdated --deprecated \
-  --output Sarif --output-file cpmigrate.sarif --quiet
-```
-
-SARIF describes analyzer findings, so `--output Sarif` requires `--analyze`. Severities map to SARIF
-levels as `Critical`/`High` → `error`, `Moderate` → `warning`, `Low`/`Info` → `note`.
-
-### Markdown for a job summary or PR comment
-
-SARIF only surfaces findings that map to a line in the diff under review, and a dependency problem
-is usually about the solution as a whole — so it never appears on the diff, and nobody goes digging
-in build logs for it. `--output Markdown` puts the report where a reviewer will actually see it:
-
-```bash
-cpmigrate --analyze --audit --outdated --output Markdown --quiet >> "$GITHUB_STEP_SUMMARY"
-```
-
-The report leads with the verdict — did anything reach the `--fail-on` threshold — then scan totals,
-a severity breakdown, and a table of findings linking each one to [its rule](docs/rules.md).
-Baselined findings are marked. An incomplete scan gets a prominent warning, because "no findings"
-from a scan that did not finish reads exactly like a clean result. Long finding lists collapse behind
-a `<details>` disclosure so they do not bury the rest of the summary.
-
-To post it as a PR comment instead:
-
-```yaml
-- name: Analyze dependencies
-  id: analyze
-  run: |
-    set +e
-    cpmigrate --analyze --audit --output Markdown --output-file report.md --quiet
-    echo "exit_code=$?" >> "$GITHUB_OUTPUT"
-
-- name: Comment on the PR
-  if: github.event_name == 'pull_request'
-  run: gh pr comment "${{ github.event.number }}" --body-file report.md
-  env:
-    GH_TOKEN: ${{ github.token }}
-```
-
-### GitHub Actions Example
-
-```yaml
-- name: Install CPMigrate
-  run: dotnet tool install --global CPMigrate
-
-- name: Check dependency health
-  run: cpmigrate --analyze --audit --output Json --output-file analysis.json --quiet
-
-- name: Fail on issues
-  run: |
-    EXIT_CODE=$(cpmigrate --analyze --audit --quiet; echo $?)
-    if [ $EXIT_CODE -eq 5 ]; then
-      echo "::error::Dependency issues detected"
-      exit 1
-    fi
-```
-
-Or upload SARIF and let code scanning annotate the diff. Capture the exit code rather than using
-`continue-on-error`: that would swallow **every** failure, including exit `8`
-([IncompleteAnalysis](#exit-codes)) — leaving the job green on exactly the unexamined-dependency
-case the upload is meant to catch. Exit `5` is expected here, because code scanning is the gate:
+`--output Sarif` emits a [SARIF 2.1.0](https://docs.github.com/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning) log — findings appear as annotations on the PR diff, each pointing at the project file **and the line declaring the offending `PackageReference`**, with a stable fingerprint so code scanning tracks findings across runs. Severities map as `Critical`/`High` → `error`, `Moderate` → `warning`, `Low`/`Info` → `note`. (`--output Sarif` requires `--analyze`, since SARIF describes analyzer findings.)
 
 ```yaml
 - name: Install CPMigrate
@@ -902,29 +569,26 @@ case the upload is meant to catch. Exit `5` is expected here, because code scann
     esac
 ```
 
-### JSON Output
+Capture the exit code rather than using `continue-on-error`: that would swallow **every** failure, including exit `8` — leaving the job green on exactly the unexamined-dependency case the upload is meant to catch.
 
-Use `--output Json` to produce machine-readable output for CI/CD pipelines:
+### Markdown for a job summary or PR comment
+
+SARIF only surfaces findings that map to a line in the diff, and a dependency problem is usually about the solution as a whole — so it never appears on the diff. `--output Markdown` puts the report where a reviewer will actually see it:
 
 ```bash
-cpmigrate --analyze --output Json --output-file report.json
+cpmigrate --analyze --audit --outdated --output Markdown --quiet >> "$GITHUB_STEP_SUMMARY"
 ```
 
-The payload has a **published schema** at
-[`schemas/cpmigrate-output.schema.json`](schemas/cpmigrate-output.schema.json), so a parser can be
-validated rather than guessed at, and editors will complete a recorded fixture. Key off
-`outputSchemaVersion` rather than the tool version — additive changes bump its minor, and the one
-field whose meaning has ever changed is called out in the [CHANGELOG](CHANGELOG.md).
-
-Two things worth knowing before writing a parser:
-
-- **`success: true` does not mean "no findings".** Findings below the `--fail-on` threshold, and
-  findings a baseline accepted, both leave it true. Check `summary.issuesFound` for whether anything
-  was reported at all, and `summary.issuesAtOrAboveThreshold` for what the exit code reflects.
-- **Absent fields are meaningful.** `summary` omits counters irrelevant to the command that ran, so
-  a missing `issuesBaselined` means no baseline was used — not zero suppressions.
+The report leads with the verdict against the `--fail-on` threshold, then scan totals, a severity breakdown, and findings linking to [their rules](docs/rules.md). Baselined findings are marked, incomplete scans get a prominent warning, and long finding lists collapse behind a `<details>` disclosure. Post it as a PR comment with `gh pr comment "${{ github.event.number }}" --body-file report.md`. Dedicated guide: https://georgepwall1991.github.io/CPMigrate/guides/ci-cd/
 
 ---
+
+## Compatibility
+
+- **.NET SDK:** 8.0+ (tool targets `net10.0` with `LatestMajor` roll-forward)
+- **Project types:** `.csproj` / `.fsproj` / `.vbproj`
+- **Solutions:** `.sln` and `.slnx`
+- **CPM:** generates and consumes standard NuGet Central Package Management files
 
 ## Examples & Benchmarks
 
@@ -934,16 +598,12 @@ Two things worth knowing before writing a parser:
 
 These sample repositories are designed for onboarding, CI templates, and reproducible before/after conversion demos.
 
----
-
 ## Release Cadence
 
 - **Stable releases:** weekly, versioned and changeloged
 - **Release candidates (RC):** published for fast feedback before stable promotion
 - **Change log source of truth:** `CHANGELOG.md`
 - **Policy details:** `docs/release-cadence.md`
-
----
 
 ## Telemetry (Opt-in)
 
@@ -954,88 +614,15 @@ CPMigrate supports privacy-first telemetry that is **disabled by default**.
 - Captures **no** project paths, package names, file contents, or source code
 - Stores local events at `~/.cpmigrate/telemetry/events.ndjson`
 
----
-
-## Community Growth
-
-- Enable **GitHub Discussions** and pin:
-  - `Start here` (first-run flow + CI JSON mode)
-  - `Success stories` (before/after migration outcomes)
-- Use Discussions as the primary intake for usage feedback and roadmap voting.
-
----
-
-## Gallery
-
-### Migration Pipeline
-
-The pipeline renders as a connected stepper — completed stages and the rails behind them light up,
-so progress is legible at a glance:
-
-```text
- ✔ DISCOVERY  ───  ✔ ANALYSIS  ───  ▶ BACKUP  ───  ○ MIGRATION  ───  ○ VERIFICATION
-```
-
-### Risk Assessment
-
-Before anything is written, CPMigrate scores the migration and shows the reasoning:
-
-```text
-┌─ ASSESSMENT ──────────────────────────────────────────────────────────┐
-│ Migration Risk: ████████░░░░░░ HIGH (58/100)                          │
-│ Impact Area:    12 projects • 7 conflicting package(s)                │
-│ Assessment:     Significant version conflicts. Review recommended.    │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-```text
-┌─ ASSESSMENT ──────────────────────────────────┐
-│ Migration Risk: ░░░░░░░░░░░░░░ LOW (0/100)    │
-│ Impact Area:    12 projects                   │
-│ Assessment:     Clean migration path.         │
-└───────────────────────────────────────────────┘
-```
-
-### Conflict Resolution
-
-Version conflict tables bold the winning version and dim the ones being dropped, so the resolution
-reads without comparing strings:
-
-```text
-               VERSION CONFLICTS
-╭─────────────────┬────────────────┬──────────╮
-│ PACKAGE         │ VERSIONS       │ RESOLVED │
-├─────────────────┼────────────────┼──────────┤
-│ Newtonsoft.Json │ 13.0.3, 13.0.1 │ ➜ 13.0.3 │
-│ Serilog         │ 3.1.1, 3.0.0   │ ➜ 3.1.1  │
-╰─────────────────┴────────────────┴──────────╯
-```
-
-### Mission Control Dashboard
-![CPMigrate Interactive Mission Control wizard for Central Package Management](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-interactive.gif)
-*The interactive wizard assessing migration risk and guiding you through each step.*
-
-### Risk Analysis & Dry Run
-![CPMigrate Demo dry-run migration preview](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-demo.gif)
-*Previewing changes safely before committing.*
-
-### Security & Package Analysis
-![CPMigrate Analyze dependency and vulnerability scan](https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/cpmigrate-analyze.gif)
-*Scanning for vulnerabilities and redundant dependencies.*
-
----
-
 ## Contributing
 
-Contributions are welcome. To get started:
+Contributions are welcome:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Write tests for your changes
-4. Ensure all 571 tests pass (`dotnet test`)
+4. Ensure the full suite passes (`dotnet test`)
 5. Open a Pull Request
-
----
 
 ## License
 
