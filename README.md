@@ -478,6 +478,7 @@ The JSON payload reports the policy alongside the findings:
 |--------|-------------|
 | `--explain <RuleId>` | Print what a rule means, why it matters, and how to resolve it (`--explain all` lists every rule) |
 | `--doctor` | Diagnose your environment: SDK version, NuGet connectivity, workspace, config, and git status |
+| `--init` | Create a `.cpmigrate.json` config file with team defaults (interactive or CI-safe defaults) |
 | `--completions <Shell>` | Print a completion script and exit: `Bash`, `Zsh`, `Fish`, or `PowerShell` |
 | `--update` | Check for and install the latest version of CPMigrate |
 

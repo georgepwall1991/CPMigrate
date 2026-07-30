@@ -70,6 +70,14 @@ public static class ProgramRunner
                         return await doctorService.RunAsync(options.GetDiscoveryTargetPath());
                     }
 
+                    if (options.Init)
+                    {
+                        var initService = new InitService(services.ConsoleService);
+                        return await initService.RunAsync(
+                            options.GetDiscoveryTargetPath(),
+                            options.Force);
+                    }
+
                     // Merge config file with CLI args (CLI args take precedence)
                     MergeConfigWithCliArgs(
                         options,
