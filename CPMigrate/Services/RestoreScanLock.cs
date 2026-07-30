@@ -32,6 +32,16 @@ internal static class RestoreScanLock
 
     private static readonly SemaphoreSlim Gate = new(Permits, Permits);
 
+    /// <summary>
+    /// Held for the whole of an exclusive acquisition, so only one caller is ever draining permits.
+    ///
+    /// Without it, two callers each take a subset of the permits and then wait forever for the ones the
+    /// other is holding — a deadlock, and a worse outcome than the corruption this lock exists to prevent,
+    /// because a hung scan never finishes at all. Draining a counting semaphore is not atomic; this makes
+    /// the attempt to drain it exclusive instead.
+    /// </summary>
+    private static readonly SemaphoreSlim ExclusiveEntry = new(1, 1);
+
     /// <summary>Taken by a restore that is isolated, or whose result will be discarded if it is not.</summary>
     public static async Task<IDisposable> AcquireSharedAsync()
     {
@@ -46,12 +56,22 @@ internal static class RestoreScanLock
     /// </summary>
     public static async Task<IDisposable> AcquireExclusiveAsync()
     {
-        for (var i = 0; i < Permits; i++)
+        await ExclusiveEntry.WaitAsync();
+
+        try
         {
-            await Gate.WaitAsync();
+            for (var i = 0; i < Permits; i++)
+            {
+                await Gate.WaitAsync();
+            }
+        }
+        catch
+        {
+            ExclusiveEntry.Release();
+            throw;
         }
 
-        return new Holder(Permits);
+        return new ExclusiveHolder();
     }
 
     private sealed class Holder(int permits) : IDisposable
@@ -67,6 +87,23 @@ internal static class RestoreScanLock
 
             _released = true;
             Gate.Release(permits);
+        }
+    }
+
+    private sealed class ExclusiveHolder : IDisposable
+    {
+        private bool _released;
+
+        public void Dispose()
+        {
+            if (_released)
+            {
+                return;
+            }
+
+            _released = true;
+            Gate.Release(Permits);
+            ExclusiveEntry.Release();
         }
     }
 }
