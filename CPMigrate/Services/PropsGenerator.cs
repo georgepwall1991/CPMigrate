@@ -13,6 +13,27 @@ public class PropsGenerator
     private const string PackageVersionItemType = "PackageVersion";
     private const string VersionMetadataName = "Version";
 
+    /// <summary>
+    /// How package IDs are ordered in a generated or merged props file.
+    ///
+    /// Explicit rather than <c>OrderBy(x =&gt; x.Key)</c>, whose default comparer is culture-sensitive.
+    /// Directory.Packages.props is a committed file that several machines and a CI job all regenerate, so
+    /// its line order is part of what gets diffed — and a line order that depends on the ambient culture,
+    /// or on whether the host was built with invariant globalization, is not something to leave to
+    /// chance. Case-insensitive first, because NuGet treats IDs case-insensitively and sorting purely by
+    /// ordinal would strand every lower-cased ID in a block after the upper-cased ones. Ordinal breaks
+    /// exact ties, which keeps the order total so it cannot depend on input enumeration order.
+    /// </summary>
+    internal static readonly IComparer<string> PackageIdOrder = Comparer<string>.Create(
+        (left, right) =>
+        {
+            var caseInsensitive = StringComparer.OrdinalIgnoreCase.Compare(left, right);
+            return caseInsensitive != 0
+                ? caseInsensitive
+                : StringComparer.Ordinal.Compare(left, right);
+        }
+    );
+
     private readonly VersionResolver _versionResolver;
 
     public PropsGenerator(VersionResolver? versionResolver = null)
@@ -27,21 +48,23 @@ public class PropsGenerator
     /// <param name="packageVersions">Dictionary mapping package names to their version sets.</param>
     /// <param name="strategy">Strategy for resolving version conflicts.</param>
     /// <returns>Complete XML content for Directory.Packages.props file.</returns>
-    public string Generate(Dictionary<string, HashSet<string>> packageVersions,
-        ConflictStrategy strategy = ConflictStrategy.Highest)
+    public string Generate(
+        Dictionary<string, HashSet<string>> packageVersions,
+        ConflictStrategy strategy = ConflictStrategy.Highest
+    )
     {
         var header = """
-                <Project>
-                  <PropertyGroup>
-                    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-                  </PropertyGroup>
-                  <ItemGroup>
-                """;
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+            """;
 
         var stringBuilder = new StringBuilder();
         stringBuilder.AppendLine(header);
 
-        foreach (var kvp in packageVersions.OrderBy(x => x.Key))
+        foreach (var kvp in packageVersions.OrderBy(x => x.Key, PackageIdOrder))
         {
             // Skip packages with no versions (shouldn't happen, but defensive)
             if (kvp.Value.Count == 0)
@@ -50,39 +73,51 @@ public class PropsGenerator
             }
 
             // Resolve to single version if multiple exist
-            var version = kvp.Value.Count > 1
-                ? _versionResolver.ResolveVersion(kvp.Value, strategy)
-                : kvp.Value.First();
+            var version =
+                kvp.Value.Count > 1
+                    ? _versionResolver.ResolveVersion(kvp.Value, strategy)
+                    : kvp.Value.First();
 
             // XML-encode package name and version to prevent XML injection
             var safePackageName = SecurityElement.Escape(kvp.Key) ?? kvp.Key;
             var safeVersion = SecurityElement.Escape(version) ?? version;
-            stringBuilder.AppendLine($"""    <PackageVersion Include="{safePackageName}" Version="{safeVersion}" />""");
+            stringBuilder.AppendLine(
+                $"""    <PackageVersion Include="{safePackageName}" Version="{safeVersion}" />"""
+            );
         }
 
-        stringBuilder.AppendLine("""
-                                   </ItemGroup>
-                                 </Project>
-                                 """);
+        stringBuilder.AppendLine(
+            """
+              </ItemGroup>
+            </Project>
+            """
+        );
         return stringBuilder.ToString();
     }
 
     public static Dictionary<string, HashSet<string>> ReadExistingPackageVersions(
         string propsFilePath,
-        out bool hasConditionalPackageVersions)
+        out bool hasConditionalPackageVersions
+    )
     {
         hasConditionalPackageVersions = false;
         Dictionary<string, HashSet<string>> packageVersions = new(StringComparer.OrdinalIgnoreCase);
         if (!File.Exists(propsFilePath))
         {
-            throw new FileNotFoundException($"Props file not found: {propsFilePath}", propsFilePath);
+            throw new FileNotFoundException(
+                $"Props file not found: {propsFilePath}",
+                propsFilePath
+            );
         }
         using var projectCollection = new ProjectCollection();
         var projectRoot = ProjectRootElement.Open(propsFilePath, projectCollection);
 
         foreach (var item in projectRoot.Items.Where(i => i.ItemType == PackageVersionItemType))
         {
-            if (!string.IsNullOrEmpty(item.Condition) || !string.IsNullOrEmpty(item.Parent?.Condition))
+            if (
+                !string.IsNullOrEmpty(item.Condition)
+                || !string.IsNullOrEmpty(item.Parent?.Condition)
+            )
             {
                 hasConditionalPackageVersions = true;
             }
@@ -111,14 +146,23 @@ public class PropsGenerator
         return packageVersions;
     }
 
-    public (string Content, int AddedCount, int UpdatedCount, bool HasConditionalPackageVersions) MergeExisting(
+    public (
+        string Content,
+        int AddedCount,
+        int UpdatedCount,
+        bool HasConditionalPackageVersions
+    ) MergeExisting(
         string propsFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
-        ConflictStrategy strategy = ConflictStrategy.Highest)
+        ConflictStrategy strategy = ConflictStrategy.Highest
+    )
     {
         if (!File.Exists(propsFilePath))
         {
-            throw new FileNotFoundException($"Props file not found: {propsFilePath}", propsFilePath);
+            throw new FileNotFoundException(
+                $"Props file not found: {propsFilePath}",
+                propsFilePath
+            );
         }
 
         using var projectCollection = new ProjectCollection();
@@ -128,24 +172,33 @@ public class PropsGenerator
         EnsureManagePackageVersionsCentrally(projectRoot);
 
         var targetItemGroup = GetOrCreateTargetItemGroup(projectRoot);
+        var documentedByComment = FindCommentedItems(targetItemGroup, propsFilePath);
         var (addedCount, updatedCount) = ProcessPackageVersions(
             packageVersions,
             strategy,
             itemsByPackage,
-            targetItemGroup);
+            targetItemGroup,
+            keepOrdered: IsOrdered(targetItemGroup, documentedByComment),
+            documentedByComment
+        );
 
         return (projectRoot.RawXml, addedCount, updatedCount, hasConditionalPackageVersions);
     }
 
-    private static (Dictionary<string, List<ProjectItemElement>> ItemsByPackage, bool HasConditionalVersions)
-        BuildExistingItemsMap(ProjectRootElement projectRoot)
+    private static (
+        Dictionary<string, List<ProjectItemElement>> ItemsByPackage,
+        bool HasConditionalVersions
+    ) BuildExistingItemsMap(ProjectRootElement projectRoot)
     {
         Dictionary<string, List<ProjectItemElement>> itemsByPackage = [];
         var hasConditionalPackageVersions = false;
 
         foreach (var item in projectRoot.Items.Where(i => i.ItemType == PackageVersionItemType))
         {
-            if (!string.IsNullOrEmpty(item.Condition) || !string.IsNullOrEmpty(item.Parent?.Condition))
+            if (
+                !string.IsNullOrEmpty(item.Condition)
+                || !string.IsNullOrEmpty(item.Parent?.Condition)
+            )
             {
                 hasConditionalPackageVersions = true;
             }
@@ -170,7 +223,8 @@ public class PropsGenerator
     private static void AddToItemsMap(
         Dictionary<string, List<ProjectItemElement>> itemsByPackage,
         string packageName,
-        ProjectItemElement item)
+        ProjectItemElement item
+    )
     {
         if (!itemsByPackage.TryGetValue(packageName, out var items))
         {
@@ -181,31 +235,44 @@ public class PropsGenerator
         items.Add(item);
     }
 
-    private static ProjectItemGroupElement GetOrCreateTargetItemGroup(ProjectRootElement projectRoot)
+    private static ProjectItemGroupElement GetOrCreateTargetItemGroup(
+        ProjectRootElement projectRoot
+    )
     {
-        return projectRoot.ItemGroups
-            .FirstOrDefault(group => string.IsNullOrEmpty(group.Condition)
-                && group.Items.Any(item => item.ItemType == PackageVersionItemType))
-            ?? projectRoot.AddItemGroup();
+        return projectRoot.ItemGroups.FirstOrDefault(group =>
+                string.IsNullOrEmpty(group.Condition)
+                && group.Items.Any(item => item.ItemType == PackageVersionItemType)
+            ) ?? projectRoot.AddItemGroup();
     }
 
     private (int AddedCount, int UpdatedCount) ProcessPackageVersions(
         Dictionary<string, HashSet<string>> packageVersions,
         ConflictStrategy strategy,
         Dictionary<string, List<ProjectItemElement>> itemsByPackage,
-        ProjectItemGroupElement targetItemGroup)
+        ProjectItemGroupElement targetItemGroup,
+        bool keepOrdered,
+        HashSet<ProjectItemElement> documentedByComment
+    )
     {
         var addedCount = 0;
         var updatedCount = 0;
 
-        foreach (var kvp in packageVersions.OrderBy(k => k.Key))
+        foreach (var kvp in packageVersions.OrderBy(k => k.Key, PackageIdOrder))
         {
             if (kvp.Value.Count == 0)
             {
                 continue;
             }
 
-            var (added, updated) = ProcessSinglePackageVersion(kvp.Key, kvp.Value, strategy, itemsByPackage, targetItemGroup);
+            var (added, updated) = ProcessSinglePackageVersion(
+                kvp.Key,
+                kvp.Value,
+                strategy,
+                itemsByPackage,
+                targetItemGroup,
+                keepOrdered,
+                documentedByComment
+            );
             addedCount += added;
             updatedCount += updated;
         }
@@ -218,7 +285,10 @@ public class PropsGenerator
         HashSet<string> versions,
         ConflictStrategy strategy,
         Dictionary<string, List<ProjectItemElement>> itemsByPackage,
-        ProjectItemGroupElement targetItemGroup)
+        ProjectItemGroupElement targetItemGroup,
+        bool keepOrdered,
+        HashSet<ProjectItemElement> documentedByComment
+    )
     {
         var resolvedVersion = ResolvePackageVersion(versions, strategy);
 
@@ -232,11 +302,20 @@ public class PropsGenerator
             return UpdateExistingItems(existingItems, resolvedVersion) ? (0, 1) : (0, 0);
         }
 
-        AddNewPackageVersion(targetItemGroup, packageName, resolvedVersion);
+        AddNewPackageVersion(
+            targetItemGroup,
+            packageName,
+            resolvedVersion,
+            keepOrdered,
+            documentedByComment
+        );
         return (1, 0);
     }
 
-    private static bool ShouldSkipUpdateForConditionalItems(List<ProjectItemElement> existingItems, HashSet<string> versions)
+    private static bool ShouldSkipUpdateForConditionalItems(
+        List<ProjectItemElement> existingItems,
+        HashSet<string> versions
+    )
     {
         if (existingItems.Count <= 1)
         {
@@ -276,48 +355,220 @@ public class PropsGenerator
         return updated;
     }
 
+    /// <summary>
+    /// Adds a pin, placed so that a file which was ordered stays ordered.
+    ///
+    /// Not <c>AddItemGroup.AddItem</c>, which chooses its own position: given an *unordered* group it
+    /// inserted at the top, and given an ordered one it inserted between a comment and the item that
+    /// comment documents — silently reattaching a team's "pinned because 2.x drops netstandard2.0" note
+    /// to a different package. That is worse than losing the comment, because the file still reads as if
+    /// it were right. MSBuild's object model does not expose comments at all (they survive only because
+    /// the underlying document is round-tripped), so the position is chosen relative to the *preceding*
+    /// item instead, which leaves any comment attached to the following one where it was.
+    /// </summary>
     private static void AddNewPackageVersion(
         ProjectItemGroupElement targetItemGroup,
         string packageName,
-        string version)
+        string version,
+        bool keepOrdered,
+        HashSet<ProjectItemElement> documentedByComment
+    )
     {
-        var newItem = targetItemGroup.AddItem(PackageVersionItemType, packageName);
+        var newItem = targetItemGroup.ContainingProject.CreateItemElement(
+            PackageVersionItemType,
+            packageName
+        );
+
+        var existing = targetItemGroup
+            .Items.Where(item => item.ItemType == PackageVersionItemType)
+            .ToList();
+
+        if (!keepOrdered)
+        {
+            // An unordered group is left as its author arranged it: reordering to match our preference
+            // would produce a diff far larger than the change that was asked for, and would move
+            // comments away from what they document. The new pin goes at the end.
+            targetItemGroup.AppendChild(newItem);
+            SetMetadataValue(newItem, VersionMetadataName, version);
+            return;
+        }
+
+        var precedingIndex = existing.FindLastIndex(item =>
+            PackageIdOrder.Compare(GetPackageName(item), packageName) < 0
+        );
+
+        // Every MSBuild insertion lands immediately before the *next item*, which is to say after that
+        // item's comment — the model cannot address a position earlier than that, because it cannot see
+        // comments at all. So where the sorted position would take a comment away from the entry it
+        // documents, the new pin goes one slot later instead. One entry marginally out of order is a
+        // strictly smaller problem than an explanation silently attached to the wrong package.
+        while (
+            precedingIndex + 1 < existing.Count
+            && documentedByComment.Contains(existing[precedingIndex + 1])
+        )
+        {
+            precedingIndex++;
+        }
+
+        if (precedingIndex >= 0)
+        {
+            targetItemGroup.InsertAfterChild(newItem, existing[precedingIndex]);
+        }
+        else if (existing.Count > 0)
+        {
+            // Sorts before everything already there. A comment that is the group's first child reads as
+            // a header for the group rather than for one entry, and inserting before the first item
+            // leaves it where its author put it.
+            targetItemGroup.InsertBeforeChild(newItem, existing[0]);
+        }
+        else
+        {
+            targetItemGroup.AppendChild(newItem);
+        }
+
         SetMetadataValue(newItem, VersionMetadataName, version);
+    }
+
+    /// <summary>
+    /// Whether the group's existing pins are already in <see cref="PackageIdOrder"/>. Evaluated once,
+    /// before anything is inserted, so adding several packages in one run cannot change the answer
+    /// partway through and place some of them by one rule and some by another.
+    /// </summary>
+    /// <summary>
+    /// The pins that have a comment immediately above them, and therefore an explanation that must not
+    /// be handed to a different package.
+    ///
+    /// Read from the file's own lines because MSBuild's object model does not expose comments — they
+    /// survive a merge only because the underlying document is round-tripped whole, which is also why
+    /// nothing in the model can be positioned relative to one. A comment that is the group's first child
+    /// is treated as a header for the group rather than for the entry below it, so it is not counted:
+    /// there is no way to tell the two apart, and holding the first slot open for a header is the
+    /// reading that leaves an ordered file ordered.
+    /// </summary>
+    private static HashSet<ProjectItemElement> FindCommentedItems(
+        ProjectItemGroupElement itemGroup,
+        string propsFilePath
+    )
+    {
+        HashSet<ProjectItemElement> documented = [];
+
+        string[] lines;
+        try
+        {
+            lines = File.ReadAllLines(propsFilePath);
+        }
+        catch (IOException)
+        {
+            // Without the source text every position is treated as comment-free, which is the same
+            // behaviour as a file that has no comments. Failing the merge over this would be worse.
+            return documented;
+        }
+
+        var items = itemGroup.Items.Where(item => item.ItemType == PackageVersionItemType).ToList();
+
+        for (var index = 0; index < items.Count; index++)
+        {
+            // Location.Line is 1-based, and the first entry's comment is the group header case above.
+            var above = items[index].Location.Line - 2;
+            while (above >= 0 && string.IsNullOrWhiteSpace(lines[above]))
+            {
+                above--;
+            }
+
+            if (above < 0 || index == 0)
+            {
+                continue;
+            }
+
+            var text = lines[above].Trim();
+            if (
+                text.StartsWith("<!--", StringComparison.Ordinal)
+                || text.EndsWith("-->", StringComparison.Ordinal)
+            )
+            {
+                documented.Add(items[index]);
+            }
+        }
+
+        return documented;
+    }
+
+    /// <summary>
+    /// Whether the group's existing pins are in <see cref="PackageIdOrder"/>, and so whether a new pin
+    /// should be sorted into place or appended.
+    ///
+    /// An entry sitting immediately after a commented one is not counted as out of order, because that
+    /// is exactly where <see cref="AddNewPackageVersion"/> puts an entry whose sorted position a comment
+    /// was occupying. Without this, honouring one comment would cost the file its ordered status for
+    /// good: the next merge would read the position it had itself just forced as evidence the file was
+    /// unsorted, and append everything from then on.
+    /// </summary>
+    private static bool IsOrdered(
+        ProjectItemGroupElement itemGroup,
+        HashSet<ProjectItemElement> documentedByComment
+    )
+    {
+        var items = itemGroup.Items.Where(item => item.ItemType == PackageVersionItemType).ToList();
+
+        for (var i = 1; i < items.Count; i++)
+        {
+            if (documentedByComment.Contains(items[i - 1]))
+            {
+                continue;
+            }
+
+            if (PackageIdOrder.Compare(GetPackageName(items[i - 1]), GetPackageName(items[i])) > 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void EnsureManagePackageVersionsCentrally(ProjectRootElement projectRoot)
     {
-        var hasProperty = projectRoot.Properties.Any(p => p.Name == "ManagePackageVersionsCentrally");
+        var hasProperty = projectRoot.Properties.Any(p =>
+            p.Name == "ManagePackageVersionsCentrally"
+        );
         if (hasProperty)
         {
             return;
         }
 
-        var propertyGroup = projectRoot.PropertyGroups
-            .FirstOrDefault(group => string.IsNullOrEmpty(group.Condition))
-            ?? projectRoot.AddPropertyGroup();
+        var propertyGroup =
+            projectRoot.PropertyGroups.FirstOrDefault(group =>
+                string.IsNullOrEmpty(group.Condition)
+            ) ?? projectRoot.AddPropertyGroup();
 
         propertyGroup.AddProperty("ManagePackageVersionsCentrally", "true");
     }
 
     private static string? GetMetadataValue(ProjectItemElement item, string name)
     {
-        var metadata = item.Metadata
-            .FirstOrDefault(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+        var metadata = item.Metadata.FirstOrDefault(m =>
+            string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)
+        );
         return metadata?.Value;
     }
 
     private static void SetMetadataValue(ProjectItemElement item, string name, string value)
     {
-        var metadata = item.Metadata
-            .FirstOrDefault(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+        var metadata = item.Metadata.FirstOrDefault(m =>
+            string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)
+        );
         if (metadata != null)
         {
             metadata.Value = value;
         }
         else
         {
-            item.AddMetadata(name, value);
+            // As an attribute, not a child element. AddMetadata defaults to element form, so a merge
+            // wrote new pins as <PackageVersion Include="X"><Version>1.0</Version></PackageVersion>
+            // while every entry around them — and everything Generate produces — used Version="1.0".
+            // One file, two styles for the same thing, and a three-line diff for a one-line addition.
+            // Existing element-form metadata is left alone: it updates in place without being rewritten.
+            item.AddMetadata(name, value, expressAsAttribute: true);
         }
     }
 }
