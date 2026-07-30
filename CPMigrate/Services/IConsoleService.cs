@@ -25,6 +25,7 @@ public interface IConsoleService
     void WriteProjectTree(List<string> projectPaths, string basePath);
     void WritePropsPreview(string content);
     void WriteDiff(string diff);
+    void WriteStructuredError(string title, string detail, string? suggestion = null, string? docsUrl = null);
     void WriteMarkup(string message);
     void WriteLine(string message = "");
     void WriteStatusDashboard(string directory, List<string> solutions, List<BackupSetInfo> backups, bool isGitRepo, bool hasUnstaged, Dictionary<string, int> targetFrameworks);

@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.34.0] - 2026-07-30
+
+### Changed
+- **Structured error output.** Errors now render in a bordered panel with the error title, detail, an actionable suggestion arrow, and a docs link where relevant — instead of a bare message followed by a "Suggestion:" line on stderr. The old `Console.Error.WriteLineAsync` suggestions in `RunMigrationAsync` are replaced by `WriteStructuredError` on the console service, so they respect `--quiet` and machine-readable output modes.
+
 ## [3.33.0] - 2026-07-30
 
 ### Added

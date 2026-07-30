@@ -899,9 +899,10 @@ internal static class CommandRouter
             );
             if (!options.Output.IsMachineReadable() && !options.Quiet)
             {
-                await Console.Error.WriteLineAsync(
-                    "\nSuggestion: Check file permissions and ensure no files are locked by another process."
-                );
+                consoleService.WriteStructuredError(
+                    "File operation failed",
+                    ex.Message,
+                    "Check file permissions and ensure no files are locked by another process.");
             }
             return ExitCodes.FileOperationError;
         }
@@ -916,9 +917,10 @@ internal static class CommandRouter
             );
             if (!options.Output.IsMachineReadable() && !options.Quiet)
             {
-                await Console.Error.WriteLineAsync(
-                    "\nSuggestion: Run with elevated permissions or check file/folder access rights."
-                );
+                consoleService.WriteStructuredError(
+                    "Permission denied",
+                    ex.Message,
+                    "Run with elevated permissions or check file/folder access rights.");
             }
             return ExitCodes.FileOperationError;
         }
@@ -939,9 +941,10 @@ internal static class CommandRouter
 #endif
             if (!options.Output.IsMachineReadable() && !options.Quiet)
             {
-                await Console.Error.WriteLineAsync(
-                    "\nSuggestion: Please report this issue at https://github.com/georgepwall1991/CPMigrate/issues"
-                );
+                consoleService.WriteStructuredError(
+                    "Unexpected error",
+                    ex.Message,
+                    "Report this at https://github.com/georgepwall1991/CPMigrate/issues");
             }
             return ExitCodes.UnexpectedError;
         }

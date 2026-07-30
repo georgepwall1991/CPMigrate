@@ -160,6 +160,11 @@ public class SpectreConsoleService : IConsoleService
         }
     }
 
+    public void WriteStructuredError(string title, string detail, string? suggestion = null, string? docsUrl = null)
+    {
+        ErrorFormatter.Render(_console, Glyphs, title, detail, suggestion, docsUrl);
+    }
+
     public void WriteMarkup(string message)
     {
         _console.MarkupLine(message);
