@@ -72,11 +72,17 @@ cpmigrate --update
 ## 30-second path
 
 ```bash
+# 0) Check your environment is ready
+cpmigrate --doctor
+
 # 1) Scan for issues (CI-safe exit codes)
 cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analysis.json
 
 # 2) Preview migration to Directory.Packages.props
 cpmigrate -s ./MySolution.sln --dry-run
+
+# 2b) Preview as a unified diff instead
+cpmigrate -s ./MySolution.sln --dry-run --diff
 
 # 3) Migrate to Central Package Management (CPM)
 cpmigrate -s ./MySolution.sln
@@ -88,7 +94,7 @@ cpmigrate --update-packages --dry-run
 cpmigrate --update-packages --bisect
 ```
 
-**First run?** Bare `cpmigrate` launches Mission Control, an interactive wizard that guides you through migration, analysis, updates, and rollback. **Single project?** `cpmigrate --project ./src/Api/Api.csproj --dry-run`. **CI?** Add `--output Json --quiet` to any command for strict JSON-only stdout.
+**First run?** Bare `cpmigrate` launches Mission Control, an interactive wizard that guides you through migration, analysis, updates, and rollback. **Single project?** `cpmigrate --project ./src/Api/Api.csproj --dry-run`. **CI?** Add `--output Json --quiet` to any command for strict JSON-only stdout. **Team defaults?** `cpmigrate --init` scaffolds a `.cpmigrate.json`. **Quick health check?** `cpmigrate --status`. **Dependency tree?** `cpmigrate --tree --transitive`.
 
 ## See it work
 
@@ -115,7 +121,7 @@ Product-flow diagrams rendered from real CLI output, plus a recording of the int
 | Surface | What you get |
 |---------|----------------|
 | **CPM migration** | Generate `Directory.Packages.props`, clean Version attributes from projects, conflict strategies |
-| **Dependency analysis** | 10 built-in analyzers + scoreboard; JSON, SARIF, and Markdown for CI |
+| **Dependency analysis** | 11 built-in analyzers + scoreboard + health score; JSON, SARIF, Markdown, and CSV for CI |
 | **Auto-fix** | Version, casing, redundant refs, transitive pin |
 | **Package updates** | Latest versions + `dotnet test` + automatic rollback |
 | **`--bisect`** | Largest green update subset; names held-back packages |
@@ -123,6 +129,11 @@ Product-flow diagrams rendered from real CLI output, plus a recording of the int
 | **Batch / monorepo** | Sequential or parallel multi-solution runs |
 | **Backup & rollback** | On-disk backups for migration and update paths |
 | **`.sln` + `.slnx`** | Classic solutions and Visual Studio 17.10+ `.slnx` |
+| **`--doctor`** | Environment diagnostics: SDK, NuGet, workspace, config, git |
+| **`--init`** | Scaffold `.cpmigrate.json` with team defaults |
+| **`--status`** | Quick workspace health dashboard |
+| **`--tree`** | ASCII dependency tree per project |
+| **`--diff`** | Unified diff preview during `--dry-run` |
 
 ### Why use CPMigrate instead of doing it by hand?
 

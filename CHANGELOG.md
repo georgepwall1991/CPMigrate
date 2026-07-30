@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.44.0] - 2026-07-30
+
+### Changed
+- **README quick-start updated.** The 30-second path gains `--doctor` as step 0 and a `--diff` variant of the dry-run preview. The closing paragraph adds pointers to `--init`, `--status`, and `--tree`. The feature snapshot table grows from 9 to 14 rows, covering every new surface added in 3.29.0–3.43.0.
+
 ## [3.43.0] - 2026-07-30
 
 ### Added
