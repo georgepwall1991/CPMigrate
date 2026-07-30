@@ -53,12 +53,62 @@ public static class RuleExplainer
         text.AppendLine($"Tags: {string.Join(", ", rule.Tags)}");
         text.AppendLine($"Docs: {rule.HelpUri}");
         text.AppendLine();
+
+        var example = GetExample(rule.Code);
+        if (example is not null)
+        {
+            text.AppendLine("Example:");
+            text.AppendLine($"  {example}");
+            text.AppendLine();
+        }
+
+        var fix = GetFixHint(rule.Code);
+        if (fix is not null)
+        {
+            text.AppendLine("How to fix:");
+            text.AppendLine(Wrap(fix, 80));
+            text.AppendLine();
+        }
+
         text.AppendLine(
             "This ID appears verbatim as `issueCode` in --output Json and `ruleId` in --output Sarif."
         );
 
         return text.ToString();
     }
+
+    private static string? GetExample(AnalysisIssueCode code) => code switch
+    {
+        AnalysisIssueCode.VersionInconsistency => "cpmigrate --analyze -s ./MySolution.sln",
+        AnalysisIssueCode.DuplicatePackageCasing => "cpmigrate --analyze --fix -s ./MySolution.sln",
+        AnalysisIssueCode.RedundantReference => "cpmigrate --analyze --fix -s ./MySolution.sln",
+        AnalysisIssueCode.TransitiveConflict => "cpmigrate --analyze --transitive -s ./MySolution.sln",
+        AnalysisIssueCode.SecurityVulnerability => "cpmigrate --analyze --audit --fail-on High",
+        AnalysisIssueCode.OutdatedPackage => "cpmigrate --analyze --outdated",
+        AnalysisIssueCode.DeprecatedPackage => "cpmigrate --analyze --deprecated",
+        AnalysisIssueCode.FrameworkAlignment => "cpmigrate --analyze -s ./MySolution.sln",
+        AnalysisIssueCode.LicenseRisk => "cpmigrate --analyze --licenses",
+        AnalysisIssueCode.CpmNotEnabled => "cpmigrate -s ./MySolution.sln",
+        AnalysisIssueCode.InlineVersionUnderCpm => "cpmigrate --analyze -s ./MySolution.sln",
+        AnalysisIssueCode.OrphanedPackageVersion => "cpmigrate --analyze -s ./MySolution.sln",
+        _ => null,
+    };
+
+    private static string? GetFixHint(AnalysisIssueCode code) => code switch
+    {
+        AnalysisIssueCode.VersionInconsistency => "Run 'cpmigrate -s ./MySolution.sln' to centralize all versions in Directory.Packages.props, or 'cpmigrate --analyze --fix' to standardize versions in place.",
+        AnalysisIssueCode.DuplicatePackageCasing => "Run 'cpmigrate --analyze --fix' to normalize package name casing to the most common variant.",
+        AnalysisIssueCode.RedundantReference => "Run 'cpmigrate --analyze --fix' to remove duplicate PackageReference entries.",
+        AnalysisIssueCode.TransitiveConflict => "Run 'cpmigrate --analyze --fix --transitive' to pin divergent transitive dependencies in Directory.Packages.props.",
+        AnalysisIssueCode.SecurityVulnerability => "Run 'cpmigrate --update-packages' to update vulnerable packages, or 'cpmigrate --update-packages --bisect' to keep the largest green subset.",
+        AnalysisIssueCode.OutdatedPackage => "Run 'cpmigrate --update-packages --dry-run' to preview available updates.",
+        AnalysisIssueCode.DeprecatedPackage => "Check the package's NuGet page for a recommended replacement, then update Directory.Packages.props.",
+        AnalysisIssueCode.CpmNotEnabled => "Run 'cpmigrate -s ./MySolution.sln' to generate Directory.Packages.props with ManagePackageVersionsCentrally enabled.",
+        AnalysisIssueCode.InlineVersionUnderCpm => "Remove the Version attribute from the PackageReference — the version should come from Directory.Packages.props.",
+        AnalysisIssueCode.OrphanedPackageVersion => "Remove the unused PackageVersion entry from Directory.Packages.props.",
+        AnalysisIssueCode.LicenseRisk => "Review the package license on its NuGet page. For copyleft licenses, consider a permissive alternative.",
+        _ => null,
+    };
 
     private static string DescribeAll()
     {
