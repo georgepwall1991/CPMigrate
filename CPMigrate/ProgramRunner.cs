@@ -66,7 +66,8 @@ public static class ProgramRunner
                     {
                         var doctorService = new DoctorService(
                             services.ConsoleService,
-                            new SolutionDiscovery(services.ConsoleService));
+                            new SolutionDiscovery(services.ConsoleService)
+                        );
                         return await doctorService.RunAsync(options.GetDiscoveryTargetPath());
                     }
 
@@ -75,14 +76,16 @@ public static class ProgramRunner
                         var initService = new InitService(services.ConsoleService);
                         return await initService.RunAsync(
                             options.GetDiscoveryTargetPath(),
-                            options.Force);
+                            options.Force
+                        );
                     }
 
                     if (options.Status)
                     {
                         var statusService = new StatusService(
                             services.ConsoleService,
-                            new SolutionDiscovery(services.ConsoleService));
+                            new SolutionDiscovery(services.ConsoleService)
+                        );
                         return await statusService.RunAsync(options.GetDiscoveryTargetPath());
                     }
 
@@ -99,7 +102,18 @@ public static class ProgramRunner
                         services.ConsoleService
                     );
 
-                    WarnAboutIneffectiveFailOn(options, args, services.ConsoleService);
+                    WarnAboutIneffectiveAnalysisFlag(
+                        options,
+                        args,
+                        "fail-on",
+                        services.ConsoleService
+                    );
+                    WarnAboutIneffectiveAnalysisFlag(
+                        options,
+                        args,
+                        "rules",
+                        services.ConsoleService
+                    );
 
                     // Initialize logging based on --verbose flag. The notice is written before the
                     // payload, so under a machine-readable format it would put prose ahead of the
@@ -145,13 +159,17 @@ public static class ProgramRunner
         {
             var projectAnalyzer = services.ProjectAnalyzer;
             var targetPath = options.GetDiscoveryTargetPath();
-            var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(targetPath);
+            var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(
+                targetPath
+            );
 
             var allReferences = new List<Models.PackageReference>();
             foreach (var projectPath in projectPaths)
             {
                 var (references, success) = await projectAnalyzer.ScanResolvedPackagesAsync(
-                    projectPath, options.IncludeTransitive);
+                    projectPath,
+                    options.IncludeTransitive
+                );
                 if (success)
                 {
                     allReferences.AddRange(references);
@@ -170,18 +188,23 @@ public static class ProgramRunner
     }
 
     /// <summary>
-    /// Warns when <c>--fail-on</c> was passed on the command line for a command it cannot affect.
-    /// It only changes analysis exit codes, so without <c>--analyze</c> the default action — a real,
+    /// Warns when a flag that only shapes analysis output was passed on the command line for a
+    /// command it cannot affect. Without <c>--analyze</c> the default action — a real,
     /// file-rewriting migration — runs while the flag does nothing.
     ///
-    /// A warning rather than an error, because the same setting can arrive from
-    /// <c>.cpmigrate.json</c> as a team-wide policy; rejecting it would break every migration run
+    /// A warning rather than an error, because the same settings can arrive from
+    /// <c>.cpmigrate.json</c> as team-wide policy; rejecting them would break every migration run
     /// in a repository that configures a gate. Only an explicit CLI flag is reported, since that is
     /// the case where the user was expecting it to apply to <em>this</em> command.
     /// </summary>
-    private static void WarnAboutIneffectiveFailOn(
+    /// <param name="options">The resolved options.</param>
+    /// <param name="args">The raw command line, used to tell a flag from a configured default.</param>
+    /// <param name="flag">The long option name, without leading dashes.</param>
+    /// <param name="consoleService">Where the warning goes.</param>
+    private static void WarnAboutIneffectiveAnalysisFlag(
         Options options,
         string[] args,
+        string flag,
         IConsoleService consoleService
     )
     {
@@ -190,13 +213,13 @@ public static class ProgramRunner
             return;
         }
 
-        if (!CliArgumentParser.GetExplicitArguments(args).Contains("fail-on"))
+        if (!CliArgumentParser.GetExplicitArguments(args).Contains(flag))
         {
             return;
         }
 
         consoleService.Warning(
-            "--fail-on only affects --analyze; it is ignored for this command. "
+            $"--{flag} only affects --analyze; it is ignored for this command. "
                 + "Did you mean to add --analyze?"
         );
     }

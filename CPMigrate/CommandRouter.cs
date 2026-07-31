@@ -242,7 +242,10 @@ internal static class CommandRouter
                     c.Services
                 )
         ),
-        new(o => o.UnifyProps, c => RunUnifyPropsModeAsync(c.Options, c.ExecutionConsole, c.Services)),
+        new(
+            o => o.UnifyProps,
+            c => RunUnifyPropsModeAsync(c.Options, c.ExecutionConsole, c.Services)
+        ),
     ];
 
     /// <summary>
@@ -904,7 +907,8 @@ internal static class CommandRouter
                 consoleService.WriteStructuredError(
                     "File operation failed",
                     ex.Message,
-                    "Check file permissions and ensure no files are locked by another process.");
+                    "Check file permissions and ensure no files are locked by another process."
+                );
             }
             return ExitCodes.FileOperationError;
         }
@@ -922,7 +926,8 @@ internal static class CommandRouter
                 consoleService.WriteStructuredError(
                     "Permission denied",
                     ex.Message,
-                    "Run with elevated permissions or check file/folder access rights.");
+                    "Run with elevated permissions or check file/folder access rights."
+                );
             }
             return ExitCodes.FileOperationError;
         }
@@ -946,7 +951,8 @@ internal static class CommandRouter
                 consoleService.WriteStructuredError(
                     "Unexpected error",
                     ex.Message,
-                    "Report this at https://github.com/georgepwall1991/CPMigrate/issues");
+                    "Report this at https://github.com/georgepwall1991/CPMigrate/issues"
+                );
             }
             return ExitCodes.UnexpectedError;
         }
@@ -1034,19 +1040,26 @@ internal static class CommandRouter
             ?? result.AnalysisReport
             ?? new AnalysisReport(0, 0, Array.Empty<AnalyzerResult>());
 
-        var rows = report.Results
-            .SelectMany(r => r.Issues.Select(issue =>
-                string.Join(",",
-                    CsvField(r.AnalyzerName),
-                    CsvField(issue.Severity.ToString()),
-                    CsvField(issue.PackageName),
-                    CsvField(issue.Description),
-                    CsvField(string.Join("; ", issue.AffectedProjects)),
-                    issue.Fixable ? "true" : "false")))
+        var rows = report
+            .Results.SelectMany(r =>
+                r.Issues.Select(issue =>
+                    string.Join(
+                        ",",
+                        CsvField(r.AnalyzerName),
+                        CsvField(issue.Severity.ToString()),
+                        CsvField(issue.PackageName),
+                        CsvField(issue.Description),
+                        CsvField(string.Join("; ", issue.AffectedProjects)),
+                        issue.Fixable ? "true" : "false"
+                    )
+                )
+            )
             .ToList();
 
-        var csv = "Rule,Severity,Package,Description,AffectedProjects,Fixable\n"
-            + string.Join("\n", rows) + "\n";
+        var csv =
+            "Rule,Severity,Package,Description,AffectedProjects,Fixable\n"
+            + string.Join("\n", rows)
+            + "\n";
 
         await JsonOutputWriter.EmitAsync(csv, options, consoleService);
     }
@@ -1118,6 +1131,7 @@ internal static class CommandRouter
 
         var formatter = new JsonFormatter();
         var operation = GetOperationName(options);
+        var rulePolicy = options.ResolveRulePolicy();
 
         var analysisIssues =
             result.AnalysisReport == null
@@ -1176,6 +1190,8 @@ internal static class CommandRouter
                 IssuesBaselined = options.UsesBaseline()
                     ? result.AnalysisReport?.SuppressedCount
                     : null,
+                DisabledRules = rulePolicy.ReportedDisabledRules(),
+                SeverityOverrides = rulePolicy.ReportedSeverityOverrides(),
                 HighestSeverity = result.AnalysisReport?.HighestSeverity?.ToString(),
                 ScanFailures = result.AnalysisReport is null ? null : result.ScanFailures,
                 DeepScanFailures = result.AnalysisReport is null ? null : result.DeepScanFailures,
@@ -1259,8 +1275,7 @@ internal static class CommandRouter
     {
         if (options.Output == OutputFormat.Markdown)
         {
-            var report =
-                $"## ❌ CPMigrate — {operation} failed\n\n{errorMessage}\n";
+            var report = $"## ❌ CPMigrate — {operation} failed\n\n{errorMessage}\n";
             await JsonOutputWriter.EmitFailureAsync(report, options);
             return;
         }

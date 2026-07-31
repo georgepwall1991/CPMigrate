@@ -1,5 +1,6 @@
 using CommandLine;
 using CommandLine.Text;
+using CPMigrate.Models;
 using CPMigrate.Services;
 using CPMigrate.Services.Update;
 
@@ -81,7 +82,6 @@ public class Options
     /// of accepted debt that belongs in version control next to the code it describes.
     /// </summary>
     public const string BaselineDefaultFileName = ".cpmigrate-baseline.json";
-
 
     [Option(
         's',
@@ -215,6 +215,15 @@ public class Options
     public FailOnSeverity FailOn { get; set; } = FailOnSeverity.Info;
 
     [Option(
+        "rules",
+        HelpText = "Per-rule policy as a comma-separated list of Rule=Severity pairs, e.g. "
+            + "\"OutdatedPackage=none,LicenseRisk=Critical\". 'none' turns a rule off; any severity "
+            + "re-grades its findings before --fail-on is applied. Unknown rule IDs are rejected. "
+            + "Set \"rules\" in .cpmigrate.json to apply a policy team-wide."
+    )]
+    public string? Rules { get; set; }
+
+    [Option(
         "explain",
         HelpText = "Explain a rule and exit: pass a rule ID (e.g. VersionInconsistency) or 'all' to "
             + "list every rule. Rule IDs appear in JSON issueCode and SARIF ruleId."
@@ -248,7 +257,9 @@ public class Options
         "write-baseline",
         Default = false,
         HelpText = "Record the current findings as the accepted baseline instead of gating on them, "
-            + "then exit. Writes to --baseline when given, otherwise " + BaselineDefaultFileName + "."
+            + "then exit. Writes to --baseline when given, otherwise "
+            + BaselineDefaultFileName
+            + "."
     )]
     public bool WriteBaseline { get; set; }
 
@@ -610,7 +621,12 @@ public class Options
             ),
             new(
                 "Gate CI on High+ findings only",
-                new Options { Analyze = true, AuditSecurity = true, FailOn = FailOnSeverity.High }
+                new Options
+                {
+                    Analyze = true,
+                    AuditSecurity = true,
+                    FailOn = FailOnSeverity.High,
+                }
             ),
             new(
                 "Analyze and include outdated/deprecated package checks",
@@ -707,6 +723,9 @@ public class Options
     /// <exception cref="ArgumentException">Thrown when options are invalid.</exception>
     public void Validate()
     {
+        // Ahead of everything else: an unusable rule policy should be reported in the moment it was
+        // typed, not after a scan that can take minutes and whose findings the policy would shape.
+        ValidateRuleOptions();
         ValidateOutputOptions();
         ValidateBatchOptions();
 
@@ -737,6 +756,31 @@ public class Options
         }
 
         ValidateMigrationOptions();
+    }
+
+    /// <summary>
+    /// Resolves the configured per-rule policy.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when the policy cannot be parsed.</exception>
+    public RulePolicy ResolveRulePolicy()
+    {
+        var (policy, error) = RulePolicy.Parse(RulePolicy.SplitSpec(Rules));
+        if (error is not null)
+        {
+            throw new ArgumentException(error);
+        }
+
+        return policy ?? RulePolicy.Empty;
+    }
+
+    /// <summary>
+    /// Rejects a rule policy that cannot be understood. Deliberately not mode-gated: a spec that is
+    /// wrong is wrong whether or not this command would have applied it, and reporting it only for
+    /// <c>--analyze</c> would let a typo sit in a config file until the day someone runs an analysis.
+    /// </summary>
+    private void ValidateRuleOptions()
+    {
+        _ = ResolveRulePolicy();
     }
 
     /// <summary>

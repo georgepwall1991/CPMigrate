@@ -11,6 +11,22 @@ so you can move between them without a translation table:
 
 Rule IDs are part of CPMigrate's public contract. They are not renamed within a major version.
 
+Because the IDs are stable, they are also how a rule is configured. `--rules` takes
+`Rule=Severity` pairs — `none` switches a rule off, any severity re-grades its findings before
+`--fail-on` is applied:
+
+```bash
+cpmigrate --analyze --rules "OutdatedPackage=none,LicenseRisk=Critical"
+```
+
+The same policy can be set team-wide as a `rules` map in `.cpmigrate.json`. Unknown rule IDs are
+rejected rather than ignored, because a typo that quietly left a rule armed is indistinguishable
+from a policy that works. A disabled rule reports nothing at all — unlike a
+[baseline](../README.md#gating-on-a-codebase-with-existing-debt), which keeps accepted findings
+visible so the debt gets paid down. Whichever rules a run switched off or re-graded are echoed to
+the terminal and published in JSON as `summary.disabledRules` and `summary.severityOverrides`, so
+`issuesFound: 0` can always be told apart from findings that were configured away.
+
 Severities map onto SARIF levels as follows:
 
 | CPMigrate severity | SARIF level |

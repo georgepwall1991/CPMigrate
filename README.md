@@ -80,7 +80,7 @@ cpmigrate --update-packages --bisect
 Requires **.NET SDK 8.0** or later. The tool itself targets `net10.0` with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.51.0
+dotnet tool install --global CPMigrate --version 3.52.0
 ```
 
 ```bash
@@ -264,9 +264,18 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--fix` | | `false` | Apply auto-fixes (with `--analyze`) |
 | `--fix-dry-run` | | `false` | Preview auto-fixes |
 | `--fail-on` | | `Info` | Lowest severity that fails: `Info`·`Low`·`Moderate`·`High`·`Critical`·`Never` |
+| `--rules` | | | Per-rule policy: `Rule=Severity` pairs, or `Rule=none` to switch a rule off |
 | `--max-parallelism` | | procs (≤8) | Projects scanned at once for `--audit`/`--outdated`/`--deprecated` |
 | `--baseline` | | | Accepted-findings file; reported but never fail the build |
 | `--write-baseline` | | `false` | Record current findings as the baseline, then exit |
+
+**Tuning rules to the codebase.** `--fail-on` is one global threshold, so silencing a noisy rule means lowering the gate for everything. `--rules` re-grades or removes rules individually, before the threshold is applied:
+
+```bash
+cpmigrate --analyze --rules "OutdatedPackage=none,LicenseRisk=Critical"
+```
+
+Unknown rule IDs are **rejected**, not ignored — a typo that quietly left a rule armed would look exactly like a working policy. A disabled rule is different from a baselined one: baselined findings stay visible so the debt gets paid down, while a disabled rule reports nothing at all. Either way the policy is echoed in the terminal and published in JSON (`summary.disabledRules`, `summary.severityOverrides`), so `issuesFound: 0` can always be told apart from findings that were configured away. Set `"rules"` in `.cpmigrate.json` to apply it team-wide.
 
 **Gating on a codebase with existing debt.** `--fail-on High` narrows the *gate* without narrowing the *report* — sub-threshold findings still show in terminal, JSON, and SARIF; only the exit code changes. It can **never** suppress exit `8` (incomplete scan). Record the current state once, then fail only on what's new:
 
