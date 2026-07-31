@@ -121,10 +121,7 @@ public sealed class RulePolicy
             var ruleText = entry[..separator].Trim();
             var valueText = entry[(separator + 1)..].Trim();
 
-            if (
-                !Enum.TryParse<AnalysisIssueCode>(ruleText, ignoreCase: true, out var code)
-                || !Enum.IsDefined(code)
-            )
+            if (!TryParseName<AnalysisIssueCode>(ruleText, out var code))
             {
                 return (
                     null,
@@ -138,10 +135,7 @@ public sealed class RulePolicy
                 continue;
             }
 
-            if (
-                !Enum.TryParse<AnalysisSeverity>(valueText, ignoreCase: true, out var severity)
-                || !Enum.IsDefined(severity)
-            )
+            if (!TryParseName<AnalysisSeverity>(valueText, out var severity))
             {
                 var accepted = string.Join(
                     ", ",
@@ -227,6 +221,29 @@ public sealed class RulePolicy
                     )
                 )
         );
+    }
+
+    /// <summary>
+    /// Matches an enum member by name only. <see cref="Enum.TryParse{TEnum}(string, bool, out TEnum)"/>
+    /// also accepts the underlying numbers, which would make <c>--rules 1=none</c> a synonym for
+    /// <c>VersionInconsistency=none</c> and <c>VersionInconsistency=4</c> a synonym for
+    /// <c>Critical</c>. Neither is documented, neither is in the published schema, and both would
+    /// silently re-target if a member were ever inserted into the enum.
+    /// </summary>
+    private static bool TryParseName<TEnum>(string text, out TEnum value)
+        where TEnum : struct, Enum
+    {
+        var match = Enum.GetNames<TEnum>()
+            .FirstOrDefault(name => string.Equals(name, text, StringComparison.OrdinalIgnoreCase));
+
+        if (match is null)
+        {
+            value = default;
+            return false;
+        }
+
+        value = Enum.Parse<TEnum>(match);
+        return true;
     }
 
     private AnalysisIssue Regrade(AnalysisIssue issue)

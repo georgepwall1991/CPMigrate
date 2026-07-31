@@ -100,6 +100,21 @@ public class RulePolicyParsingTests
             .Be(AnalysisSeverity.Critical);
     }
 
+    [Theory]
+    [InlineData("1=none")]
+    [InlineData("VersionInconsistency=4")]
+    [InlineData("1=4")]
+    public void Parse_NumericTokens_AreRejected(string entry)
+    {
+        // Enum.TryParse also accepts the underlying numbers, which would make '1=none' a synonym for
+        // 'VersionInconsistency=none'. Neither form is documented or in the published schema, and
+        // both would silently re-target the moment a member were inserted into either enum.
+        var (policy, error) = RulePolicy.Parse(new[] { entry });
+
+        policy.Should().BeNull();
+        error.Should().NotBeNull();
+    }
+
     [Fact]
     public void Parse_NoEntries_IsTheEmptyPolicy()
     {
@@ -302,6 +317,103 @@ public class RulePolicyContractTests : IDisposable
         var summary = JsonDocument.Parse(stdout).RootElement.GetProperty("summary");
         summary.TryGetProperty("disabledRules", out _).Should().BeFalse();
         summary.TryGetProperty("severityOverrides", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Migrate_UnderJson_DoesNotClaimAPolicyItNeverApplied()
+    {
+        // A migration produces no analysis report, so --rules shapes nothing. Publishing the policy
+        // there would claim rules were switched off in a report they did not touch — the same lie as
+        // omitting it from one they did, pointed the other way.
+        CreateInconsistentFixture();
+
+        var stdout = await CaptureStdoutAsync(() =>
+            CommandRouter.RouteCommand(
+                new Options
+                {
+                    DryRun = true,
+                    Output = OutputFormat.Json,
+                    Quiet = true,
+                    SolutionFileDir = _testDirectory,
+                    Rules = "VersionInconsistency=none",
+                },
+                new SpectreConsoleService(_versionResolver),
+                new InteractiveService(SilentConsoleService.Instance),
+                _versionResolver,
+                new ConfigService(SilentConsoleService.Instance),
+                new BackupManager()
+            )
+        );
+
+        var summary = JsonDocument.Parse(stdout).RootElement.GetProperty("summary");
+        summary.TryGetProperty("disabledRules", out _).Should().BeFalse();
+        summary.TryGetProperty("severityOverrides", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Batch_CarriesThePolicyIntoEachSolutionSummary()
+    {
+        // Per-solution runs are quiet, so the terminal notice never reaches a batch consumer. Without
+        // the policy in the payload, a batch that configured its findings away is indistinguishable
+        // from a repository of clean solutions.
+        var solutionDirectory = Path.Combine(_testDirectory, "Sln");
+        Directory.CreateDirectory(solutionDirectory);
+        CreateProject(Path.Combine("Sln", "Api.csproj"), "13.0.1");
+        CreateProject(Path.Combine("Sln", "Lib.csproj"), "12.0.3");
+        CreateSolution(Path.Combine("Sln", "Test.sln"), "Api.csproj", "Lib.csproj");
+
+        var stdout = await CaptureStdoutAsync(() =>
+            ProgramRunner.RunAsync(
+                new[]
+                {
+                    "--batch",
+                    _testDirectory,
+                    "--analyze",
+                    "--output",
+                    "Json",
+                    "--rules",
+                    "VersionInconsistency=none",
+                },
+                new TestDoubles.FakeConsoleService()
+            )
+        );
+
+        var summary = JsonDocument
+            .Parse(stdout)
+            .RootElement.GetProperty("solutions")[0]
+            .GetProperty("summary");
+        summary
+            .GetProperty("disabledRules")
+            .EnumerateArray()
+            .Select(element => element.GetString())
+            .Should()
+            .Equal("VersionInconsistency");
+    }
+
+    [Fact]
+    public async Task SideEffectingMode_WithAnUnusablePolicy_IsRejectedBeforeItRuns()
+    {
+        // --unify-props is dispatched ahead of per-command validation and rewrites project files.
+        // A policy rejected only under --analyze would let it run straight past the promised strict
+        // rejection and modify the tree.
+        CreateInconsistentFixture();
+        var console = new TestDoubles.FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[]
+            {
+                "--unify-props",
+                "--rules",
+                "NoSuchRule=none",
+                "--quiet",
+                "-s",
+                _testDirectory,
+            },
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(message => message.Contains("NoSuchRule"));
     }
 
     [Fact]

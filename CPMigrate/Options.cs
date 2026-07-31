@@ -723,9 +723,6 @@ public class Options
     /// <exception cref="ArgumentException">Thrown when options are invalid.</exception>
     public void Validate()
     {
-        // Ahead of everything else: an unusable rule policy should be reported in the moment it was
-        // typed, not after a scan that can take minutes and whose findings the policy would shape.
-        ValidateRuleOptions();
         ValidateOutputOptions();
         ValidateBatchOptions();
 
@@ -776,7 +773,8 @@ public class Options
     /// <summary>
     /// Rejects a rule policy that cannot be understood. Deliberately not mode-gated: a spec that is
     /// wrong is wrong whether or not this command would have applied it, and reporting it only for
-    /// <c>--analyze</c> would let a typo sit in a config file until the day someone runs an analysis.
+    /// <c>--analyze</c> would let a typo sit in a config file until the day someone runs an
+    /// analysis — or let a side-effecting mode run straight past it.
     /// </summary>
     private void ValidateRuleOptions()
     {
@@ -886,6 +884,12 @@ public class Options
     /// <exception cref="ArgumentException">Thrown when the combination is unsupported.</exception>
     public void ValidateReportingContract()
     {
+        // First, and here rather than in Validate: this runs ahead of dispatch, so it is the only
+        // check a side-effecting mode passes through. An unusable policy rejected only under
+        // --analyze would let `--update --rules NoSuchRule=none` perform a real self-update while
+        // the promised strict rejection never happened. Also means a typo costs a second rather
+        // than a scan that can take minutes.
+        ValidateRuleOptions();
         ValidateSarifOptions();
         ValidateMarkdownOptions();
         ValidateBaselineOptions();

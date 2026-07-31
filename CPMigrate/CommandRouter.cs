@@ -1100,6 +1100,17 @@ internal static class CommandRouter
         return SarifRunOutcome.Successful;
     }
 
+    /// <summary>
+    /// The rule policy that actually shaped a payload — empty when no analysis ran. A migration
+    /// under <c>--output Json</c> never applies the policy, so publishing it there would claim rules
+    /// were switched off in a report they did not touch: the same lie as omitting it from a report
+    /// they did, pointed the other way.
+    /// </summary>
+    private static RulePolicy PolicyThatShapedTheReport(Options options, AnalysisReport? report)
+    {
+        return report is null ? RulePolicy.Empty : options.ResolveRulePolicy();
+    }
+
     private static async Task WriteJsonOutputForMigration(
         Options options,
         MigrationResult result,
@@ -1131,7 +1142,7 @@ internal static class CommandRouter
 
         var formatter = new JsonFormatter();
         var operation = GetOperationName(options);
-        var rulePolicy = options.ResolveRulePolicy();
+        var rulePolicy = PolicyThatShapedTheReport(options, result.AnalysisReport);
 
         var analysisIssues =
             result.AnalysisReport == null
