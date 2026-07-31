@@ -323,7 +323,7 @@ public class SpectreConsoleServiceTests
     }
 
     [Fact]
-    public void WriteAnalysisSummary_NoIssues_OmitsBreakdown()
+    public void WriteAnalysisSummary_NoIssues_RendersCleanScoreboard()
     {
         var report = new AnalysisReport(1, 1, new List<AnalyzerResult>
         {
@@ -332,8 +332,9 @@ public class SpectreConsoleServiceTests
 
         _service.WriteAnalysisSummary(report);
 
-        _console.Output.Should().Contain("NO ISSUES");
-        _console.Output.Should().NotContain("ANALYZER");
+        _console.Output.Should().Contain("CLEAN");
+        _console.Output.Should().Contain("PASS");
+        _console.Output.Should().Contain("100/100");
     }
 
     [Fact]

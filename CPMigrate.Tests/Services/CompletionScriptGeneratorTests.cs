@@ -106,7 +106,7 @@ public class CompletionScriptGeneratorTests
         var script = CompletionScriptGenerator.Generate(CompletionShell.PowerShell);
 
         script.Should().Contain("$optionValues");
-        script.Should().Contain("'--output' = @('Terminal', 'Json', 'Sarif', 'Markdown')");
+        script.Should().Contain("'--output' = @('Terminal', 'Json', 'Sarif', 'Markdown', 'Csv')");
         script.Should().Contain("ParameterValue");
         script.Should().Contain("$pathOptions");
         script.Should().Contain("ProviderItem", "path options should offer files");
@@ -147,7 +147,7 @@ public class CompletionScriptGeneratorTests
             .DescribeOptions()
             .Single(o => o.LongName == "--output");
 
-        output.EnumValues.Should().Contain(new[] { "Terminal", "Json", "Sarif", "Markdown" });
+        output.EnumValues.Should().Contain(new[] { "Terminal", "Json", "Sarif", "Markdown", "Csv" });
     }
 
     [Fact]
