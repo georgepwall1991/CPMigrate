@@ -161,9 +161,22 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // the caller knows which one it needs.
                     var isConditional = HasConditionalAncestor(item);
 
+                    // Update rather than Include is how a project amends a reference it inherits —
+                    // attaching a VersionOverride to one, for instance. Reading Include alone left
+                    // those with an empty package name, and a finding that names no package names
+                    // nothing anyone can go and fix.
+                    var packageName = string.IsNullOrWhiteSpace(item.Include)
+                        ? item.Update
+                        : item.Include;
+
+                    if (string.IsNullOrWhiteSpace(packageName))
+                    {
+                        continue;
+                    }
+
                     references.Add(
                         new PackageReference(
-                            item.Include,
+                            packageName,
                             version,
                             projectFilePath,
                             projectName,

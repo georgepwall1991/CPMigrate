@@ -91,7 +91,7 @@ public class CpmDriftAnalyzer : IAnalyzer
 
         // Both remaining rules compare against the full central set. If an import could not be
         // followed, that set is incomplete, and every conclusion drawn from it would be a guess.
-        if (importsResolved && !IsTransitivePinningEnabled(props, packageInfo.BasePath))
+        if (importsResolved && !IsTransitivePinningEnabled(props, propsPath, packageInfo.BasePath))
         {
             AddOrphanedVersionIssues(issues, central, referenced);
         }
@@ -165,16 +165,21 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// True when transitive pinning is on, in which case a <c>PackageVersion</c> may deliberately pin
     /// a package no project references directly — so every such pin would look orphaned.
     /// </summary>
-    private static bool IsTransitivePinningEnabled(XDocument props, string? basePath)
+    private static bool IsTransitivePinningEnabled(
+        XDocument props,
+        string propsPath,
+        string? basePath
+    )
     {
         if (IsPropertyTrue(props, "CentralPackageTransitivePinningEnabled"))
         {
             return true;
         }
 
-        var buildProps = basePath is null
-            ? null
-            : ReadProps(Path.Combine(basePath, "Directory.Build.props"));
+        // The same resolution the enablement check uses. Reading only the scan root meant a nested
+        // project whose Directory.Build.props turns transitive pinning on had its deliberately
+        // transitive-only pins reported as OrphanedPackageVersion.
+        var buildProps = ReadNearestBuildProps(propsPath, basePath);
 
         return buildProps is not null
             && IsPropertyTrue(buildProps, "CentralPackageTransitivePinningEnabled");
@@ -609,10 +614,27 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// </para>
     ///
     /// <para>
-    /// The outermost value wins over an imported one, matching MSBuild's last-assignment-wins
-    /// evaluation for a property set after an <c>Import</c>. An import can therefore turn central
-    /// management off as well as on; only ever honouring "true" would make the check unable to
-    /// disagree.
+    /// Elements are read in document order and the last assignment wins, which is how MSBuild
+    /// evaluates a file: a property set after an <c>Import</c> overrides what the import set. Taking
+    /// the local value first would have let an import turn central management on but never off.
+    /// </para>
+    ///
+    /// <para>
+    /// An <c>Import</c> carrying a <c>Condition</c> is skipped rather than followed. Whether it
+    /// applies depends on properties this cannot evaluate, and an inactive import that switched
+    /// central management on would be worse than not reading it at all — the drift rules would then
+    /// judge every project against pins NuGet never applies.
+    /// </para>
+    ///
+    /// <para>
+    /// A conditioned <em>assignment</em> is still read, and that is a deliberate choice rather than
+    /// an oversight. Treating it as unresolved would be the more faithful reading of MSBuild, but
+    /// the commonest use of a condition here is defaulting
+    /// (<c>Condition="'$(ManagePackageVersionsCentrally)' == ''"</c>), and ignoring those would
+    /// report <c>CpmNotEnabled</c> — a High finding that fails CI — across a great many repositories
+    /// that are configured perfectly well. The cost is the opposite error on a genuinely
+    /// configuration-specific assignment. Both readings are wrong somewhere; this one is wrong less
+    /// often, and it errs towards not accusing a working repository.
     /// </para>
     /// </summary>
     private static string? ReadCpmEnablementThroughImports(
@@ -715,19 +737,57 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// <param name="basePath">Directory the scan was rooted at.</param>
     private static XDocument? ReadNearestBuildProps(string propsPath, string? basePath)
     {
-        const string BuildPropsFileName = "Directory.Build.props";
-
-        var propsDirectory = Path.GetDirectoryName(Path.GetFullPath(propsPath));
-        if (propsDirectory is not null)
+        // From the scan root upwards first, because that is where MSBuild starts and the nearest
+        // file wins: with /repo/Directory.Build.props setting the property one way and
+        // /repo/src/Directory.Build.props setting it the other, a project under src gets the
+        // nearer answer. Checking only the two endpoints picked the wrong one.
+        var fromScanRoot = WalkUpForBuildProps(basePath);
+        if (fromScanRoot is not null)
         {
-            var beside = ReadProps(Path.Combine(propsDirectory, BuildPropsFileName));
-            if (beside is not null)
-            {
-                return beside;
-            }
+            return fromScanRoot;
         }
 
-        return basePath is null ? null : ReadProps(Path.Combine(basePath, BuildPropsFileName));
+        // Then beside the props file, which may sit above the scan root and above the boundary the
+        // walk stops at.
+        return WalkUpForBuildProps(
+            Path.GetDirectoryName(Path.GetFullPath(propsPath)),
+            single: true
+        );
+    }
+
+    /// <summary>
+    /// The nearest <c>Directory.Build.props</c> at or above a directory, stopping at the repository
+    /// root for the same reason the central props walk does.
+    /// </summary>
+    /// <param name="startDirectory">Where to start looking.</param>
+    /// <param name="single">When true, look only in <paramref name="startDirectory"/>.</param>
+    private static XDocument? WalkUpForBuildProps(string? startDirectory, bool single = false)
+    {
+        const string BuildPropsFileName = "Directory.Build.props";
+
+        if (string.IsNullOrWhiteSpace(startDirectory))
+        {
+            return null;
+        }
+
+        var directory = new DirectoryInfo(Path.GetFullPath(startDirectory));
+        while (directory is not null)
+        {
+            var found = ReadProps(Path.Combine(directory.FullName, BuildPropsFileName));
+            if (found is not null)
+            {
+                return found;
+            }
+
+            if (single || IsRepositoryRoot(directory.FullName))
+            {
+                return null;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     private static XDocument? ReadProps(string path)

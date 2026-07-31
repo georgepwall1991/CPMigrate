@@ -251,10 +251,45 @@ public class CentralPinDiscoveryTests : IDisposable
     }
 
     [Fact]
+    public void ReadEffectiveCentralVersions_TheNearestDirectoryBuildPropsWins()
+    {
+        // MSBuild resolves the nearest one. Checking only the props file's directory and the scan
+        // root skipped everything between them, so /repo/Directory.Build.props could override the
+        // /repo/src one that actually applies.
+        Write("Directory.Build.props", BuildProps(enabled: false));
+        Write(
+            "Directory.Packages.props",
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        Write(Path.Combine("src", "Directory.Build.props"), BuildProps(enabled: true));
+        var nested = Path.Combine(_root, "src", "Api");
+        Directory.CreateDirectory(nested);
+
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(nested).Should().ContainKey("Serilog");
+    }
+
+    [Fact]
     public void ReadEffectiveCentralVersions_NoPropsAnywhere_IsEmpty()
     {
         CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root).Should().BeEmpty();
     }
+
+    private static string BuildProps(bool enabled) =>
+        $"""
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>{(
+                enabled ? "true" : "false"
+            )}</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """;
 
     private static string Props(params (string Package, string Version)[] pins)
     {
