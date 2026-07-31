@@ -1,4 +1,5 @@
 using CPMigrate.Models;
+using NuGet.Versioning;
 
 namespace CPMigrate.Analyzers;
 
@@ -110,10 +111,15 @@ public class FloatingVersionAnalyzer : IAnalyzer
     }
 
     /// <summary>
-    /// Classifies a version specification, or null when it pins exactly one release.
+    /// Classifies a version specification, or null when only one release can satisfy it.
     ///
-    /// <c>[1.0.0]</c> is the most exact form NuGet has — a bracketed single version locks the
-    /// package to it — so it must not be read as a range just because it has brackets.
+    /// <para>
+    /// Decided by <see cref="VersionRange"/> rather than by reading the string, because the question
+    /// — can this resolve to more than one version? — is exactly what NuGet's own parser answers,
+    /// and the string forms that mean "exactly one" are not obvious. <c>[1.0.0]</c> is the familiar
+    /// one; <c>[1.0.0,1.0.0]</c> is a range whose bounds coincide, so it is every bit as
+    /// reproducible, and reporting it would flag a deterministic pin as a defect.
+    /// </para>
     /// </summary>
     private static string? DescribeKind(string? version)
     {
@@ -125,22 +131,50 @@ public class FloatingVersionAnalyzer : IAnalyzer
             return null;
         }
 
-        if (trimmed.Contains('*', StringComparison.Ordinal))
+        if (!VersionRange.TryParse(trimmed, out var range))
+        {
+            // Not something NuGet can read. Whatever is wrong with it, this rule is not the one to
+            // say so — restore will, and loudly.
+            return null;
+        }
+
+        if (range.IsFloating)
         {
             return WildcardKind;
         }
 
         if (!IsBracketed(trimmed))
         {
+            // A bare "13.0.1" parses as [13.0.1,), because that is NuGet's documented meaning: a
+            // minimum. It is not what anyone writing it means, and resolution picks that exact
+            // version whenever the feed has it — so reporting it would flag every ordinary pin in
+            // every project, which is how a rule becomes noise and then gets switched off.
             return null;
         }
 
-        return trimmed[1..^1].Contains(',', StringComparison.Ordinal) ? RangeKind : null;
+        return PinsOneVersion(range) ? null : RangeKind;
     }
 
+    /// <summary>
+    /// Whether the specification was written as an explicit interval, which is the only form that
+    /// deliberately admits more than one version.
+    /// </summary>
     private static bool IsBracketed(string version)
     {
         return version.Length >= 2 && version[0] is '[' or '(' && version[^1] is ']' or ')';
+    }
+
+    /// <summary>
+    /// Whether a range admits exactly one version: both bounds present, both inclusive, and equal.
+    /// </summary>
+    private static bool PinsOneVersion(VersionRange range)
+    {
+        if (!range.HasLowerAndUpperBounds || !range.IsMinInclusive || !range.IsMaxInclusive)
+        {
+            return false;
+        }
+
+        return range.MinVersion.Equals(range.MaxVersion);
     }
 
     /// <summary>

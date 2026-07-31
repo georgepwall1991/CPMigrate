@@ -55,10 +55,14 @@ public class FloatingVersionAnalyzerTests : IDisposable
     [InlineData("13.0.1-beta1")]
     [InlineData("[13.0.1]")]
     [InlineData("[13.0.1] ")]
+    [InlineData("[13.0.1,13.0.1]")]
+    [InlineData("13.0.1+build.5")]
     public void Analyze_ExactVersion_IsNotReported(string version)
     {
         // [13.0.1] is the *most* exact form NuGet has — a bracketed single version locks the
-        // package to it. Reporting it would flag the fix as the defect.
+        // package to it. Reporting it would flag the fix as the defect. [13.0.1,13.0.1] is a range
+        // whose bounds coincide, so exactly one version satisfies it and it is every bit as
+        // reproducible: the question is what a specification can resolve to, not how it is spelled.
         var result = Analyze(DeclaredReference("Newtonsoft.Json", version));
 
         result.Issues.Should().BeEmpty();
@@ -280,6 +284,16 @@ public class FloatingVersionAnalyzerTests : IDisposable
         );
 
         result.Issues.Should().HaveCount(2);
+    }
+
+    [Theory]
+    [InlineData("not a version")]
+    [InlineData("[1.0.0")]
+    public void Analyze_AVersionNuGetCannotRead_IsNotThisRulesFinding(string version)
+    {
+        // Whatever is wrong with it, restore will say so loudly. Guessing here would report a
+        // parse failure as a reproducibility problem.
+        Analyze(DeclaredReference("Serilog", version)).Issues.Should().BeEmpty();
     }
 
     [Fact]
