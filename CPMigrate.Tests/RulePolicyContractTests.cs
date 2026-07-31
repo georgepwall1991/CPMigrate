@@ -357,6 +357,10 @@ public class RulePolicyContractTests : IDisposable
         // parse failure rather than a reported one, so the consumer learns the run broke but not
         // why — and a rule ID is a string someone typed into a workflow file, which makes this the
         // rejection most likely to be hit in CI.
+        //
+        // Deliberately driven without a console double. An earlier version of this test passed one,
+        // which captured the diagnostic instead of letting it reach stdout — so it went green while
+        // the real binary printed prose in front of the opening brace and broke every parser.
         CreateInconsistentFixture();
 
         var stdout = await CaptureStdoutAsync(() =>
@@ -370,8 +374,7 @@ public class RulePolicyContractTests : IDisposable
                     "Json",
                     "-s",
                     _testDirectory,
-                },
-                new TestDoubles.FakeConsoleService()
+                }
             )
         );
 
@@ -383,6 +386,37 @@ public class RulePolicyContractTests : IDisposable
             .Select(element => element.GetString())
             .Should()
             .Contain(message => message!.Contains("NoSuchRule"));
+    }
+
+    [Fact]
+    public async Task UnknownRuleId_UnderSarif_StillProducesAValidSarifLog()
+    {
+        // SARIF has the same contract and a worse failure mode: an upload step reads stdout as a
+        // log, so prose in front of it fails the upload rather than reporting the finding.
+        CreateInconsistentFixture();
+
+        var stdout = await CaptureStdoutAsync(() =>
+            ProgramRunner.RunAsync(
+                new[]
+                {
+                    "--analyze",
+                    "--rules",
+                    "NoSuchRule=none",
+                    "--output",
+                    "Sarif",
+                    "-s",
+                    _testDirectory,
+                }
+            )
+        );
+
+        var root = JsonDocument.Parse(stdout).RootElement;
+        root.GetProperty("runs")[0]
+            .GetProperty("invocations")[0]
+            .GetProperty("executionSuccessful")
+            .GetBoolean()
+            .Should()
+            .BeFalse();
     }
 
     [Fact]

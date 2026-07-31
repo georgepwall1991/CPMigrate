@@ -98,7 +98,7 @@ internal static class CommandRouter
             consoleService.Error(ex.Message);
 
             // The whole point of a machine-readable format is that a CI step parses stdout. A
-            // rejection printed as prose there is a parse failure rather than a reported one, so
+            // rejection reported only as prose is a parse failure rather than a reported one, so
             // the consumer learns the run broke but not why — and this is the rejection most likely
             // to be hit in CI, since a rule ID is a string someone typed into a workflow file.
             await WriteErrorJsonOutputIfRequested(
