@@ -351,6 +351,41 @@ public class RulePolicyContractTests : IDisposable
     }
 
     [Fact]
+    public async Task UnknownRuleId_UnderJson_IsReportedAsAParseablePayload()
+    {
+        // A CI step under --output Json parses stdout. A rejection printed as prose there is a
+        // parse failure rather than a reported one, so the consumer learns the run broke but not
+        // why — and a rule ID is a string someone typed into a workflow file, which makes this the
+        // rejection most likely to be hit in CI.
+        CreateInconsistentFixture();
+
+        var stdout = await CaptureStdoutAsync(() =>
+            ProgramRunner.RunAsync(
+                new[]
+                {
+                    "--analyze",
+                    "--rules",
+                    "NoSuchRule=none",
+                    "--output",
+                    "Json",
+                    "-s",
+                    _testDirectory,
+                },
+                new TestDoubles.FakeConsoleService()
+            )
+        );
+
+        var root = JsonDocument.Parse(stdout).RootElement;
+        root.GetProperty("success").GetBoolean().Should().BeFalse();
+        root.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.ValidationError);
+        root.GetProperty("errors")
+            .EnumerateArray()
+            .Select(element => element.GetString())
+            .Should()
+            .Contain(message => message!.Contains("NoSuchRule"));
+    }
+
+    [Fact]
     public async Task Batch_CarriesThePolicyIntoEachSolutionSummary()
     {
         // Per-solution runs are quiet, so the terminal notice never reaches a batch consumer. Without
