@@ -59,30 +59,25 @@
     },
     "rules": {
       "type": "object",
-      "description": "Per-rule policy applied before --fail-on. Each key is a rule ID as published in JSON issueCode and SARIF ruleId (run 'cpmigrate --explain all' to list them); each value is either a severity or 'none' to switch the rule off. A disabled rule reports nothing at all, unlike a baseline, which keeps accepted findings visible.",
-      "propertyNames": {
-        "enum": [
-          "Unknown",
-          "VersionInconsistency",
-          "DuplicatePackageCasing",
-          "RedundantReference",
-          "TransitiveConflict",
-          "SecurityVulnerability",
-          "RedundantDirectReference",
-          "FrameworkAlignment",
-          "OutdatedPackage",
-          "DeprecatedPackage",
-          "CpmNotEnabled",
-          "InlineVersionUnderCpm",
-          "MissingPackageVersion",
-          "OrphanedPackageVersion",
-          "LicenseRisk"
-        ]
+      "description": "Per-rule policy applied before --fail-on. Each key is a rule ID as published in JSON issueCode and SARIF ruleId (run 'cpmigrate --explain all' to list them); each value is either a severity or 'none' to switch the rule off. A disabled rule reports nothing at all, unlike a baseline, which keeps accepted findings visible. Rule IDs and severities are matched case-insensitively; the spellings listed here are the canonical ones. Names are listed as properties rather than constrained with propertyNames so an editor offers them without a differently-cased but perfectly valid policy failing schema validation — an unknown rule ID is rejected by the tool itself, with a message naming it.",
+      "properties": {
+        "Unknown": { "$ref": "#/definitions/rulePolicyValue" },
+        "VersionInconsistency": { "$ref": "#/definitions/rulePolicyValue" },
+        "DuplicatePackageCasing": { "$ref": "#/definitions/rulePolicyValue" },
+        "RedundantReference": { "$ref": "#/definitions/rulePolicyValue" },
+        "TransitiveConflict": { "$ref": "#/definitions/rulePolicyValue" },
+        "SecurityVulnerability": { "$ref": "#/definitions/rulePolicyValue" },
+        "RedundantDirectReference": { "$ref": "#/definitions/rulePolicyValue" },
+        "FrameworkAlignment": { "$ref": "#/definitions/rulePolicyValue" },
+        "OutdatedPackage": { "$ref": "#/definitions/rulePolicyValue" },
+        "DeprecatedPackage": { "$ref": "#/definitions/rulePolicyValue" },
+        "CpmNotEnabled": { "$ref": "#/definitions/rulePolicyValue" },
+        "InlineVersionUnderCpm": { "$ref": "#/definitions/rulePolicyValue" },
+        "MissingPackageVersion": { "$ref": "#/definitions/rulePolicyValue" },
+        "OrphanedPackageVersion": { "$ref": "#/definitions/rulePolicyValue" },
+        "LicenseRisk": { "$ref": "#/definitions/rulePolicyValue" }
       },
-      "additionalProperties": {
-        "type": "string",
-        "enum": ["Info", "Low", "Moderate", "High", "Critical", "none"]
-      }
+      "additionalProperties": { "$ref": "#/definitions/rulePolicyValue" }
     },
     "retention": {
       "type": "object",
@@ -109,6 +104,26 @@
       },
       "default": ["node_modules", "bin", "obj", ".git", "packages"],
       "description": "Directories to exclude when scanning for solutions in batch mode"
+    }
+  },
+  "definitions": {
+    "rulePolicyValue": {
+      "type": "string",
+      "description": "A severity to re-grade the rule to, or 'none' to switch it off. Matched case-insensitively.",
+      "enum": [
+        "Info",
+        "Low",
+        "Moderate",
+        "High",
+        "Critical",
+        "none",
+        "info",
+        "low",
+        "moderate",
+        "high",
+        "critical",
+        "None"
+      ]
     }
   },
   "additionalProperties": false

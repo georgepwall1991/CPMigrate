@@ -42,6 +42,69 @@ public class ConfigSchemaDriftTests
     }
 
     [Fact]
+    public void Schema_ListsEveryRuleIdUnderRules()
+    {
+        // Offering the rule names is the whole reason they are enumerated. A rule added without
+        // updating the schema would be a valid policy the editor does not know about.
+        var documented = SchemaProperties()["rules"]
+            .GetProperty("properties")
+            .EnumerateObject()
+            .Select(property => property.Name);
+
+        documented.Should().BeEquivalentTo(Enum.GetNames<AnalysisIssueCode>());
+    }
+
+    [Fact]
+    public void Schema_AcceptsEveryPolicyValueTheParserAccepts()
+    {
+        // The parser matches case-insensitively, so a schema that only lists canonical spellings
+        // fails a config the tool runs perfectly well — an editor error, or a CI validation step
+        // rejecting a working file.
+        var documented = Schema()
+            .GetProperty("definitions")
+            .GetProperty("rulePolicyValue")
+            .GetProperty("enum")
+            .EnumerateArray()
+            .Select(value => value.GetString()!)
+            .ToList();
+
+        foreach (
+            var canonical in Enum.GetNames<AnalysisSeverity>().Append(RulePolicy.DisableKeyword)
+        )
+        {
+            documented.Should().Contain(canonical);
+            documented
+                .Should()
+                .Contain(
+                    canonical.ToLowerInvariant() == canonical
+                        ? char.ToUpperInvariant(canonical[0]) + canonical[1..]
+                        : canonical.ToLowerInvariant(),
+                    "the parser accepts any casing, so the schema must not reject the obvious alternative"
+                );
+        }
+    }
+
+    [Fact]
+    public void Schema_RulePolicyValuesAreAllParseable()
+    {
+        // The other direction: every spelling the schema blesses has to actually work.
+        var documented = Schema()
+            .GetProperty("definitions")
+            .GetProperty("rulePolicyValue")
+            .GetProperty("enum")
+            .EnumerateArray()
+            .Select(value => value.GetString()!);
+
+        foreach (var value in documented)
+        {
+            var (policy, error) = RulePolicy.Parse(new[] { $"LicenseRisk={value}" });
+
+            error.Should().BeNull($"the schema offers '{value}' as a valid policy value");
+            policy.Should().NotBeNull();
+        }
+    }
+
+    [Fact]
     public void Schema_RejectsUnknownProperties()
     {
         // additionalProperties:false is what makes a typo in a config file visible in the editor.
