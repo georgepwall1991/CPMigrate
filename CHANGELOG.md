@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.50.0] - 2026-07-31
+
+### Changed
+- **Docs site, take two — went nuts.** Rebuilt the landing page into a portfolio-grade, terminal-native experience after the first pass read as a flat dark-theme default. The hero now opens with a **playable terminal** (a real shell simulation: `help`/`analyze`/`doctor`/`migrate`/`bisect`/`tree`/`clear`, with `Tab` completion, `↑`/`↓` history, blinking cursor, CRT scanlines + phosphor glow) instead of a canned clip. Added a **⌘K command palette** (jump to sections / copy commands), a left **scroll-progress rail**, a full-bleed **severity ticker**, a **drag-to-compare migration slider** (messy csproj ↔ clean CPM), an **animated SVG health gauge** with count-up scoreboard, a **4-round bisect chip visualization** that mirrors the algorithm, **cursor-spotlight** panels/cards, **ghost section numerals**, a **man-page-styled exit-code** block, and a tabbed install strip with copy toasts — all `prefers-reduced-motion`-safe. New design system: deep-slate field with a dot grid + pinned phosphor blooms + a CRT scanline veil, multi-hue palette (pink/cyan/green/amber/red) matching the tool's own Spectre output, and a real type pairing (Space Grotesk + IBM Plex Sans/Mono, actually loaded this time). Subpages inherit the system through the shared class vocabulary. All JSON-LD / OG / canonical preserved.
+
 ## [3.49.0] - 2026-07-31
 
 ### Changed
