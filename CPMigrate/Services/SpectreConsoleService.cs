@@ -288,12 +288,14 @@ public class SpectreConsoleService : IConsoleService
             _console.Write(new Rule($"[{Ink.Success}]{Glyphs.Success} ANALYSIS COMPLETE — CLEAN[/]") { Style = Style.Parse(Ink.Success) });
             _console.WriteLine();
             _console.Write(SpectreTableBuilder.BuildAnalysisBreakdownTable(_theme, report));
-            return;
+        }
+        else
+        {
+            _console.Write(new Rule($"[{Ink.Accent}]{Glyphs.Warning} ANALYSIS COMPLETE — {report.TotalIssues} ISSUE{(report.TotalIssues == 1 ? "" : "S")}[/]") { Style = Style.Parse(Ink.Accent) });
+            _console.WriteLine();
+            _console.Write(SpectreTableBuilder.BuildAnalysisBreakdownTable(_theme, report));
         }
 
-        _console.Write(new Rule($"[{Ink.Accent}]{Glyphs.Warning} ANALYSIS COMPLETE — {report.TotalIssues} ISSUE{(report.TotalIssues == 1 ? "" : "S")}[/]") { Style = Style.Parse(Ink.Accent) });
-        _console.WriteLine();
-        _console.Write(SpectreTableBuilder.BuildAnalysisBreakdownTable(_theme, report));
         _console.WriteLine();
 
         var healthScore = SpectreTableBuilder.ComputeHealthScore(report);

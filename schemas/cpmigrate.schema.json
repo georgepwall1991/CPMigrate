@@ -42,9 +42,9 @@
     },
     "outputFormat": {
       "type": "string",
-      "enum": ["Terminal", "Json", "Sarif", "Markdown"],
+      "enum": ["Terminal", "Json", "Sarif", "Markdown", "Csv"],
       "default": "Terminal",
-      "description": "Output format: Terminal (rich UI), Json (for CI/CD), Sarif (GitHub code scanning), or Markdown (CI job summary or PR comment). Sarif and Markdown require --analyze."
+      "description": "Output format: Terminal (rich UI), Json (for CI/CD), Sarif (GitHub code scanning), Markdown (CI job summary or PR comment), or Csv (spreadsheet analysis). Sarif, Markdown, and Csv require --analyze."
     },
     "baseline": {
       "type": "string",

@@ -6,6 +6,7 @@
   <title>NuGet Central Package Management Migration Tool for .NET Teams | CPMigrate</title>
   <meta name="description" content="Migrate .NET solutions to NuGet Central Package Management, generate Directory.Packages.props, analyze dependency health, and update packages safely with rollback." />
   <link rel="canonical" href="https://georgepwall1991.github.io/CPMigrate/" />
+  <link rel="icon" href="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/docs/images/logo.png" />
   <meta property="og:title" content="NuGet Central Package Management Migration Tool for .NET Teams" />
   <meta property="og:description" content="Use CPMigrate to migrate to Directory.Packages.props, analyze NuGet dependency health, and update packages safely with rollback." />
   <meta property="og:type" content="website" />
@@ -31,6 +32,7 @@
       "url": "https://georgepwall1991.github.io/CPMigrate/",
       "downloadUrl": "https://www.nuget.org/packages/CPMigrate/",
       "codeRepository": "https://github.com/georgepwall1991/CPMigrate",
+      "softwareVersion": "3.49.0",
       "description": "Migrate .NET solutions to NuGet Central Package Management, analyze dependency health, and update packages safely with rollback.",
       "offers": {
         "@type": "Offer",
@@ -131,119 +133,222 @@
   </div>
 
   <main class="shell">
+
+    <!-- ══ hero: the tool's own terminal output is the opening shot ══ -->
     <section class="hero">
       <div>
-        <div class="eyebrow">NuGet Central Package Management migration</div>
-        <h1>Stop hand-migrating .NET solutions to <code>Directory.Packages.props</code>.</h1>
-        <p class="lede">CPMigrate is a .NET dependency analysis CLI for app teams adopting NuGet Central Package Management. It generates <code>Directory.Packages.props</code>, audits dependency drift, fixes common issues, and updates packages with rollback when tests fail.</p>
+        <div class="eyebrow"><span class="dot"></span> v3.49.0 — now on NuGet</div>
+        <h1>One command to <span class="hl-pink">Central Package Management</span>.<br /><span class="thin">Every version in</span> <code>Directory.Packages.props</code>.</h1>
+        <p class="lede">CPMigrate is a .NET global tool that migrates solutions to NuGet Central Package Management, scores dependency health across 11 analyzers, and updates packages with test verification — rolling back the moment <code>dotnet test</code> goes red.</p>
         <div class="cta-row">
           <a class="button" href="/CPMigrate/install/">Install CPMigrate</a>
-          <a class="button-secondary" href="/CPMigrate/guides/migrate-directory-packages-props/">See the migration guide</a>
+          <a class="button-secondary" href="/CPMigrate/guides/migrate-directory-packages-props/">Migration guide</a>
         </div>
-        <div class="pill-row">
-          <span class="pill">NuGet Central Package Management migration</span>
-          <span class="pill">Directory.Packages.props generator</span>
-          <span class="pill">.NET dependency analysis CLI</span>
-          <span class="pill">NuGet package updates with rollback</span>
+        <div class="stat-strip">
+          <span><b>11</b> analyzers</span><span class="sep">·</span>
+          <span><b>4</b> output formats</span><span class="sep">·</span>
+          <span><b>.sln + .slnx</b></span><span class="sep">·</span>
+          <span><b>.NET SDK 8.0+</b></span><span class="sep">·</span>
+          <span><b>MIT</b></span>
         </div>
       </div>
-      <div class="hero-panel">
-        <h3>Built for .NET app teams</h3>
-        <ul class="kicker-list">
-          <li>Modernize multi-project solutions without manual XML cleanup.</li>
-          <li>Catch version drift, vulnerability issues, and redundant references before CI breaks.</li>
-          <li>Update packages with test verification and automatic rollback protection.</li>
-          <li>Work across standard repos, monorepos, and `.slnx`-based solutions.</li>
-        </ul>
+
+      <div class="term" id="hero-term" aria-label="Animated terminal showing CPMigrate analyzing and migrating a solution">
+        <div class="term-bar">
+          <span class="t-dot"></span><span class="t-dot"></span><span class="t-dot"></span>
+          <span class="t-title">cpmigrate — MySolution.sln</span>
+        </div>
+        <div class="term-body" id="term-body">
+          <div class="t-line" data-type><span class="t-prompt">➜</span> <span class="t-cmd">cpmigrate --analyze --audit</span></div>
+          <div class="t-line" data-type><span class="t-dim">╭──────────────────────────┬────────┬────────────┬──────────╮</span></div>
+          <div class="t-line" data-type><span class="t-dim">│</span> <span class="t-bold">ANALYZER</span>                 <span class="t-dim">│</span> <span class="t-bold">ISSUES</span> <span class="t-dim">│</span> <span class="t-bold">SHARE</span>      <span class="t-dim">│</span> <span class="t-bold">STATUS</span>   <span class="t-dim">│</span></div>
+          <div class="t-line" data-type><span class="t-dim">├──────────────────────────┼────────┼────────────┼──────────┤</span></div>
+          <div class="t-line" data-type><span class="t-dim">│</span> <span class="t-amber">!</span> Version Inconsistencies <span class="t-dim">│</span> <span class="t-amber t-bold">     3</span> <span class="t-dim">│</span> <span class="t-amber">██████████</span> <span class="t-dim">│</span> <span class="t-amber">3 FOUND</span>  <span class="t-dim">│</span></div>
+          <div class="t-line" data-type><span class="t-dim">│</span> <span class="t-red">✖</span> Security Vulnerabilities <span class="t-dim">│</span> <span class="t-red t-bold">    1</span> <span class="t-dim">│</span> <span class="t-red">███░░░░░░░</span> <span class="t-dim">│</span> <span class="t-red">1 FOUND</span>  <span class="t-dim">│</span></div>
+          <div class="t-line" data-type><span class="t-dim">│</span> <span class="t-green">✔</span> Duplicate Packages       <span class="t-dim">│</span>      0 <span class="t-dim">│</span> <span class="t-dim">░░░░░░░░░░</span> <span class="t-dim">│</span> <span class="t-green">PASS</span>     <span class="t-dim">│</span></div>
+          <div class="t-line" data-type><span class="t-dim">╰──────────────────────────┴────────┴────────────┴──────────╯</span></div>
+          <div class="t-line" data-type><span class="t-dim">Dependency Health:</span> <span class="t-pink">████████████████</span><span class="t-dim">░░░░</span> <span class="t-cyan t-bold">78/100</span> <span class="t-cyan">GOOD</span></div>
+          <div class="t-line" data-type> </div>
+          <div class="t-line" data-type><span class="t-prompt">➜</span> <span class="t-cmd">cpmigrate -s ./MySolution.sln</span></div>
+          <div class="t-line" data-type><span class="t-green">✔</span> <span class="t-bold">SUCCESS</span> <span class="t-dim">— 6 projects, 38 packages centralized</span></div>
+          <div class="t-line" data-type><span class="t-dim">  → Directory.Packages.props written · backup: .cpmigrate_backup/20260731_091204</span></div>
+          <div class="t-line" data-type><span class="t-prompt">➜</span> <span class="cursor"></span></div>
+        </div>
       </div>
     </section>
 
-    <section class="section">
-      <div class="image-frame">
-        <video autoplay muted loop playsinline preload="metadata"
-          poster="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/video/cpmigrate-hero-poster.png"
-          src="https://github.com/georgepwall1991/CPMigrate/raw/main/assets/video/cpmigrate-hero.mp4"
-          aria-label="CPMigrate demo video — migrating a .NET solution to Directory.Packages.props, scoring migration risk, and bisecting package updates to keep tests green"></video>
-      </div>
-    </section>
-
-    <section class="section">
+    <!-- ══ what it catches ══ -->
+    <section class="section reveal">
       <div class="section-header">
-        <h2>Why teams find CPMigrate through problem searches, not just the name</h2>
-        <p class="page-intro">Brand SEO alone is weak for CPMigrate. The real discovery path is intent-led: teams searching for “migrate to central package management”, “Directory.Packages.props migration”, “NuGet dependency analysis CLI”, or “safe package updates with rollback”.</p>
+        <div class="section-kicker">// analysis</div>
+        <h2>Everything that silently rots a dependency graph</h2>
+        <p class="page-intro">Eleven analyzers run against your real project files and the resolved NuGet graph. Every finding carries a stable rule ID — paste it into <code>cpmigrate --explain</code> to get the fix.</p>
       </div>
-      <div class="grid">
-        <article class="card">
-          <h3>Migrate to CPM</h3>
-          <p>Generate <code>Directory.Packages.props</code> from existing project references and resolve conflicts with a defined strategy.</p>
-          <a href="/CPMigrate/guides/migrate-directory-packages-props/">How to migrate to Directory.Packages.props</a>
-        </article>
-        <article class="card">
-          <h3>Analyze dependency health</h3>
-          <p>Find version inconsistencies, duplicate references, transitive issues, outdated packages, and vulnerabilities.</p>
-          <a href="/CPMigrate/guides/ci-cd/">Use CPMigrate in CI/CD</a>
-        </article>
-        <article class="card">
-          <h3>Update packages safely</h3>
-          <p>Preview updates, include transitive packages, run tests, and roll back automatically if verification fails.</p>
-          <a href="/CPMigrate/guides/safe-package-updates/">See the safe package update flow</a>
-        </article>
+      <div class="rule-list">
+        <div class="rule-row"><span class="sev sev-moderate">Moderate</span><span class="rid">VersionInconsistency</span><span class="rdesc">Same package pinned at different versions across projects — assembly-binding surprises waiting to happen.</span></div>
+        <div class="rule-row"><span class="sev sev-critical">Critical</span><span class="rid">SecurityVulnerability</span><span class="rdesc">Known CVEs in direct <em>and</em> transitive dependencies, straight from the NuGet audit source.</span></div>
+        <div class="rule-row"><span class="sev sev-high">High</span><span class="rid">InlineVersionUnderCpm</span><span class="rdesc">CPM drift: inline versions overriding the central pin, missing pins, orphaned entries, CPM switched off.</span></div>
+        <div class="rule-row"><span class="sev sev-moderate">Moderate</span><span class="rid">TransitiveConflict</span><span class="rdesc">Divergent transitive graphs; the fixer pins the winner into <code>Directory.Packages.props</code>.</span></div>
+        <div class="rule-row"><span class="sev sev-low">Low</span><span class="rid">DuplicatePackageCasing</span><span class="rdesc"><code>Newtonsoft.Json</code> vs <code>newtonsoft.json</code> — dedup that the casing difference hid.</span></div>
+        <div class="rule-row"><span class="sev sev-high">High</span><span class="rid">LicenseRisk</span><span class="rdesc">Copyleft and proprietary licenses flagged before legal finds them for you.</span></div>
+        <div class="rule-row"><span class="sev sev-low">Low</span><span class="rid">OutdatedPackage</span><span class="rdesc">Versions behind the feed, with the latest available alongside — fuel for <code>--update-packages</code>.</span></div>
       </div>
     </section>
 
-    <section class="section split">
-      <article class="panel">
-        <h2>Who this is for</h2>
-        <ul class="plain-list">
-          <li>.NET solution owners migrating to Central Package Management.</li>
-          <li>App teams modernizing package management without writing one-off migration scripts.</li>
-          <li>Monorepo and multi-solution teams standardizing dependency policy.</li>
-          <li>CI/CD maintainers who need machine-readable dependency analysis and safe update workflows.</li>
-        </ul>
-      </article>
-      <article class="panel">
-        <h2>Proof before promise</h2>
-        <ul class="plain-list">
-          <li>Starter example repo: <a href="https://github.com/georgepwall1991/CPMigrate/tree/main/examples/small-solution">small solution</a></li>
-          <li>Monorepo example repo: <a href="https://github.com/georgepwall1991/CPMigrate/tree/main/examples/monorepo">multi-solution repo</a></li>
-          <li>GitHub release assets: <a href="https://github.com/georgepwall1991/CPMigrate/releases/latest">latest release</a></li>
-          <li>NuGet package: <a href="https://www.nuget.org/packages/CPMigrate/">CPMigrate on NuGet</a></li>
-        </ul>
-      </article>
-    </section>
-
-    <section class="section">
+    <!-- ══ 30-second path ══ -->
+    <section class="section reveal">
       <div class="section-header">
-        <h2>How CPMigrate compares to manual migration and ad hoc scripts</h2>
+        <div class="section-kicker">// 30-second path</div>
+        <h2>From version soup to CPM in five commands</h2>
+      </div>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-num">01</div>
+          <div>
+            <h3>Check your environment</h3>
+            <p>SDK version, NuGet reachability, workspace state, git status — one diagnostic table.</p>
+            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --doctor</code></pre></div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">02</div>
+          <div>
+            <h3>Score the dependency graph</h3>
+            <p>CI-safe exit codes: <code>0</code> clean, <code>5</code> findings, <code>8</code> incomplete scan.</p>
+            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --analyze --audit --outdated --deprecated</code></pre></div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">03</div>
+          <div>
+            <h3>Preview the migration as a diff</h3>
+            <p><code>--diff</code> renders the exact <code>Directory.Packages.props</code> change before anything is written.</p>
+            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln --dry-run --diff</code></pre></div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">04</div>
+          <div>
+            <h3>Migrate</h3>
+            <p>Generates the props file, strips inline versions, keeps a timestamped backup.</p>
+            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln</code></pre></div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">05</div>
+          <div>
+            <h3>Update packages without fear</h3>
+            <p>Tests fail? Everything rolls back. With <code>--bisect</code>, the largest green subset stays and the culprits are named.</p>
+            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --update-packages --bisect</code></pre></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ feature deep-dives, asymmetric ══ -->
+    <section class="section reveal">
+      <div class="section-header">
+        <div class="section-kicker">// deep dives</div>
+        <h2>Built around the three moments that break</h2>
+      </div>
+
+      <div class="asym">
+        <article class="panel">
+          <h2>The migration itself</h2>
+          <p class="muted">Every <code>&lt;PackageReference&gt;</code> extracted, conflicts resolved by strategy (<code>Highest</code> / <code>Lowest</code> / <code>Fail</code>), central pins generated — with <code>--merge</code> for an existing props file and <code>--rollback</code> if you change your mind.</p>
+          <div class="code-block"><button class="copy-btn">copy</button><pre><code><span style="color:var(--red)">-  &lt;PackageReference Include="Serilog" Version="3.1.1" /&gt;</span>
+<span style="color:var(--green)">+  &lt;PackageReference Include="Serilog" /&gt;</span>
+
+<span style="color:var(--cyan)">   &lt;!-- Directory.Packages.props --&gt;</span>
+<span style="color:var(--green)">+  &lt;PackageVersion Include="Serilog" Version="4.2.0" /&gt;</span></code></pre></div>
+          <div class="tag-row">
+            <span class="tag">--conflict-strategy</span><span class="tag">--keep-attrs</span><span class="tag">--merge</span><span class="tag">--unify-props</span>
+          </div>
+        </article>
+        <article class="panel">
+          <h2>Batch &amp; monorepos</h2>
+          <p class="muted"><code>--batch /path/to/repo</code> discovers every solution recursively — parallel, continue-on-failure, isolated backup per solution. Reads <code>.sln</code> and VS 17.10+ <code>.slnx</code> alike.</p>
+          <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --batch ./monorepo \
+  --batch-parallel --batch-continue</code></pre></div>
+          <a href="/CPMigrate/guides/monorepos/">Monorepo guide →</a>
+        </article>
+      </div>
+
+      <div class="asym flip">
+        <article class="panel">
+          <h2>Bisect, don't revert</h2>
+          <p class="muted">All-or-nothing rollback throws away 37 good updates because of one bad one. <code>--bisect</code> banks green halves, probes against them, and keeps ~36/38 in about 2·log₂(n) test runs.</p>
+          <div class="term" style="margin-top:16px">
+            <div class="term-bar"><span class="t-dot"></span><span class="t-dot"></span><span class="t-dot"></span><span class="t-title">BISECT RESULT</span></div>
+            <div class="term-body" style="min-height:0"><div class="t-line"><span class="t-red t-bold">HELD</span>    <span class="t-dim">Serilog: 3.1.1 → 4.2.0 (left at 3.1.1)</span></div><div class="t-line"><span class="t-green t-bold">APPLIED</span> <span class="t-dim">Polly: 8.4.1 → 8.6.4 · …36 more</span></div><div class="t-line"><span class="t-cyan">Kept 36/38 updates with tests green (9 runs)</span></div></div>
+          </div>
+          <a href="/CPMigrate/guides/safe-package-updates/">Safe update flow →</a>
+        </article>
+        <article class="panel">
+          <h2>CI that can't lie</h2>
+          <p class="muted">Strict JSON-only stdout against a published schema, SARIF annotations on the PR diff, Markdown for the job summary — and exit code <code>8</code> when a scan didn't complete, so a gate never reads silence as clean.</p>
+          <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --analyze --audit \
+  --output Sarif \
+  --output-file cpmigrate.sarif \
+  --fail-on High \
+  --baseline .cpmigrate-baseline.json</code></pre></div>
+          <div class="tag-row">
+            <span class="tag">Json</span><span class="tag">Sarif</span><span class="tag">Markdown</span><span class="tag">Csv</span>
+          </div>
+          <p style="margin-top:14px"><a href="/CPMigrate/guides/ci-cd/">CI/CD guide →</a></p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ══ shipping cadence ══ -->
+    <section class="section reveal">
+      <div class="section-header">
+        <div class="section-kicker">// the tool keeps shipping</div>
+        <h2>New since 3.28</h2>
+        <p class="page-intro">Twenty releases in one pass — diagnostics, previews, and a scoreboard you can read across the room.</p>
+      </div>
+      <div class="changelog">
+        <div class="cl-item"><span class="ver">--doctor</span><span class="what">Environment diagnostics: SDK, NuGet, workspace, git</span></div>
+        <div class="cl-item"><span class="ver">--init</span><span class="what">Scaffold <b>.cpmigrate.json</b> team defaults interactively</span></div>
+        <div class="cl-item"><span class="ver">--status</span><span class="what">One-shot workspace health dashboard</span></div>
+        <div class="cl-item"><span class="ver">--tree</span><span class="what">ASCII dependency tree, direct + transitive</span></div>
+        <div class="cl-item"><span class="ver">--diff</span><span class="what">Unified-diff preview on <b>--dry-run</b></span></div>
+        <div class="cl-item"><span class="ver">--licenses</span><span class="what">Copyleft / proprietary license flags</span></div>
+        <div class="cl-item"><span class="ver">--output Csv</span><span class="what">Findings straight into a spreadsheet</span></div>
+        <div class="cl-item"><span class="ver">scoreboard</span><span class="what">Per-analyzer PASS/FOUND + 0–100 health meter</span></div>
+      </div>
+    </section>
+
+    <!-- ══ comparison ══ -->
+    <section class="section reveal">
+      <div class="section-header">
+        <div class="section-kicker">// alternatives</div>
+        <h2>Against doing it by hand</h2>
       </div>
       <table>
         <thead>
-          <tr>
-            <th>Approach</th>
-            <th>Good fit</th>
-            <th>Where it falls short</th>
-          </tr>
+          <tr><th>Approach</th><th>Good fit</th><th>Where it falls short</th></tr>
         </thead>
         <tbody>
           <tr>
             <td><strong>Manual CPM migration</strong></td>
-            <td>One-off experiments and tiny solutions</td>
-            <td>Slow, repetitive, and easy to get wrong across many projects</td>
+            <td>One-off experiments, tiny solutions</td>
+            <td>Slow, easy to miss references, impossible to repeat across many projects</td>
           </tr>
           <tr>
             <td><strong>Ad hoc scripts</strong></td>
-            <td>Internal repo-specific automation</td>
-            <td>Brittle logic, little reuse, weak docs, and no standard rollback path</td>
+            <td>Repo-specific automation</td>
+            <td>Brittle logic, no analysis, no rollback you'd trust at 2 a.m.</td>
           </tr>
           <tr>
             <td><strong>Raw <code>dotnet package list</code></strong></td>
-            <td>Inventory, outdated package checks, vulnerability data</td>
-            <td>No migration, no central props generation, no fixers, no rollback workflow</td>
+            <td>Inventory and vulnerability data</td>
+            <td>No migration, no fixers, no central props generation</td>
           </tr>
-          <tr>
-            <td><strong>CPMigrate</strong></td>
-            <td>Teams adopting CPM across real .NET solutions</td>
-            <td>Purpose-built for this exact modernization path</td>
+          <tr class="row-hl">
+            <td><strong style="color:var(--pink)">CPMigrate</strong></td>
+            <td>Teams adopting CPM across real solutions</td>
+            <td>Purpose-built for exactly this path</td>
           </tr>
         </tbody>
       </table>
@@ -253,19 +358,120 @@
       </div>
     </section>
 
-    <section class="cta-strip">
+    <!-- ══ video ══ -->
+    <section class="section reveal">
+      <div class="section-header">
+        <div class="section-kicker">// see it work</div>
+        <h2>Twenty seconds of the real thing</h2>
+      </div>
+      <div class="image-frame">
+        <video autoplay muted loop playsinline preload="metadata" controls
+          poster="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/video/cpmigrate-hero-poster.png"
+          src="https://github.com/georgepwall1991/CPMigrate/raw/main/assets/video/cpmigrate-hero.mp4"
+          aria-label="CPMigrate demo video — migrating a .NET solution to Directory.Packages.props, scoring migration risk, and bisecting package updates to keep tests green"></video>
+      </div>
+    </section>
+
+    <!-- ══ FAQ ══ -->
+    <section class="section reveal">
+      <div class="section-header">
+        <div class="section-kicker">// faq</div>
+        <h2>Asked before you ask</h2>
+      </div>
+
+      <details class="faq">
+        <summary>How do I migrate a .NET solution to Central Package Management?</summary>
+        <div class="faq-body"><p>Run <code>cpmigrate -s ./MySolution.sln --dry-run</code> to preview, then <code>cpmigrate -s ./MySolution.sln</code> to apply. CPMigrate extracts every <code>&lt;PackageReference&gt;</code>, resolves version conflicts, generates <code>Directory.Packages.props</code>, and strips inline <code>Version</code> attributes — with a timestamped backup you can roll back to.</p></div>
+      </details>
+      <details class="faq">
+        <summary>What is Directory.Packages.props?</summary>
+        <div class="faq-body"><p>The file NuGet Central Package Management reads package versions from, so every project in a solution shares one version per package instead of declaring its own. CPMigrate generates and maintains it for you. <a href="https://learn.microsoft.com/nuget/consume-packages/central-package-management">Microsoft's CPM docs</a> cover the format itself.</p></div>
+      </details>
+      <details class="faq">
+        <summary>Can CPMigrate roll back a bad package update?</summary>
+        <div class="faq-body"><p>Two ways. <code>--update-packages</code> runs <code>dotnet test</code> after applying updates and rolls back automatically on failure. <code>--update-packages --bisect</code> keeps the largest subset that stays green and names the held-back packages. Migrations get timestamped backups restorable with <code>cpmigrate --rollback</code>.</p></div>
+      </details>
+      <details class="faq">
+        <summary>Does CPMigrate work in CI/CD?</summary>
+        <div class="faq-body"><p>It's built for it. <code>--output Json --quiet</code> gives strict JSON-only stdout against a published schema; <code>--output Sarif</code> uploads to GitHub code scanning as PR annotations; <code>--output Markdown</code> drops a verdict-first report into the step summary. Exit codes are contract-level — <code>5</code> means findings, <code>8</code> means the scan did not complete.</p></div>
+      </details>
+      <details class="faq">
+        <summary>Does it support .slnx and monorepos?</summary>
+        <div class="faq-body"><p>Yes. CPMigrate reads classic <code>.sln</code> and Visual Studio 17.10+ <code>.slnx</code> solutions, and <code>--batch</code> recursively discovers every solution — optionally in parallel and continuing past failures — with an isolated backup directory per solution.</p></div>
+      </details>
+      <details class="faq">
+        <summary>Can it gate on vulnerabilities without failing on existing debt?</summary>
+        <div class="faq-body"><p>Yes. <code>--audit</code> scans direct and transitive dependencies for known CVEs; <code>--fail-on High</code> narrows the exit-code gate while still reporting everything; <code>--write-baseline</code> records today's findings once so CI fails only on <em>new</em> debt. Baselined findings stay visible in every report.</p></div>
+      </details>
+    </section>
+
+    <!-- ══ install ══ -->
+    <section class="install-strip reveal">
+      <div class="section-kicker">// install</div>
       <h2>Start with one command</h2>
-      <pre><code>dotnet tool install --global CPMigrate
-cpmigrate --analyze --audit --outdated --deprecated</code></pre>
+      <div class="code-block"><button class="copy-btn">copy</button><pre><code>dotnet tool install --global CPMigrate --version 3.49.0
+cpmigrate --doctor</code></pre></div>
       <div class="cta-row">
-        <a class="button" href="/CPMigrate/install/">See all install paths</a>
-        <a class="button-secondary" href="/CPMigrate/guides/ci-cd/">Use CPMigrate in CI</a>
+        <a class="button" href="/CPMigrate/install/">All install paths</a>
+        <a class="button-secondary" href="https://www.nuget.org/packages/CPMigrate/">CPMigrate on NuGet</a>
       </div>
     </section>
 
     <footer class="footer">
-      CPMigrate is a .NET global tool for NuGet Central Package Management migration, dependency analysis, and safe package updates.
+      <span>CPMigrate — NuGet Central Package Management migration, dependency analysis, and safe package updates for .NET.</span>
+      <span class="mono">MIT · <a href="https://github.com/georgepwall1991/CPMigrate">georgepwall1991/CPMigrate</a></span>
     </footer>
   </main>
+
+  <script>
+    (function () {
+      var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      /* terminal typing */
+      var lines = Array.prototype.slice.call(document.querySelectorAll("#term-body .t-line[data-type]"));
+      if (reduce) {
+        lines.forEach(function (l) { l.classList.add("typed"); });
+      } else {
+        var i = 0;
+        (function next() {
+          if (i >= lines.length) return;
+          lines[i].classList.add("typed");
+          i += 1;
+          setTimeout(next, i <= 1 ? 420 : 130);
+        })();
+      }
+
+      /* scroll reveals */
+      var revealables = document.querySelectorAll(".reveal");
+      if (reduce || !("IntersectionObserver" in window)) {
+        revealables.forEach(function (el) { el.classList.add("in"); });
+      } else {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+          });
+        }, { threshold: 0.12 });
+        revealables.forEach(function (el) { io.observe(el); });
+      }
+
+      /* copy buttons */
+      document.querySelectorAll(".copy-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var block = btn.closest(".code-block");
+          var code = block.querySelector("pre").innerText;
+          var done = function () {
+            btn.textContent = "copied ✔";
+            btn.classList.add("copied");
+            setTimeout(function () { btn.textContent = "copy"; btn.classList.remove("copied"); }, 1600);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code).then(done, done);
+          } else {
+            done();
+          }
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

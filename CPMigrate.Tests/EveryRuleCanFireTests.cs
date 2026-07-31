@@ -266,6 +266,17 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     [Fact]
+    public async Task LicenseRisk_Fires()
+    {
+        // MySql.Data ships under GPL-2.0 — the built-in license table flags copyleft packages
+        // from the project file alone, no feed involved.
+        WriteProject("src/Api/Api.csproj", ("MySql.Data", "8.0.33"));
+        WriteSolution("src/Api/Api.csproj");
+
+        (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.LicenseRisk));
+    }
+
+    [Fact]
     public async Task RedundantReference_FiresUnderCentralPackageManagement()
     {
         // Cross-review caught this: the declaration scan reused a method that drops PackageReference items

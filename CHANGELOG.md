@@ -6,6 +6,15 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.49.0] - 2026-07-31
+
+### Changed
+- **README overhauled.** Rewritten around the current surface: `--doctor` opens the 30-second path, `--diff` previews migrations, the analysis sample shows the STATUS-column scoreboard and the 0–100 health meter, and the CLI reference documents every flag added in 3.29–3.48 (`--doctor`, `--init`, `--status`, `--tree`, `--diff`, `--licenses`, `--output Csv`) — the drift tests flagged four of them as undocumented. Install pin, feature snapshot (14 rows), FAQ, and CI section all current at 3.49.0.
+- **Docs site rebuilt on a terminal-native design system.** New `styles.css`: dark engineering-grid background with pink/cyan/green accents mirroring the tool's own Spectre palette, Space Grotesk + IBM Plex Sans/Mono (actually loaded now — the old CSS relied on system fallbacks), sticky blurred nav with gradient underlines. The landing page opens with an animated terminal typing a real analyze → scoreboard → migrate session, followed by a severity-chipped rule rail, a numbered five-step flow with copy buttons, asymmetric feature panels (migration diff, bisect result, CI YAML), a "new since 3.28" changelog strip, comparison table with the CPMigrate row highlighted, `<details>`-based FAQ, and a gradient install strip. Scroll reveals, copy-to-clipboard, blinking cursor, and pulsing status dot — all disabled under `prefers-reduced-motion`. Subpages (install, guides, comparisons, 404) inherit the new system through the shared class vocabulary. All JSON-LD (`SoftwareApplication` at 3.49.0, `VideoObject`, `FAQPage`), OG tags, and canonical URLs preserved.
+
+### Fixed
+- **Test suite fully green (1122/1122)** — four drift failures that had accumulated during 3.29–3.48 are resolved: the clean-run scoreboard assertion matches the redesigned output, `LicenseRisk` gains an end-to-end `LicenseRisk_Fires` case (MySql.Data's GPL-2.0 fires it from files alone, no feed), the PowerShell completion and config-schema enums include `Csv`, and the discoverability version pin tracks 3.49.0.
+
 ## [3.48.0] - 2026-07-31
 
 ### Changed
