@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.51.0] - 2026-07-31
+
+### Changed
+- **README rewritten from scratch.** A ground-up rebuild with a much louder, more scannable voice: centered logo + banner + for-the-badge shields, a punchy hook, severity-keyed "What it catches" table (🟥🟧🟦), an ASCII health-scoreboard sample, a check/cross comparison matrix, and a collapsible (`<details>`) CLI reference grouped by concern so the page stays readable while still documenting all 53 flags. New "whole toolbox" section for `--doctor`/`--init`/`--status`/`--tree`, a bisect explainer, a man-page-style exit-code legend, and an accordion FAQ. Every drift contract preserved — required section headings, the pinned install line (now 3.51.0), every long-option table row, verbatim exit-code rows, the three flow SVGs + wizard GIF by absolute `https://raw…` URL, and all-HTTPS images.
+
 ## [3.50.0] - 2026-07-31
 
 ### Changed
