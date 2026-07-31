@@ -141,6 +141,116 @@ public class CentralPinDiscoveryTests : IDisposable
     }
 
     [Fact]
+    public void ReadEffectiveCentralVersions_AWorktreeRootIsStillABoundary()
+    {
+        // .git is a directory in an ordinary clone but a file in a linked worktree or submodule.
+        // Testing only for the directory walked straight past those roots.
+        Write("Directory.Packages.props", Props(("Serilog", "4.0.0")));
+        var worktree = Path.Combine(_root, "worktree");
+        Directory.CreateDirectory(worktree);
+        File.WriteAllText(Path.Combine(worktree, ".git"), "gitdir: /somewhere/else");
+
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(worktree).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ReadEffectiveCentralVersions_EnablementInADirectoryBuildPropsBesideTheProps_CountsAsEnabled()
+    {
+        // Once the props file can come from an ancestor, looking for Directory.Build.props only
+        // beside the scan root misses the one sitting next to the props file — and reports
+        // CpmNotEnabled, a High finding, on a repository that is correctly set up.
+        Write(
+            "Directory.Build.props",
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        Write(
+            "Directory.Packages.props",
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var nested = Path.Combine(_root, "src", "Api");
+        Directory.CreateDirectory(nested);
+
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(nested).Should().ContainKey("Serilog");
+    }
+
+    [Fact]
+    public void ReadEffectiveCentralVersions_APropertySetAfterAnImport_Wins()
+    {
+        // MSBuild evaluates in document order and the last assignment wins. Reading the local value
+        // first would have let an import turn central management on but never off — here the local
+        // 'false' comes after the import and has to win.
+        Write(
+            "Enable.props",
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        Write(
+            "Directory.Packages.props",
+            """
+            <Project>
+              <Import Project="Enable.props" />
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ReadEffectiveCentralVersions_AConditionalImport_DoesNotDecideEnablement()
+    {
+        // Whether it applies depends on properties this cannot evaluate. Following it could switch
+        // central management on where NuGet leaves it off, and the drift rules would then judge
+        // every project against pins that are never applied.
+        Write(
+            "Enable.props",
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        Write(
+            "Directory.Packages.props",
+            """
+            <Project>
+              <Import Project="Enable.props" Condition="'$(Configuration)' == 'Release'" />
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root).Should().BeEmpty();
+    }
+
+    [Fact]
     public void ReadEffectiveCentralVersions_NoPropsAnywhere_IsEmpty()
     {
         CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root).Should().BeEmpty();
