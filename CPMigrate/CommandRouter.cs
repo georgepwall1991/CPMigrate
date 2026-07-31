@@ -1347,6 +1347,34 @@ internal static class CommandRouter
     }
 
     /// <summary>
+    /// Whether this run will actually analyse anything.
+    ///
+    /// <para>
+    /// <c>--analyze</c> alone does not answer that: the alternate-mode table is consulted first, so
+    /// <c>--update --analyze</c> performs the update and never analyses. Batch is the exception —
+    /// it is an alternate mode that runs the analysis per solution. Below the table,
+    /// <c>--rollback</c> and <c>--list-backups</c> preempt analysis inside
+    /// <see cref="Services.MigrationService"/>. Anything that keys off "will findings be produced"
+    /// has to ask this rather than read the flag.
+    /// </para>
+    /// </summary>
+    internal static bool PerformsAnalysis(Options options)
+    {
+        if (!options.Analyze)
+        {
+            return false;
+        }
+
+        var selected = AlternateModes.FirstOrDefault(mode => mode.Matches(options));
+        if (selected is not null)
+        {
+            return selected.OperationName == BatchModeName;
+        }
+
+        return !options.Rollback && !options.ListBackups;
+    }
+
+    /// <summary>
     /// Names the command a payload describes.
     ///
     /// <para>

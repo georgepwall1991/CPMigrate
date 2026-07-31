@@ -751,6 +751,61 @@ public class RulePolicyContractTests : IDisposable
             .Contain(message => message.Contains("--rules") && message.Contains("--analyze"));
     }
 
+    [Theory]
+    [InlineData("--update")]
+    [InlineData("--unify-props")]
+    [InlineData("--init")]
+    public async Task RunAsync_ModeThatSkipsAnalysis_WarnsEvenAlongsideAnalyze(string mode)
+    {
+        // --analyze is not the dispatch decision: --update runs the update and --init returns long
+        // before any analysis, so in both cases the policy is ignored. Reading the flag rather than
+        // asking which mode wins left exactly those runs silent.
+        CreateInconsistentFixture();
+        var console = new TestDoubles.FakeConsoleService();
+
+        await ProgramRunner.RunAsync(
+            new[]
+            {
+                mode,
+                "--analyze",
+                "--rules",
+                "VersionInconsistency=none",
+                "--quiet",
+                "-s",
+                _testDirectory,
+            },
+            console
+        );
+
+        console
+            .OutputMessages.Should()
+            .Contain(message => message.Contains("--rules") && message.Contains("--analyze"));
+    }
+
+    [Fact]
+    public async Task RunAsync_BatchAnalyze_DoesNotWarnBecauseThePolicyDoesApply()
+    {
+        // Batch is the exception among alternate modes: it runs the analysis per solution, so the
+        // policy is honoured and a warning would be simply wrong.
+        CreateInconsistentFixture();
+        var console = new TestDoubles.FakeConsoleService();
+
+        await ProgramRunner.RunAsync(
+            new[]
+            {
+                "--batch",
+                _testDirectory,
+                "--analyze",
+                "--rules",
+                "VersionInconsistency=none",
+                "--quiet",
+            },
+            console
+        );
+
+        console.OutputMessages.Should().NotContain(message => message.Contains("--rules"));
+    }
+
     [Fact]
     public async Task WriteBaseline_DoesNotRecordFindingsFromADisabledRule()
     {

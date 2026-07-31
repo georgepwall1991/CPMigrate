@@ -75,6 +75,22 @@ public static class ProgramRunner
                         return ExitCodes.ValidationError;
                     }
 
+                    // Ahead of the diagnostic modes, which return without reaching the router: a
+                    // policy those commands cannot use is still a policy the caller expected to
+                    // apply, and silence is what makes that invisible.
+                    WarnAboutIneffectiveAnalysisFlag(
+                        options,
+                        args,
+                        "fail-on",
+                        services.ConsoleService
+                    );
+                    WarnAboutIneffectiveAnalysisFlag(
+                        options,
+                        args,
+                        "rules",
+                        services.ConsoleService
+                    );
+
                     if (options.Doctor)
                     {
                         var doctorService = new DoctorService(
@@ -117,19 +133,6 @@ public static class ProgramRunner
                         options,
                         args,
                         services.ConfigService,
-                        services.ConsoleService
-                    );
-
-                    WarnAboutIneffectiveAnalysisFlag(
-                        options,
-                        args,
-                        "fail-on",
-                        services.ConsoleService
-                    );
-                    WarnAboutIneffectiveAnalysisFlag(
-                        options,
-                        args,
-                        "rules",
                         services.ConsoleService
                     );
 
@@ -226,7 +229,11 @@ public static class ProgramRunner
         IConsoleService consoleService
     )
     {
-        if (options.Analyze)
+        // Asking the router rather than reading options.Analyze: the flag is not the dispatch
+        // decision. `--update --analyze` performs the update, and `--init` returns long before any
+        // analysis — in both cases the policy is ignored, which is exactly when the warning is
+        // owed. Diagnostic modes are this file's own, so they are excluded here.
+        if (!IsDiagnosticMode(options) && CommandRouter.PerformsAnalysis(options))
         {
             return;
         }
