@@ -16,8 +16,6 @@
   <meta property="og:image:height" content="630" />
   <meta property="og:video" content="https://github.com/georgepwall1991/CPMigrate/raw/main/assets/video/cpmigrate-hero.mp4" />
   <meta property="og:video:type" content="video/mp4" />
-  <meta property="og:video:width" content="1920" />
-  <meta property="og:video:height" content="1080" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="NuGet Central Package Management Migration Tool for .NET Teams" />
   <meta name="twitter:description" content="Migrate .NET solutions to NuGet Central Package Management and update packages safely with rollback." />
@@ -32,13 +30,9 @@
       "url": "https://georgepwall1991.github.io/CPMigrate/",
       "downloadUrl": "https://www.nuget.org/packages/CPMigrate/",
       "codeRepository": "https://github.com/georgepwall1991/CPMigrate",
-      "softwareVersion": "3.49.0",
+      "softwareVersion": "3.50.0",
       "description": "Migrate .NET solutions to NuGet Central Package Management, analyze dependency health, and update packages safely with rollback.",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      }
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     }
   </script>
   <script type="application/ld+json">
@@ -51,11 +45,7 @@
       "contentUrl": "https://github.com/georgepwall1991/CPMigrate/raw/main/assets/video/cpmigrate-hero.mp4",
       "uploadDate": "2026-07-30",
       "duration": "PT20S",
-      "publisher": {
-        "@type": "Organization",
-        "name": "CPMigrate",
-        "url": "https://georgepwall1991.github.io/CPMigrate/"
-      }
+      "publisher": { "@type": "Organization", "name": "CPMigrate", "url": "https://georgepwall1991.github.io/CPMigrate/" }
     }
   </script>
   <script type="application/ld+json">
@@ -63,415 +53,652 @@
       "@context": "https://schema.org",
       "@type": "FAQPage",
       "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "How do I migrate a .NET solution to Central Package Management?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Run cpmigrate -s ./MySolution.sln --dry-run to preview, then cpmigrate -s ./MySolution.sln to apply. CPMigrate extracts every PackageReference from your project files, resolves version conflicts, generates Directory.Packages.props, and strips inline Version attributes — with a timestamped backup you can roll back to."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What is Directory.Packages.props?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "It is the file NuGet Central Package Management (CPM) reads package versions from, so every project in a solution shares one version per package instead of declaring its own. CPMigrate generates and maintains it for you."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Can CPMigrate roll back a bad package update?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes. --update-packages runs dotnet test after applying updates and rolls back automatically on failure. --update-packages --bisect keeps the largest subset that stays green and names the packages it held back. Migrations get timestamped backups restorable with cpmigrate --rollback."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Does CPMigrate work in CI/CD?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes. --output Json --quiet gives strict JSON-only stdout against a published schema, --output Sarif uploads to GitHub code scanning as PR annotations, and --output Markdown drops a verdict-first report into the GitHub step summary. Exit codes are contract-level: 5 means findings, 8 means the scan did not complete."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Does CPMigrate support .slnx and monorepos?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes. CPMigrate reads classic .sln and Visual Studio 17.10+ .slnx solutions, and --batch recursively discovers every solution in a monorepo — optionally in parallel and continuing past failures — with an isolated backup directory per solution."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Can it gate on security vulnerabilities without failing on existing debt?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes. --audit scans direct and transitive dependencies for known CVEs, --fail-on High narrows the exit-code gate while still reporting everything, and --write-baseline records today's findings once so CI fails only on new debt. Baselined findings stay visible in every report."
-          }
-        }
+        { "@type": "Question", "name": "How do I migrate a .NET solution to Central Package Management?", "acceptedAnswer": { "@type": "Answer", "text": "Run cpmigrate -s ./MySolution.sln --dry-run to preview, then cpmigrate -s ./MySolution.sln to apply. CPMigrate extracts every PackageReference from your project files, resolves version conflicts, generates Directory.Packages.props, and strips inline Version attributes — with a timestamped backup you can roll back to." } },
+        { "@type": "Question", "name": "What is Directory.Packages.props?", "acceptedAnswer": { "@type": "Answer", "text": "It is the file NuGet Central Package Management (CPM) reads package versions from, so every project in a solution shares one version per package instead of declaring its own. CPMigrate generates and maintains it for you." } },
+        { "@type": "Question", "name": "Can CPMigrate roll back a bad package update?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. --update-packages runs dotnet test after applying updates and rolls back automatically on failure. --update-packages --bisect keeps the largest subset that stays green and names the packages it held back. Migrations get timestamped backups restorable with cpmigrate --rollback." } },
+        { "@type": "Question", "name": "Does CPMigrate work in CI/CD?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. --output Json --quiet gives strict JSON-only stdout against a published schema, --output Sarif uploads to GitHub code scanning as PR annotations, and --output Markdown drops a verdict-first report into the GitHub step summary. Exit codes are contract-level: 5 means findings, 8 means the scan did not complete." } },
+        { "@type": "Question", "name": "Does CPMigrate support .slnx and monorepos?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. CPMigrate reads classic .sln and Visual Studio 17.10+ .slnx solutions, and --batch recursively discovers every solution in a monorepo — optionally in parallel and continuing past failures — with an isolated backup directory per solution." } },
+        { "@type": "Question", "name": "Can it gate on security vulnerabilities without failing on existing debt?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. --audit scans direct and transitive dependencies for known CVEs, --fail-on High narrows the exit-code gate while still reporting everything, and --write-baseline records today's findings once so CI fails only on new debt. Baselined findings stay visible in every report." } }
       ]
     }
   </script>
 </head>
 <body>
+
+  <!-- progress rail -->
+  <nav class="rail" aria-label="Section progress">
+    <a href="#analyze" data-label="analyze"></a>
+    <a href="#migrate" data-label="migrate"></a>
+    <a href="#bisect" data-label="bisect"></a>
+    <a href="#path" data-label="30-sec path"></a>
+    <a href="#install" data-label="install"></a>
+  </nav>
+
   <div class="topbar">
     <div class="topbar-inner">
-      <a class="brand" href="/CPMigrate/">
-        <span class="brand-mark"></span>
-        <span>CPMigrate</span>
-      </a>
+      <a class="brand" href="/CPMigrate/"><span class="brand-mark"></span><span>CPMigrate</span></a>
       <nav class="nav">
+        <a href="#analyze">Analyze</a>
+        <a href="#migrate">Migrate</a>
+        <a href="#bisect">Updates</a>
         <a href="/CPMigrate/install/">Install</a>
-        <a href="/CPMigrate/guides/migrate-directory-packages-props/">Migrate</a>
-        <a href="/CPMigrate/guides/ci-cd/">CI/CD</a>
-        <a href="/CPMigrate/compare/manual-cpm-migration/">Manual vs CPMigrate</a>
         <a href="https://github.com/georgepwall1991/CPMigrate">GitHub</a>
+        <button class="cmdk" id="openCmd" aria-label="Open command palette">search <kbd>⌘K</kbd></button>
       </nav>
     </div>
   </div>
 
-  <main class="shell">
-
-    <!-- ══ hero: the tool's own terminal output is the opening shot ══ -->
-    <section class="hero">
+  <!-- ═══════ HERO ═══════ -->
+  <header class="shell">
+    <section class="hero" id="hero">
       <div>
-        <div class="eyebrow"><span class="dot"></span> v3.49.0 — now on NuGet</div>
-        <h1>One command to <span class="hl-pink">Central Package Management</span>.<br /><span class="thin">Every version in</span> <code>Directory.Packages.props</code>.</h1>
-        <p class="lede">CPMigrate is a .NET global tool that migrates solutions to NuGet Central Package Management, scores dependency health across 11 analyzers, and updates packages with test verification — rolling back the moment <code>dotnet test</code> goes red.</p>
+        <div class="eyebrow"><span class="blip"></span> <span>live demo below</span> <span class="v">· v3.50.0</span></div>
+        <h1>One command to<br><span class="g">Central Package</span><br><span class="g">Management.</span><span class="caret"></span></h1>
+        <p class="hero-out"><span class="t-p">➜</span> every version lands in <code>Directory.Packages.props</code></p>
+        <p class="lede">A .NET global tool that migrates solutions to CPM, scores dependency health across 11 analyzers, and updates packages with test verification — rolling back the instant <code>dotnet test</code> goes red.</p>
         <div class="cta-row">
           <a class="button" href="/CPMigrate/install/">Install CPMigrate</a>
           <a class="button-secondary" href="/CPMigrate/guides/migrate-directory-packages-props/">Migration guide</a>
         </div>
+        <div class="hints">
+          <span><kbd>⌘K</kbd> command palette</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> history</span>
+          <span><kbd>Tab</kbd> complete</span>
+        </div>
         <div class="stat-strip">
-          <span><b>11</b> analyzers</span><span class="sep">·</span>
-          <span><b>4</b> output formats</span><span class="sep">·</span>
-          <span><b>.sln + .slnx</b></span><span class="sep">·</span>
-          <span><b>.NET SDK 8.0+</b></span><span class="sep">·</span>
+          <span><b>11</b> analyzers</span>
+          <span><b>4+1</b> output formats</span>
+          <span><b>.sln + .slnx</b></span>
+          <span><b>SDK 8.0+</b></span>
           <span><b>MIT</b></span>
         </div>
       </div>
 
-      <div class="term" id="hero-term" aria-label="Animated terminal showing CPMigrate analyzing and migrating a solution">
+      <!-- playable terminal -->
+      <div class="term" id="term">
         <div class="term-bar">
-          <span class="t-dot"></span><span class="t-dot"></span><span class="t-dot"></span>
-          <span class="t-title">cpmigrate — MySolution.sln</span>
+          <span class="d"></span><span class="d"></span><span class="d"></span>
+          <span class="t">cpmigrate — MySolution.sln — zsh</span>
+          <span class="live"><i></i> interactive</span>
         </div>
-        <div class="term-body" id="term-body">
-          <div class="t-line" data-type><span class="t-prompt">➜</span> <span class="t-cmd">cpmigrate --analyze --audit</span></div>
-          <div class="t-line" data-type><span class="t-dim">╭──────────────────────────┬────────┬────────────┬──────────╮</span></div>
-          <div class="t-line" data-type><span class="t-dim">│</span> <span class="t-bold">ANALYZER</span>                 <span class="t-dim">│</span> <span class="t-bold">ISSUES</span> <span class="t-dim">│</span> <span class="t-bold">SHARE</span>      <span class="t-dim">│</span> <span class="t-bold">STATUS</span>   <span class="t-dim">│</span></div>
-          <div class="t-line" data-type><span class="t-dim">├──────────────────────────┼────────┼────────────┼──────────┤</span></div>
-          <div class="t-line" data-type><span class="t-dim">│</span> <span class="t-amber">!</span> Version Inconsistencies <span class="t-dim">│</span> <span class="t-amber t-bold">     3</span> <span class="t-dim">│</span> <span class="t-amber">██████████</span> <span class="t-dim">│</span> <span class="t-amber">3 FOUND</span>  <span class="t-dim">│</span></div>
-          <div class="t-line" data-type><span class="t-dim">│</span> <span class="t-red">✖</span> Security Vulnerabilities <span class="t-dim">│</span> <span class="t-red t-bold">    1</span> <span class="t-dim">│</span> <span class="t-red">███░░░░░░░</span> <span class="t-dim">│</span> <span class="t-red">1 FOUND</span>  <span class="t-dim">│</span></div>
-          <div class="t-line" data-type><span class="t-dim">│</span> <span class="t-green">✔</span> Duplicate Packages       <span class="t-dim">│</span>      0 <span class="t-dim">│</span> <span class="t-dim">░░░░░░░░░░</span> <span class="t-dim">│</span> <span class="t-green">PASS</span>     <span class="t-dim">│</span></div>
-          <div class="t-line" data-type><span class="t-dim">╰──────────────────────────┴────────┴────────────┴──────────╯</span></div>
-          <div class="t-line" data-type><span class="t-dim">Dependency Health:</span> <span class="t-pink">████████████████</span><span class="t-dim">░░░░</span> <span class="t-cyan t-bold">78/100</span> <span class="t-cyan">GOOD</span></div>
-          <div class="t-line" data-type> </div>
-          <div class="t-line" data-type><span class="t-prompt">➜</span> <span class="t-cmd">cpmigrate -s ./MySolution.sln</span></div>
-          <div class="t-line" data-type><span class="t-green">✔</span> <span class="t-bold">SUCCESS</span> <span class="t-dim">— 6 projects, 38 packages centralized</span></div>
-          <div class="t-line" data-type><span class="t-dim">  → Directory.Packages.props written · backup: .cpmigrate_backup/20260731_091204</span></div>
-          <div class="t-line" data-type><span class="t-prompt">➜</span> <span class="cursor"></span></div>
+        <div class="term-body" id="termBody" aria-live="polite"></div>
+        <div class="term-in">
+          <span class="t-p">➜</span>
+          <input id="termInput" type="text" spellcheck="false" autocomplete="off" aria-label="terminal input" placeholder="type a command — try: help" />
         </div>
+        <div class="term-hint">this is a real shell simulation · <kbd>help</kbd> <kbd>analyze</kbd> <kbd>doctor</kbd> <kbd>migrate</kbd> <kbd>bisect</kbd> <kbd>tree</kbd> <kbd>clear</kbd></div>
       </div>
     </section>
+  </header>
 
-    <!-- ══ what it catches ══ -->
-    <section class="section reveal">
-      <div class="section-header">
-        <div class="section-kicker">// analysis</div>
+  <!-- ═══════ TICKER ═══════ -->
+  <div class="ticker" aria-hidden="true">
+    <div class="ticker-track" id="ticker"></div>
+  </div>
+
+  <main>
+    <!-- ═══════ ANALYZE ═══════ -->
+    <section class="sec shell reveal" id="analyze">
+      <div class="sec-head">
+        <span class="ghost">01</span>
+        <div class="kicker">analysis</div>
         <h2>Everything that silently rots a dependency graph</h2>
-        <p class="page-intro">Eleven analyzers run against your real project files and the resolved NuGet graph. Every finding carries a stable rule ID — paste it into <code>cpmigrate --explain</code> to get the fix.</p>
+        <p class="sub">Eleven analyzers run against your real project files and the resolved NuGet graph. Every finding carries a stable rule ID — hover a row for the command that explains it.</p>
       </div>
-      <div class="rule-list">
-        <div class="rule-row"><span class="sev sev-moderate">Moderate</span><span class="rid">VersionInconsistency</span><span class="rdesc">Same package pinned at different versions across projects — assembly-binding surprises waiting to happen.</span></div>
-        <div class="rule-row"><span class="sev sev-critical">Critical</span><span class="rid">SecurityVulnerability</span><span class="rdesc">Known CVEs in direct <em>and</em> transitive dependencies, straight from the NuGet audit source.</span></div>
-        <div class="rule-row"><span class="sev sev-high">High</span><span class="rid">InlineVersionUnderCpm</span><span class="rdesc">CPM drift: inline versions overriding the central pin, missing pins, orphaned entries, CPM switched off.</span></div>
-        <div class="rule-row"><span class="sev sev-moderate">Moderate</span><span class="rid">TransitiveConflict</span><span class="rdesc">Divergent transitive graphs; the fixer pins the winner into <code>Directory.Packages.props</code>.</span></div>
-        <div class="rule-row"><span class="sev sev-low">Low</span><span class="rid">DuplicatePackageCasing</span><span class="rdesc"><code>Newtonsoft.Json</code> vs <code>newtonsoft.json</code> — dedup that the casing difference hid.</span></div>
-        <div class="rule-row"><span class="sev sev-high">High</span><span class="rid">LicenseRisk</span><span class="rdesc">Copyleft and proprietary licenses flagged before legal finds them for you.</span></div>
-        <div class="rule-row"><span class="sev sev-low">Low</span><span class="rid">OutdatedPackage</span><span class="rdesc">Versions behind the feed, with the latest available alongside — fuel for <code>--update-packages</code>.</span></div>
+
+      <div class="scan">
+        <div class="srow"><span class="sev s-crit">Critical</span><span class="rid">SecurityVulnerability</span><span class="rd">Known CVEs in direct <em>and</em> transitive dependencies, straight from the NuGet audit source.</span><span class="expl">SecurityVulnerability</span></div>
+        <div class="srow"><span class="sev s-high">High</span><span class="rid">InlineVersionUnderCpm</span><span class="rd">CPM drift: inline versions overriding the central pin, missing pins, orphaned entries, CPM switched off.</span><span class="expl">InlineVersionUnderCpm</span></div>
+        <div class="srow"><span class="sev s-mod">Moderate</span><span class="rid">VersionInconsistency</span><span class="rd">Same package pinned at different versions across projects — assembly-binding surprises waiting to happen.</span><span class="expl">VersionInconsistency</span></div>
+        <div class="srow"><span class="sev s-mod">Moderate</span><span class="rid">TransitiveConflict</span><span class="rd">Divergent transitive graphs; the fixer pins the winner into <code>Directory.Packages.props</code>.</span><span class="expl">TransitiveConflict</span></div>
+        <div class="srow"><span class="sev s-high">High</span><span class="rid">LicenseRisk</span><span class="rd">Copyleft (GPL/AGPL) and proprietary licenses flagged before legal finds them for you.</span><span class="expl">LicenseRisk</span></div>
+        <div class="srow"><span class="sev s-low">Low</span><span class="rid">DuplicatePackageCasing</span><span class="rd"><code>Newtonsoft.Json</code> vs <code>newtonsoft.json</code> — dedup that the casing difference hid.</span><span class="expl">DuplicatePackageCasing</span></div>
+        <div class="srow"><span class="sev s-low">Low</span><span class="rid">OutdatedPackage</span><span class="rd">Versions behind the feed, with the latest available alongside — fuel for <code>--update-packages</code>.</span><span class="expl">OutdatedPackage</span></div>
+      </div>
+
+      <!-- scoreboard + animated gauge -->
+      <div class="score">
+        <div class="gauge-wrap">
+          <svg class="gauge" width="240" height="240" viewBox="0 0 240 240" aria-label="Dependency health score 78 of 100, good">
+            <defs>
+              <linearGradient id="gg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ff3d8b"/><stop offset="0.5" stop-color="#ffb042"/><stop offset="1" stop-color="#2fe09a"/>
+              </linearGradient>
+            </defs>
+            <circle class="track" cx="120" cy="120" r="54"/>
+            <circle class="bar" cx="120" cy="120" r="54" style="--off:74.6"/>
+          </svg>
+          <div class="gauge-num"><span class="n" data-count="78">0</span><span class="d">/100</span><span class="v t-green">GOOD</span></div>
+        </div>
+        <div class="board">
+          <div class="bh">Analyzer scoreboard · MySolution.sln</div>
+          <div class="bline"><span class="nm"><span class="ic t-amber">!</span> Version Inconsistencies</span><span class="ct t-amber" data-count="3">0</span><span class="meter m-pink"><i style="--w:100%"></i></span><span class="st t-amber">3 FOUND</span></div>
+          <div class="bline"><span class="nm"><span class="ic t-red">✖</span> Security Vulnerabilities</span><span class="ct t-red" data-count="1">0</span><span class="meter m-red"><i style="--w:33%"></i></span><span class="st t-red">1 FOUND</span></div>
+          <div class="bline"><span class="nm"><span class="ic t-green">✔</span> Duplicate Packages</span><span class="ct t-dim">0</span><span class="meter m-green"><i style="--w:0%"></i></span><span class="st t-green">PASS</span></div>
+          <div class="bline"><span class="nm"><span class="ic t-green">✔</span> Transitive Conflicts</span><span class="ct t-dim">0</span><span class="meter m-green"><i style="--w:0%"></i></span><span class="st t-green">PASS</span></div>
+          <div class="bline"><span class="nm"><span class="ic t-green">✔</span> Redundant References</span><span class="ct t-dim">0</span><span class="meter m-green"><i style="--w:0%"></i></span><span class="st t-green">PASS</span></div>
+        </div>
       </div>
     </section>
 
-    <!-- ══ 30-second path ══ -->
-    <section class="section reveal">
-      <div class="section-header">
-        <div class="section-kicker">// 30-second path</div>
+    <!-- ═══════ MIGRATE (drag slider) ═══════ -->
+    <section class="sec shell reveal" id="migrate">
+      <div class="sec-head">
+        <span class="ghost">02</span>
+        <div class="kicker">migration</div>
+        <h2>Drag to see what CPM actually changes</h2>
+        <p class="sub">Inline <code>Version</code> attributes vanish from every project; one central <code>PackageVersion</code> per package appears instead. Drag the handle.</p>
+      </div>
+      <div class="ba" id="ba">
+        <span class="pane-tag tag-before">before · messy</span>
+        <span class="pane-tag tag-after">after · CPM</span>
+        <div class="after"><pre><code><span class="t-dim">&lt;!-- Api.csproj --&gt;</span>
+&lt;Project Sdk="Microsoft.NET.Sdk"&gt;
+  &lt;ItemGroup&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Serilog"</span> /&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Polly"</span> /&gt;
+  &lt;/ItemGroup&gt;
+&lt;/Project&gt;
+
+<span class="t-dim">&lt;!-- Directory.Packages.props --&gt;</span>
+&lt;Project&gt;
+  &lt;PropertyGroup&gt;
+    &lt;ManagePackageVersionsCentrally&gt;<span class="t-green">true</span>&lt;/…&gt;
+  &lt;/PropertyGroup&gt;
+  &lt;ItemGroup&gt;
+    &lt;PackageVersion Include=<span class="t-cyan">"Serilog"</span> Version=<span class="t-green">"4.2.0"</span> /&gt;
+    &lt;PackageVersion Include=<span class="t-cyan">"Polly"</span>    Version=<span class="t-green">"8.6.4"</span> /&gt;
+  &lt;/ItemGroup&gt;
+&lt;/Project&gt;</code></pre></div>
+        <div class="before" id="baBefore"><pre><code><span class="t-dim">&lt;!-- Api.csproj --&gt;</span>
+&lt;Project Sdk="Microsoft.NET.Sdk"&gt;
+  &lt;ItemGroup&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Serilog"</span> Version=<span class="t-red">"3.1.1"</span> /&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Polly"</span> Version=<span class="t-red">"8.4.1"</span> /&gt;
+  &lt;/ItemGroup&gt;
+&lt;/Project&gt;
+
+<span class="t-dim">&lt;!-- Worker.csproj --&gt;</span>
+&lt;Project Sdk="Microsoft.NET.Sdk"&gt;
+  &lt;ItemGroup&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Serilog"</span> Version=<span class="t-red">"4.0.2"</span> /&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Polly"</span> Version=<span class="t-red">"8.6.4"</span> /&gt;
+  &lt;/ItemGroup&gt;
+&lt;/Project&gt;</code></pre></div>
+        <div class="divider" id="baDivider"><div class="handle" tabindex="0" role="slider" aria-label="compare before and after" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">⇆</div></div>
+      </div>
+    </section>
+
+    <!-- ═══════ BISECT ═══════ -->
+    <section class="sec shell reveal" id="bisect">
+      <div class="sec-head">
+        <span class="ghost">03</span>
+        <div class="kicker">safe updates</div>
+        <h2>Bisect, don't revert</h2>
+        <p class="sub">All-or-nothing rollback throws away 37 good updates because of one bad one. <code>--bisect</code> banks the green half each round and probes the rest — keeping ~36/38 in about 2·log₂(n) test runs.</p>
+      </div>
+      <div class="bisect">
+        <div class="bisect-viz" id="bisectViz">
+          <div class="bround"><div class="lab"><span>round 1 · probe all 8</span><span class="t-red">✖ red</span></div>
+            <div class="chips">
+              <span class="chip probe">Serilog</span><span class="chip probe">AutoMapper</span><span class="chip probe">Polly</span><span class="chip probe">Dapper</span><span class="chip probe">Moq</span><span class="chip probe">MediatR</span><span class="chip probe">FluentVal.</span><span class="chip probe">Newtonsoft</span>
+            </div></div>
+          <div class="bround"><div class="lab"><span>round 2 · bank the green half</span><span class="t-green">4 banked</span></div>
+            <div class="chips">
+              <span class="chip held">Serilog</span><span class="chip held">AutoMapper</span><span class="chip probe">Polly</span><span class="chip probe">Dapper</span><span class="chip probe">Moq</span><span class="chip probe">MediatR</span><span class="chip bank">FluentVal.</span><span class="chip bank">Newtonsoft</span>
+            </div></div>
+          <div class="bround"><div class="lab"><span>round 3 · split the red, bank green</span><span class="t-red">✖ red</span></div>
+            <div class="chips">
+              <span class="chip held">Serilog</span><span class="chip held">AutoMapper</span><span class="chip bank">Polly</span><span class="chip bank">Dapper</span><span class="chip bank">Moq</span><span class="chip probe">MediatR</span><span class="chip bank">FluentVal.</span><span class="chip bank">Newtonsoft</span>
+            </div></div>
+          <div class="bround"><div class="lab"><span>final · isolate the culprit</span><span class="t-green">✔ green</span></div>
+            <div class="chips">
+              <span class="chip held">Serilog</span><span class="chip bank">AutoMapper</span><span class="chip bank">Polly</span><span class="chip bank">Dapper</span><span class="chip bank">Moq</span><span class="chip bank">MediatR</span><span class="chip bank">FluentVal.</span><span class="chip bank">Newtonsoft</span>
+            </div></div>
+          <div class="blegend"><span><i class="dot d-low" style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></i> probing</span><span><i class="dot" style="background:var(--green);box-shadow:0 0 8px var(--green)"></i> banked green</span><span><i class="dot d-crit"></i> held back</span></div>
+        </div>
+        <article class="panel">
+          <h3>Kept 36 / 38 with tests green</h3>
+          <p class="sub">The two it couldn't clear stay at their old version and get named, so you investigate exactly two packages — not thirty-eight.</p>
+          <div class="mini-term">
+            <div class="mt-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i> BISECT RESULT</div>
+            <pre><code><span class="t-red t-b">HELD</span>    <span class="t-dim">Serilog: 3.1.1 → 4.2.0 (left at 3.1.1)</span>
+<span class="t-red t-b">HELD</span>    <span class="t-dim">AutoMapper: 12.0.1 → 14.0.0</span>
+<span class="t-green t-b">APPLIED</span> <span class="t-dim">Polly 8.4.1→8.6.4 · Dapper · Moq · …34 more</span>
+<span class="t-cyan">Kept 36/38 updates with tests green (9 runs)</span>
+<span class="t-dim">→ cpmigrate --update-packages --only Serilog,AutoMapper</span></code></pre>
+          </div>
+          <a href="/CPMigrate/guides/safe-package-updates/" style="display:inline-block;margin-top:14px">Safe update flow →</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- ═══════ 30-SEC PATH ═══════ -->
+    <section class="sec shell reveal" id="path">
+      <div class="sec-head">
+        <span class="ghost">04</span>
+        <div class="kicker">30-second path</div>
         <h2>From version soup to CPM in five commands</h2>
       </div>
       <div class="flow">
-        <div class="flow-step">
-          <div class="flow-num">01</div>
-          <div>
-            <h3>Check your environment</h3>
-            <p>SDK version, NuGet reachability, workspace state, git status — one diagnostic table.</p>
-            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --doctor</code></pre></div>
-          </div>
-        </div>
-        <div class="flow-step">
-          <div class="flow-num">02</div>
-          <div>
-            <h3>Score the dependency graph</h3>
-            <p>CI-safe exit codes: <code>0</code> clean, <code>5</code> findings, <code>8</code> incomplete scan.</p>
-            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --analyze --audit --outdated --deprecated</code></pre></div>
-          </div>
-        </div>
-        <div class="flow-step">
-          <div class="flow-num">03</div>
-          <div>
-            <h3>Preview the migration as a diff</h3>
-            <p><code>--diff</code> renders the exact <code>Directory.Packages.props</code> change before anything is written.</p>
-            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln --dry-run --diff</code></pre></div>
-          </div>
-        </div>
-        <div class="flow-step">
-          <div class="flow-num">04</div>
-          <div>
-            <h3>Migrate</h3>
-            <p>Generates the props file, strips inline versions, keeps a timestamped backup.</p>
-            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln</code></pre></div>
-          </div>
-        </div>
-        <div class="flow-step">
-          <div class="flow-num">05</div>
-          <div>
-            <h3>Update packages without fear</h3>
-            <p>Tests fail? Everything rolls back. With <code>--bisect</code>, the largest green subset stays and the culprits are named.</p>
-            <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --update-packages --bisect</code></pre></div>
-          </div>
-        </div>
+        <div class="fstep"><div class="fnum">01</div><div><h3>Check the environment</h3><p>SDK, NuGet reachability, workspace, git — one diagnostic table.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --doctor</code></pre></div></div></div>
+        <div class="fstep"><div class="fnum">02</div><div><h3>Score the graph</h3><p>CI-safe exit codes: <code>0</code> clean · <code>5</code> findings · <code>8</code> incomplete scan.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --analyze --audit --outdated --deprecated</code></pre></div></div></div>
+        <div class="fstep"><div class="fnum">03</div><div><h3>Preview as a diff</h3><p><code>--diff</code> renders the exact <code>Directory.Packages.props</code> change before anything is written.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln --dry-run --diff</code></pre></div></div></div>
+        <div class="fstep"><div class="fnum">04</div><div><h3>Migrate</h3><p>Generates the props file, strips inline versions, keeps a timestamped backup.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln</code></pre></div></div></div>
+        <div class="fstep"><div class="fnum">05</div><div><h3>Update without fear</h3><p>Tests fail? Everything rolls back. With <code>--bisect</code> the largest green subset stays.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --update-packages --bisect</code></pre></div></div></div>
       </div>
     </section>
 
-    <!-- ══ feature deep-dives, asymmetric ══ -->
-    <section class="section reveal">
-      <div class="section-header">
-        <div class="section-kicker">// deep dives</div>
-        <h2>Built around the three moments that break</h2>
+    <!-- ═══════ FEATURES ═══════ -->
+    <section class="sec shell reveal" id="features">
+      <div class="sec-head">
+        <span class="ghost">05</span>
+        <div class="kicker">the whole toolbox</div>
+        <h2>Built around the moments that break</h2>
       </div>
-
-      <div class="asym">
-        <article class="panel">
-          <h2>The migration itself</h2>
-          <p class="muted">Every <code>&lt;PackageReference&gt;</code> extracted, conflicts resolved by strategy (<code>Highest</code> / <code>Lowest</code> / <code>Fail</code>), central pins generated — with <code>--merge</code> for an existing props file and <code>--rollback</code> if you change your mind.</p>
-          <div class="code-block"><button class="copy-btn">copy</button><pre><code><span style="color:var(--red)">-  &lt;PackageReference Include="Serilog" Version="3.1.1" /&gt;</span>
-<span style="color:var(--green)">+  &lt;PackageReference Include="Serilog" /&gt;</span>
-
-<span style="color:var(--cyan)">   &lt;!-- Directory.Packages.props --&gt;</span>
-<span style="color:var(--green)">+  &lt;PackageVersion Include="Serilog" Version="4.2.0" /&gt;</span></code></pre></div>
-          <div class="tag-row">
-            <span class="tag">--conflict-strategy</span><span class="tag">--keep-attrs</span><span class="tag">--merge</span><span class="tag">--unify-props</span>
-          </div>
-        </article>
-        <article class="panel">
-          <h2>Batch &amp; monorepos</h2>
-          <p class="muted"><code>--batch /path/to/repo</code> discovers every solution recursively — parallel, continue-on-failure, isolated backup per solution. Reads <code>.sln</code> and VS 17.10+ <code>.slnx</code> alike.</p>
-          <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --batch ./monorepo \
-  --batch-parallel --batch-continue</code></pre></div>
-          <a href="/CPMigrate/guides/monorepos/">Monorepo guide →</a>
-        </article>
-      </div>
-
-      <div class="asym flip">
-        <article class="panel">
-          <h2>Bisect, don't revert</h2>
-          <p class="muted">All-or-nothing rollback throws away 37 good updates because of one bad one. <code>--bisect</code> banks green halves, probes against them, and keeps ~36/38 in about 2·log₂(n) test runs.</p>
-          <div class="term" style="margin-top:16px">
-            <div class="term-bar"><span class="t-dot"></span><span class="t-dot"></span><span class="t-dot"></span><span class="t-title">BISECT RESULT</span></div>
-            <div class="term-body" style="min-height:0"><div class="t-line"><span class="t-red t-bold">HELD</span>    <span class="t-dim">Serilog: 3.1.1 → 4.2.0 (left at 3.1.1)</span></div><div class="t-line"><span class="t-green t-bold">APPLIED</span> <span class="t-dim">Polly: 8.4.1 → 8.6.4 · …36 more</span></div><div class="t-line"><span class="t-cyan">Kept 36/38 updates with tests green (9 runs)</span></div></div>
-          </div>
-          <a href="/CPMigrate/guides/safe-package-updates/">Safe update flow →</a>
-        </article>
-        <article class="panel">
-          <h2>CI that can't lie</h2>
-          <p class="muted">Strict JSON-only stdout against a published schema, SARIF annotations on the PR diff, Markdown for the job summary — and exit code <code>8</code> when a scan didn't complete, so a gate never reads silence as clean.</p>
-          <div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --analyze --audit \
-  --output Sarif \
-  --output-file cpmigrate.sarif \
-  --fail-on High \
-  --baseline .cpmigrate-baseline.json</code></pre></div>
-          <div class="tag-row">
-            <span class="tag">Json</span><span class="tag">Sarif</span><span class="tag">Markdown</span><span class="tag">Csv</span>
-          </div>
-          <p style="margin-top:14px"><a href="/CPMigrate/guides/ci-cd/">CI/CD guide →</a></p>
-        </article>
+      <div class="grid">
+        <article class="card"><h3>Environment doctor</h3><p>One command verifies SDK, feed, workspace and git before you touch anything.</p><span class="cmd">cpmigrate --doctor</span></article>
+        <article class="card"><h3>Config scaffolding</h3><p><code>--init</code> writes a <code>.cpmigrate.json</code> of team defaults — interactive or CI-safe.</p><span class="cmd">cpmigrate --init</span></article>
+        <article class="card"><h3>Workspace status</h3><p>A repository-context dashboard without entering the wizard.</p><span class="cmd">cpmigrate --status</span></article>
+        <article class="card"><h3>Dependency tree</h3><p>Direct + transitive packages per project, rendered as ASCII.</p><span class="cmd">cpmigrate --tree --transitive</span></article>
+        <article class="card"><h3>License radar</h3><p>Copyleft and proprietary licenses flagged from the project file alone.</p><span class="cmd">cpmigrate --analyze --licenses</span></article>
+        <article class="card"><h3>Spreadsheet export</h3><p><code>--output Csv</code> dumps one row per finding for trend tracking.</p><span class="cmd">cpmigrate --analyze --output Csv</span></article>
+        <article class="card"><h3>Batch / monorepo</h3><p>Recursive solution discovery, parallel, continue-on-failure, isolated backups.</p><span class="cmd">cpmigrate --batch ./repo --batch-parallel</span></article>
+        <article class="card"><h3>Unify props</h3><p>Promote repeated properties into <code>Directory.Build.props</code>.</p><span class="cmd">cpmigrate --unify-props</span></article>
       </div>
     </section>
 
-    <!-- ══ shipping cadence ══ -->
-    <section class="section reveal">
-      <div class="section-header">
-        <div class="section-kicker">// the tool keeps shipping</div>
-        <h2>New since 3.28</h2>
-        <p class="page-intro">Twenty releases in one pass — diagnostics, previews, and a scoreboard you can read across the room.</p>
+    <!-- ═══════ CHANGES ═══════ -->
+    <section class="sec shell reveal" id="changes">
+      <div class="sec-head">
+        <span class="ghost">06</span>
+        <div class="kicker">shipping cadence</div>
+        <h2>Twenty releases in one pass</h2>
       </div>
-      <div class="changelog">
-        <div class="cl-item"><span class="ver">--doctor</span><span class="what">Environment diagnostics: SDK, NuGet, workspace, git</span></div>
-        <div class="cl-item"><span class="ver">--init</span><span class="what">Scaffold <b>.cpmigrate.json</b> team defaults interactively</span></div>
-        <div class="cl-item"><span class="ver">--status</span><span class="what">One-shot workspace health dashboard</span></div>
-        <div class="cl-item"><span class="ver">--tree</span><span class="what">ASCII dependency tree, direct + transitive</span></div>
-        <div class="cl-item"><span class="ver">--diff</span><span class="what">Unified-diff preview on <b>--dry-run</b></span></div>
-        <div class="cl-item"><span class="ver">--licenses</span><span class="what">Copyleft / proprietary license flags</span></div>
-        <div class="cl-item"><span class="ver">--output Csv</span><span class="what">Findings straight into a spreadsheet</span></div>
-        <div class="cl-item"><span class="ver">scoreboard</span><span class="what">Per-analyzer PASS/FOUND + 0–100 health meter</span></div>
+      <div class="grid">
+        <div class="card cl"><span class="ver v1">--doctor</span><span class="what">Environment diagnostics</span></div>
+        <div class="card cl"><span class="ver v1">--init</span><span class="what">Scaffold <b>.cpmigrate.json</b></span></div>
+        <div class="card cl"><span class="ver v1">--status</span><span class="what">Workspace health dashboard</span></div>
+        <div class="card cl"><span class="ver v1">--tree</span><span class="what">ASCII dependency tree</span></div>
+        <div class="card cl"><span class="ver v2">--diff</span><span class="what">Unified-diff dry-run</span></div>
+        <div class="card cl"><span class="ver v2">--licenses</span><span class="what">License radar</span></div>
+        <div class="card cl"><span class="ver v2">--output Csv</span><span class="what">Spreadsheet export</span></div>
+        <div class="card cl"><span class="ver v2">scoreboard</span><span class="what">Health gauge + STATUS</span></div>
       </div>
     </section>
 
-    <!-- ══ comparison ══ -->
-    <section class="section reveal">
-      <div class="section-header">
-        <div class="section-kicker">// alternatives</div>
+    <!-- ═══════ COMPARE ═══════ -->
+    <section class="sec shell reveal" id="compare">
+      <div class="sec-head">
+        <span class="ghost">07</span>
+        <div class="kicker">alternatives</div>
         <h2>Against doing it by hand</h2>
       </div>
       <table>
-        <thead>
-          <tr><th>Approach</th><th>Good fit</th><th>Where it falls short</th></tr>
-        </thead>
+        <thead><tr><th>Approach</th><th>Good fit</th><th>Where it falls short</th></tr></thead>
         <tbody>
-          <tr>
-            <td><strong>Manual CPM migration</strong></td>
-            <td>One-off experiments, tiny solutions</td>
-            <td>Slow, easy to miss references, impossible to repeat across many projects</td>
-          </tr>
-          <tr>
-            <td><strong>Ad hoc scripts</strong></td>
-            <td>Repo-specific automation</td>
-            <td>Brittle logic, no analysis, no rollback you'd trust at 2 a.m.</td>
-          </tr>
-          <tr>
-            <td><strong>Raw <code>dotnet package list</code></strong></td>
-            <td>Inventory and vulnerability data</td>
-            <td>No migration, no fixers, no central props generation</td>
-          </tr>
-          <tr class="row-hl">
-            <td><strong style="color:var(--pink)">CPMigrate</strong></td>
-            <td>Teams adopting CPM across real solutions</td>
-            <td>Purpose-built for exactly this path</td>
-          </tr>
+          <tr><td><strong>Manual CPM migration</strong></td><td>One-off experiments, tiny solutions</td><td>Slow, easy to miss references, impossible to repeat</td></tr>
+          <tr><td><strong>Ad hoc scripts</strong></td><td>Repo-specific automation</td><td>Brittle logic, no analysis, no rollback you'd trust at 2 a.m.</td></tr>
+          <tr><td><strong>Raw <code>dotnet package list</code></strong></td><td>Inventory and vulnerability data</td><td>No migration, no fixers, no central props generation</td></tr>
+          <tr class="hl"><td><strong style="color:var(--pink)">CPMigrate</strong></td><td>Teams adopting CPM across real solutions</td><td>Purpose-built for exactly this path</td></tr>
         </tbody>
       </table>
-      <div class="cta-row">
-        <a class="button-secondary" href="/CPMigrate/compare/manual-cpm-migration/">CPMigrate vs manual migration</a>
-        <a class="button-secondary" href="/CPMigrate/compare/ad-hoc-scripts/">CPMigrate vs ad hoc scripts</a>
+    </section>
+
+    <!-- ═══════ EXIT CODES (man page) ═══════ -->
+    <section class="sec shell reveal" id="codes">
+      <div class="sec-head">
+        <span class="ghost">08</span>
+        <div class="kicker">contract</div>
+        <h2>Exit codes, like a man page</h2>
+        <p class="sub">The numbers a CI gate is written against — and the one thing a script can't discover by trying.</p>
+      </div>
+      <div class="man">
+        <div class="title">CPMIGRATE(1)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CPMigrate exit codes</div>
+        <div class="mh">Exit status</div>
+        <div class="row"><span class="c">0</span><span><span class="nm">Success</span> — operation completed successfully.</span></div>
+        <div class="row"><span class="c">1</span><span><span class="nm">ValidationError</span> — invalid command-line options.</span></div>
+        <div class="row"><span class="c">2</span><span><span class="nm">FileOperationError</span> — file I/O or permission failure.</span></div>
+        <div class="row"><span class="c">3</span><span><span class="nm">VersionConflict</span> — unresolvable conflict with <code>--conflict-strategy Fail</code>.</span></div>
+        <div class="row"><span class="c">4</span><span><span class="nm">NoProjectsFound</span> — no project files discovered.</span></div>
+        <div class="row"><span class="c">5</span><span><span class="nm">AnalysisIssuesFound</span> — analysis detected issues (the CI gate).</span></div>
+        <div class="row"><span class="c">6</span><span><span class="nm">UnexpectedError</span> — unhandled exception.</span></div>
+        <div class="row"><span class="c">7</span><span><span class="nm">TestFailure</span> — tests failed after update; rollback performed.</span></div>
+        <div class="row"><span class="c">8</span><span><span class="nm">IncompleteAnalysis</span> — a scan didn't finish; treat as re-run, never as clean.</span></div>
       </div>
     </section>
 
-    <!-- ══ video ══ -->
-    <section class="section reveal">
-      <div class="section-header">
-        <div class="section-kicker">// see it work</div>
+    <!-- ═══════ VIDEO ═══════ -->
+    <section class="sec shell reveal" id="see">
+      <div class="sec-head">
+        <span class="ghost">09</span>
+        <div class="kicker">see it work</div>
         <h2>Twenty seconds of the real thing</h2>
       </div>
-      <div class="image-frame">
+      <div class="frame">
         <video autoplay muted loop playsinline preload="metadata" controls
           poster="https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/assets/video/cpmigrate-hero-poster.png"
           src="https://github.com/georgepwall1991/CPMigrate/raw/main/assets/video/cpmigrate-hero.mp4"
-          aria-label="CPMigrate demo video — migrating a .NET solution to Directory.Packages.props, scoring migration risk, and bisecting package updates to keep tests green"></video>
+          aria-label="CPMigrate demo video"></video>
       </div>
     </section>
 
-    <!-- ══ FAQ ══ -->
-    <section class="section reveal">
-      <div class="section-header">
-        <div class="section-kicker">// faq</div>
+    <!-- ═══════ FAQ ═══════ -->
+    <section class="sec shell reveal" id="faq">
+      <div class="sec-head">
+        <span class="ghost">10</span>
+        <div class="kicker">faq</div>
         <h2>Asked before you ask</h2>
       </div>
-
-      <details class="faq">
-        <summary>How do I migrate a .NET solution to Central Package Management?</summary>
-        <div class="faq-body"><p>Run <code>cpmigrate -s ./MySolution.sln --dry-run</code> to preview, then <code>cpmigrate -s ./MySolution.sln</code> to apply. CPMigrate extracts every <code>&lt;PackageReference&gt;</code>, resolves version conflicts, generates <code>Directory.Packages.props</code>, and strips inline <code>Version</code> attributes — with a timestamped backup you can roll back to.</p></div>
-      </details>
-      <details class="faq">
-        <summary>What is Directory.Packages.props?</summary>
-        <div class="faq-body"><p>The file NuGet Central Package Management reads package versions from, so every project in a solution shares one version per package instead of declaring its own. CPMigrate generates and maintains it for you. <a href="https://learn.microsoft.com/nuget/consume-packages/central-package-management">Microsoft's CPM docs</a> cover the format itself.</p></div>
-      </details>
-      <details class="faq">
-        <summary>Can CPMigrate roll back a bad package update?</summary>
-        <div class="faq-body"><p>Two ways. <code>--update-packages</code> runs <code>dotnet test</code> after applying updates and rolls back automatically on failure. <code>--update-packages --bisect</code> keeps the largest subset that stays green and names the held-back packages. Migrations get timestamped backups restorable with <code>cpmigrate --rollback</code>.</p></div>
-      </details>
-      <details class="faq">
-        <summary>Does CPMigrate work in CI/CD?</summary>
-        <div class="faq-body"><p>It's built for it. <code>--output Json --quiet</code> gives strict JSON-only stdout against a published schema; <code>--output Sarif</code> uploads to GitHub code scanning as PR annotations; <code>--output Markdown</code> drops a verdict-first report into the step summary. Exit codes are contract-level — <code>5</code> means findings, <code>8</code> means the scan did not complete.</p></div>
-      </details>
-      <details class="faq">
-        <summary>Does it support .slnx and monorepos?</summary>
-        <div class="faq-body"><p>Yes. CPMigrate reads classic <code>.sln</code> and Visual Studio 17.10+ <code>.slnx</code> solutions, and <code>--batch</code> recursively discovers every solution — optionally in parallel and continuing past failures — with an isolated backup directory per solution.</p></div>
-      </details>
-      <details class="faq">
-        <summary>Can it gate on vulnerabilities without failing on existing debt?</summary>
-        <div class="faq-body"><p>Yes. <code>--audit</code> scans direct and transitive dependencies for known CVEs; <code>--fail-on High</code> narrows the exit-code gate while still reporting everything; <code>--write-baseline</code> records today's findings once so CI fails only on <em>new</em> debt. Baselined findings stay visible in every report.</p></div>
-      </details>
+      <details class="faq"><summary>How do I migrate a .NET solution to Central Package Management?</summary><div class="fb"><p>Run <code>cpmigrate -s ./MySolution.sln --dry-run</code> (add <code>--diff</code> for a unified diff), then <code>cpmigrate -s ./MySolution.sln</code> to apply. CPMigrate extracts every <code>&lt;PackageReference&gt;</code>, resolves conflicts, generates <code>Directory.Packages.props</code>, and strips inline <code>Version</code> attributes — with a backup you can roll back to.</p></div></details>
+      <details class="faq"><summary>What is Directory.Packages.props?</summary><div class="fb"><p>The file NuGet Central Package Management reads versions from, so every project shares one version per package. CPMigrate generates and maintains it. <a href="https://learn.microsoft.com/nuget/consume-packages/central-package-management">Microsoft's CPM docs</a> cover the format.</p></div></details>
+      <details class="faq"><summary>Can CPMigrate roll back a bad package update?</summary><div class="fb"><p>Two ways. <code>--update-packages</code> runs <code>dotnet test</code> and rolls back on failure. <code>--update-packages --bisect</code> keeps the largest subset that stays green and names the held-back packages. Migrations get timestamped backups restorable with <code>cpmigrate --rollback</code>.</p></div></details>
+      <details class="faq"><summary>Does CPMigrate work in CI/CD?</summary><div class="fb"><p>Built for it. <code>--output Json --quiet</code> for strict JSON against a published schema; <code>--output Sarif</code> for PR annotations; <code>--output Markdown</code> for the step summary; <code>--output Csv</code> for spreadsheets. Exit code <code>8</code> means the scan didn't complete.</p></div></details>
+      <details class="faq"><summary>Does it support .slnx and monorepos?</summary><div class="fb"><p>Yes — classic <code>.sln</code> and VS 17.10+ <code>.slnx</code>, and <code>--batch</code> recursively discovers every solution, optionally in parallel and continue-on-failure, with an isolated backup per solution.</p></div></details>
+      <details class="faq"><summary>Can it gate on vulnerabilities without failing on existing debt?</summary><div class="fb"><p>Yes. <code>--audit</code> scans direct and transitive CVEs; <code>--fail-on High</code> narrows the gate while still reporting everything; <code>--write-baseline</code> records today's findings once so CI fails only on <em>new</em> debt.</p></div></details>
     </section>
 
-    <!-- ══ install ══ -->
-    <section class="install-strip reveal">
-      <div class="section-kicker">// install</div>
-      <h2>Start with one command</h2>
-      <div class="code-block"><button class="copy-btn">copy</button><pre><code>dotnet tool install --global CPMigrate --version 3.49.0
-cpmigrate --doctor</code></pre></div>
-      <div class="cta-row">
-        <a class="button" href="/CPMigrate/install/">All install paths</a>
-        <a class="button-secondary" href="https://www.nuget.org/packages/CPMigrate/">CPMigrate on NuGet</a>
+    <!-- ═══════ INSTALL ═══════ -->
+    <section class="sec shell reveal" id="install">
+      <div class="install">
+        <div class="kicker">install</div>
+        <h2>Start with one command</h2>
+        <div class="tabs" id="instTabs" role="tablist">
+          <button class="on" data-t="dotnet">dotnet</button>
+          <button data-t="brew">homebrew</button>
+          <button data-t="winget">winget</button>
+        </div>
+        <div class="tab-pane on" data-p="dotnet"><div class="code-block"><button class="copy-btn">copy</button><pre><code>dotnet tool install --global CPMigrate --version 3.50.0
+cpmigrate --doctor</code></pre></div></div>
+        <div class="tab-pane" data-p="brew"><div class="code-block"><button class="copy-btn">copy</button><pre><code>brew tap georgepwall1991/cpmigrate
+brew install cpmigrate</code></pre></div></div>
+        <div class="tab-pane" data-p="winget"><div class="code-block"><button class="copy-btn">copy</button><pre><code>winget install GeorgeWall.CPMigrate</code></pre></div></div>
+        <div class="cta-row" style="margin-top:18px">
+          <a class="button" href="https://www.nuget.org/packages/CPMigrate/">CPMigrate on NuGet</a>
+          <a class="button-secondary" href="/CPMigrate/guides/ci-cd/">Use it in CI</a>
+        </div>
       </div>
     </section>
 
-    <footer class="footer">
+    <footer class="footer shell">
       <span>CPMigrate — NuGet Central Package Management migration, dependency analysis, and safe package updates for .NET.</span>
-      <span class="mono">MIT · <a href="https://github.com/georgepwall1991/CPMigrate">georgepwall1991/CPMigrate</a></span>
+      <span class="sig"><span class="t-p">george@cpmigrate</span>:<span style="color:var(--cyan)">~</span>$ ship it<span class="caret"></span></span>
     </footer>
   </main>
 
+  <!-- command palette -->
+  <div class="palette" id="palette">
+    <div class="box">
+      <div class="pin"><span>›</span><input id="palInput" type="text" placeholder="jump to a section or copy a command…" autocomplete="off" /></div>
+      <div class="res" id="palRes"></div>
+    </div>
+  </div>
+  <div class="toast" id="toast">copied ✔</div>
+
   <script>
-    (function () {
-      var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  (function () {
+    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-      /* terminal typing */
-      var lines = Array.prototype.slice.call(document.querySelectorAll("#term-body .t-line[data-type]"));
-      if (reduce) {
-        lines.forEach(function (l) { l.classList.add("typed"); });
-      } else {
-        var i = 0;
-        (function next() {
-          if (i >= lines.length) return;
-          lines[i].classList.add("typed");
-          i += 1;
-          setTimeout(next, i <= 1 ? 420 : 130);
-        })();
-      }
+    /* ───── ticker build ───── */
+    var tickItems = [
+      ["d-crit","SecurityVulnerability","critical"],["d-high","InlineVersionUnderCpm","high"],
+      ["d-mod","VersionInconsistency","moderate"],["d-mod","TransitiveConflict","moderate"],
+      ["d-high","LicenseRisk","high"],["d-low","DuplicatePackageCasing","low"],
+      ["d-low","OutdatedPackage","low"],["d-low","FrameworkAlignment","info"],
+      ["d-mod","RedundantReference","low"],["d-low","OrphanedPackageVersion","low"]
+    ];
+    function tickerHTML() {
+      return tickItems.map(function (t) {
+        return '<span class="ti"><span class="dot ' + t[0] + '"></span><b>' + t[1] + '</b>' + t[2] + '</span>';
+      }).join('<span class="ti" style="color:var(--line-2)">·</span>');
+    }
+    document.getElementById("ticker").innerHTML = tickerHTML() + tickerHTML();
 
-      /* scroll reveals */
-      var revealables = document.querySelectorAll(".reveal");
-      if (reduce || !("IntersectionObserver" in window)) {
-        revealables.forEach(function (el) { el.classList.add("in"); });
-      } else {
-        var io = new IntersectionObserver(function (entries) {
-          entries.forEach(function (e) {
-            if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
-          });
-        }, { threshold: 0.12 });
-        revealables.forEach(function (el) { io.observe(el); });
-      }
-
-      /* copy buttons */
-      document.querySelectorAll(".copy-btn").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var block = btn.closest(".code-block");
-          var code = block.querySelector("pre").innerText;
-          var done = function () {
-            btn.textContent = "copied ✔";
-            btn.classList.add("copied");
-            setTimeout(function () { btn.textContent = "copy"; btn.classList.remove("copied"); }, 1600);
-          };
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(code).then(done, done);
-          } else {
-            done();
+    /* ───── scroll reveals + section rail ───── */
+    var reveals = document.querySelectorAll(".reveal");
+    if (reduce || !("IntersectionObserver" in window)) {
+      reveals.forEach(function (e) { e.classList.add("in"); });
+    } else {
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+      }, { threshold: 0.12 });
+      reveals.forEach(function (e) { io.observe(e); });
+    }
+    var rail = document.querySelectorAll(".rail a");
+    var secs = Array.prototype.map.call(rail, function (a) { return document.querySelector(a.getAttribute("href")); });
+    if ("IntersectionObserver" in window) {
+      var so = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          if (e.isIntersecting) {
+            var idx = secs.indexOf(e.target);
+            rail.forEach(function (a, i) { a.classList.toggle("on", i === idx); });
           }
         });
+      }, { rootMargin: "-45% 0px -45% 0px" });
+      secs.forEach(function (s) { if (s) so.observe(s); });
+    }
+
+    /* ───── count-up + gauge when score in view ───── */
+    var scoreEl = document.querySelector(".score");
+    function runCounters() {
+      document.querySelectorAll("[data-count]").forEach(function (el) {
+        var target = parseInt(el.getAttribute("data-count"), 10);
+        if (reduce) { el.textContent = target; return; }
+        var start = performance.now(), dur = 900;
+        (function step(now) {
+          var p = Math.min(1, (now - start) / dur);
+          el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
+          if (p < 1) requestAnimationFrame(step);
+        })(start);
       });
-    })();
+    }
+    if (scoreEl && "IntersectionObserver" in window) {
+      var co = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting) { runCounters(); co.disconnect(); } });
+      }, { threshold: 0.4 });
+      co.observe(scoreEl);
+    } else { runCounters(); }
+
+    /* ───── copy buttons + toast ───── */
+    var toast = document.getElementById("toast"), toastT;
+    function showToast(msg) { toast.textContent = msg; toast.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(function () { toast.classList.remove("show"); }, 1500); }
+    function copy(text, btn) {
+      var done = function () { if (btn) { btn.textContent = "copied ✔"; btn.classList.add("ok"); setTimeout(function () { btn.textContent = "copy"; btn.classList.remove("ok"); }, 1500); } showToast("copied ✔"); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done); else done();
+    }
+    document.addEventListener("click", function (e) {
+      var b = e.target.closest(".copy-btn");
+      if (b) copy(b.closest(".code-block").querySelector("pre").innerText, b);
+    });
+
+    /* ───── cursor spotlight on panels/cards ───── */
+    if (!reduce) {
+      document.querySelectorAll(".panel, .card").forEach(function (el) {
+        el.addEventListener("pointermove", function (e) {
+          var r = el.getBoundingClientRect();
+          el.style.setProperty("--mx", (e.clientX - r.left) + "px");
+          el.style.setProperty("--my", (e.clientY - r.top) + "px");
+        });
+      });
+    }
+
+    /* ───── before/after slider ───── */
+    var ba = document.getElementById("ba");
+    if (ba) {
+      var before = document.getElementById("baBefore"), divider = document.getElementById("baDivider"), handle = divider.querySelector(".handle");
+      function setPos(pct) {
+        pct = Math.max(2, Math.min(98, pct));
+        before.style.clipPath = "inset(0 " + (100 - pct) + "% 0 0)";
+        divider.style.left = pct + "%";
+        handle.setAttribute("aria-valuenow", Math.round(pct));
+      }
+      function fromX(x) { var r = ba.getBoundingClientRect(); setPos((x - r.left) / r.width * 100); }
+      var dragging = false;
+      divider.addEventListener("pointerdown", function (e) { dragging = true; divider.setPointerCapture(e.pointerId); });
+      divider.addEventListener("pointermove", function (e) { if (dragging) fromX(e.clientX); });
+      divider.addEventListener("pointerup", function () { dragging = false; });
+      ba.addEventListener("pointerdown", function (e) { if (e.target === handle || e.target === divider) return; fromX(e.clientX); });
+      handle.addEventListener("keydown", function (e) {
+        var cur = parseInt(handle.getAttribute("aria-valuenow"), 10) || 50;
+        if (e.key === "ArrowLeft") { setPos(cur - 4); e.preventDefault(); }
+        if (e.key === "ArrowRight") { setPos(cur + 4); e.preventDefault(); }
+      });
+      setPos(50);
+    }
+
+    /* ───── install tabs ───── */
+    var tabs = document.getElementById("instTabs");
+    if (tabs) tabs.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      tabs.querySelectorAll("button").forEach(function (x) { x.classList.remove("on"); });
+      b.classList.add("on");
+      var t = b.getAttribute("data-t");
+      document.querySelectorAll("#install .tab-pane").forEach(function (p) { p.classList.toggle("on", p.getAttribute("data-p") === t); });
+    });
+
+    /* ───── command palette ───── */
+    var pal = document.getElementById("palette"), palInput = document.getElementById("palInput"), palRes = document.getElementById("palRes");
+    var items = [
+      { k: "goto", label: "Analyze & scoreboard", t: "section", href: "#analyze" },
+      { k: "goto", label: "Migration drag-compare", t: "section", href: "#migrate" },
+      { k: "goto", label: "Bisect visualization", t: "section", href: "#bisect" },
+      { k: "goto", label: "30-second path", t: "section", href: "#path" },
+      { k: "goto", label: "Exit codes (man page)", t: "section", href: "#codes" },
+      { k: "goto", label: "Install", t: "section", href: "#install" },
+      { k: "copy", label: "cpmigrate --doctor", t: "command", cmd: "cpmigrate --doctor" },
+      { k: "copy", label: "cpmigrate --analyze --audit --outdated", t: "command", cmd: "cpmigrate --analyze --audit --outdated" },
+      { k: "copy", label: "cpmigrate -s . --dry-run --diff", t: "command", cmd: "cpmigrate -s . --dry-run --diff" },
+      { k: "copy", label: "cpmigrate --update-packages --bisect", t: "command", cmd: "cpmigrate --update-packages --bisect" },
+      { k: "copy", label: "cpmigrate --init", t: "command", cmd: "cpmigrate --init" }
+    ];
+    var sel = 0, filtered = items;
+    function renderPal() {
+      palRes.innerHTML = filtered.map(function (it, i) {
+        return '<div class="item' + (i === sel ? " sel" : '') + '" data-i="' + i + '"><span class="k">' + it.t + '</span>' + it.label + '<span class="ar">' + (it.t === "copy" ? "↵ copy" : "↵ jump") + '</span></div>';
+      }).join("") || '<div class="item">no match</div>';
+    }
+    function execPal() {
+      var it = filtered[sel]; if (!it) return;
+      if (it.t === "copy") { copy(it.cmd); }
+      else { location.hash = it.href; }
+      closePal();
+    }
+    function openPal() { pal.classList.add("open"); sel = 0; filtered = items; palInput.value = ""; renderPal(); setTimeout(function () { palInput.focus(); }, 20); }
+    function closePal() { pal.classList.remove("open"); }
+    document.getElementById("openCmd").addEventListener("click", openPal);
+    pal.addEventListener("click", function (e) { if (e.target === pal) closePal(); });
+    pal.addEventListener("click", function (e) { var it = e.target.closest(".item"); if (it && it.dataset.i) { sel = +it.dataset.i; execPal(); } });
+    palInput.addEventListener("input", function () {
+      var q = palInput.value.toLowerCase().trim();
+      filtered = items.filter(function (it) { return it.label.toLowerCase().indexOf(q) > -1; });
+      sel = 0; renderPal();
+    });
+    palInput.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown") { sel = Math.min(filtered.length - 1, sel + 1); renderPal(); e.preventDefault(); }
+      else if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); renderPal(); e.preventDefault(); }
+      else if (e.key === "Enter") { execPal(); e.preventDefault(); }
+      else if (e.key === "Escape") { closePal(); }
+    });
+    document.addEventListener("keydown", function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); pal.classList.contains("open") ? closePal() : openPal(); }
+      else if (e.key === "Escape" && pal.classList.contains("open")) closePal();
+    });
+
+    /* ───── playable terminal ───── */
+    var body = document.getElementById("termBody"), input = document.getElementById("termInput");
+    var history = [], hIdx = -1;
+    function el(html) { var d = document.createElement("div"); d.className = "tl"; d.innerHTML = html; return d; }
+    function push(html) { body.appendChild(el(html)); body.scrollTop = body.scrollHeight; }
+    function pushLines(arr, cb) {
+      if (reduce) { arr.forEach(push); if (cb) cb(); return; }
+      var i = 0;
+      (function n() { if (i >= arr.length) { if (cb) cb(); return; } push(arr[i++]); setTimeout(n, 70); })();
+    }
+    var B = "█", E = "░";
+    function meter(n) { var f = Math.round(n / 5); return '<span class="t-pink">' + B.repeat(f) + '</span><span class="t-dim">' + E.repeat(20 - f) + '</span>'; }
+    var CMDS = {
+      help: function () { return [
+        '<span class="t-cyan">CPMigrate interactive shell</span> <span class="t-dim">— type one and press enter:</span>',
+        '  <span class="t-green">analyze</span>   score dependency health',
+        '  <span class="t-green">doctor</span>    check the environment',
+        '  <span class="t-green">migrate</span>   preview CPM migration',
+        '  <span class="t-green">bisect</span>    keep the largest green update set',
+        '  <span class="t-green">tree</span>      dependency tree',
+        '  <span class="t-green">clear</span>     clear the screen'
+      ]; },
+      doctor: function () { return [
+        '<span class="t-green">✔</span> SDK        <span class="t-dim">.NET 10.0.100</span>',
+        '<span class="t-green">✔</span> Tool       <span class="t-dim">CPMigrate v3.50.0</span>',
+        '<span class="t-green">✔</span> NuGet      <span class="t-dim">nuget.org reachable (142ms)</span>',
+        '<span class="t-green">✔</span> Solutions  <span class="t-dim">1 found (MySolution.sln)</span>',
+        '<span class="t-green">✔</span> CPM        <span class="t-dim">Directory.Packages.props — 38 versions</span>',
+        '<span class="t-amber">!</span> Git        <span class="t-amber">working tree dirty — commit before migrating</span>',
+        '<span class="t-cyan">all critical checks passed.</span>'
+      ]; },
+      analyze: function () { return [
+        '<span class="t-dim">scanning 6 projects · 38 references …</span>',
+        '',
+        '  <span class="t-b">ANALYZER</span>                <span class="t-b">ISS</span> <span class="t-b">STATUS</span>',
+        '  <span class="t-amber">!</span> Version Inconsistency    <span class="t-amber t-b">3</span>  <span class="t-amber">FOUND</span>',
+        '  <span class="t-red">✖</span> Security Vulnerability   <span class="t-red t-b">1</span>  <span class="t-red">FOUND</span>',
+        '  <span class="t-green">✔</span> Duplicate Packages       <span class="t-dim">0</span>  <span class="t-green">PASS</span>',
+        '  <span class="t-green">✔</span> Transitive Conflicts     <span class="t-dim">0</span>  <span class="t-green">PASS</span>',
+        '  <span class="t-green">✔</span> Redundant References     <span class="t-dim">0</span>  <span class="t-green">PASS</span>',
+        '',
+        'health  ' + meter(78) + '  <span class="t-cyan t-b">78/100</span> <span class="t-cyan">GOOD</span>'
+      ]; },
+      migrate: function () { return [
+        '<span class="t-dim">dry-run · 6 projects · 38 references</span>',
+        '<span class="t-red">- &lt;PackageReference Include="Serilog" Version="3.1.1" /&gt;</span>',
+        '<span class="t-green">+ &lt;PackageVersion Include="Serilog" Version="4.2.0" /&gt;</span>',
+        '<span class="t-green">+ wrote Directory.Packages.props</span>',
+        '<span class="t-green">✔</span> <span class="t-b">SUCCESS</span> <span class="t-dim">— backup: .cpmigrate_backup/20260731_091204</span>'
+      ]; },
+      bisect: function () { return [
+        '<span class="t-red t-b">HELD</span>    <span class="t-dim">Serilog: 3.1.1 → 4.2.0 (left at 3.1.1)</span>',
+        '<span class="t-red t-b">HELD</span>    <span class="t-dim">AutoMapper: 12.0.1 → 14.0.0</span>',
+        '<span class="t-green t-b">APPLIED</span> <span class="t-dim">Polly 8.4.1→8.6.4 · Dapper · Moq · …34 more</span>',
+        '<span class="t-cyan">kept 36/38 updates with tests green (9 runs)</span>'
+      ]; },
+      tree: function () { return [
+        '<span class="t-pink t-b">Api</span>',
+        '├─ <span class="t-green">Serilog</span> <span class="t-dim">4.2.0</span>',
+        '├─ <span class="t-green">Polly</span> <span class="t-dim">8.6.4</span>',
+        '└─ <span class="t-dim">transitive</span> System.Text.Json <span class="t-dim">8.0.5</span>',
+        '<span class="t-pink t-b">Worker</span>',
+        '└─ <span class="t-green">Serilog</span> <span class="t-dim">4.2.0</span>'
+      ]; },
+      version: function () { return ['<span class="t-cyan">CPMigrate 3.50.0</span> <span class="t-dim">(net10.0, MIT)</span>']; },
+      clear: function () { body.innerHTML = ""; return null; }
+    };
+    var NAMES = Object.keys(CMDS);
+    function run(raw) {
+      var cmd = raw.trim().toLowerCase();
+      push('<span class="t-p">➜</span> <span class="t-cmd">' + raw.replace(/</g, "&lt;") + '</span>');
+      if (!cmd) return;
+      history.push(raw); hIdx = history.length;
+      if (cmd === "clear") { CMDS.clear(); return; }
+      var fn = CMDS[cmd];
+      if (!fn) { push('<span class="t-red">command not found: ' + cmd.replace(/</g, "&lt;") + '</span> <span class="t-dim">— type </span><span class="t-green">help</span>'); return; }
+      pushLines(fn());
+    }
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { run(input.value); input.value = ""; }
+      else if (e.key === "ArrowUp") { if (hIdx > 0) { hIdx--; input.value = history[hIdx]; } e.preventDefault(); }
+      else if (e.key === "ArrowDown") { if (hIdx < history.length - 1) { hIdx++; input.value = history[hIdx]; } else { hIdx = history.length; input.value = ""; } e.preventDefault(); }
+      else if (e.key === "Tab") {
+        e.preventDefault();
+        var m = NAMES.filter(function (n) { return n.indexOf(input.value.toLowerCase()) === 0; });
+        if (m.length === 1) input.value = m[0];
+      }
+    });
+    document.getElementById("term").addEventListener("click", function () { input.focus(); });
+    /* auto demo */
+    pushLines(['<span class="t-p">➜</span> <span class="t-cmd">analyze</span>'].concat(CMDS.analyze()), function () {
+      input.placeholder = "your turn — type 'help' and press enter";
+      input.focus();
+    });
+  })();
   </script>
 </body>
 </html>
