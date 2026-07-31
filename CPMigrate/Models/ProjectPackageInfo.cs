@@ -13,13 +13,22 @@ namespace CPMigrate.Models;
 /// duplicates has to be able to tell them apart from two unconditional ones. Only ever set on references
 /// read from the project file; the resolved graph has no conditions left in it.
 /// </param>
+/// <param name="VersionOverride">
+/// The <c>VersionOverride</c> metadata, when the declaration carries one. Under central package
+/// management this is the sanctioned way for a project to step outside the central pin, so it is the
+/// version actually in force — and it can float exactly as a <c>Version</c> can. Kept separate
+/// rather than folded into <see cref="Version"/>, because the rules that ask "does this project pin
+/// inline?" and "what version does this project get?" want opposite answers about it. Only ever set
+/// on references read from the project file.
+/// </param>
 public record PackageReference(
     string PackageName,
     string Version,
     string ProjectPath,
     string ProjectName,
     bool IsTransitive = false,
-    bool IsConditional = false
+    bool IsConditional = false,
+    string? VersionOverride = null
 );
 
 /// <summary>

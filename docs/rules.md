@@ -209,7 +209,8 @@ input.
 the package to that release.
 
 Read from what the files declare and from `Directory.Packages.props`, never from the resolved graph
-— by the time restore has run, `4.*` is already a concrete version.
+— by the time restore has run, `4.*` is already a concrete version. A `VersionOverride` counts,
+because under central package management that is the version actually in force for that project.
 
 - Reported whenever a declared version is a wildcard or a range
 - Default severity: `Moderate`. Teams that accept ranges deliberately can re-grade or switch the

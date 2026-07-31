@@ -62,7 +62,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             return new AnalyzerResult(Name, issues);
         }
 
-        if (!IsCpmEnabled(props, packageInfo.BasePath, out var enablement))
+        if (!IsCpmEnabled(props, propsPath, packageInfo.BasePath, out var enablement))
         {
             AddCpmNotEnabledIssue(issues, enablement);
 
@@ -103,9 +103,14 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// leaves every <c>PackageVersion</c> entry inert — the file looks authoritative and does
     /// nothing.
     /// </summary>
-    private static bool IsCpmEnabled(XDocument props, string? basePath, out string? enablement)
+    private static bool IsCpmEnabled(
+        XDocument props,
+        string propsPath,
+        string? basePath,
+        out string? enablement
+    )
     {
-        enablement = ReadCpmEnablement(props);
+        enablement = ReadCpmEnablementThroughImports(props, propsPath, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
         if (string.Equals(enablement, "true", StringComparison.OrdinalIgnoreCase))
         {
@@ -528,7 +533,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         }
 
         var props = ReadProps(propsPath);
-        if (props is null || !IsCpmEnabled(props, basePath, out _))
+        if (props is null || !IsCpmEnabled(props, propsPath, basePath, out _))
         {
             return empty;
         }
@@ -544,6 +549,23 @@ public class CpmDriftAnalyzer : IAnalyzer
             );
     }
 
+    /// <summary>
+    /// Finds the <c>Directory.Packages.props</c> in effect, walking up from the scan root the way
+    /// MSBuild does — the nearest one wins.
+    ///
+    /// <para>
+    /// Looking only at the scan root meant pointing <c>--analyze</c> at one solution inside a
+    /// repository reported it as having no central versions at all: every CPM rule went quiet, which
+    /// is what a solution with nothing wrong also looks like.
+    /// </para>
+    ///
+    /// <para>
+    /// The walk stops at the repository root rather than continuing to the filesystem root. MSBuild
+    /// would keep going, but a props file in a parent of the checkout belongs to something else, and
+    /// letting an unrelated file on one machine decide what a scan reports makes the result
+    /// unreproducible on any other.
+    /// </para>
+    /// </summary>
     private static string? ResolvePropsPath(string? basePath)
     {
         if (string.IsNullOrWhiteSpace(basePath))
@@ -551,8 +573,97 @@ public class CpmDriftAnalyzer : IAnalyzer
             return null;
         }
 
-        var candidate = Path.Combine(basePath, PropsFileName);
-        return File.Exists(candidate) ? candidate : null;
+        var directory = new DirectoryInfo(Path.GetFullPath(basePath));
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, PropsFileName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            if (Directory.Exists(Path.Combine(directory.FullName, ".git")))
+            {
+                // Checked after the candidate, so a props file sitting at the repository root is
+                // still found — it is the last directory searched, not the first one skipped.
+                return null;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The enablement property as MSBuild would resolve it, following imports.
+    ///
+    /// <para>
+    /// Reading only the props file itself called a repository unmanaged whenever the property lived
+    /// in a file the props file imports — a perfectly ordinary way to organise it — and that answer
+    /// is loud: every central pin becomes inert, so the CPM rules report a High-severity finding
+    /// about a repository that is correctly configured.
+    /// </para>
+    ///
+    /// <para>
+    /// The outermost value wins over an imported one, matching MSBuild's last-assignment-wins
+    /// evaluation for a property set after an <c>Import</c>. An import can therefore turn central
+    /// management off as well as on; only ever honouring "true" would make the check unable to
+    /// disagree.
+    /// </para>
+    /// </summary>
+    private static string? ReadCpmEnablementThroughImports(
+        XDocument document,
+        string documentPath,
+        HashSet<string> visited
+    )
+    {
+        if (!visited.Add(Path.GetFullPath(documentPath)))
+        {
+            return null;
+        }
+
+        if (ReadCpmEnablement(document) is { } declared)
+        {
+            return declared;
+        }
+
+        var directory = Path.GetDirectoryName(Path.GetFullPath(documentPath));
+        if (directory is null)
+        {
+            return null;
+        }
+
+        foreach (var import in document.Descendants().Where(element =>
+            element.Name.LocalName.Equals("Import", StringComparison.OrdinalIgnoreCase)))
+        {
+            var relative = import.Attribute("Project")?.Value;
+            if (
+                string.IsNullOrWhiteSpace(relative)
+                || relative.Contains("$(", StringComparison.Ordinal)
+                || relative.Contains('*')
+            )
+            {
+                // Built from MSBuild properties or a glob: not resolvable by reading XML.
+                continue;
+            }
+
+            var importedPath = Path.GetFullPath(
+                Path.Combine(directory, relative.Replace('\\', Path.DirectorySeparatorChar))
+            );
+            var imported = ReadProps(importedPath);
+            if (imported is null)
+            {
+                continue;
+            }
+
+            if (ReadCpmEnablementThroughImports(imported, importedPath, visited) is { } inherited)
+            {
+                return inherited;
+            }
+        }
+
+        return null;
     }
 
     private static XDocument? ReadProps(string path)

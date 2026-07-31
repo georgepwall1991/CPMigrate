@@ -50,7 +50,11 @@ public class FloatingVersionAnalyzer : IAnalyzer
             .Where(reference => !reference.IsTransitive)
             .Select(reference => new Declaration(
                 reference.PackageName,
-                reference.Version,
+                // VersionOverride wins when present, because under central package management it is
+                // the version actually in force. A project with an exact central pin and a floating
+                // override is not reproducible, and reading only Version reported it clean.
+                reference.VersionOverride
+                    ?? reference.Version,
                 packageInfo.ProjectId(reference.ProjectPath)
             ))
             .Concat(ReadCentralPins(packageInfo.BasePath))
