@@ -195,6 +195,28 @@ terms before shipping.
 - Default severity: `High` (copyleft), `Moderate` (proprietary), `Low` (unknown)
 - Fixable: no — review the license on the package's NuGet page
 
+## FloatingVersion
+
+**A version is a wildcard or an open range rather than an exact pin.**
+
+A wildcard (`4.*`) or an open range (`[4.0.0,)`) lets restore choose the version, so the same commit
+can build against different code tomorrow. Nothing reports it: resolving a wildcard to a new major
+is a perfectly successful restore, and a green CI run against one version says nothing about the one
+that gets built next. It is also why a bisect can fail to reproduce — the tree is not the whole
+input.
+
+`[4.0.0]` is *not* reported. A bracketed single version is the most exact form NuGet has; it locks
+the package to that release.
+
+Read from what the files declare and from `Directory.Packages.props`, never from the resolved graph
+— by the time restore has run, `4.*` is already a concrete version.
+
+- Reported whenever a declared version is a wildcard or a range
+- Default severity: `Moderate`. Teams that accept ranges deliberately can re-grade or switch the
+  rule off with `--rules FloatingVersion=Low` or `--rules FloatingVersion=none`
+- Fixable: no — choosing the release a float should become needs the feed, which this pass does not
+  query
+
 ## Unknown
 
 **An analyzer reported a finding without a specific rule code.**

@@ -245,11 +245,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                     new AnalysisIssue(
                         packageName,
                         $"Uses VersionOverride=\"{overrideVersion}\" to step outside the central "
-                            + (
-                                hasCentralVersion
-                                    ? $"{centralEntry.Version}."
-                                    : "version."
-                            )
+                            + (hasCentralVersion ? $"{centralEntry.Version}." : "version.")
                             + " Intentional, but the project no longer follows the solution.",
                         new[] { projectId },
                         AnalysisIssueCode.InlineVersionUnderCpm,
@@ -348,10 +344,10 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// or a glob cannot be resolved by reading XML, and when that happens the central set is
     /// incomplete — so the caller must not conclude a reference is unversioned.
     /// </summary>
-    private static (Dictionary<string, CentralEntry> Central, bool ImportsResolved) ReadCentralVersions(
-        XDocument props,
-        string propsPath
-    )
+    private static (
+        Dictionary<string, CentralEntry> Central,
+        bool ImportsResolved
+    ) ReadCentralVersions(XDocument props, string propsPath)
     {
         var versions = new Dictionary<string, CentralEntry>(StringComparer.OrdinalIgnoreCase);
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -446,7 +442,8 @@ public class CpmDriftAnalyzer : IAnalyzer
         {
             // A conditional import of a file that is not there is normal, so this is not treated as
             // an unresolved import.
-            return !File.Exists(importedPath) || string.IsNullOrEmpty(import.Attribute("Condition")?.Value);
+            return !File.Exists(importedPath)
+                || string.IsNullOrEmpty(import.Attribute("Condition")?.Value);
         }
 
         return CollectCentralVersions(imported, importedPath, versions, visited);
@@ -495,6 +492,56 @@ public class CpmDriftAnalyzer : IAnalyzer
             ?.Value;
 
         return string.IsNullOrWhiteSpace(child) ? null : child.Trim();
+    }
+
+    /// <summary>
+    /// The central pins in effect for a scan, as package id to the version specification exactly as
+    /// written — following imports, accepting the <c>Update</c> form and child-element
+    /// <c>&lt;Version&gt;</c> metadata, both of which MSBuild accepts and this repository's own props
+    /// file uses.
+    ///
+    /// <para>
+    /// Exposed so other rules read central versions through the same parser rather than a second,
+    /// simpler one. A rule with its own reader silently misses whichever forms it did not think of,
+    /// and reports the solution clean — which is indistinguishable from a solution with nothing
+    /// wrong.
+    /// </para>
+    ///
+    /// <para>
+    /// Empty when the solution is not centrally managed, including when the props file exists but
+    /// sets <c>ManagePackageVersionsCentrally</c> to false: those <c>PackageVersion</c> items are
+    /// inert, so treating them as effective versions would report a finding about a value NuGet
+    /// ignores.
+    /// </para>
+    /// </summary>
+    /// <param name="basePath">Directory the scan was rooted at.</param>
+    internal static IReadOnlyDictionary<string, string> ReadEffectiveCentralVersions(
+        string? basePath
+    )
+    {
+        var empty = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        var propsPath = ResolvePropsPath(basePath);
+        if (propsPath is null)
+        {
+            return empty;
+        }
+
+        var props = ReadProps(propsPath);
+        if (props is null || !IsCpmEnabled(props, basePath, out _))
+        {
+            return empty;
+        }
+
+        var (central, _) = ReadCentralVersions(props, propsPath);
+
+        return central
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Value.Version))
+            .ToDictionary(
+                entry => entry.Key,
+                entry => entry.Value.Version!,
+                StringComparer.OrdinalIgnoreCase
+            );
     }
 
     private static string? ResolvePropsPath(string? basePath)

@@ -6,6 +6,13 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.53.0] - 2026-07-31
+
+### Added
+- **New rule: `FloatingVersion`.** A wildcard (`4.*`) or an open range (`[4.0.0,)`) lets restore choose the version, so the same commit builds against different code tomorrow — and nothing reports it, because resolving a wildcard to a new major is a perfectly successful restore. A green CI run against one version says nothing about the one that gets built next; it is also why a bisect can fail to reproduce, since the tree is not the whole input. `[4.0.0]` is deliberately **not** reported: a bracketed single version is the most exact form NuGet has.
+- Read from what the files *declare* and from `Directory.Packages.props`, never from the resolved graph. By the time `dotnet package list` has run, `4.*` is already a concrete version — a rule reading it could never fire, which is the exact shape that left three earlier rules silent for many releases. Reading the props file matters just as much: after a migration every version lives there, so a rule confined to project files would go quiet on precisely the solutions this tool produces. Both paths are proven by `EveryRuleCanFireTests`, along with a case asserting an exactly-pinned solution stays clean.
+- Findings are grouped by package *and* specification, so one decision is one finding however many projects share it, while two different specifications stay two findings — they are two strings someone has to change. `Moderate` by default, and not fixable, because choosing the release a float should become needs the feed this pass does not query. Teams that accept ranges deliberately can re-grade or silence it with the `--rules` policy added in 3.52.0.
+
 ## [3.52.0] - 2026-07-31
 
 ### Added
