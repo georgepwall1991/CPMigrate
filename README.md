@@ -29,7 +29,7 @@ NuGet dependency drift is a slow leak. Version sprawl, duplicate references, tra
 CPMigrate replaces both with three things that actually hold up:
 
 - 🔍 **A dry-run-first migration** that shows you the exact `Directory.Packages.props` diff before it touches a byte.
-- 📊 **A dependency health scoreboard** — 11 analyzers, a 0–100 score, severity-gated CI exits.
+- 📊 **A dependency health scoreboard** — 12 analyzers, a 0–100 score, severity-gated CI exits.
 - 🛡️ **Updates that roll themselves back** the instant `dotnet test` goes red — and with `--bisect`, keep the largest subset that stays green instead of nuking all 38 because one broke.
 
 ---
@@ -42,6 +42,7 @@ CPMigrate replaces both with three things that actually hold up:
 | 🟧 | **InlineVersionUnderCpm** | CPM drift — inline overrides, missing pins, orphaned entries, CPM switched off | High |
 | 🟧 | **LicenseRisk** | Copyleft (GPL/AGPL) & proprietary licenses (`--licenses`) | High |
 | 🟨 | **VersionInconsistency** | Same package, different versions across projects | Moderate |
+| 🟨 | **FloatingVersion** | `4.*` or `[4.0.0,)` — restore picks the version, so the build isn't reproducible | Moderate |
 | 🟨 | **TransitiveConflict** | Divergent transitive graphs (auto-pinnable) | Moderate |
 | 🟦 | **DuplicatePackageCasing** | `Newtonsoft.Json` vs `newtonsoft.json` | Low |
 | 🟦 | **RedundantReference** | The same `PackageReference` twice in one project | Low |
@@ -80,7 +81,7 @@ cpmigrate --update-packages --bisect
 Requires **.NET SDK 8.0** or later. The tool itself targets `net10.0` with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.52.0
+dotnet tool install --global CPMigrate --version 3.53.0
 ```
 
 ```bash
@@ -139,7 +140,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | Surface | What you get |
 |---------|--------------|
 | 🏗️ **CPM migration** | Generate `Directory.Packages.props`, strip inline versions, conflict strategies, `--merge` |
-| 🔬 **Dependency analysis** | 11 analyzers + scoreboard + 0–100 health score; JSON / SARIF / Markdown / **CSV** |
+| 🔬 **Dependency analysis** | 12 analyzers + scoreboard + 0–100 health score; JSON / SARIF / Markdown / **CSV** |
 | 🩹 **Auto-fix** | Version, casing, redundant refs, transitive pin |
 | 🔁 **Safe updates** | Latest versions + `dotnet test` + automatic rollback |
 | 🔪 **`--bisect`** | Largest green update subset; names the held-back packages |

@@ -29,7 +29,10 @@ public enum AnalysisIssueCode
     OrphanedPackageVersion,
 
     /// <summary>A package carries a copyleft, proprietary, or unknown license.</summary>
-    LicenseRisk
+    LicenseRisk,
+
+    /// <summary>A version is a wildcard or an open range, so restore can resolve it differently.</summary>
+    FloatingVersion,
 }
 
 /// <summary>
@@ -41,7 +44,7 @@ public enum AnalysisSeverity
     Low,
     Moderate,
     High,
-    Critical
+    Critical,
 }
 
 /// <summary>

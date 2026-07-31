@@ -277,6 +277,53 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     [Fact]
+    public async Task FloatingVersion_Fires()
+    {
+        // A wildcard read straight from the project file — no feed, and deliberately not from the
+        // resolved graph, where restore has already turned it into a concrete version.
+        WriteProject("src/Api/Api.csproj", ("Newtonsoft.Json", "13.0.*"));
+        WriteSolution("src/Api/Api.csproj");
+
+        (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.FloatingVersion));
+    }
+
+    [Fact]
+    public async Task FloatingVersion_FiresOnACentralPin()
+    {
+        // After a migration every version lives in the props file. A rule confined to project files
+        // would go quiet on exactly the solutions this tool produces, which is the same
+        // never-fires shape the guard exists to catch.
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj");
+        WriteCentralProps(("Newtonsoft.Json", "[13.0.1,)"));
+
+        (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.FloatingVersion));
+    }
+
+    [Fact]
+    public async Task FloatingVersion_DoesNotFireOnAnExactlyPinnedSolution()
+    {
+        // The other half of the guard: a rule that fires on everything is as useless as one that
+        // fires on nothing, and [13.0.1] is the most exact form NuGet has.
+        WriteProject("src/Api/Api.csproj", ("Newtonsoft.Json", "[13.0.1]"));
+        WriteSolution("src/Api/Api.csproj");
+
+        (await Analyze()).Should().NotContain(nameof(AnalysisIssueCode.FloatingVersion));
+    }
+
+    [Fact]
     public async Task RedundantReference_FiresUnderCentralPackageManagement()
     {
         // Cross-review caught this: the declaration scan reused a method that drops PackageReference items

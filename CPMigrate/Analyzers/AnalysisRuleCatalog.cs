@@ -156,6 +156,15 @@ public static class AnalysisRuleCatalog
                 new[] { "dependencies", "legal", "supply-chain" }
             ),
             new(
+                AnalysisIssueCode.FloatingVersion,
+                "A version is a wildcard or an open range rather than an exact pin.",
+                "A wildcard (4.*) or an open range ([4.0.0,)) lets restore choose the version, so the "
+                    + "same commit can build against different code tomorrow — and nothing reports it, "
+                    + "because resolving a wildcard to a new major is a successful restore. Pin an exact "
+                    + "version, and use a tool that proposes upgrades deliberately instead.",
+                new[] { "dependencies", "reproducibility" }
+            ),
+            new(
                 AnalysisIssueCode.Unknown,
                 "An analyzer reported a finding without a specific rule code.",
                 "This is a fallback used when an analyzer does not classify its finding. Treat the message text as "
