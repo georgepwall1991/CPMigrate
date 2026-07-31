@@ -144,6 +144,21 @@ public class OperationSummary
     public int? IssuesBaselined { get; init; }
 
     /// <summary>
+    /// Rules switched off by policy, so a consumer can tell a clean solution from one whose
+    /// findings were configured away. Null when no rule was disabled.
+    /// </summary>
+    [JsonPropertyName("disabledRules")]
+    public IReadOnlyList<string>? DisabledRules { get; init; }
+
+    /// <summary>
+    /// Rules whose severity was re-graded before the gate was applied, keyed by rule ID. Null when
+    /// no rule was re-graded — without it, <c>highestSeverity</c> could not be reconciled with the
+    /// severities the rule documentation publishes.
+    /// </summary>
+    [JsonPropertyName("severityOverrides")]
+    public IReadOnlyDictionary<string, string>? SeverityOverrides { get; init; }
+
+    /// <summary>
     /// Severity of the worst finding, or null when nothing was found.
     /// </summary>
     [JsonPropertyName("highestSeverity")]

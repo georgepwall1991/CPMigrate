@@ -37,10 +37,14 @@
             "analyze",
             "migrate",
             "rollback",
+            "update",
             "update-packages",
             "unify-props",
+            "interactive",
             "list-backups",
-            "prune-backups"
+            "prune-backups",
+            "batch-analyze",
+            "batch-migrate"
           ],
           "description": "Which command produced the payload"
         },
@@ -217,6 +221,16 @@
         "issuesBaselined": {
           "type": "integer",
           "description": "Findings a baseline accepted, and therefore excluded from the gate. Absent when no baseline was used."
+        },
+        "disabledRules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Rules switched off by the --rules policy or the config file's rules map. Their findings are absent from analysisIssues entirely, so this is what distinguishes a clean solution from one whose findings were configured away. Absent when no rule was disabled."
+        },
+        "severityOverrides": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/severity" },
+          "description": "Rules whose severity was re-graded before the gate was applied, keyed by rule ID. Without it, a severity in analysisIssues could not be reconciled with the one the rule documentation publishes. Absent when no rule was re-graded."
         },
         "highestSeverity": {
           "$ref": "#/definitions/severity"

@@ -75,6 +75,12 @@ internal sealed class AnalysisHandler
 
         var report = _analysisService.Analyze(packageInfo);
 
+        // Ahead of the baseline, and ahead of --write-baseline: a rule a team has switched off
+        // produces no findings, so none of its findings belong in a file recording accepted debt.
+        var rulePolicy = options.ResolveRulePolicy();
+        report = rulePolicy.Apply(report);
+        ReportRulePolicy(rulePolicy);
+
         if (options.WriteBaseline)
         {
             return await WriteBaselineAsync(
@@ -937,6 +943,21 @@ internal sealed class AnalysisHandler
     }
 
     /// <summary>
+    /// Says which rules were switched off or re-graded. A report shaped by a policy the reader
+    /// cannot see is the same trap as a clean-looking run that skipped half its projects: the
+    /// output is honest only if the policy that produced it is on screen next to it.
+    /// </summary>
+    private void ReportRulePolicy(RulePolicy policy)
+    {
+        if (_quietMode || policy.IsEmpty)
+        {
+            return;
+        }
+
+        _consoleService.Dim($"Rule policy applied: {policy.Describe()}");
+    }
+
+    /// <summary>
     /// Re-scans the tree after fixes have been written, so the gate is evaluated against reality
     /// rather than against the report that prompted the fixes.
     /// </summary>
@@ -958,7 +979,12 @@ internal sealed class AnalysisHandler
             basePath
         );
 
-        return (_analysisService.Analyze(packageInfo), scanFailures, deepScanFailures);
+        // The rescan runs the analyzers afresh, so the policy has to be reapplied here too —
+        // otherwise a rule the team switched off comes back the moment --fix runs, and fails a
+        // build on findings that were excluded from the report that prompted the fixes.
+        var rescanned = options.ResolveRulePolicy().Apply(_analysisService.Analyze(packageInfo));
+
+        return (rescanned, scanFailures, deepScanFailures);
     }
 
     /// <summary>

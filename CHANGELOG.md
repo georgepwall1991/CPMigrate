@@ -6,6 +6,21 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.52.0] - 2026-07-31
+
+### Added
+- **`--rules`: per-rule policy.** Until now the only ways to narrow what fails a build were `--fail-on`, a single global threshold, and a baseline, which accepts the findings that exist *today*. Neither can say "this rule does not apply to us" — silencing one noisy rule meant lowering the gate for every rule, and a baseline lets the next occurrence through the gate anyway. `--rules "OutdatedPackage=none,LicenseRisk=Critical"` turns rules off or re-grades them individually, before the threshold is applied. Settable team-wide as a `rules` map in `.cpmigrate.json`; the CLI flag replaces the configured policy rather than merging with it.
+- **The applied policy is reported, not silent.** A run whose findings were configured away must not be indistinguishable from a clean one. The policy is echoed to the terminal and published in JSON as `summary.disabledRules` and `summary.severityOverrides` (output schema 1.4.0, both additive and absent when no policy applied). Config schema gains `rules`, with the rule IDs and severities enumerated so an editor completes them.
+- Unknown rule IDs and severities are **rejected**, naming the offending value and pointing at `--explain all`. A typo that parsed to "no change" would leave the rule armed while looking exactly like a working policy — the same failure mode as a lookup that reports a failure as "up to date". Validation runs before the scan, so a bad policy costs a second rather than a full analysis.
+
+### Fixed
+- **Errors and warnings go to stderr, so a machine-readable payload is always parseable.** `SpectreConsoleService.Error` wrote to stdout, so any rejection raised before dispatch — `--output Sarif` without `--analyze`, a bad baseline combination, and now a bad rule policy — printed prose in front of the opening brace. That does not merely add noise: it stops the document parsing at all, leaving the consumer unable to read the very error being reported. Pre-existing, and found by cross-review of the new policy path, which is the rejection most likely to be hit in CI since a rule ID is a string someone typed into a workflow file. A caller that supplies its own console still receives errors there.
+- Pre-dispatch rejections now also emit the error payload for the configured format, rather than only plain text — a `--rules` typo under `--output Json` produces a parseable failure with the reason in `errors`, and under `--output Sarif` an unsuccessful invocation. The payload names the command that actually ran, taken from the same ordered dispatch table the router reads, rather than labelling every non-analyze mode `migrate`.
+- Warnings that were previously dropped under a machine-readable format now reach stderr. A `--rules` policy passed without `--analyze` is ignored, and a CI job had no way to learn that: the warning was suppressed to protect stdout and the payload carried nothing in its place.
+
+### Notes
+- A disabled rule is deliberately *not* the same as a baselined one: baselined findings stay visible in every report because the point is to pay the debt down, while a rule a team has switched off is removed from the report entirely. For the same reason `--write-baseline` does not record findings from a disabled rule, and the policy is reapplied to the post-`--fix` rescan — otherwise a disabled rule would come back and fail a build the moment an unrelated fix ran.
+
 ## [3.51.0] - 2026-07-31
 
 ### Changed

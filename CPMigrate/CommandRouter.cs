@@ -96,6 +96,17 @@ internal static class CommandRouter
         catch (ArgumentException ex)
         {
             consoleService.Error(ex.Message);
+
+            // The whole point of a machine-readable format is that a CI step parses stdout. A
+            // rejection reported only as prose is a parse failure rather than a reported one, so
+            // the consumer learns the run broke but not why — and this is the rejection most likely
+            // to be hit in CI, since a rule ID is a string someone typed into a workflow file.
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                GetOperationName(options),
+                ExitCodes.ValidationError,
+                ex.Message
+            );
             return ExitCodes.ValidationError;
         }
 
@@ -191,13 +202,22 @@ internal static class CommandRouter
         ApplicationServices Services
     );
 
+    /// <summary>Table entry for --batch, whose payload name depends on the pass it is making.</summary>
+    private const string BatchModeName = "batch";
+
     /// <summary>
     /// One dispatchable mode: what selects it, and what it runs.
     /// </summary>
     /// <param name="Matches">Whether the options select this mode.</param>
+    /// <param name="OperationName">
+    /// The name this mode reports in a machine-readable payload. Carried on the mode rather than
+    /// derived separately so precedence and labelling cannot disagree: a failure payload that names
+    /// a command the dispatch table did not choose tells a consumer the wrong thing failed.
+    /// </param>
     /// <param name="RunAsync">The handler.</param>
     private sealed record CommandMode(
         Func<Options, bool> Matches,
+        string OperationName,
         Func<CommandContext, Task<int>> RunAsync
     );
 
@@ -211,13 +231,15 @@ internal static class CommandRouter
     /// </summary>
     private static readonly IReadOnlyList<CommandMode> AlternateModes =
     [
-        new(o => o.Update, c => RunUpdateModeAsync(c.ExecutionConsole, c.Services)),
+        new(o => o.Update, "update", c => RunUpdateModeAsync(c.ExecutionConsole, c.Services)),
         new(
             o => o.UpdatePackages,
+            "update-packages",
             c => RunUpdatePackagesModeAsync(c.Options, c.ExecutionConsole, c.Services)
         ),
         new(
             o => o.Interactive,
+            "interactive",
             c =>
                 RunInteractiveModeAsync(
                     c.Console,
@@ -229,10 +251,12 @@ internal static class CommandRouter
         ),
         new(
             o => o.PruneBackups || o.PruneAll,
+            "prune-backups",
             c => RunPruneModeAsync(c.Options, c.ExecutionConsole, c.Backups)
         ),
         new(
             o => !string.IsNullOrEmpty(o.BatchDir),
+            BatchModeName,
             c =>
                 RunBatchModeAsync(
                     c.Options,
@@ -242,7 +266,11 @@ internal static class CommandRouter
                     c.Services
                 )
         ),
-        new(o => o.UnifyProps, c => RunUnifyPropsModeAsync(c.Options, c.ExecutionConsole, c.Services)),
+        new(
+            o => o.UnifyProps,
+            "unify-props",
+            c => RunUnifyPropsModeAsync(c.Options, c.ExecutionConsole, c.Services)
+        ),
     ];
 
     /// <summary>
@@ -904,7 +932,8 @@ internal static class CommandRouter
                 consoleService.WriteStructuredError(
                     "File operation failed",
                     ex.Message,
-                    "Check file permissions and ensure no files are locked by another process.");
+                    "Check file permissions and ensure no files are locked by another process."
+                );
             }
             return ExitCodes.FileOperationError;
         }
@@ -922,7 +951,8 @@ internal static class CommandRouter
                 consoleService.WriteStructuredError(
                     "Permission denied",
                     ex.Message,
-                    "Run with elevated permissions or check file/folder access rights.");
+                    "Run with elevated permissions or check file/folder access rights."
+                );
             }
             return ExitCodes.FileOperationError;
         }
@@ -946,7 +976,8 @@ internal static class CommandRouter
                 consoleService.WriteStructuredError(
                     "Unexpected error",
                     ex.Message,
-                    "Report this at https://github.com/georgepwall1991/CPMigrate/issues");
+                    "Report this at https://github.com/georgepwall1991/CPMigrate/issues"
+                );
             }
             return ExitCodes.UnexpectedError;
         }
@@ -1034,19 +1065,26 @@ internal static class CommandRouter
             ?? result.AnalysisReport
             ?? new AnalysisReport(0, 0, Array.Empty<AnalyzerResult>());
 
-        var rows = report.Results
-            .SelectMany(r => r.Issues.Select(issue =>
-                string.Join(",",
-                    CsvField(r.AnalyzerName),
-                    CsvField(issue.Severity.ToString()),
-                    CsvField(issue.PackageName),
-                    CsvField(issue.Description),
-                    CsvField(string.Join("; ", issue.AffectedProjects)),
-                    issue.Fixable ? "true" : "false")))
+        var rows = report
+            .Results.SelectMany(r =>
+                r.Issues.Select(issue =>
+                    string.Join(
+                        ",",
+                        CsvField(r.AnalyzerName),
+                        CsvField(issue.Severity.ToString()),
+                        CsvField(issue.PackageName),
+                        CsvField(issue.Description),
+                        CsvField(string.Join("; ", issue.AffectedProjects)),
+                        issue.Fixable ? "true" : "false"
+                    )
+                )
+            )
             .ToList();
 
-        var csv = "Rule,Severity,Package,Description,AffectedProjects,Fixable\n"
-            + string.Join("\n", rows) + "\n";
+        var csv =
+            "Rule,Severity,Package,Description,AffectedProjects,Fixable\n"
+            + string.Join("\n", rows)
+            + "\n";
 
         await JsonOutputWriter.EmitAsync(csv, options, consoleService);
     }
@@ -1087,6 +1125,17 @@ internal static class CommandRouter
         return SarifRunOutcome.Successful;
     }
 
+    /// <summary>
+    /// The rule policy that actually shaped a payload — empty when no analysis ran. A migration
+    /// under <c>--output Json</c> never applies the policy, so publishing it there would claim rules
+    /// were switched off in a report they did not touch: the same lie as omitting it from a report
+    /// they did, pointed the other way.
+    /// </summary>
+    private static RulePolicy PolicyThatShapedTheReport(Options options, AnalysisReport? report)
+    {
+        return report is null ? RulePolicy.Empty : options.ResolveRulePolicy();
+    }
+
     private static async Task WriteJsonOutputForMigration(
         Options options,
         MigrationResult result,
@@ -1118,6 +1167,7 @@ internal static class CommandRouter
 
         var formatter = new JsonFormatter();
         var operation = GetOperationName(options);
+        var rulePolicy = PolicyThatShapedTheReport(options, result.AnalysisReport);
 
         var analysisIssues =
             result.AnalysisReport == null
@@ -1176,6 +1226,8 @@ internal static class CommandRouter
                 IssuesBaselined = options.UsesBaseline()
                     ? result.AnalysisReport?.SuppressedCount
                     : null,
+                DisabledRules = rulePolicy.ReportedDisabledRules(),
+                SeverityOverrides = rulePolicy.ReportedSeverityOverrides(),
                 HighestSeverity = result.AnalysisReport?.HighestSeverity?.ToString(),
                 ScanFailures = result.AnalysisReport is null ? null : result.ScanFailures,
                 DeepScanFailures = result.AnalysisReport is null ? null : result.DeepScanFailures,
@@ -1259,8 +1311,7 @@ internal static class CommandRouter
     {
         if (options.Output == OutputFormat.Markdown)
         {
-            var report =
-                $"## ❌ CPMigrate — {operation} failed\n\n{errorMessage}\n";
+            var report = $"## ❌ CPMigrate — {operation} failed\n\n{errorMessage}\n";
             await JsonOutputWriter.EmitFailureAsync(report, options);
             return;
         }
@@ -1295,19 +1346,73 @@ internal static class CommandRouter
         await JsonOutputWriter.EmitFailureAsync(output, options);
     }
 
-    private static string GetOperationName(Options options)
+    /// <summary>
+    /// Whether this run will actually analyse anything.
+    ///
+    /// <para>
+    /// <c>--analyze</c> alone does not answer that: the alternate-mode table is consulted first, so
+    /// <c>--update --analyze</c> performs the update and never analyses. Batch is the exception —
+    /// it is an alternate mode that runs the analysis per solution. Below the table,
+    /// <c>--rollback</c> and <c>--list-backups</c> preempt analysis inside
+    /// <see cref="Services.MigrationService"/>. Anything that keys off "will findings be produced"
+    /// has to ask this rather than read the flag.
+    /// </para>
+    /// </summary>
+    internal static bool PerformsAnalysis(Options options)
     {
-        if (options.Analyze)
+        if (!options.Analyze)
         {
-            return "analyze";
+            return false;
         }
 
+        var selected = AlternateModes.FirstOrDefault(mode => mode.Matches(options));
+        if (selected is not null)
+        {
+            return selected.OperationName == BatchModeName;
+        }
+
+        return !options.Rollback && !options.ListBackups;
+    }
+
+    /// <summary>
+    /// Names the command a payload describes.
+    ///
+    /// <para>
+    /// The alternate-mode table is consulted first, and in its own order, because that is what
+    /// decides dispatch: <c>--update --analyze</c> runs the update, so calling the payload "analyze"
+    /// would name a command that never ran. Reading the same table the router reads is what keeps
+    /// precedence and labelling from drifting apart.
+    /// </para>
+    /// </summary>
+    private static string GetOperationName(Options options)
+    {
+        var selected = AlternateModes.FirstOrDefault(mode => mode.Matches(options));
+        if (selected is not null)
+        {
+            if (selected.OperationName != BatchModeName)
+            {
+                return selected.OperationName;
+            }
+
+            // Batch reports which pass it is making, matching the payload BatchService builds when
+            // the run gets far enough to produce one.
+            return options.Analyze ? "batch-analyze" : "batch-migrate";
+        }
+
+        // Below the table, the order is MigrationService's: rollback, then list-backups, then
+        // analyze. Reading it in a different order here would name the wrong one for a run that
+        // asked for two.
         if (options.Rollback)
         {
             return "rollback";
         }
 
-        return "migrate";
+        if (options.ListBackups)
+        {
+            return "list-backups";
+        }
+
+        return options.Analyze ? "analyze" : "migrate";
     }
 
     private static ApplicationServices CreateApplicationServices(

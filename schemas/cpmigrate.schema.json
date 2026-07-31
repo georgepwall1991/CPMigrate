@@ -57,6 +57,28 @@
       "default": "Info",
       "description": "Lowest finding severity that fails the build during --analyze. Info fails on any finding; Never reports without gating. Does not suppress exit 8 for an incomplete scan."
     },
+    "rules": {
+      "type": "object",
+      "description": "Per-rule policy applied before --fail-on. Each key is a rule ID as published in JSON issueCode and SARIF ruleId (run 'cpmigrate --explain all' to list them); each value is either a severity or 'none' to switch the rule off. A disabled rule reports nothing at all, unlike a baseline, which keeps accepted findings visible. Rule IDs and severities are matched case-insensitively; the spellings listed here are the canonical ones. Names are listed as properties rather than constrained with propertyNames so an editor offers them without a differently-cased but perfectly valid policy failing schema validation — an unknown rule ID is rejected by the tool itself, with a message naming it.",
+      "properties": {
+        "Unknown": { "$ref": "#/definitions/rulePolicyValue" },
+        "VersionInconsistency": { "$ref": "#/definitions/rulePolicyValue" },
+        "DuplicatePackageCasing": { "$ref": "#/definitions/rulePolicyValue" },
+        "RedundantReference": { "$ref": "#/definitions/rulePolicyValue" },
+        "TransitiveConflict": { "$ref": "#/definitions/rulePolicyValue" },
+        "SecurityVulnerability": { "$ref": "#/definitions/rulePolicyValue" },
+        "RedundantDirectReference": { "$ref": "#/definitions/rulePolicyValue" },
+        "FrameworkAlignment": { "$ref": "#/definitions/rulePolicyValue" },
+        "OutdatedPackage": { "$ref": "#/definitions/rulePolicyValue" },
+        "DeprecatedPackage": { "$ref": "#/definitions/rulePolicyValue" },
+        "CpmNotEnabled": { "$ref": "#/definitions/rulePolicyValue" },
+        "InlineVersionUnderCpm": { "$ref": "#/definitions/rulePolicyValue" },
+        "MissingPackageVersion": { "$ref": "#/definitions/rulePolicyValue" },
+        "OrphanedPackageVersion": { "$ref": "#/definitions/rulePolicyValue" },
+        "LicenseRisk": { "$ref": "#/definitions/rulePolicyValue" }
+      },
+      "additionalProperties": { "$ref": "#/definitions/rulePolicyValue" }
+    },
     "retention": {
       "type": "object",
       "description": "Backup retention settings",
@@ -82,6 +104,20 @@
       },
       "default": ["node_modules", "bin", "obj", ".git", "packages"],
       "description": "Directories to exclude when scanning for solutions in batch mode"
+    }
+  },
+  "definitions": {
+    "rulePolicyValue": {
+      "type": "string",
+      "description": "A severity to re-grade the rule to, or 'none' to switch the rule off. The tool trims surrounding whitespace and matches case-insensitively, so the pattern below accepts any casing while the enum branch is what an editor offers for completion. Listing only canonical spellings would reject a config the tool runs perfectly well.",
+      "anyOf": [
+        {
+          "enum": ["Info", "Low", "Moderate", "High", "Critical", "none"]
+        },
+        {
+          "pattern": "^\\s*([Ii][Nn][Ff][Oo]|[Ll][Oo][Ww]|[Mm][Oo][Dd][Ee][Rr][Aa][Tt][Ee]|[Hh][Ii][Gg][Hh]|[Cc][Rr][Ii][Tt][Ii][Cc][Aa][Ll]|[Nn][Oo][Nn][Ee])\\s*$"
+        }
+      ]
     }
   },
   "additionalProperties": false

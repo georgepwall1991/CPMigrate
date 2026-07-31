@@ -12,7 +12,9 @@ public class BatchService
     private readonly IConsoleService _consoleService;
     private readonly Func<Options, Task<MigrationResult>> _migrationExecutor;
 
-    private static readonly HashSet<string> _defaultExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> _defaultExcludedDirectories = new(
+        StringComparer.OrdinalIgnoreCase
+    )
     {
         "node_modules",
         "bin",
@@ -23,7 +25,7 @@ public class BatchService
         ".idea",
         "TestResults",
         "artifacts",
-        ".nuget"
+        ".nuget",
     };
 
     /// <summary>
@@ -36,7 +38,10 @@ public class BatchService
     /// </summary>
     /// <param name="consoleService">Console service for output.</param>
     /// <param name="migrationExecutor">Function to execute migration for a single solution.</param>
-    public BatchService(IConsoleService consoleService, Func<Options, Task<MigrationResult>> migrationExecutor)
+    public BatchService(
+        IConsoleService consoleService,
+        Func<Options, Task<MigrationResult>> migrationExecutor
+    )
     {
         _consoleService = consoleService;
         _migrationExecutor = migrationExecutor;
@@ -48,9 +53,14 @@ public class BatchService
     /// <param name="rootPath">Root directory to search.</param>
     /// <param name="excludedDirectories">Directories to exclude from search.</param>
     /// <returns>List of solution file paths.</returns>
-    public List<string> DiscoverSolutions(string rootPath, HashSet<string>? excludedDirectories = null)
+    public List<string> DiscoverSolutions(
+        string rootPath,
+        HashSet<string>? excludedDirectories = null
+    )
     {
-        var excluded = excludedDirectories ?? new HashSet<string>(DefaultExcludedDirectories, StringComparer.OrdinalIgnoreCase);
+        var excluded =
+            excludedDirectories
+            ?? new HashSet<string>(DefaultExcludedDirectories, StringComparer.OrdinalIgnoreCase);
         var solutions = new List<string>();
 
         if (!Directory.Exists(rootPath))
@@ -70,7 +80,12 @@ public class BatchService
         return solutions.OrderBy(s => s).ToList();
     }
 
-    private void DiscoverSolutionsRecursive(string directory, List<string> solutions, HashSet<string> excluded, HashSet<string>? visitedPaths = null)
+    private void DiscoverSolutionsRecursive(
+        string directory,
+        List<string> solutions,
+        HashSet<string> excluded,
+        HashSet<string>? visitedPaths = null
+    )
     {
         // Track visited directories to avoid infinite loops from symlinks
         visitedPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -128,7 +143,7 @@ public class BatchService
         var result = new BatchResult
         {
             Operation = options.Analyze ? "batch-analyze" : "batch-migrate",
-            DryRun = options.DryRun
+            DryRun = options.DryRun,
         };
 
         // Discover solutions
@@ -172,7 +187,10 @@ public class BatchService
         return result;
     }
 
-    private async Task<List<SolutionResult>> RunSequentialAsync(Options options, List<string> solutions)
+    private async Task<List<SolutionResult>> RunSequentialAsync(
+        Options options,
+        List<string> solutions
+    )
     {
         var results = new List<SolutionResult>();
         var batchDir = options.BatchDir!;
@@ -184,7 +202,9 @@ public class BatchService
             var solutionName = Path.GetFileNameWithoutExtension(sln);
             var solutionDir = Path.GetDirectoryName(sln) ?? ".";
 
-            _consoleService.WriteMarkup($"\n[cyan]▓▓▓ [[{i + 1}/{solutions.Count}]] {Markup.Escape(relativePath)} ▓▓▓[/]\n");
+            _consoleService.WriteMarkup(
+                $"\n[cyan]▓▓▓ [[{i + 1}/{solutions.Count}]] {Markup.Escape(relativePath)} ▓▓▓[/]\n"
+            );
 
             try
             {
@@ -193,32 +213,38 @@ public class BatchService
 
                 var migrationResult = await _migrationExecutor(solutionOptions);
 
-                results.Add(new SolutionResult
-                {
-                    Path = sln,
-                    Name = solutionName,
-                    Success = migrationResult.ExitCode == ExitCodes.Success,
-                    ExitCode = migrationResult.ExitCode,
-                    Summary = BuildSolutionSummary(migrationResult, solutionOptions),
-                    PropsFile = migrationResult.PropsFilePath
-                });
+                results.Add(
+                    new SolutionResult
+                    {
+                        Path = sln,
+                        Name = solutionName,
+                        Success = migrationResult.ExitCode == ExitCodes.Success,
+                        ExitCode = migrationResult.ExitCode,
+                        Summary = BuildSolutionSummary(migrationResult, solutionOptions),
+                        PropsFile = migrationResult.PropsFilePath,
+                    }
+                );
             }
             catch (Exception ex)
             {
                 _consoleService.Error($"Failed to process {relativePath}: {ex.Message}");
 
-                results.Add(new SolutionResult
-                {
-                    Path = sln,
-                    Name = solutionName,
-                    Success = false,
-                    ExitCode = ExitCodes.UnexpectedError,
-                    Error = ex.Message
-                });
+                results.Add(
+                    new SolutionResult
+                    {
+                        Path = sln,
+                        Name = solutionName,
+                        Success = false,
+                        ExitCode = ExitCodes.UnexpectedError,
+                        Error = ex.Message,
+                    }
+                );
 
                 if (!options.BatchContinue)
                 {
-                    _consoleService.Warning("Stopping batch (use --batch-continue to continue on failure)");
+                    _consoleService.Warning(
+                        "Stopping batch (use --batch-continue to continue on failure)"
+                    );
                     break;
                 }
             }
@@ -227,7 +253,10 @@ public class BatchService
         return results;
     }
 
-    private async Task<List<SolutionResult>> RunParallelAsync(Options options, List<string> solutions)
+    private async Task<List<SolutionResult>> RunParallelAsync(
+        Options options,
+        List<string> solutions
+    )
     {
         var results = new ConcurrentBag<SolutionResult>();
         using var cts = new CancellationTokenSource();
@@ -236,56 +265,66 @@ public class BatchService
         var parallelOptions = new ParallelOptions
         {
             CancellationToken = cts.Token,
-            MaxDegreeOfParallelism = Environment.ProcessorCount
+            MaxDegreeOfParallelism = Environment.ProcessorCount,
         };
 
         try
         {
-            await Parallel.ForEachAsync(solutions, parallelOptions, async (sln, ct) =>
-            {
-                if (ct.IsCancellationRequested)
+            await Parallel.ForEachAsync(
+                solutions,
+                parallelOptions,
+                async (sln, ct) =>
                 {
-                    return;
-                }
-
-                var solutionName = Path.GetFileNameWithoutExtension(sln);
-                var solutionDir = Path.GetDirectoryName(sln) ?? ".";
-
-                try
-                {
-                    var solutionOptions = CloneOptionsForSolution(options, solutionDir, solutionName);
-                    var migrationResult = await _migrationExecutor(solutionOptions);
-
-                    results.Add(
-                        CreateSolutionResult(
-                            sln,
-                            solutionName,
-                            migrationResult,
-                            solutionOptions
-                        )
-                    );
-
-                    if (migrationResult.ExitCode != ExitCodes.Success && !options.BatchContinue)
+                    if (ct.IsCancellationRequested)
                     {
-                        SignalFailureAndCancel(cts, ref hasFailure);
+                        return;
+                    }
+
+                    var solutionName = Path.GetFileNameWithoutExtension(sln);
+                    var solutionDir = Path.GetDirectoryName(sln) ?? ".";
+
+                    try
+                    {
+                        var solutionOptions = CloneOptionsForSolution(
+                            options,
+                            solutionDir,
+                            solutionName
+                        );
+                        var migrationResult = await _migrationExecutor(solutionOptions);
+
+                        results.Add(
+                            CreateSolutionResult(
+                                sln,
+                                solutionName,
+                                migrationResult,
+                                solutionOptions
+                            )
+                        );
+
+                        if (migrationResult.ExitCode != ExitCodes.Success && !options.BatchContinue)
+                        {
+                            SignalFailureAndCancel(cts, ref hasFailure);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        results.Add(CreateFailedResult(sln, solutionName, ex));
+
+                        if (!options.BatchContinue)
+                        {
+                            SignalFailureAndCancel(cts, ref hasFailure);
+                        }
                     }
                 }
-                catch (Exception ex)
-                {
-                    results.Add(CreateFailedResult(sln, solutionName, ex));
-
-                    if (!options.BatchContinue)
-                    {
-                        SignalFailureAndCancel(cts, ref hasFailure);
-                    }
-                }
-            });
+            );
         }
         catch (OperationCanceledException)
         {
             if (Interlocked.CompareExchange(ref hasFailure, 0, 0) == 1 && !options.BatchContinue)
             {
-                _consoleService.Warning("Stopping batch (use --batch-continue to continue on failure)");
+                _consoleService.Warning(
+                    "Stopping batch (use --batch-continue to continue on failure)"
+                );
             }
         }
 
@@ -306,7 +345,7 @@ public class BatchService
             Success = migrationResult.ExitCode == ExitCodes.Success,
             ExitCode = migrationResult.ExitCode,
             Summary = BuildSolutionSummary(migrationResult, solutionOptions),
-            PropsFile = migrationResult.PropsFilePath
+            PropsFile = migrationResult.PropsFilePath,
         };
     }
 
@@ -322,8 +361,15 @@ public class BatchService
     {
         var report = migrationResult.AnalysisReport;
 
+        // Per-solution runs are quiet, so the terminal notice never reaches a batch consumer. Without
+        // the policy in the payload, findings a batch run configured away would be indistinguishable
+        // from a solution that had none.
+        var rulePolicy = report is null ? RulePolicy.Empty : solutionOptions.ResolveRulePolicy();
+
         return new OperationSummary
         {
+            DisabledRules = rulePolicy.ReportedDisabledRules(),
+            SeverityOverrides = rulePolicy.ReportedSeverityOverrides(),
             ProjectsProcessed = migrationResult.ProjectsProcessed,
             PackagesFound = migrationResult.PackagesCentralized,
             ConflictsResolved = migrationResult.ConflictsResolved,
@@ -345,7 +391,7 @@ public class BatchService
             Name = solutionName,
             Success = false,
             ExitCode = ExitCodes.UnexpectedError,
-            Error = ex.Message
+            Error = ex.Message,
         };
     }
 
@@ -378,11 +424,15 @@ public class BatchService
 
         if (result.Success)
         {
-            _consoleService.Success($"BATCH COMPLETE: {totals.Succeeded}/{totals.Solutions} solutions processed successfully");
+            _consoleService.Success(
+                $"BATCH COMPLETE: {totals.Succeeded}/{totals.Solutions} solutions processed successfully"
+            );
         }
         else
         {
-            _consoleService.Warning($"BATCH COMPLETE: {totals.Succeeded}/{totals.Solutions} succeeded, {totals.Failed} failed");
+            _consoleService.Warning(
+                $"BATCH COMPLETE: {totals.Succeeded}/{totals.Solutions} succeeded, {totals.Failed} failed"
+            );
         }
 
         _consoleService.WriteLine();

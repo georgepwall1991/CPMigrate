@@ -31,8 +31,15 @@ public static class OutputMetadata
     /// identical on every machine.
     /// </para>
     /// This is the only field whose meaning has changed in any revision.
+    /// <para>
+    /// 1.4.0 additively introduced the rule-policy fields: <c>summary.disabledRules</c> and
+    /// <c>summary.severityOverrides</c>. Both are absent when no policy applied. Without them a
+    /// payload shaped by <c>--rules</c> is indistinguishable from one produced by a clean solution,
+    /// and a severity in <c>analysisIssues</c> cannot be reconciled with the one the rule
+    /// documentation publishes.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.3.0";
+    public const string SchemaVersion = "1.4.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

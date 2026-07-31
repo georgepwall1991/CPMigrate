@@ -38,7 +38,9 @@ public class ConfigService
         return config;
     }
 
-    public (ConfigModel? Config, string? ConfigPath, string? ErrorMessage) LoadConfigDetailed(string startDirectory)
+    public (ConfigModel? Config, string? ConfigPath, string? ErrorMessage) LoadConfigDetailed(
+        string startDirectory
+    )
     {
         var configPath = DiscoverConfig(startDirectory);
         if (configPath == null)
@@ -137,7 +139,11 @@ public class ConfigService
 
             if (config is null)
             {
-                return (null, configPath, $"Config file {configPath} deserialized to null — check the JSON structure.");
+                return (
+                    null,
+                    configPath,
+                    $"Config file {configPath} deserialized to null — check the JSON structure."
+                );
             }
 
             var validationWarning = ValidateConfig(config);
@@ -167,17 +173,19 @@ public class ConfigService
 
         if (config.Backup == false && config.AddGitignore == true)
         {
-            warnings.Add("addGitignore is true but backup is false — no backup directory will be created to ignore.");
+            warnings.Add(
+                "addGitignore is true but backup is false — no backup directory will be created to ignore."
+            );
         }
 
         if (!string.IsNullOrWhiteSpace(config.Baseline) && config.FailOn == FailOnSeverity.Never)
         {
-            warnings.Add("baseline is set but failOn is Never — the baseline will never gate anything.");
+            warnings.Add(
+                "baseline is set but failOn is Never — the baseline will never gate anything."
+            );
         }
 
-        return warnings.Count > 0
-            ? string.Join(" ", warnings)
-            : null;
+        return warnings.Count > 0 ? string.Join(" ", warnings) : null;
     }
 
     /// <summary>
@@ -187,7 +195,11 @@ public class ConfigService
     /// <param name="options">The CLI options to merge into.</param>
     /// <param name="config">The config file settings.</param>
     /// <param name="cliArgsProvided">Set of CLI argument names that were explicitly provided.</param>
-    public static void MergeConfig(Options options, ConfigModel config, HashSet<string>? cliArgsProvided = null)
+    public static void MergeConfig(
+        Options options,
+        ConfigModel config,
+        HashSet<string>? cliArgsProvided = null
+    )
     {
         cliArgsProvided ??= new HashSet<string>();
 
@@ -199,44 +211,63 @@ public class ConfigService
 
     private static readonly List<ConfigMergeRule> MergeRules = new()
     {
-        new(c => c.ConflictStrategy.HasValue, "conflict-strategy",
-            (o, c) => o.ConflictStrategy = c.ConflictStrategy.GetValueOrDefault()),
-
-        new(c => c.Backup.HasValue, "no-backup",
-            (o, c) => o.NoBackup = !c.Backup.GetValueOrDefault()),
-
-        new(c => !string.IsNullOrEmpty(c.BackupDir), "backup-dir",
-            (o, c) => o.BackupDir = c.BackupDir ?? string.Empty),
-
-        new(c => c.AddGitignore.HasValue, "add-gitignore",
-            (o, c) => o.AddBackupToGitignore = c.AddGitignore.GetValueOrDefault()),
-
-        new(c => c.KeepVersionAttributes.HasValue, "keep-attrs",
-            (o, c) => o.KeepAttributes = c.KeepVersionAttributes.GetValueOrDefault()),
-
-        new(c => c.MergeExisting.HasValue, "merge",
-            (o, c) => o.MergeExisting = c.MergeExisting.GetValueOrDefault()),
-
         new(
-            c => !string.IsNullOrEmpty(c.Baseline),
-            "baseline",
-            (o, c) => o.Baseline = c.Baseline
+            c => c.ConflictStrategy.HasValue,
+            "conflict-strategy",
+            (o, c) => o.ConflictStrategy = c.ConflictStrategy.GetValueOrDefault()
         ),
-
-        new(c => c.FailOn.HasValue, "fail-on",
-            (o, c) => o.FailOn = c.FailOn.GetValueOrDefault()),
-
-        new(c => c.OutputFormat.HasValue, "output",
-            (o, c) => o.Output = c.OutputFormat.GetValueOrDefault()),
-
-        new(c => c.Retention is { Enabled: true }, "retention",
-            (o, c) => o.Retention = c.Retention?.MaxBackups ?? 0)
+        new(
+            c => c.Backup.HasValue,
+            "no-backup",
+            (o, c) => o.NoBackup = !c.Backup.GetValueOrDefault()
+        ),
+        new(
+            c => !string.IsNullOrEmpty(c.BackupDir),
+            "backup-dir",
+            (o, c) => o.BackupDir = c.BackupDir ?? string.Empty
+        ),
+        new(
+            c => c.AddGitignore.HasValue,
+            "add-gitignore",
+            (o, c) => o.AddBackupToGitignore = c.AddGitignore.GetValueOrDefault()
+        ),
+        new(
+            c => c.KeepVersionAttributes.HasValue,
+            "keep-attrs",
+            (o, c) => o.KeepAttributes = c.KeepVersionAttributes.GetValueOrDefault()
+        ),
+        new(
+            c => c.MergeExisting.HasValue,
+            "merge",
+            (o, c) => o.MergeExisting = c.MergeExisting.GetValueOrDefault()
+        ),
+        new(c => !string.IsNullOrEmpty(c.Baseline), "baseline", (o, c) => o.Baseline = c.Baseline),
+        new(c => c.FailOn.HasValue, "fail-on", (o, c) => o.FailOn = c.FailOn.GetValueOrDefault()),
+        // Flattened to the same Rule=Value spec the CLI takes, so the config file and the flag
+        // cannot drift into two parsers that disagree about what a policy means.
+        new(
+            c => c.Rules is { Count: > 0 },
+            "rules",
+            (o, c) =>
+                o.Rules = string.Join(",", c.Rules!.Select(entry => $"{entry.Key}={entry.Value}"))
+        ),
+        new(
+            c => c.OutputFormat.HasValue,
+            "output",
+            (o, c) => o.Output = c.OutputFormat.GetValueOrDefault()
+        ),
+        new(
+            c => c.Retention is { Enabled: true },
+            "retention",
+            (o, c) => o.Retention = c.Retention?.MaxBackups ?? 0
+        ),
     };
 
     private sealed record ConfigMergeRule(
         Func<ConfigModel, bool> HasValue,
         string CliArg,
-        Action<Options, ConfigModel> Apply)
+        Action<Options, ConfigModel> Apply
+    )
     {
         public void TryApply(Options options, ConfigModel config, HashSet<string> cliArgsProvided)
         {
@@ -255,7 +286,8 @@ public class ConfigService
     {
         var sampleConfig = new ConfigModel
         {
-            Schema = "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate.schema.json",
+            Schema =
+                "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate.schema.json",
             ConflictStrategy = CPMigrate.ConflictStrategy.Highest,
             Backup = true,
             BackupDir = ".cpmigrate_backup",
@@ -263,19 +295,15 @@ public class ConfigService
             KeepVersionAttributes = false,
             MergeExisting = false,
             OutputFormat = OutputFormat.Terminal,
-            Retention = new RetentionConfig
-            {
-                Enabled = true,
-                MaxBackups = 5
-            },
+            Retention = new RetentionConfig { Enabled = true, MaxBackups = 5 },
             ExcludeDirectories = new List<string>
             {
                 "node_modules",
                 "bin",
                 "obj",
                 ".git",
-                "packages"
-            }
+                "packages",
+            },
         };
 
         var json = JsonSerializer.Serialize(sampleConfig, _writeOptions);

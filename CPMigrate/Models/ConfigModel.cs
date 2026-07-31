@@ -81,6 +81,14 @@ public class ConfigModel
     /// </summary>
     [JsonPropertyName("excludeDirectories")]
     public List<string>? ExcludeDirectories { get; set; }
+
+    /// <summary>
+    /// Per-rule policy: rule ID to either a severity or <c>none</c> to switch the rule off. Belongs
+    /// in the config file because which rules a codebase cares about is a team decision that should
+    /// hold for every run, not something each caller re-states.
+    /// </summary>
+    [JsonPropertyName("rules")]
+    public Dictionary<string, string>? Rules { get; set; }
 }
 
 /// <summary>
