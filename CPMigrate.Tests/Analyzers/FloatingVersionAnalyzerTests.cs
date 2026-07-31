@@ -118,11 +118,106 @@ public class FloatingVersionAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_CentralPinInChildElementForm_IsReported()
+    {
+        // MSBuild accepts metadata as a child element, and this repository's own props file uses
+        // that form. A rule with its own simpler parser reads no version here and reports the
+        // solution clean — which is indistinguishable from a solution with nothing wrong.
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Serilog">
+                  <Version>4.*</Version>
+                </PackageVersion>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        Analyze().Issues.Should().ContainSingle().Which.PackageName.Should().Be("Serilog");
+    }
+
+    [Fact]
+    public void Analyze_CentralPinUsingTheUpdateForm_IsReported()
+    {
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Update="Serilog" Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        Analyze().Issues.Should().ContainSingle().Which.PackageName.Should().Be("Serilog");
+    }
+
+    [Fact]
+    public void Analyze_CentralPinInAnImportedPropsFile_IsReported()
+    {
+        File.WriteAllText(
+            Path.Combine(_testDirectory, "Versions.props"),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="Versions.props" />
+            </Project>
+            """
+        );
+
+        Analyze().Issues.Should().ContainSingle().Which.PackageName.Should().Be("Serilog");
+    }
+
+    [Fact]
+    public void Analyze_CentralPinWithCentralManagementSwitchedOff_IsNotReported()
+    {
+        // NuGet ignores every PackageVersion in a props file that does not enable central
+        // management, so reporting one would be a finding about a value nothing consults — and it
+        // would fail the default gate for a project pinning exactly, inline.
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        Analyze().Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Analyze_GlobalPackageReference_IsReported()
     {
         WriteProps(
             """
             <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
               <ItemGroup>
                 <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="[8.0.0,)" />
               </ItemGroup>

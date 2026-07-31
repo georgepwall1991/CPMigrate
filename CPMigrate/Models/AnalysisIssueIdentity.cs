@@ -60,7 +60,48 @@ public static class AnalysisIssueIdentity
             string.Join(',', projects)
         );
 
+        // Appended only when there is one. Joining an empty discriminator would leave a trailing
+        // separator, which changes the hash of *every* finding — committed baselines would stop
+        // matching and accepted debt would start failing builds, without the scheme version
+        // changing to say why. Caught by the test that pins an untouched fingerprint by value.
+        var discriminator = Discriminator(issue);
+        if (discriminator.Length > 0)
+        {
+            seed = string.Join('\u001F', seed, discriminator);
+        }
+
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexStringLower(hash.AsSpan(0, 16));
+    }
+
+    /// <summary>
+    /// An extra identifying part for rules where the package and the projects are not the whole
+    /// finding.
+    ///
+    /// <para>
+    /// <c>FloatingVersion</c> reports one finding per version specification, and a central pin names
+    /// no project at all — so two different specifications for one package would otherwise share a
+    /// fingerprint. <c>--write-baseline</c> would record one of them and the baseline would then
+    /// suppress both, which is the quiet half of the accepted-debt failure: a finding nobody
+    /// accepted, silently gone.
+    /// </para>
+    ///
+    /// <para>
+    /// Empty for every rule that does not publish a specification, so fingerprints computed before
+    /// this existed are unchanged and committed baselines keep matching. That is why this is not a
+    /// scheme bump: nothing that had an identity has a different one now.
+    /// </para>
+    /// </summary>
+    private static string Discriminator(AnalysisIssue issue)
+    {
+        if (
+            issue.Metadata is not null
+            && issue.Metadata.TryGetValue("versionSpecification", out var specification)
+        )
+        {
+            return specification.Trim().ToLowerInvariant();
+        }
+
+        return string.Empty;
     }
 }

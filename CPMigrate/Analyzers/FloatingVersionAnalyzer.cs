@@ -1,5 +1,3 @@
-using System.Xml;
-using System.Xml.Linq;
 using CPMigrate.Models;
 
 namespace CPMigrate.Analyzers;
@@ -146,46 +144,29 @@ public class FloatingVersionAnalyzer : IAnalyzer
     }
 
     /// <summary>
-    /// Central pins, read from the props file rather than from the scan. Projects under central
-    /// package management carry no version of their own, so this is the only place the
-    /// specification exists.
+    /// Central pins, read through <see cref="CpmDriftAnalyzer.ReadEffectiveCentralVersions"/> rather
+    /// than a second parser of this file's own.
+    ///
+    /// <para>
+    /// A rule with its own reader silently misses whichever declaration forms it did not think of —
+    /// an imported props file, the <c>Update</c> form, child-element <c>&lt;Version&gt;</c> metadata
+    /// (which this repository's own props file uses) — and reports the solution clean, which looks
+    /// exactly like a solution with nothing wrong. Sharing the parser also means an inert
+    /// <c>PackageVersion</c>, in a props file with central management switched off, is not reported
+    /// as a floating version NuGet would never consult.
+    /// </para>
     /// </summary>
     private static IEnumerable<Declaration> ReadCentralPins(string? basePath)
     {
-        if (string.IsNullOrWhiteSpace(basePath))
-        {
-            return [];
-        }
-
-        var propsPath = Path.Combine(basePath, CpmDriftAnalyzer.PropsFileName);
-        if (!File.Exists(propsPath))
-        {
-            return [];
-        }
-
-        XDocument props;
-        try
-        {
-            props = XDocument.Load(propsPath);
-        }
-        catch (Exception ex) when (ex is XmlException or IOException or UnauthorizedAccessException)
-        {
-            // An unreadable props file is CpmDriftAnalyzer's finding to report; duplicating it here
-            // would say the same thing twice under a rule that is not about parsing.
-            return [];
-        }
-
-        return props
-            .Descendants()
-            .Where(element =>
-                element.Name.LocalName is "PackageVersion" or "GlobalPackageReference"
-            )
-            .Select(element => new Declaration(
-                (string?)element.Attribute("Include") ?? string.Empty,
-                (string?)element.Attribute("Version") ?? string.Empty,
+        return CpmDriftAnalyzer
+            .ReadEffectiveCentralVersions(basePath)
+            .Select(entry => new Declaration(
+                entry.Key,
+                entry.Value,
+                // The pin lives in the props file, not in any one project, so naming projects here
+                // would point at the wrong file to edit.
                 Project: string.Empty
             ))
-            .Where(declaration => !string.IsNullOrWhiteSpace(declaration.PackageName))
             .ToList();
     }
 }
