@@ -161,32 +161,60 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // the caller knows which one it needs.
                     var isConditional = HasConditionalAncestor(item);
 
-                    // Update rather than Include is how a project amends a reference it inherits —
-                    // attaching a VersionOverride to one, for instance. Reading Include alone left
-                    // those with an empty package name, and a finding that names no package names
-                    // nothing anyone can go and fix.
-                    var packageName = string.IsNullOrWhiteSpace(item.Include)
-                        ? item.Update
-                        : item.Include;
+                    // Update rather than Include is how a project *amends* a reference — attaching a
+                    // VersionOverride to an inherited one, or restating a version. Reading Include
+                    // alone left those with an empty package name, and a finding that names no
+                    // package names nothing anyone can go and fix.
+                    var isUpdate = string.IsNullOrWhiteSpace(item.Include);
+                    var packageName = isUpdate ? item.Update : item.Include;
 
                     if (string.IsNullOrWhiteSpace(packageName))
                     {
                         continue;
                     }
 
-                    references.Add(
-                        new PackageReference(
-                            packageName,
-                            version,
-                            projectFilePath,
-                            projectName,
-                            IsTransitive: false,
-                            IsConditional: isConditional,
-                            VersionOverride: string.IsNullOrWhiteSpace(versionOverride)
-                                ? null
-                                : versionOverride.Trim()
-                        )
+                    var reference = new PackageReference(
+                        packageName,
+                        version,
+                        projectFilePath,
+                        projectName,
+                        IsTransitive: false,
+                        IsConditional: isConditional,
+                        VersionOverride: string.IsNullOrWhiteSpace(versionOverride)
+                            ? null
+                            : versionOverride.Trim()
                     );
+
+                    // An Update amends the item already declared rather than adding another one, so
+                    // recording it separately would have RedundantReference report a duplicate that
+                    // does not exist, and would leave the superseded version in the list for
+                    // FloatingVersion to read. With no Include to amend it stands on its own: that
+                    // is a project adjusting a reference it inherits.
+                    var amended = isUpdate
+                        ? references.FindLastIndex(existing =>
+                            string.Equals(
+                                existing.PackageName,
+                                packageName,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
+                        : -1;
+
+                    if (amended >= 0)
+                    {
+                        references[amended] = references[amended] with
+                        {
+                            Version = string.IsNullOrWhiteSpace(version)
+                                ? references[amended].Version
+                                : version,
+                            VersionOverride =
+                                reference.VersionOverride ?? references[amended].VersionOverride,
+                        };
+
+                        continue;
+                    }
+
+                    references.Add(reference);
                 }
 
                 return (references, true);
