@@ -226,11 +226,14 @@ public static class ProgramRunner
         IConsoleService consoleService
     )
     {
-        if (options.Analyze || options.Output.IsMachineReadable())
+        if (options.Analyze)
         {
             return;
         }
 
+        // Deliberately not skipped under a machine-readable format. Warnings go to stderr now, so
+        // they cannot corrupt the payload — and suppressing this one is precisely how a CI job
+        // never learns that the policy it passed was ignored.
         if (!CliArgumentParser.GetExplicitArguments(args).Contains(flag))
         {
             return;

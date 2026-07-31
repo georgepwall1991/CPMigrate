@@ -1371,12 +1371,20 @@ internal static class CommandRouter
             return options.Analyze ? "batch-analyze" : "batch-migrate";
         }
 
-        if (options.Analyze)
+        // Below the table, the order is MigrationService's: rollback, then list-backups, then
+        // analyze. Reading it in a different order here would name the wrong one for a run that
+        // asked for two.
+        if (options.Rollback)
         {
-            return "analyze";
+            return "rollback";
         }
 
-        return options.Rollback ? "rollback" : "migrate";
+        if (options.ListBackups)
+        {
+            return "list-backups";
+        }
+
+        return options.Analyze ? "analyze" : "migrate";
     }
 
     private static ApplicationServices CreateApplicationServices(

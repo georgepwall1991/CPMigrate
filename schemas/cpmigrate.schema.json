@@ -109,20 +109,14 @@
   "definitions": {
     "rulePolicyValue": {
       "type": "string",
-      "description": "A severity to re-grade the rule to, or 'none' to switch it off. Matched case-insensitively.",
-      "enum": [
-        "Info",
-        "Low",
-        "Moderate",
-        "High",
-        "Critical",
-        "none",
-        "info",
-        "low",
-        "moderate",
-        "high",
-        "critical",
-        "None"
+      "description": "A severity to re-grade the rule to, or 'none' to switch the rule off. The tool trims surrounding whitespace and matches case-insensitively, so the pattern below accepts any casing while the enum branch is what an editor offers for completion. Listing only canonical spellings would reject a config the tool runs perfectly well.",
+      "anyOf": [
+        {
+          "enum": ["Info", "Low", "Moderate", "High", "Critical", "none"]
+        },
+        {
+          "pattern": "^\\s*([Ii][Nn][Ff][Oo]|[Ll][Oo][Ww]|[Mm][Oo][Dd][Ee][Rr][Aa][Tt][Ee]|[Hh][Ii][Gg][Hh]|[Cc][Rr][Ii][Tt][Ii][Cc][Aa][Ll]|[Nn][Oo][Nn][Ee])\\s*$"
+        }
       ]
     }
   },

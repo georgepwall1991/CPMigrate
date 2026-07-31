@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CPMigrate.Models;
@@ -55,47 +57,90 @@ public class ConfigSchemaDriftTests
     }
 
     [Fact]
-    public void Schema_AcceptsEveryPolicyValueTheParserAccepts()
+    public void Schema_OffersTheCanonicalPolicyValuesForCompletion()
     {
-        // The parser matches case-insensitively, so a schema that only lists canonical spellings
-        // fails a config the tool runs perfectly well — an editor error, or a CI validation step
-        // rejecting a working file.
-        var documented = Schema()
-            .GetProperty("definitions")
-            .GetProperty("rulePolicyValue")
+        var offered = RulePolicyValue()
+            .GetProperty("anyOf")[0]
             .GetProperty("enum")
             .EnumerateArray()
-            .Select(value => value.GetString()!)
+            .Select(value => value.GetString())
             .ToList();
 
-        foreach (
-            var canonical in Enum.GetNames<AnalysisSeverity>().Append(RulePolicy.DisableKeyword)
-        )
+        offered
+            .Should()
+            .BeEquivalentTo(
+                Enum.GetNames<AnalysisSeverity>().Append(RulePolicy.DisableKeyword),
+                "the completion list is the canonical spelling of every value"
+            );
+    }
+
+    [Theory]
+    [InlineData("{0}")]
+    [InlineData("  {0}  ")]
+    public void Schema_AcceptsEveryCasingTheParserAccepts(string format)
+    {
+        // Enumerating casings in an enum is unwinnable — "nOnE" is as valid to the parser as
+        // "none". The pattern closes the class instead, and this asserts the two agree rather than
+        // chasing spellings one bug report at a time.
+        var pattern = new Regex(
+            RulePolicyValue().GetProperty("anyOf")[1].GetProperty("pattern").GetString()!
+        );
+
+        foreach (var canonical in CanonicalPolicyValues())
         {
-            documented.Should().Contain(canonical);
-            documented
-                .Should()
-                .Contain(
-                    canonical.ToLowerInvariant() == canonical
-                        ? char.ToUpperInvariant(canonical[0]) + canonical[1..]
-                        : canonical.ToLowerInvariant(),
-                    "the parser accepts any casing, so the schema must not reject the obvious alternative"
-                );
+            foreach (var spelling in Casings(canonical))
+            {
+                var candidate = string.Format(CultureInfo.InvariantCulture, format, spelling);
+                var (policy, error) = RulePolicy.Parse(new[] { $"LicenseRisk={candidate}" });
+
+                error.Should().BeNull($"the parser accepts '{candidate}'");
+                policy.Should().NotBeNull();
+                pattern
+                    .IsMatch(candidate)
+                    .Should()
+                    .BeTrue($"the schema must not reject '{candidate}', which the tool runs");
+            }
         }
     }
 
+    private static IEnumerable<string> Casings(string value)
+    {
+        yield return value;
+        yield return value.ToLowerInvariant();
+        yield return value.ToUpperInvariant();
+        // Alternating case: the spelling nobody writes deliberately, and exactly the one an
+        // enum-of-variants misses.
+        yield return string.Concat(
+            value.Select(
+                (character, index) =>
+                    index % 2 == 0
+                        ? char.ToUpperInvariant(character)
+                        : char.ToLowerInvariant(character)
+            )
+        );
+    }
+
+    private static IEnumerable<string> CanonicalPolicyValues()
+    {
+        return Enum.GetNames<AnalysisSeverity>().Append(RulePolicy.DisableKeyword);
+    }
+
+    private static JsonElement RulePolicyValue()
+    {
+        return Schema().GetProperty("definitions").GetProperty("rulePolicyValue");
+    }
+
     [Fact]
-    public void Schema_RulePolicyValuesAreAllParseable()
+    public void Schema_OffersNothingTheParserWouldReject()
     {
         // The other direction: every spelling the schema blesses has to actually work.
-        var documented = Schema()
-            .GetProperty("definitions")
-            .GetProperty("rulePolicyValue")
+        var offered = RulePolicyValue()
+            .GetProperty("anyOf")[0]
             .GetProperty("enum")
             .EnumerateArray()
             .Select(value => value.GetString()!);
 
-        foreach (var value in documented)
+        foreach (var value in offered)
         {
             var (policy, error) = RulePolicy.Parse(new[] { $"LicenseRisk={value}" });
 

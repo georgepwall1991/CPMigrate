@@ -57,7 +57,10 @@ public class SpectreConsoleService : IConsoleService
 
     public void Warning(string message)
     {
-        _console.MarkupLine(
+        // stderr, like Error: a warning is a diagnostic about the run, not part of the payload the
+        // run produces. On stdout it either corrupts a JSON document or has to be dropped, and
+        // dropping it is how a CI job never learns that the policy it passed was ignored.
+        _errorConsole.MarkupLine(
             $"[{Ink.Warning}]{Glyphs.Warning}[/] [yellow]{EscapeMarkup(message)}[/]"
         );
     }
