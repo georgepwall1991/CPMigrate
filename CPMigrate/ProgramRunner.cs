@@ -62,6 +62,19 @@ public static class ProgramRunner
                         return found ? ExitCodes.Success : ExitCodes.ValidationError;
                     }
 
+                    // Ahead of the modes below, which return before CommandRouter ever validates.
+                    // `--init --rules NoSuchRule=none` otherwise wrote a config file and exited
+                    // successfully, so the promised strict rejection depended on which command the
+                    // policy happened to be passed to.
+                    NormalizeValuelessRuleFlag(options, args);
+                    if (
+                        IsDiagnosticMode(options)
+                        && RejectsUnusableRulePolicy(options, services.ConsoleService)
+                    )
+                    {
+                        return ExitCodes.ValidationError;
+                    }
+
                     if (options.Doctor)
                     {
                         var doctorService = new DoctorService(
@@ -241,6 +254,37 @@ public static class ProgramRunner
     /// machine-readable format, emits it as a payload.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// The modes handled here rather than by <c>CommandRouter</c>. They return before the router
+    /// validates anything, and they report to the terminal rather than emitting a machine-readable
+    /// payload — which is why they get their own rule-policy check, and why every other mode is
+    /// deliberately left to the router, where a rejection also reaches a JSON or SARIF consumer.
+    /// </summary>
+    private static bool IsDiagnosticMode(Options options)
+    {
+        return options.Doctor || options.Init || options.Status || options.Tree;
+    }
+
+    /// <summary>
+    /// Reports an unusable <c>--rules</c> policy and says the run should stop. Applied before the
+    /// diagnostic modes, which return without ever reaching <c>CommandRouter</c>'s validation — so
+    /// without this, whether a typo was caught depended on which command it was passed to.
+    /// </summary>
+    /// <returns>True when the policy cannot be understood and the run must not proceed.</returns>
+    private static bool RejectsUnusableRulePolicy(Options options, IConsoleService consoleService)
+    {
+        try
+        {
+            options.ValidateRuleOptions();
+            return false;
+        }
+        catch (ArgumentException ex)
+        {
+            consoleService.Error(ex.Message);
+            return true;
+        }
+    }
+
     private static void NormalizeValuelessRuleFlag(Options options, string[] args)
     {
         if (options.Rules is null && CliArgumentParser.GetExplicitArguments(args).Contains("rules"))

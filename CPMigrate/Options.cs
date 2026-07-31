@@ -776,7 +776,7 @@ public class Options
     /// <c>--analyze</c> would let a typo sit in a config file until the day someone runs an
     /// analysis — or let a side-effecting mode run straight past it.
     /// </summary>
-    private void ValidateRuleOptions()
+    public void ValidateRuleOptions()
     {
         // A flag that was passed but carries nothing is the failure this feature exists to prevent,
         // turned on itself: it looks like a policy, applies none, and — because the argument counts

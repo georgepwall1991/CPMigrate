@@ -202,13 +202,22 @@ internal static class CommandRouter
         ApplicationServices Services
     );
 
+    /// <summary>Table entry for --batch, whose payload name depends on the pass it is making.</summary>
+    private const string BatchModeName = "batch";
+
     /// <summary>
     /// One dispatchable mode: what selects it, and what it runs.
     /// </summary>
     /// <param name="Matches">Whether the options select this mode.</param>
+    /// <param name="OperationName">
+    /// The name this mode reports in a machine-readable payload. Carried on the mode rather than
+    /// derived separately so precedence and labelling cannot disagree: a failure payload that names
+    /// a command the dispatch table did not choose tells a consumer the wrong thing failed.
+    /// </param>
     /// <param name="RunAsync">The handler.</param>
     private sealed record CommandMode(
         Func<Options, bool> Matches,
+        string OperationName,
         Func<CommandContext, Task<int>> RunAsync
     );
 
@@ -222,13 +231,15 @@ internal static class CommandRouter
     /// </summary>
     private static readonly IReadOnlyList<CommandMode> AlternateModes =
     [
-        new(o => o.Update, c => RunUpdateModeAsync(c.ExecutionConsole, c.Services)),
+        new(o => o.Update, "update", c => RunUpdateModeAsync(c.ExecutionConsole, c.Services)),
         new(
             o => o.UpdatePackages,
+            "update-packages",
             c => RunUpdatePackagesModeAsync(c.Options, c.ExecutionConsole, c.Services)
         ),
         new(
             o => o.Interactive,
+            "interactive",
             c =>
                 RunInteractiveModeAsync(
                     c.Console,
@@ -240,10 +251,12 @@ internal static class CommandRouter
         ),
         new(
             o => o.PruneBackups || o.PruneAll,
+            "prune-backups",
             c => RunPruneModeAsync(c.Options, c.ExecutionConsole, c.Backups)
         ),
         new(
             o => !string.IsNullOrEmpty(o.BatchDir),
+            BatchModeName,
             c =>
                 RunBatchModeAsync(
                     c.Options,
@@ -255,6 +268,7 @@ internal static class CommandRouter
         ),
         new(
             o => o.UnifyProps,
+            "unify-props",
             c => RunUnifyPropsModeAsync(c.Options, c.ExecutionConsole, c.Services)
         ),
     ];
@@ -1332,38 +1346,37 @@ internal static class CommandRouter
         await JsonOutputWriter.EmitFailureAsync(output, options);
     }
 
+    /// <summary>
+    /// Names the command a payload describes.
+    ///
+    /// <para>
+    /// The alternate-mode table is consulted first, and in its own order, because that is what
+    /// decides dispatch: <c>--update --analyze</c> runs the update, so calling the payload "analyze"
+    /// would name a command that never ran. Reading the same table the router reads is what keeps
+    /// precedence and labelling from drifting apart.
+    /// </para>
+    /// </summary>
     private static string GetOperationName(Options options)
     {
+        var selected = AlternateModes.FirstOrDefault(mode => mode.Matches(options));
+        if (selected is not null)
+        {
+            if (selected.OperationName != BatchModeName)
+            {
+                return selected.OperationName;
+            }
+
+            // Batch reports which pass it is making, matching the payload BatchService builds when
+            // the run gets far enough to produce one.
+            return options.Analyze ? "batch-analyze" : "batch-migrate";
+        }
+
         if (options.Analyze)
         {
             return "analyze";
         }
 
-        if (options.Rollback)
-        {
-            return "rollback";
-        }
-
-        // The modes below run *instead* of a migration and can be rejected before dispatch, so a
-        // failure payload built here would otherwise label them "migrate" — telling a consumer that
-        // a command the user never ran is the one that failed.
-        return AlternateOperationName(options) ?? "migrate";
-    }
-
-    private static string? AlternateOperationName(Options options)
-    {
-        return options switch
-        {
-            { UpdatePackages: true } => "update-packages",
-            { Update: true } => "update",
-            { UnifyProps: true } => "unify-props",
-            { ListBackups: true } => "list-backups",
-            { PruneBackups: true } or { PruneAll: true } => "prune-backups",
-            { Doctor: true } => "doctor",
-            { Init: true } => "init",
-            { Status: true } => "status",
-            _ => null,
-        };
+        return options.Rollback ? "rollback" : "migrate";
     }
 
     private static ApplicationServices CreateApplicationServices(

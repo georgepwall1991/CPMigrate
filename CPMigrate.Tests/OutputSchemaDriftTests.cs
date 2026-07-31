@@ -113,6 +113,14 @@ public class OutputSchemaDriftTests
                     "migrate",
                     "rollback",
                     "update-packages",
+                    // A pre-dispatch rejection can produce a payload for any mode the router can
+                    // select, not just the ones that get far enough to report a result — so the
+                    // enum has to cover every name in the dispatch table, or a consumer validating
+                    // against the schema rejects an otherwise parseable error payload.
+                    "update",
+                    "interactive",
+                    "batch-analyze",
+                    "batch-migrate",
                 }
             );
     }
@@ -214,7 +222,9 @@ public class OutputSchemaDriftTests
         }
 
         var issueKeys = SchemaPropertyNames("analysisIssue").ToHashSet(StringComparer.Ordinal);
-        foreach (var property in document.RootElement.GetProperty("analysisIssues")[0].EnumerateObject())
+        foreach (
+            var property in document.RootElement.GetProperty("analysisIssues")[0].EnumerateObject()
+        )
         {
             issueKeys.Should().Contain(property.Name);
         }

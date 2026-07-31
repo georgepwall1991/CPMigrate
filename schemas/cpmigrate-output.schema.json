@@ -37,10 +37,14 @@
             "analyze",
             "migrate",
             "rollback",
+            "update",
             "update-packages",
             "unify-props",
+            "interactive",
             "list-backups",
-            "prune-backups"
+            "prune-backups",
+            "batch-analyze",
+            "batch-migrate"
           ],
           "description": "Which command produced the payload"
         },

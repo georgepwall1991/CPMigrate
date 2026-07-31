@@ -405,6 +405,63 @@ public class RulePolicyContractTests : IDisposable
         console.ErrorMessages.Should().Contain(message => message.Contains("--rules"));
     }
 
+    [Theory]
+    [InlineData("--doctor")]
+    [InlineData("--init")]
+    [InlineData("--status")]
+    [InlineData("--tree")]
+    public async Task DiagnosticMode_WithAnUnusablePolicy_IsRejectedRatherThanRunning(string mode)
+    {
+        // These return before CommandRouter validates anything, so `--init --rules NoSuchRule=none`
+        // wrote a config file and exited successfully — the promised strict rejection depended on
+        // which command the policy happened to be passed to.
+        CreateInconsistentFixture();
+        var console = new TestDoubles.FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { mode, "--rules", "NoSuchRule=none", "--quiet", "-s", _testDirectory },
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(message => message.Contains("NoSuchRule"));
+        File.Exists(Path.Combine(_testDirectory, ".cpmigrate.json"))
+            .Should()
+            .BeFalse("a rejected run must not have done the work first");
+    }
+
+    [Fact]
+    public async Task UnknownRuleId_UnderJson_NamesTheModeThatWinsDispatch()
+    {
+        // --update runs instead of the analysis, so labelling the payload "analyze" would name a
+        // command that never ran. The name comes from the same ordered table the router dispatches
+        // on, which is what stops precedence and labelling drifting apart.
+        CreateInconsistentFixture();
+
+        var stdout = await CaptureStdoutAsync(() =>
+            ProgramRunner.RunAsync(
+                new[]
+                {
+                    "--update",
+                    "--analyze",
+                    "--rules",
+                    "NoSuchRule=none",
+                    "--output",
+                    "Json",
+                    "-s",
+                    _testDirectory,
+                }
+            )
+        );
+
+        JsonDocument
+            .Parse(stdout)
+            .RootElement.GetProperty("operation")
+            .GetString()
+            .Should()
+            .Be("update");
+    }
+
     [Fact]
     public async Task UnknownRuleId_UnderJson_NamesTheOperationTheUserActuallyRan()
     {
