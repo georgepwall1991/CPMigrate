@@ -778,6 +778,18 @@ public class Options
     /// </summary>
     private void ValidateRuleOptions()
     {
+        // A flag that was passed but carries nothing is the failure this feature exists to prevent,
+        // turned on itself: it looks like a policy, applies none, and — because the argument counts
+        // as explicit — stops a configured `rules` map from being merged, quietly moving the gate.
+        if (Rules is not null && RulePolicy.SplitSpec(Rules).Count == 0)
+        {
+            throw new ArgumentException(
+                "--rules needs at least one Rule=Severity pair, for example "
+                    + $"--rules \"OutdatedPackage={RulePolicy.DisableKeyword}\". Omit the flag "
+                    + "entirely to use the policy from .cpmigrate.json."
+            );
+        }
+
         _ = ResolveRulePolicy();
     }
 

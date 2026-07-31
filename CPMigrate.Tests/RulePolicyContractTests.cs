@@ -351,6 +351,91 @@ public class RulePolicyContractTests : IDisposable
     }
 
     [Fact]
+    public Task Analyze_WithATrailingRulesFlag_IsRejected()
+    {
+        // The parser leaves the property null here, which is indistinguishable from the flag never
+        // being passed — so the run used to proceed with no policy at all.
+        return AssertValuelessRuleFlagIsRejected(
+            new[] { "--analyze", "--quiet", "-s", _testDirectory, "--rules" }
+        );
+    }
+
+    [Fact]
+    public Task Analyze_WithAnEmptyRulesValue_IsRejected()
+    {
+        return AssertValuelessRuleFlagIsRejected(
+            new[] { "--analyze", "--rules", "", "--quiet", "-s", _testDirectory }
+        );
+    }
+
+    [Fact]
+    public async Task Analyze_WithATrailingRulesFlagAndNoConfigFile_IsStillRejected()
+    {
+        // Deliberately without a .cpmigrate.json. An earlier version of this check ran inside the
+        // config merge, which returns early when no config file is found — the common case — so the
+        // rejection fired only in repositories that happened to have one, and the test that created
+        // one went green over it.
+        CreateInconsistentFixture();
+        var console = new TestDoubles.FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--analyze", "--quiet", "-s", _testDirectory, "--rules" },
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(message => message.Contains("--rules"));
+    }
+
+    private async Task AssertValuelessRuleFlagIsRejected(string[] args)
+    {
+        // A flag that was passed but carries nothing is this feature's own failure mode turned on
+        // itself: it looks like a policy and applies none. Worse, the argument still counts as
+        // explicit, so it suppresses the configured rules map below and moves the gate silently.
+        CreateInconsistentFixture();
+        await File.WriteAllTextAsync(
+            Path.Combine(_testDirectory, ".cpmigrate.json"),
+            """{ "rules": { "VersionInconsistency": "none" } }"""
+        );
+        var console = new TestDoubles.FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(args, console);
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(message => message.Contains("--rules"));
+    }
+
+    [Fact]
+    public async Task UnknownRuleId_UnderJson_NamesTheOperationTheUserActuallyRan()
+    {
+        // A pre-dispatch rejection used to label every non-analyze mode "migrate", telling a
+        // consumer that a command the user never ran is the one that failed.
+        CreateInconsistentFixture();
+
+        var stdout = await CaptureStdoutAsync(() =>
+            ProgramRunner.RunAsync(
+                new[]
+                {
+                    "--update-packages",
+                    "--rules",
+                    "NoSuchRule=none",
+                    "--output",
+                    "Json",
+                    "-s",
+                    _testDirectory,
+                }
+            )
+        );
+
+        JsonDocument
+            .Parse(stdout)
+            .RootElement.GetProperty("operation")
+            .GetString()
+            .Should()
+            .Be("update-packages");
+    }
+
+    [Fact]
     public async Task UnknownRuleId_UnderJson_IsReportedAsAParseablePayload()
     {
         // A CI step under --output Json parses stdout. A rejection printed as prose there is a

@@ -94,6 +94,11 @@ public static class ProgramRunner
                         return await RunTreeModeAsync(options, services);
                     }
 
+                    // Unconditionally, and not inside the merge: that returns early when no config
+                    // file is found, which is the common case — so a valueless --rules would be
+                    // rejected only in repositories that happen to have a .cpmigrate.json.
+                    NormalizeValuelessRuleFlag(options, args);
+
                     // Merge config file with CLI args (CLI args take precedence)
                     MergeConfigWithCliArgs(
                         options,
@@ -222,6 +227,26 @@ public static class ProgramRunner
             $"--{flag} only affects --analyze; it is ignored for this command. "
                 + "Did you mean to add --analyze?"
         );
+    }
+
+    /// <summary>
+    /// Turns a valueless <c>--rules</c> into an empty spec so validation rejects it.
+    ///
+    /// <para>
+    /// A trailing <c>--rules</c> leaves the property null, which is indistinguishable from the flag
+    /// never being passed — so the run proceeds with no policy at all. That is worse than it looks:
+    /// the argument still counts as explicit, so it also suppresses the <c>rules</c> map from
+    /// <c>.cpmigrate.json</c>, and a team's configured gate silently moves. Marking it empty routes
+    /// it into the same rejection as <c>--rules ""</c>, which reports the reason and, under a
+    /// machine-readable format, emits it as a payload.
+    /// </para>
+    /// </summary>
+    private static void NormalizeValuelessRuleFlag(Options options, string[] args)
+    {
+        if (options.Rules is null && CliArgumentParser.GetExplicitArguments(args).Contains("rules"))
+        {
+            options.Rules = string.Empty;
+        }
     }
 
     /// <summary>

@@ -1344,7 +1344,26 @@ internal static class CommandRouter
             return "rollback";
         }
 
-        return "migrate";
+        // The modes below run *instead* of a migration and can be rejected before dispatch, so a
+        // failure payload built here would otherwise label them "migrate" — telling a consumer that
+        // a command the user never ran is the one that failed.
+        return AlternateOperationName(options) ?? "migrate";
+    }
+
+    private static string? AlternateOperationName(Options options)
+    {
+        return options switch
+        {
+            { UpdatePackages: true } => "update-packages",
+            { Update: true } => "update",
+            { UnifyProps: true } => "unify-props",
+            { ListBackups: true } => "list-backups",
+            { PruneBackups: true } or { PruneAll: true } => "prune-backups",
+            { Doctor: true } => "doctor",
+            { Init: true } => "init",
+            { Status: true } => "status",
+            _ => null,
+        };
     }
 
     private static ApplicationServices CreateApplicationServices(
