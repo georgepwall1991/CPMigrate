@@ -65,7 +65,8 @@ public class CpmDriftAnalyzer : IAnalyzer
         var orphanCandidates =
             new List<(
                 IReadOnlyDictionary<string, CentralEntry> Central,
-                HashSet<string> Referenced
+                HashSet<string> Referenced,
+                bool CanOriginate
             )>();
 
         // Sorted so a report is identical run to run, whatever order discovery happened to produce.
@@ -105,10 +106,11 @@ public class CpmDriftAnalyzer : IAnalyzer
                         IsTransitivePinningEnabled(context.Props, propsPath, root)
                     );
 
-            if (context.ImportsResolved && !transitivePinning)
-            {
-                orphanCandidates.Add((context.Central, referenced));
-            }
+            // Added whatever the answer: the references are evidence for every pin this context
+            // holds. Only the flag decides whether the context may state an orphan of its own.
+            orphanCandidates.Add(
+                (context.Central, referenced, context.ImportsResolved && !transitivePinning)
+            );
         }
 
         AddOrphanedVersionIssues(issues, orphanCandidates, packageInfo);
@@ -165,11 +167,32 @@ public class CpmDriftAnalyzer : IAnalyzer
             // project can rely on a nearer Directory.Build.props for ManagePackageVersionsCentrally,
             // and reading the wrong one reports a valid project as CpmNotEnabled — a High finding.
             var propertyRoot = directory ?? packageInfo.BasePath;
-            var enablementKey = $"{propsPath}{KeySeparator}{propertyRoot}";
+
+            // The project's own body settles it. MSBuild evaluates it after Directory.Build.props,
+            // and setting the property in a single .csproj is the documented way to opt one project
+            // out of — or into — central management. Judging it by the surrounding files alone
+            // reported every ordinary inline version in an opted-out project as drift, and skipped
+            // an opted-in one as CpmNotEnabled.
+            var projectEnablement = project is null ? null : ReadProjectEnablement(project);
+
+            if (string.Equals(projectEnablement, "false", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var optedIn = string.Equals(
+                projectEnablement,
+                "true",
+                StringComparison.OrdinalIgnoreCase
+            );
+
+            // The opt-in is part of the key: the same file can be inert for its neighbours and in
+            // force for a project that turns it on, and one cached answer cannot say both.
+            var enablementKey = $"{propsPath}{KeySeparator}{propertyRoot}{KeySeparator}{optedIn}";
 
             if (!enablement.TryGetValue(enablementKey, out var enabled))
             {
-                enabled = IsUsable(propsPath, propertyRoot, packageInfo, issues, reported);
+                enabled = IsUsable(propsPath, propertyRoot, packageInfo, issues, reported, optedIn);
                 enablement[enablementKey] = enabled;
             }
 
@@ -219,7 +242,10 @@ public class CpmDriftAnalyzer : IAnalyzer
         string? propertyRoot,
         ProjectPackageInfo packageInfo,
         List<AnalysisIssue> issues,
-        HashSet<string> reported
+        HashSet<string> reported,
+        // The project turned central management on for itself, so the surrounding files no longer
+        // get to call the file inert. It must still parse.
+        bool optedIn
     )
     {
         var propsFile = DescribePropsPath(propsPath, packageInfo);
@@ -245,7 +271,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             return false;
         }
 
-        if (IsCpmEnabled(props, propsPath, propertyRoot, out var enablement))
+        if (IsCpmEnabled(props, propsPath, propertyRoot, out var enablement) || optedIn)
         {
             return true;
         }
@@ -420,6 +446,17 @@ public class CpmDriftAnalyzer : IAnalyzer
     }
 
     /// <summary>
+    /// The project's own <c>ManagePackageVersionsCentrally</c>, or null when it does not set one.
+    /// An unreadable project is treated as silent rather than as an opt-out, so a file this analyzer
+    /// cannot parse never suppresses findings.
+    /// </summary>
+    private static string? ReadProjectEnablement(string projectPath)
+    {
+        var project = ReadProps(projectPath);
+        return project is null ? null : ReadCpmEnablement(project);
+    }
+
+    /// <summary>
     /// Last-wins value of <c>ManagePackageVersionsCentrally</c> in a document, or null when absent.
     /// </summary>
     private static string? ReadCpmEnablement(XDocument document)
@@ -551,7 +588,8 @@ public class CpmDriftAnalyzer : IAnalyzer
         List<AnalysisIssue> issues,
         List<(
             IReadOnlyDictionary<string, CentralEntry> Central,
-            HashSet<string> Referenced
+            HashSet<string> Referenced,
+            bool CanOriginate
         )> candidates,
         ProjectPackageInfo packageInfo
     )
@@ -563,12 +601,20 @@ public class CpmDriftAnalyzer : IAnalyzer
         // evidence at all that the root's pin is used — counting it would suppress a real orphan.
         var evidence = new Dictionary<string, HashSet<string>>(PathComparer);
 
-        foreach (var (central, referenced) in candidates)
+        foreach (var (central, referenced, canOriginate) in candidates)
         {
             foreach (var (packageName, entry) in central)
             {
                 var key = $"{entry.SourcePath}{KeySeparator}{packageName}";
-                pins.TryAdd(key, (entry, packageName));
+
+                // Whether a context may *originate* a finding is separate from whether its
+                // references count as evidence. A context with transitive pinning on states no
+                // orphans of its own, but a package its projects reference is still in use — losing
+                // that proof reported the pin orphaned against the file that declares it.
+                if (canOriginate)
+                {
+                    pins.TryAdd(key, (entry, packageName));
+                }
 
                 if (!evidence.TryGetValue(key, out var seen))
                 {

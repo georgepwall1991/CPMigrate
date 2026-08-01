@@ -328,6 +328,73 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_APinUsedOnlyUnderTransitivePinning_IsNotOrphaned()
+    {
+        // A context with transitive pinning on originates no orphan findings, but its references are
+        // still proof the pin is used. Dropping them alongside its pins let a package referenced only
+        // there be reported orphaned against the root file that declares it.
+        WriteProps(".", ("Serilog", "4.0.0"), ("Newtonsoft.Json", "13.0.1"));
+        WriteTransitivePinningProps("tools", "../Directory.Packages.props");
+        var rootProject = WriteProject("src/Api/Api.csproj", "Newtonsoft.Json");
+        var toolProject = WriteProject("tools/Build/Build.csproj", "Serilog");
+
+        var issues = Analyze(rootProject, toolProject);
+
+        issues
+            .Should()
+            .NotContain(issue =>
+                issue.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+                && issue.PackageName == "Serilog"
+            );
+    }
+
+    [Fact]
+    public void Analyze_AProjectOptingOutInItsOwnFile_IsNotJudgedAgainstCentralPins()
+    {
+        // MSBuild imports Directory.Build.props at the top of the project, so the project's own body
+        // has the last word on ManagePackageVersionsCentrally. Reading enablement only from the props
+        // files reported every ordinary inline version in an opted-out project as drift.
+        WriteProps(".", ("Serilog", "4.0.0"));
+        var project = WriteProject(
+            "src/Legacy/Legacy.csproj",
+            "Serilog",
+            inlineVersion: "3.1.1",
+            centrallyManaged: false
+        );
+
+        var issues = Analyze(project);
+
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.InlineVersionUnderCpm);
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.MissingPackageVersion);
+    }
+
+    [Fact]
+    public void Analyze_AProjectOptingInInItsOwnFile_IsStillGoverned()
+    {
+        // The same override the other way: a project turning central management on for itself must
+        // not be dismissed as CpmNotEnabled and skipped. The props file stays silent on the property
+        // so enablement really is decided by the build props and the project, not short-circuited.
+        WriteSilentProps(".", ("Serilog", "4.0.0"));
+        WriteBuildProps("src", enabled: false);
+        var project = WriteProject(
+            "src/Api/Api.csproj",
+            "Serilog",
+            inlineVersion: "3.1.1",
+            centrallyManaged: true
+        );
+
+        var issues = Analyze(project);
+
+        issues
+            .Should()
+            .Contain(issue => issue.IssueCode == AnalysisIssueCode.InlineVersionUnderCpm);
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");
@@ -381,6 +448,24 @@ public class PerProjectCentralPinTests : IDisposable
         );
     }
 
+    private void WriteTransitivePinningProps(string relativeDirectory, string import)
+    {
+        var directory = Path.Combine(_root, relativeDirectory);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(
+            Path.Combine(directory, CpmDriftAnalyzer.PropsFileName),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+              </PropertyGroup>
+              <Import Project="{import}" />
+            </Project>
+            """
+        );
+    }
+
     private void WriteBuildProps(string relativeDirectory, bool enabled)
     {
         var directory = Path.Combine(_root, relativeDirectory);
@@ -423,6 +508,27 @@ public class PerProjectCentralPinTests : IDisposable
         params (string Package, string Version)[] pins
     )
     {
+        WritePropsFile(relativeDirectory, declaresEnablement: true, pins);
+    }
+
+    /// <summary>
+    /// Pins with no <c>ManagePackageVersionsCentrally</c> of its own, so enablement is decided by
+    /// the build props and the project rather than short-circuited by the props file.
+    /// </summary>
+    private void WriteSilentProps(
+        string relativeDirectory,
+        params (string Package, string Version)[] pins
+    )
+    {
+        WritePropsFile(relativeDirectory, declaresEnablement: false, pins);
+    }
+
+    private void WritePropsFile(
+        string relativeDirectory,
+        bool declaresEnablement,
+        (string Package, string Version)[] pins
+    )
+    {
         var directory = Path.Combine(_root, relativeDirectory);
         Directory.CreateDirectory(directory);
 
@@ -433,13 +539,16 @@ public class PerProjectCentralPinTests : IDisposable
             )
         );
 
+        var properties = declaresEnablement
+            ? "\n  <PropertyGroup>\n    "
+                + "<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>"
+                + "\n  </PropertyGroup>"
+            : string.Empty;
+
         File.WriteAllText(
             Path.Combine(directory, CpmDriftAnalyzer.PropsFileName),
             $"""
-            <Project>
-              <PropertyGroup>
-                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-              </PropertyGroup>
+            <Project>{properties}
               <ItemGroup>
                 {items}
               </ItemGroup>
@@ -448,19 +557,33 @@ public class PerProjectCentralPinTests : IDisposable
         );
     }
 
-    private string WriteProject(string relativePath, string package)
+    private string WriteProject(
+        string relativePath,
+        string package,
+        string? inlineVersion = null,
+        bool? centrallyManaged = null
+    )
     {
         var path = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+        var enablement = centrallyManaged is null
+            ? string.Empty
+            : $"\n    <ManagePackageVersionsCentrally>{(
+                centrallyManaged.Value ? "true" : "false"
+            )}</ManagePackageVersionsCentrally>";
+
+        var version = inlineVersion is null ? string.Empty : $" Version=\"{inlineVersion}\"";
+
         File.WriteAllText(
             path,
             $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
-                <TargetFramework>net10.0</TargetFramework>
+                <TargetFramework>net10.0</TargetFramework>{enablement}
               </PropertyGroup>
               <ItemGroup>
-                <PackageReference Include="{package}" />
+                <PackageReference Include="{package}"{version} />
               </ItemGroup>
             </Project>
             """
