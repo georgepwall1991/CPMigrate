@@ -26,6 +26,7 @@ public class CpmDriftAnalyzer : IAnalyzer
     private const string PackageVersionItem = "PackageVersion";
     private const string GlobalPackageReferenceItem = "GlobalPackageReference";
     private const string PackageReferenceItem = "PackageReference";
+    private const string EnablementProperty = "ManagePackageVersionsCentrally";
 
     /// <inheritdoc />
     public string Name => "Central Package Management Drift";
@@ -62,7 +63,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             return new AnalyzerResult(Name, issues);
         }
 
-        if (!IsCpmEnabled(props, packageInfo.BasePath, out var enablement))
+        if (!IsCpmEnabled(props, propsPath, packageInfo.BasePath, out var enablement))
         {
             AddCpmNotEnabledIssue(issues, enablement);
 
@@ -90,7 +91,7 @@ public class CpmDriftAnalyzer : IAnalyzer
 
         // Both remaining rules compare against the full central set. If an import could not be
         // followed, that set is incomplete, and every conclusion drawn from it would be a guess.
-        if (importsResolved && !IsTransitivePinningEnabled(props, packageInfo.BasePath))
+        if (importsResolved && !IsTransitivePinningEnabled(props, propsPath, packageInfo.BasePath))
         {
             AddOrphanedVersionIssues(issues, central, referenced);
         }
@@ -103,9 +104,18 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// leaves every <c>PackageVersion</c> entry inert — the file looks authoritative and does
     /// nothing.
     /// </summary>
-    private static bool IsCpmEnabled(XDocument props, string? basePath, out string? enablement)
+    private static bool IsCpmEnabled(
+        XDocument props,
+        string propsPath,
+        string? basePath,
+        out string? enablement
+    )
     {
-        enablement = ReadCpmEnablement(props);
+        enablement = ReadCpmEnablementThroughImports(
+            props,
+            propsPath,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        );
 
         if (string.Equals(enablement, "true", StringComparison.OrdinalIgnoreCase))
         {
@@ -118,9 +128,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             // conventional home for it. Absence from both is still not proof — a custom import could
             // set it — but reporting on the props file alone produces a High-severity false positive
             // on repositories that are perfectly well configured.
-            var buildProps = basePath is null
-                ? null
-                : ReadProps(Path.Combine(basePath, "Directory.Build.props"));
+            var buildProps = ReadNearestBuildProps(propsPath, basePath);
 
             if (buildProps is not null && ReadCpmEnablement(buildProps) is { } inherited)
             {
@@ -157,16 +165,21 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// True when transitive pinning is on, in which case a <c>PackageVersion</c> may deliberately pin
     /// a package no project references directly — so every such pin would look orphaned.
     /// </summary>
-    private static bool IsTransitivePinningEnabled(XDocument props, string? basePath)
+    private static bool IsTransitivePinningEnabled(
+        XDocument props,
+        string propsPath,
+        string? basePath
+    )
     {
         if (IsPropertyTrue(props, "CentralPackageTransitivePinningEnabled"))
         {
             return true;
         }
 
-        var buildProps = basePath is null
-            ? null
-            : ReadProps(Path.Combine(basePath, "Directory.Build.props"));
+        // The same resolution the enablement check uses. Reading only the scan root meant a nested
+        // project whose Directory.Build.props turns transitive pinning on had its deliberately
+        // transitive-only pins reported as OrphanedPackageVersion.
+        var buildProps = ReadNearestBuildProps(propsPath, basePath);
 
         return buildProps is not null
             && IsPropertyTrue(buildProps, "CentralPackageTransitivePinningEnabled");
@@ -528,7 +541,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         }
 
         var props = ReadProps(propsPath);
-        if (props is null || !IsCpmEnabled(props, basePath, out _))
+        if (props is null || !IsCpmEnabled(props, propsPath, basePath, out _))
         {
             return empty;
         }
@@ -544,6 +557,23 @@ public class CpmDriftAnalyzer : IAnalyzer
             );
     }
 
+    /// <summary>
+    /// Finds the <c>Directory.Packages.props</c> in effect, walking up from the scan root the way
+    /// MSBuild does — the nearest one wins.
+    ///
+    /// <para>
+    /// Looking only at the scan root meant pointing <c>--analyze</c> at one solution inside a
+    /// repository reported it as having no central versions at all: every CPM rule went quiet, which
+    /// is what a solution with nothing wrong also looks like.
+    /// </para>
+    ///
+    /// <para>
+    /// The walk stops at the repository root rather than continuing to the filesystem root. MSBuild
+    /// would keep going, but a props file in a parent of the checkout belongs to something else, and
+    /// letting an unrelated file on one machine decide what a scan reports makes the result
+    /// unreproducible on any other.
+    /// </para>
+    /// </summary>
     private static string? ResolvePropsPath(string? basePath)
     {
         if (string.IsNullOrWhiteSpace(basePath))
@@ -551,8 +581,213 @@ public class CpmDriftAnalyzer : IAnalyzer
             return null;
         }
 
-        var candidate = Path.Combine(basePath, PropsFileName);
-        return File.Exists(candidate) ? candidate : null;
+        var directory = new DirectoryInfo(Path.GetFullPath(basePath));
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, PropsFileName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            if (IsRepositoryRoot(directory.FullName))
+            {
+                // Checked after the candidate, so a props file sitting at the repository root is
+                // still found — it is the last directory searched, not the first one skipped.
+                return null;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The enablement property as MSBuild would resolve it, following imports.
+    ///
+    /// <para>
+    /// Reading only the props file itself called a repository unmanaged whenever the property lived
+    /// in a file the props file imports — a perfectly ordinary way to organise it — and that answer
+    /// is loud: every central pin becomes inert, so the CPM rules report a High-severity finding
+    /// about a repository that is correctly configured.
+    /// </para>
+    ///
+    /// <para>
+    /// Elements are read in document order and the last assignment wins, which is how MSBuild
+    /// evaluates a file: a property set after an <c>Import</c> overrides what the import set. Taking
+    /// the local value first would have let an import turn central management on but never off.
+    /// </para>
+    ///
+    /// <para>
+    /// An <c>Import</c> carrying a <c>Condition</c> is skipped rather than followed. Whether it
+    /// applies depends on properties this cannot evaluate, and an inactive import that switched
+    /// central management on would be worse than not reading it at all — the drift rules would then
+    /// judge every project against pins NuGet never applies.
+    /// </para>
+    ///
+    /// <para>
+    /// A conditioned <em>assignment</em> is still read, and that is a deliberate choice rather than
+    /// an oversight. Treating it as unresolved would be the more faithful reading of MSBuild, but
+    /// the commonest use of a condition here is defaulting
+    /// (<c>Condition="'$(ManagePackageVersionsCentrally)' == ''"</c>), and ignoring those would
+    /// report <c>CpmNotEnabled</c> — a High finding that fails CI — across a great many repositories
+    /// that are configured perfectly well. The cost is the opposite error on a genuinely
+    /// configuration-specific assignment. Both readings are wrong somewhere; this one is wrong less
+    /// often, and it errs towards not accusing a working repository.
+    /// </para>
+    /// </summary>
+    private static string? ReadCpmEnablementThroughImports(
+        XDocument document,
+        string documentPath,
+        HashSet<string> visited
+    )
+    {
+        if (!visited.Add(Path.GetFullPath(documentPath)))
+        {
+            return null;
+        }
+
+        var directory = Path.GetDirectoryName(Path.GetFullPath(documentPath));
+        string? resolved = null;
+
+        // Document order, last assignment wins — how MSBuild evaluates a file. Reading the local
+        // value first instead would let an import turn central management on but never off.
+        foreach (var element in document.Descendants())
+        {
+            if (
+                element.Name.LocalName.Equals(
+                    EnablementProperty,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                resolved = element.Value.Trim();
+                continue;
+            }
+
+            if (
+                !element.Name.LocalName.Equals("Import", StringComparison.OrdinalIgnoreCase)
+                || directory is null
+            )
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(element.Attribute("Condition")?.Value))
+            {
+                // Whether it applies depends on properties this cannot evaluate. Following it could
+                // switch central management on where NuGet leaves it off, and the drift rules would
+                // then judge every project against pins that are never applied.
+                continue;
+            }
+
+            var relative = element.Attribute("Project")?.Value;
+            if (
+                string.IsNullOrWhiteSpace(relative)
+                || relative.Contains("$(", StringComparison.Ordinal)
+                || relative.Contains('*')
+            )
+            {
+                // Built from MSBuild properties or a glob: not resolvable by reading XML.
+                continue;
+            }
+
+            var importedPath = Path.GetFullPath(
+                Path.Combine(directory, relative.Replace('\\', Path.DirectorySeparatorChar))
+            );
+            var imported = ReadProps(importedPath);
+            if (imported is null)
+            {
+                continue;
+            }
+
+            if (ReadCpmEnablementThroughImports(imported, importedPath, visited) is { } inherited)
+            {
+                resolved = inherited;
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Whether a directory is the root of a working tree.
+    ///
+    /// <c>.git</c> is a directory in an ordinary clone but a <em>file</em> in a linked worktree or a
+    /// submodule. Testing only for the directory walked straight past those roots, so a props file
+    /// in a parent could be picked up — the machine-dependent result this boundary exists to
+    /// prevent, appearing only for the people using worktrees.
+    /// </summary>
+    private static bool IsRepositoryRoot(string directory)
+    {
+        var git = Path.Combine(directory, ".git");
+        return Directory.Exists(git) || File.Exists(git);
+    }
+
+    /// <summary>
+    /// The nearest <c>Directory.Build.props</c>: beside the central props file first, then beside
+    /// the scan root. Both are conventional homes for the enablement property.
+    ///
+    /// Once the props file can come from an ancestor, looking only beside the scan root means a
+    /// nested solution misses the <c>Directory.Build.props</c> that sits next to the props file —
+    /// and reports <c>CpmNotEnabled</c>, a High finding, on a repository that is correctly set up.
+    /// </summary>
+    /// <param name="propsPath">Path of the central props file that was found.</param>
+    /// <param name="basePath">Directory the scan was rooted at.</param>
+    private static XDocument? ReadNearestBuildProps(string propsPath, string? basePath)
+    {
+        // From the scan root upwards first, because that is where MSBuild starts and the nearest
+        // file wins: with /repo/Directory.Build.props setting the property one way and
+        // /repo/src/Directory.Build.props setting it the other, a project under src gets the
+        // nearer answer. Checking only the two endpoints picked the wrong one.
+        var fromScanRoot = WalkUpForBuildProps(basePath);
+        if (fromScanRoot is not null)
+        {
+            return fromScanRoot;
+        }
+
+        // Then beside the props file, which may sit above the scan root and above the boundary the
+        // walk stops at.
+        return WalkUpForBuildProps(
+            Path.GetDirectoryName(Path.GetFullPath(propsPath)),
+            single: true
+        );
+    }
+
+    /// <summary>
+    /// The nearest <c>Directory.Build.props</c> at or above a directory, stopping at the repository
+    /// root for the same reason the central props walk does.
+    /// </summary>
+    /// <param name="startDirectory">Where to start looking.</param>
+    /// <param name="single">When true, look only in <paramref name="startDirectory"/>.</param>
+    private static XDocument? WalkUpForBuildProps(string? startDirectory, bool single = false)
+    {
+        const string BuildPropsFileName = "Directory.Build.props";
+
+        if (string.IsNullOrWhiteSpace(startDirectory))
+        {
+            return null;
+        }
+
+        var directory = new DirectoryInfo(Path.GetFullPath(startDirectory));
+        while (directory is not null)
+        {
+            var found = ReadProps(Path.Combine(directory.FullName, BuildPropsFileName));
+            if (found is not null)
+            {
+                return found;
+            }
+
+            if (single || IsRepositoryRoot(directory.FullName))
+            {
+                return null;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     private static XDocument? ReadProps(string path)

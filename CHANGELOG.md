@@ -6,6 +6,16 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.54.0] - 2026-08-01
+
+### Fixed
+- **`Directory.Packages.props` is found by walking up, the way MSBuild does.** Only the scan root was checked, so pointing `--analyze` at one solution inside a repository reported it as having no central versions at all — every CPM rule went quiet, which is exactly what a solution with nothing wrong also looks like. The nearest props file wins. The walk stops at the repository root rather than continuing to the filesystem root: MSBuild would keep going, but a props file in a parent of the checkout belongs to something else, and letting an unrelated file on one machine decide what a scan reports makes the result unreproducible on any other.
+- **Central management enablement is resolved through imports.** `ManagePackageVersionsCentrally` set in a file the props file imports — an ordinary way to organise it — was not seen, so a correctly configured repository was reported as having a props file that "exists but does not set ManagePackageVersionsCentrally", a `High` finding that fails CI, with every central pin then treated as inert. An import can now switch central management off as well as on; only ever honouring `true` would leave the check unable to disagree.
+- **`FloatingVersion` reads `VersionOverride`.** It is NuGet's sanctioned way for a project to step outside a central pin, so it is the version actually in force — and it floats exactly as a `Version` can. A project with an exact central pin and a `VersionOverride="4.*"` was reported clean. Carried as its own field rather than folded into `Version`, because the rules asking "does this project pin inline?" and "what version does this project get?" want opposite answers about it.
+
+### Notes
+- All three were found by cross-review of 3.53.0 and affect every rule that reads central pins, not only the new one. Validated against a cloned Serilog (unchanged: 6 projects, 4 issues, same findings) and against a nested-solution fixture, which now correctly reports the floating pin held at the repository root.
+
 ## [3.53.0] - 2026-07-31
 
 ### Added

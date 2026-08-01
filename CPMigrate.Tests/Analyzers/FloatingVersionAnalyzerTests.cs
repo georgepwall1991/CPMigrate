@@ -297,6 +297,68 @@ public class FloatingVersionAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_AFloatingVersionOverride_IsReported()
+    {
+        // VersionOverride is NuGet's sanctioned way to step outside a central pin, so it is the
+        // version actually in force — and it can float exactly as a Version can. Reading only
+        // Version reported a project with an exact central pin and a floating override as clean.
+        var reference = new PackageReference(
+            "Serilog",
+            string.Empty,
+            Path.Combine(_testDirectory, "App.csproj"),
+            "App.csproj",
+            VersionOverride: "4.*"
+        );
+
+        var result = Analyze(reference);
+
+        var issue = result.Issues.Should().ContainSingle().Subject;
+        issue.PackageName.Should().Be("Serilog");
+        issue.Metadata!["versionSpecification"].Should().Be("4.*");
+    }
+
+    [Fact]
+    public void Analyze_AnExactVersionOverride_IsNotReported()
+    {
+        var reference = new PackageReference(
+            "Serilog",
+            string.Empty,
+            Path.Combine(_testDirectory, "App.csproj"),
+            "App.csproj",
+            VersionOverride: "4.0.0"
+        );
+
+        Analyze(reference).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_AnExactOverrideOfAFloatingCentralPin_IsStillReportedForTheCentralPin()
+    {
+        // The override fixes it for one project; the pin every other project uses still floats.
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var reference = new PackageReference(
+            "Serilog",
+            string.Empty,
+            Path.Combine(_testDirectory, "App.csproj"),
+            "App.csproj",
+            VersionOverride: "4.0.0"
+        );
+
+        Analyze(reference).Issues.Should().ContainSingle();
+    }
+
+    [Fact]
     public void Analyze_IsNotFixable()
     {
         // Choosing the concrete version a float should become needs the feed, which this pass does

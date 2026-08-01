@@ -11,7 +11,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     private readonly IConsoleService _consoleService;
     private readonly ILogger<ProjectFileScanner> _logger;
 
-    public ProjectFileScanner(IConsoleService consoleService, ILogger<ProjectFileScanner>? logger = null)
+    public ProjectFileScanner(
+        IConsoleService consoleService,
+        ILogger<ProjectFileScanner>? logger = null
+    )
     {
         _consoleService = consoleService;
         _logger = logger ?? NullLogger<ProjectFileScanner>.Instance;
@@ -24,12 +27,22 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             using var projectCollection = new ProjectCollection();
             var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
 
-            var targetFramework = projectRoot.Properties
-                .FirstOrDefault(p => p.Name == "TargetFramework" || p.Name == "TargetFrameworks")?.Value ?? "Unknown";
+            var targetFramework =
+                projectRoot
+                    .Properties.FirstOrDefault(p =>
+                        p.Name == "TargetFramework" || p.Name == "TargetFrameworks"
+                    )
+                    ?.Value
+                ?? "Unknown";
 
             return targetFramework;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Build.Exceptions.InvalidProjectFileException)
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or UnauthorizedAccessException
+                        or Microsoft.Build.Exceptions.InvalidProjectFileException
+            )
         {
             return "Unknown";
         }
@@ -38,7 +51,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     public string ProcessProject(
         string projectFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
-        bool keepVersionAttributes = false)
+        bool keepVersionAttributes = false
+    )
     {
         using var projectCollection = new ProjectCollection();
         var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
@@ -91,11 +105,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     /// </summary>
     private static bool HasConditionalAncestor(ProjectElement element)
     {
-        for (
-            ProjectElement? current = element;
-            current is not null;
-            current = current.Parent
-        )
+        for (ProjectElement? current = element; current is not null; current = current.Parent)
         {
             if (!string.IsNullOrEmpty(current.Condition))
             {
@@ -135,23 +145,76 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     }
 
                     var version =
-                        item.Metadata.FirstOrDefault(m => m.Name == "Version")?.Value ?? string.Empty;
+                        item.Metadata.FirstOrDefault(m => m.Name == "Version")?.Value
+                        ?? string.Empty;
+
+                    // Carried separately from Version: under central package management this is the
+                    // version actually in force, and it can float exactly as a Version can — but a
+                    // rule asking "does this project pin inline?" must not read it as one, because
+                    // VersionOverride is NuGet's sanctioned way to step outside the central pin.
+                    var versionOverride = item
+                        .Metadata.FirstOrDefault(m => m.Name == "VersionOverride")
+                        ?.Value;
 
                     // Kept rather than filtered, because "this package is declared twice, both times
                     // conditionally" is a different fact from "this package is declared twice" and only
                     // the caller knows which one it needs.
                     var isConditional = HasConditionalAncestor(item);
 
-                    references.Add(
-                        new PackageReference(
-                            item.Include,
-                            version,
-                            projectFilePath,
-                            projectName,
-                            IsTransitive: false,
-                            IsConditional: isConditional
-                        )
+                    // Update rather than Include is how a project *amends* a reference — attaching a
+                    // VersionOverride to an inherited one, or restating a version. Reading Include
+                    // alone left those with an empty package name, and a finding that names no
+                    // package names nothing anyone can go and fix.
+                    var isUpdate = string.IsNullOrWhiteSpace(item.Include);
+                    var packageName = isUpdate ? item.Update : item.Include;
+
+                    if (string.IsNullOrWhiteSpace(packageName))
+                    {
+                        continue;
+                    }
+
+                    var reference = new PackageReference(
+                        packageName,
+                        version,
+                        projectFilePath,
+                        projectName,
+                        IsTransitive: false,
+                        IsConditional: isConditional,
+                        VersionOverride: string.IsNullOrWhiteSpace(versionOverride)
+                            ? null
+                            : versionOverride.Trim()
                     );
+
+                    // An Update amends the item already declared rather than adding another one, so
+                    // recording it separately would have RedundantReference report a duplicate that
+                    // does not exist, and would leave the superseded version in the list for
+                    // FloatingVersion to read. With no Include to amend it stands on its own: that
+                    // is a project adjusting a reference it inherits.
+                    var amended = isUpdate
+                        ? references.FindLastIndex(existing =>
+                            string.Equals(
+                                existing.PackageName,
+                                packageName,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
+                        : -1;
+
+                    if (amended >= 0)
+                    {
+                        references[amended] = references[amended] with
+                        {
+                            Version = string.IsNullOrWhiteSpace(version)
+                                ? references[amended].Version
+                                : version,
+                            VersionOverride =
+                                reference.VersionOverride ?? references[amended].VersionOverride,
+                        };
+
+                        continue;
+                    }
+
+                    references.Add(reference);
                 }
 
                 return (references, true);
@@ -168,7 +231,9 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
     }
 
-    public (List<PackageReference> References, bool Success) ScanProjectPackages(string projectFilePath)
+    public (List<PackageReference> References, bool Success) ScanProjectPackages(
+        string projectFilePath
+    )
     {
         var references = new List<PackageReference>();
         var projectName = Path.GetFileName(projectFilePath);
@@ -195,16 +260,23 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
                     if (versionMetadata.Value.Contains("$("))
                     {
-                        _logger.LogDebug("Skipping MSBuild variable version '{Version}' for package {Package} in {Project}",
-                            versionMetadata.Value, item.Include, projectName);
+                        _logger.LogDebug(
+                            "Skipping MSBuild variable version '{Version}' for package {Package} in {Project}",
+                            versionMetadata.Value,
+                            item.Include,
+                            projectName
+                        );
                         continue;
                     }
 
-                    references.Add(new PackageReference(
-                        item.Include,
-                        versionMetadata.Value,
-                        projectFilePath,
-                        projectName));
+                    references.Add(
+                        new PackageReference(
+                            item.Include,
+                            versionMetadata.Value,
+                            projectFilePath,
+                            projectName
+                        )
+                    );
                 }
 
                 return (references, true);
@@ -222,4 +294,3 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
     }
 }
-
