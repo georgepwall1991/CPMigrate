@@ -36,7 +36,9 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+/* tells the UA to draw scrollbars and the <video> controls dark — without it
+   they render in the light default against a #070b11 page */
+html { color-scheme: dark; scroll-behavior: smooth; scroll-padding-top: 84px; }
 
 body {
   margin: 0;
@@ -294,7 +296,7 @@ h1, h2, h3, .lede { text-wrap: balance; }
 .gauge .bar { fill: none; stroke: url(#gg); stroke-width: 12; stroke-linecap: round; stroke-dasharray: 339.3; stroke-dashoffset: 339.3; transition: stroke-dashoffset 1.4s cubic-bezier(.22,1,.36,1) .2s; filter: drop-shadow(0 0 6px rgba(47,224,154,.4)); }
 .in .gauge .bar { stroke-dashoffset: var(--off, 80); }
 .gauge-num { position: absolute; text-align: center; }
-.gauge-num .n { font-family: var(--fd); font-weight: 700; font-size: 3.4rem; line-height: 1; color: var(--ink); letter-spacing: -.03em; }
+.gauge-num .n { font-family: var(--fd); font-weight: 700; font-size: 3.4rem; line-height: 1; color: var(--ink); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .gauge-num .d { font-family: var(--fm); font-size: .82rem; color: var(--faint); }
 .gauge-num .v { display: block; font-family: var(--fm); font-size: .78rem; font-weight: 600; letter-spacing: .14em; margin-top: 6px; }
 .board { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
@@ -303,7 +305,8 @@ h1, h2, h3, .lede { text-wrap: balance; }
 .bline:last-child { border-bottom: 0; }
 .bline .nm { display: flex; align-items: center; gap: 9px; color: var(--ink-2); }
 .bline .nm .ic { font-family: var(--fm); }
-.bline .ct { font-family: var(--fm); font-weight: 700; text-align: right; }
+/* these count up on reveal — tabular stops the column jittering as digits change */
+.bline .ct { font-family: var(--fm); font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .bline .st { font-family: var(--fm); font-size: .72rem; text-align: right; letter-spacing: .06em; }
 .meter { height: 8px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
 .meter i { display: block; height: 100%; width: 0; border-radius: 99px; transition: width 1.1s cubic-bezier(.22,1,.36,1) .25s; }
