@@ -120,6 +120,7 @@ kbd {
 .nav a:hover::after { transform: scaleX(1); }
 .cmdk {
   display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  font-family: var(--fm); /* buttons do not inherit — this was rendering in Arial */
   color: var(--muted); background: var(--surface-2); border: 1px solid var(--line);
   border-radius: 8px; padding: 6px 9px 6px 11px; font-size: .82rem; transition: border-color .15s, color .15s;
 }
@@ -180,10 +181,11 @@ h1 code { font-family: var(--fm); font-size: .62em; font-weight: 600; color: var
 
 .hints { display: flex; flex-wrap: wrap; gap: 16px; font-family: var(--fm); font-size: .76rem; color: var(--faint); margin-bottom: 22px; }
 .hints span { display: inline-flex; align-items: center; gap: 6px; }
-.stat-strip { display: flex; flex-wrap: wrap; gap: 8px 0; font-family: var(--fm); font-size: .8rem; color: var(--muted); }
-.stat-strip b { color: var(--ink); }
-.stat-strip span { padding-right: 16px; margin-right: 16px; border-right: 1px solid var(--line); }
-.stat-strip span:last-child { border-right: 0; margin-right: 0; }
+/* chips, not border-separated inline runs: on wrap the old version left a
+   dangling divider at the end of line one and stranded the last stat alone */
+.stat-strip { display: flex; flex-wrap: wrap; gap: 8px; font-family: var(--fm); font-size: .78rem; color: var(--muted); }
+.stat-strip b { color: var(--ink); font-weight: 600; }
+.stat-strip span { padding: 5px 11px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.015); }
 
 /* ── CRT terminal ────────────────────────────────────────────── */
 .term {
