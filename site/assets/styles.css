@@ -245,8 +245,15 @@ h1 code { font-family: var(--fm); font-size: .62em; font-weight: 600; color: var
 
 /* ── section heads + ghost numerals ──────────────────────────── */
 .sec { padding: 58px 0; position: relative; }
-.sec-head { max-width: 760px; margin-bottom: 36px; position: relative; }
-.ghost { position: absolute; top: -44px; left: -4px; font-family: var(--fm); font-weight: 700; font-size: clamp(4.5rem, 13vw, 10rem); line-height: 1; color: transparent; -webkit-text-stroke: 1.5px rgba(255,61,139,.13); z-index: -1; letter-spacing: -.04em; user-select: none; pointer-events: none; }
+/* static so the ghost numeral below anchors to .sec and can sit in the right
+   gutter instead of on top of the kicker and heading */
+.sec-head { max-width: 760px; margin-bottom: 36px; }
+.ghost {
+  position: absolute; top: 40px; right: 4px; left: auto;
+  font-family: var(--fm); font-weight: 700; font-size: clamp(5rem, 9vw, 8.5rem);
+  line-height: 1; color: transparent; -webkit-text-stroke: 1.5px rgba(255,61,139,.14);
+  z-index: 0; letter-spacing: -.04em; user-select: none; pointer-events: none;
+}
 .kicker { font-family: var(--fm); font-size: .76rem; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--pink); margin-bottom: 12px; display: inline-flex; align-items: center; gap: 8px; }
 .kicker::before { content: "//"; color: var(--faint); }
 h2 { font-family: var(--fd); font-size: clamp(1.9rem, 4vw, 3rem); line-height: 1.04; letter-spacing: -.035em; margin: 0 0 14px; color: var(--ink); }
@@ -471,6 +478,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
   .srow .rd, .srow .expl { grid-column: 1 / -1; }
   .srow .expl { text-align: left; }
   .man .row { grid-template-columns: 70px 1fr; }
+  /* no gutter left to hold the watermark without landing on the heading */
+  .ghost { display: none; }
   /* no room to drag two code columns — stack them and drop the handle */
   .ba { flex-direction: column; }
   .ba-before, .ba-after { flex: 0 0 auto; }
