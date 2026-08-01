@@ -60,6 +60,47 @@ public class AnalysisIssueIdentityTests
     }
 
     [Fact]
+    public void Compute_AFindingAboutTheRootPropsFile_KeepsTheIdentityItHadBeforeNestedFilesWereRead()
+    {
+        // The root Directory.Packages.props is the only file that could produce a finding before
+        // nested ones were read, so its fingerprint must not move: a committed baseline would stop
+        // matching the High finding it had accepted, and SARIF would reopen it, on upgrade and with
+        // no scheme change to explain why. Pinned by a value computed from the pre-change
+        // algorithm — recomputing it from this code would agree with itself however it changed.
+        var issue = new AnalysisIssue(
+            "Directory.Packages.props",
+            "Directory.Packages.props exists but does not set ManagePackageVersionsCentrally",
+            Array.Empty<string>(),
+            AnalysisIssueCode.CpmNotEnabled,
+            AnalysisSeverity.High
+        );
+
+        AnalysisIssueIdentity.Compute(issue).Should().Be("b25d3005b83a5c8106bd4f714db23710");
+    }
+
+    [Fact]
+    public void Compute_TwoNestedPropsFiles_AreDistinctFindings()
+    {
+        var first = PropsIssue("tools/Directory.Packages.props");
+        var second = PropsIssue("samples/Directory.Packages.props");
+
+        AnalysisIssueIdentity.Compute(first).Should().NotBe(AnalysisIssueIdentity.Compute(second));
+    }
+
+    private static AnalysisIssue PropsIssue(string propsFile) =>
+        new(
+            propsFile,
+            $"{propsFile} exists but does not set ManagePackageVersionsCentrally",
+            Array.Empty<string>(),
+            AnalysisIssueCode.CpmNotEnabled,
+            AnalysisSeverity.High,
+            Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["propsFile"] = propsFile,
+            }
+        );
+
+    [Fact]
     public void Compute_MetadataOtherThanTheSpecification_DoesNotChangeIdentity()
     {
         // Only the specification participates. Folding in arbitrary metadata would make the

@@ -6,6 +6,26 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.55.0] - 2026-08-01
+
+### Fixed
+- **Central pins are resolved per project, not once per scan.** MSBuild resolves `Directory.Packages.props` from each project's own directory, so a repository can hold several — a nested one governing `tools/`, say — each governing the projects beneath it. Judging every project against the file at the scan root was wrong in both directions: a project under a nested file was measured against pins it never sees, reporting `MissingPackageVersion` (a `High` finding that fails CI) for references that restore perfectly well, and a pin was called orphaned because the projects using it were reading a different file. Projects are now grouped by the props file that governs them and each group judged against its own pins.
+- An unusable props file — unparseable, or with central management switched off — is reported **once per file** rather than once per project beneath it. The misconfiguration is a property of the file; repeating it turned one problem into a wall.
+- `FloatingVersion` reads across every props file governing a scanned project, for the same reason: a nested file's floating pin is no more reproducible than the root's.
+- **A project's own `ManagePackageVersionsCentrally` is honoured.** MSBuild evaluates the project body after `Directory.Build.props`, so setting the property in a single `.csproj` is the documented way to opt one project out of central management — or into it. Enablement was read from the surrounding files only, so an opted-out project had every ordinary inline version reported as drift, and an opted-in one was dismissed as `CpmNotEnabled` and skipped.
+- **`DirectoryPackagesPropsPath` is honoured**, including when an unconditional `<Import>` is what declares it. A repository redirecting central management to a file of its own choosing was still judged against the nearest `Directory.Packages.props` — pins the project never receives, and a file it does not read. Where the redirect names a property that cannot be evaluated, no governing file is claimed and the project is left alone rather than measured against the wrong one.
+- **Every build property is now resolved the same way**, through one reader — including a project's own, which may equally be delegated to an imported fragment. `ManagePackageVersionsCentrally`, `DirectoryPackagesPropsPath`, and `CentralPackageTransitivePinningEnabled` previously had separate traversals that disagreed about which imports exist, so a property set in an imported fragment was honoured for one rule and invisible to another. The shared reader also substitutes `$(MSBuildThisFileDirectory)` in an import path — the ordinary way to write a portable import, previously rejected as unresolvable — and treats a `Condition` on an enclosing `ImportGroup` as making the import unresolved, consistently with the policy already applied to a condition on the import itself.
+- A props file **outside the scan root** is named by its path rather than by the conventional file name. A scan rooted in a subdirectory whose `DirectoryPackagesPropsPath` redirects elsewhere in the repository previously labelled that file `Directory.Packages.props` — naming a file that does not exist, and collapsing two different custom files onto one fingerprint.
+- Path comparisons in pin discovery use the platform-aware comparer throughout. On Linux, `tools/` and `Tools/` are different directories that can hold different props files; folding them dropped one context entirely, including its floating pins. That comparer still decides from the OS rather than the filesystem, so a case-sensitive macOS volume is not yet handled — tracked in [#111](https://github.com/georgepwall1991/CPMigrate/issues/111), and not fixed here because no CI runner can verify it.
+- `FloatingVersion` honours a project's own enablement too. Its pin discovery kept only each project's directory, so an opt-out never reached it: pins inert for every governed project were still reported, and a floating pin in a file a project opted into was missed.
+- Every governing context's references now count as evidence that a pin is used. A context with transitive pinning enabled states no orphans of its own, but dropping it entirely lost the proof that the packages its projects reference are live, and those pins were reported orphaned against the file declaring them.
+- `InlineVersionUnderCpm` and `MissingPackageVersion` name the props file that actually governs the project, so the file they tell you to edit is the one MSBuild reads for it.
+
+### Notes
+- A props file governing **no** scanned project is deliberately not judged at all. Reporting its pins as orphaned would make every scoped scan — `--analyze -s tools` — accuse the wider repository's props file of being dead. With no evidence either way, silence is the honest answer.
+- Findings are emitted in sorted props-file order, so a report is identical run to run whatever order discovery produced.
+- This was raised in three consecutive review rounds against 3.54.0 and deferred each time as needing its own release. Validated against a cloned Serilog (6 projects, 4 issues, unchanged), a nested-solution fixture, and CPMigrate's own repository.
+
 ## [3.54.0] - 2026-08-01
 
 ### Fixed
