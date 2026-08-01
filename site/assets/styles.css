@@ -2,8 +2,10 @@
    CPMigrate — terminal-native showcase system
    Display: Space Grotesk · Body: IBM Plex Sans · Code: IBM Plex Mono
    Multi-hue phosphor palette on deep slate, CRT texture, living UI.
+   Fonts are loaded via <link> in each page head, not @import here: an @import
+   cannot start downloading until this file has arrived and parsed, which put a
+   whole extra round-trip in front of the typeface the design is built on.
    ═════════════════════════════════════════════════════════════════ */
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap");
 
 :root {
   --bg: #070b11;
