@@ -379,6 +379,19 @@ pre code { font-family: inherit; background: none; border: 0; padding: 0; color:
 .card:hover { transform: translateY(-4px); border-color: rgba(255,61,139,.35); }
 .card h3 { margin-top: 0; }
 .card p, .muted { color: var(--muted); }
+/* cards in a row share a height, so pin the command to the bottom of each.
+   :not(.cl) keeps the release-strip cards on their existing baseline row. */
+.grid .card:not(.cl) { display: flex; flex-direction: column; }
+.grid .card:not(.cl) p { margin-bottom: 0; }
+/* the command each card is really about — was shipping as bare body text */
+.card .cmd {
+  display: block; margin-top: auto; padding: 9px 12px;
+  font-family: var(--fm); font-size: .78rem; color: var(--cyan);
+  background: #060a10; border: 1px solid var(--line); border-radius: var(--r-sm);
+  /* wrap rather than clip: this is a command the reader is meant to copy */
+  white-space: pre-wrap; word-break: break-word; line-height: 1.6;
+}
+.card .cmd::before { content: "$ "; color: var(--faint); }
 .cl { display: flex; gap: 13px; align-items: baseline; }
 .cl .ver { font-family: var(--fm); font-size: .74rem; font-weight: 700; white-space: nowrap; padding: 3px 9px; border-radius: 6px; }
 .cl .v1 { color: var(--green); background: rgba(47,224,154,.1); border: 1px solid rgba(47,224,154,.25); }
