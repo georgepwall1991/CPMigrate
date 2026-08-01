@@ -299,15 +299,20 @@ h3 { font-family: var(--fd); font-size: 1.18rem; margin: 0 0 8px; color: var(--i
 .m-red i { background: linear-gradient(90deg, var(--red), #ff8a92); }
 .m-green i { background: linear-gradient(90deg, var(--green), var(--green-2)); }
 
-/* ── before/after migration slider ───────────────────────────── */
-.ba { position: relative; border: 1px solid var(--line-2); border-radius: var(--r); overflow: hidden; user-select: none; box-shadow: 0 30px 70px rgba(0,0,0,.4); margin-top: 8px; }
-.ba pre { margin: 0; border: 0; border-radius: 0; min-height: 320px; }
-.ba .after { position: relative; }
-.ba .before { position: absolute; inset: 0; clip-path: inset(0 50% 0 0); }
+/* ── before/after migration split ────────────────────────────── */
+/* Two real panes side by side. Dragging re-apportions width between them, so
+   both files stay readable at every position — a clip-path wipe cannot work
+   here because the two snippets are different lengths and both start at the
+   left edge, which left the revealed half blank and overlapped the text. */
+.ba { --split: 50%; position: relative; display: flex; align-items: stretch; border: 1px solid var(--line-2); border-radius: var(--r); overflow: hidden; user-select: none; box-shadow: 0 30px 70px rgba(0,0,0,.4); margin-top: 8px; background: #060a10; }
+.ba-pane { position: relative; min-width: 0; overflow: hidden; }
+.ba-before { flex: 0 0 var(--split); }
+.ba-after { flex: 1 1 auto; border-left: 1px solid var(--line-2); }
+.ba pre { margin: 0; border: 0; border-radius: 0; min-height: 340px; height: 100%; padding-top: 46px; background: transparent; }
 .ba .pane-tag { position: absolute; top: 12px; font-family: var(--fm); font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; padding: 4px 10px; border-radius: 6px; z-index: 3; }
 .ba .tag-before { left: 14px; color: var(--red); background: rgba(255,85,96,.12); border: 1px solid rgba(255,85,96,.3); }
-.ba .tag-after { right: 14px; color: var(--green); background: rgba(47,224,154,.12); border: 1px solid rgba(47,224,154,.3); }
-.ba .divider { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: linear-gradient(var(--cyan), var(--pink)); z-index: 4; cursor: ew-resize; transform: translateX(-1px); }
+.ba .tag-after { left: 14px; color: var(--green); background: rgba(47,224,154,.12); border: 1px solid rgba(47,224,154,.3); }
+.ba .divider { position: absolute; top: 0; bottom: 0; left: var(--split); width: 2px; background: linear-gradient(var(--cyan), var(--pink)); z-index: 4; cursor: ew-resize; transform: translateX(-1px); }
 .ba .handle { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 38px; height: 38px; border-radius: 50%; background: var(--surface-3); border: 2px solid var(--cyan); display: grid; place-items: center; color: var(--cyan); box-shadow: 0 0 20px rgba(47,217,230,.4); cursor: ew-resize; font-size: .9rem; }
 .ba:focus-within .handle { outline: 2px solid var(--cyan); outline-offset: 3px; }
 
@@ -466,6 +471,12 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
   .srow .rd, .srow .expl { grid-column: 1 / -1; }
   .srow .expl { text-align: left; }
   .man .row { grid-template-columns: 70px 1fr; }
+  /* no room to drag two code columns — stack them and drop the handle */
+  .ba { flex-direction: column; }
+  .ba-before, .ba-after { flex: 0 0 auto; }
+  .ba-after { border-left: 0; border-top: 1px solid var(--line-2); }
+  .ba pre { min-height: 0; }
+  .ba .divider { display: none; }
 }
 @media (max-width: 600px) {
   .shell { padding: 0 16px; }

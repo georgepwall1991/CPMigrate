@@ -190,9 +190,27 @@
         <p class="sub">Inline <code>Version</code> attributes vanish from every project; one central <code>PackageVersion</code> per package appears instead. Drag the handle.</p>
       </div>
       <div class="ba" id="ba">
-        <span class="pane-tag tag-before">before · messy</span>
-        <span class="pane-tag tag-after">after · CPM</span>
-        <div class="after"><pre><code><span class="t-dim">&lt;!-- Api.csproj --&gt;</span>
+        <div class="ba-pane ba-before" id="baBefore">
+          <span class="pane-tag tag-before">before · messy</span>
+          <pre><code><span class="t-dim">&lt;!-- Api.csproj --&gt;</span>
+&lt;Project Sdk="Microsoft.NET.Sdk"&gt;
+  &lt;ItemGroup&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Serilog"</span> Version=<span class="t-red">"3.1.1"</span> /&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Polly"</span> Version=<span class="t-red">"8.4.1"</span> /&gt;
+  &lt;/ItemGroup&gt;
+&lt;/Project&gt;
+
+<span class="t-dim">&lt;!-- Worker.csproj --&gt;</span>
+&lt;Project Sdk="Microsoft.NET.Sdk"&gt;
+  &lt;ItemGroup&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Serilog"</span> Version=<span class="t-red">"4.0.2"</span> /&gt;
+    &lt;PackageReference Include=<span class="t-cyan">"Polly"</span> Version=<span class="t-red">"8.6.4"</span> /&gt;
+  &lt;/ItemGroup&gt;
+&lt;/Project&gt;</code></pre>
+        </div>
+        <div class="ba-pane ba-after">
+          <span class="pane-tag tag-after">after · CPM</span>
+          <pre><code><span class="t-dim">&lt;!-- Api.csproj --&gt;</span>
 &lt;Project Sdk="Microsoft.NET.Sdk"&gt;
   &lt;ItemGroup&gt;
     &lt;PackageReference Include=<span class="t-cyan">"Serilog"</span> /&gt;
@@ -209,22 +227,8 @@
     &lt;PackageVersion Include=<span class="t-cyan">"Serilog"</span> Version=<span class="t-green">"4.2.0"</span> /&gt;
     &lt;PackageVersion Include=<span class="t-cyan">"Polly"</span>    Version=<span class="t-green">"8.6.4"</span> /&gt;
   &lt;/ItemGroup&gt;
-&lt;/Project&gt;</code></pre></div>
-        <div class="before" id="baBefore"><pre><code><span class="t-dim">&lt;!-- Api.csproj --&gt;</span>
-&lt;Project Sdk="Microsoft.NET.Sdk"&gt;
-  &lt;ItemGroup&gt;
-    &lt;PackageReference Include=<span class="t-cyan">"Serilog"</span> Version=<span class="t-red">"3.1.1"</span> /&gt;
-    &lt;PackageReference Include=<span class="t-cyan">"Polly"</span> Version=<span class="t-red">"8.4.1"</span> /&gt;
-  &lt;/ItemGroup&gt;
-&lt;/Project&gt;
-
-<span class="t-dim">&lt;!-- Worker.csproj --&gt;</span>
-&lt;Project Sdk="Microsoft.NET.Sdk"&gt;
-  &lt;ItemGroup&gt;
-    &lt;PackageReference Include=<span class="t-cyan">"Serilog"</span> Version=<span class="t-red">"4.0.2"</span> /&gt;
-    &lt;PackageReference Include=<span class="t-cyan">"Polly"</span> Version=<span class="t-red">"8.6.4"</span> /&gt;
-  &lt;/ItemGroup&gt;
-&lt;/Project&gt;</code></pre></div>
+&lt;/Project&gt;</code></pre>
+        </div>
         <div class="divider" id="baDivider"><div class="handle" tabindex="0" role="slider" aria-label="compare before and after" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">⇆</div></div>
       </div>
     </section>
@@ -525,11 +529,13 @@ brew install cpmigrate</code></pre></div></div>
     /* ───── before/after slider ───── */
     var ba = document.getElementById("ba");
     if (ba) {
-      var before = document.getElementById("baBefore"), divider = document.getElementById("baDivider"), handle = divider.querySelector(".handle");
+      var divider = document.getElementById("baDivider"), handle = divider.querySelector(".handle");
       function setPos(pct) {
-        pct = Math.max(2, Math.min(98, pct));
-        before.style.clipPath = "inset(0 " + (100 - pct) + "% 0 0)";
-        divider.style.left = pct + "%";
+        /* Both panes stay on screen and keep their own column; the split only
+           changes how much width each one gets. Clamp well inside the edges so
+           neither side collapses to an unreadable sliver. */
+        pct = Math.max(18, Math.min(82, pct));
+        ba.style.setProperty("--split", pct + "%");
         handle.setAttribute("aria-valuenow", Math.round(pct));
       }
       function fromX(x) { var r = ba.getBoundingClientRect(); setPos((x - r.left) / r.width * 100); }
