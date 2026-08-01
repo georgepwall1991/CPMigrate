@@ -260,7 +260,10 @@ h1 code { font-family: var(--fm); font-size: .62em; font-weight: 600; color: var
 .kicker { font-family: var(--fm); font-size: .76rem; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--pink); margin-bottom: 12px; display: inline-flex; align-items: center; gap: 8px; }
 .kicker::before { content: "//"; color: var(--faint); }
 h2 { font-family: var(--fd); font-size: clamp(1.9rem, 4vw, 3rem); line-height: 1.04; letter-spacing: -.035em; margin: 0 0 14px; color: var(--ink); }
-h3 { font-family: var(--fd); font-size: 1.18rem; margin: 0 0 8px; color: var(--ink); letter-spacing: -.02em; }
+/* was 1.18rem — barely above the 16px body, and a 2.5x drop from h2 */
+h3 { font-family: var(--fd); font-size: 1.35rem; line-height: 1.25; margin: 0 0 8px; color: var(--ink); letter-spacing: -.02em; }
+/* stops "Built around the moments that / break" leaving a one-word last line */
+h1, h2, h3, .lede { text-wrap: balance; }
 .sub { color: var(--muted); font-size: 1.06rem; max-width: 60ch; }
 
 /* ── live scan feed (rules) ──────────────────────────────────── */
