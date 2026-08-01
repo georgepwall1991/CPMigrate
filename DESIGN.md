@@ -72,14 +72,24 @@ look; warm charcoal with a single high-chroma signal reads as expensive.
 an operational state, and severity collapses to three values instead of five:
 
 ```css
---sig-red:   #FF5F52;  /* critical, high — failure or blocked */
---sig-amber: #FFB020;  /* moderate — needs attention (same hue as identity, deliberately) */
---sig-green: #7FD98A;  /* pass, verified */
+--red:   #FF5F52;  /* critical, high — failure or blocked */
+--amber: #FFB020;  /* moderate — needs attention (same hue as identity, deliberately) */
+--green: #7FD98A;  /* pass, verified */
+--cyan:  #6FD3D8;  /* identifier — package and symbol names inside code only */
 ```
 
 Low and info severities render as neutral chips with no hue. Previously every
 analyzer row carried its own colour, which made the list read as noise; now the
 serious ones are the only coloured things on the page, so they actually land.
+The ticker dots use the same three-value ramp as the rows they preview.
+
+**Cyan is a data colour, never chrome.** It marks identifiers inside terminal
+output, code blocks and the exit-code man page. It must not appear on hover
+states, borders, handles, buttons or any other interface furniture — those take
+the accent. There are no `--pink*` tokens; if you find one, it is drift.
+
+Code surfaces use `--code-bg: #08080A` and `--ink-2` for body text. Never a
+blue-black; it reads cold against the warm canvas.
 
 `color-scheme: dark` so the UA draws scrollbars and video controls to match.
 
