@@ -359,7 +359,9 @@ h1, h2, h3, .lede { text-wrap: balance; }
 
 /* ── flow steps ──────────────────────────────────────────────── */
 .flow { display: flex; flex-direction: column; }
-.fstep { display: grid; grid-template-columns: 60px 1fr; gap: 22px; padding-bottom: 8px; position: relative; }
+/* minmax(0,1fr): a plain 1fr floors at the column's min-content width, so the
+   code-block min-width below would push the track past the viewport on mobile */
+.fstep { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 22px; padding-bottom: 8px; position: relative; }
 .fstep:not(:last-child)::before { content: ""; position: absolute; left: 29px; top: 60px; bottom: 0; width: 1px; background: linear-gradient(var(--line-2), transparent); }
 .fnum { width: 60px; height: 60px; display: grid; place-items: center; font-family: var(--fm); font-weight: 700; font-size: 1.05rem; color: var(--pink); background: radial-gradient(circle at 30% 20%, var(--surface-3), var(--surface)); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 0 24px rgba(255,61,139,.12); }
 .fstep h3 { margin: 8px 0 4px; }
@@ -446,7 +448,9 @@ tr.hl td:first-child { box-shadow: inset 3px 0 0 var(--pink); }
 .man .row { display: grid; grid-template-columns: 90px 1fr; gap: 14px; padding: 3px 0; }
 .man .row .c { color: var(--amber); font-weight: 700; }
 .man .row .nm { color: var(--cyan); }
-.man .title { color: var(--ink); font-weight: 700; font-size: 1.05rem; letter-spacing: .02em; }
+/* the man-page header used a run of &nbsp; to push the right half over, which
+   cannot wrap and so set the page's minimum width on mobile */
+.man .title { display: flex; flex-wrap: wrap; gap: 4px 24px; justify-content: space-between; color: var(--ink); font-weight: 700; font-size: 1.05rem; letter-spacing: .02em; }
 
 /* video frame (never a dead box) */
 .frame { position: relative; background: linear-gradient(135deg, var(--surface-2), #0a0f16); border: 1px solid var(--line-2); border-radius: 18px; padding: 12px; box-shadow: 0 30px 70px rgba(0,0,0,.45); overflow: hidden; }
@@ -530,6 +534,18 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
   .ba-after { border-left: 0; border-top: 1px solid var(--line-2); }
   .ba pre { min-height: 0; }
   .ba .divider { display: none; }
+}
+@media (max-width: 700px) {
+  /* 56px + 150px + 80px of fixed track never fitted a phone — drop the meter
+     to its own row so the name, count and status keep a readable line */
+  /* explicit placement: .meter sits before .st in the DOM, so spanning it
+     full-width pushes .st onto a third row and collapses column 3 to 0px */
+  .bline { grid-template-columns: 1fr auto auto; gap: 6px 10px; }
+  .bline .nm { grid-area: 1 / 1; }
+  .bline .ct { grid-area: 1 / 2; }
+  .bline .st { grid-area: 1 / 3; }
+  .bline .meter { grid-area: 2 / 1 / 3 / -1; }
+  .man { font-size: .78rem; padding: 20px 18px; }
 }
 @media (max-width: 600px) {
   .shell { padding: 0 16px; }
