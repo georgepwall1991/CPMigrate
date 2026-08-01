@@ -40,7 +40,7 @@ public class CentralPinDiscoveryTests : IDisposable
     {
         Write("Directory.Packages.props", Props(("Serilog", "4.0.0")));
 
-        CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root).Should().ContainKey("Serilog");
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root).Should().Contain(pin => pin.Package == "Serilog");
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public class CentralPinDiscoveryTests : IDisposable
         var nested = Path.Combine(_root, "src", "Api");
         Directory.CreateDirectory(nested);
 
-        CpmDriftAnalyzer.ReadEffectiveCentralVersions(nested).Should().ContainKey("Serilog");
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(nested).Should().Contain(pin => pin.Package == "Serilog");
     }
 
     [Fact]
@@ -65,7 +65,12 @@ public class CentralPinDiscoveryTests : IDisposable
         Directory.CreateDirectory(nested);
         Write(Path.Combine("src", "Directory.Packages.props"), Props(("Serilog", "3.0.0")));
 
-        CpmDriftAnalyzer.ReadEffectiveCentralVersions(nested)["Serilog"].Should().Be("3.0.0");
+        CpmDriftAnalyzer
+            .ReadEffectiveCentralVersions(nested)
+            .Should()
+            .ContainSingle(pin => pin.Package == "Serilog")
+            .Which.Version.Should()
+            .Be("3.0.0");
     }
 
     [Fact]
@@ -108,7 +113,7 @@ public class CentralPinDiscoveryTests : IDisposable
             """
         );
 
-        CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root).Should().ContainKey("Serilog");
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root).Should().Contain(pin => pin.Package == "Serilog");
     }
 
     [Fact]
@@ -182,7 +187,7 @@ public class CentralPinDiscoveryTests : IDisposable
         var nested = Path.Combine(_root, "src", "Api");
         Directory.CreateDirectory(nested);
 
-        CpmDriftAnalyzer.ReadEffectiveCentralVersions(nested).Should().ContainKey("Serilog");
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(nested).Should().Contain(pin => pin.Package == "Serilog");
     }
 
     [Fact]
@@ -271,7 +276,7 @@ public class CentralPinDiscoveryTests : IDisposable
         var nested = Path.Combine(_root, "src", "Api");
         Directory.CreateDirectory(nested);
 
-        CpmDriftAnalyzer.ReadEffectiveCentralVersions(nested).Should().ContainKey("Serilog");
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(nested).Should().Contain(pin => pin.Package == "Serilog");
     }
 
     [Fact]

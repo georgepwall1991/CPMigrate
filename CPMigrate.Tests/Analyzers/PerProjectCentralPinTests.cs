@@ -132,6 +132,69 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void ReadEffectiveCentralVersions_ARootExactPinDoesNotHideANestedFloatingOne()
+    {
+        // Collapsing to one entry per package let the root's exact Serilog pin mask the nested
+        // file's 4.*, so the nested project's dependency passed as reproducible when it is not —
+        // exactly the finding FloatingVersion exists to make.
+        WriteProps(".", ("Serilog", "4.0.0"));
+        WriteProps("tools", ("Serilog", "4.*"));
+        var rootProject = WriteProject("src/Api/Api.csproj", "Serilog");
+        var toolProject = WriteProject("tools/Build/Build.csproj", "Serilog");
+
+        var pins = CpmDriftAnalyzer.ReadEffectiveCentralVersions(
+            _root,
+            new[] { rootProject, toolProject }
+        );
+
+        pins.Should().Contain(pin => pin.Package == "Serilog" && pin.Version == "4.*");
+        pins.Should().Contain(pin => pin.Package == "Serilog" && pin.Version == "4.0.0");
+    }
+
+    [Fact]
+    public void Analyze_EnablementFromANearerDirectoryBuildProps_IsHonoured()
+    {
+        // The property is resolved from the governed project's own directory. Reading it from the
+        // scan root reported a valid project as CpmNotEnabled — a High finding that fails CI.
+        File.WriteAllText(
+            Path.Combine(_root, "Directory.Build.props"),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        Directory.CreateDirectory(Path.Combine(_root, "tools"));
+        File.WriteAllText(
+            Path.Combine(_root, "tools", "Directory.Build.props"),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        File.WriteAllText(
+            Path.Combine(_root, "tools", CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject("tools/Build/Build.csproj", "Serilog");
+
+        var issues = Analyze(project);
+
+        issues.Should().NotContain(issue => issue.IssueCode == AnalysisIssueCode.CpmNotEnabled);
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");

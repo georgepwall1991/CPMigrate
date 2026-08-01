@@ -72,10 +72,17 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             // Both remaining rules compare against the full central set. If an import could not be
             // followed, that set is incomplete, and every conclusion drawn from it would be a guess.
-            if (
-                context.ImportsResolved
-                && !IsTransitivePinningEnabled(context.Props, propsPath, packageInfo.BasePath)
-            )
+            // Asked from each governed project's directory, and satisfied by any of them.
+            // Transitive pinning makes a pin that nothing references deliberate, so treating it as
+            // on wherever it might be errs towards not accusing a project that is fine.
+            var transitivePinning =
+                context.PropertyRoots.Count == 0
+                    ? IsTransitivePinningEnabled(context.Props, propsPath, packageInfo.BasePath)
+                    : context.PropertyRoots.Any(root =>
+                        IsTransitivePinningEnabled(context.Props, propsPath, root)
+                    );
+
+            if (context.ImportsResolved && !transitivePinning)
             {
                 AddOrphanedVersionIssues(issues, context.Central, referenced);
             }
@@ -124,9 +131,14 @@ public class CpmDriftAnalyzer : IAnalyzer
                 continue;
             }
 
+            // Resolved from the governed project's own directory, not the scan root: a nested
+            // project can rely on a nearer Directory.Build.props for ManagePackageVersionsCentrally,
+            // and reading the wrong one reports a valid project as CpmNotEnabled — a High finding.
+            var propertyRoot = directory ?? packageInfo.BasePath;
+
             if (!usable.TryGetValue(propsPath, out var context))
             {
-                if (!TryBuildContext(propsPath, packageInfo.BasePath, issues, out context))
+                if (!TryBuildContext(propsPath, propertyRoot, issues, out context))
                 {
                     rejected.Add(propsPath);
                     continue;
@@ -138,6 +150,13 @@ public class CpmDriftAnalyzer : IAnalyzer
             if (project is not null)
             {
                 context.Projects.Add(project);
+
+                // Kept so the orphan check can ask each governed project whether transitive pinning
+                // is on for it, rather than asking once from the scan root.
+                if (propertyRoot is not null)
+                {
+                    context.PropertyRoots.Add(propertyRoot);
+                }
             }
         }
 
@@ -199,6 +218,9 @@ public class CpmDriftAnalyzer : IAnalyzer
     )
     {
         public List<string> Projects { get; } = [];
+
+        /// <summary>Directories the governed projects live in, for build-property lookups.</summary>
+        public HashSet<string> PropertyRoots { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -639,12 +661,12 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// <param name="projectPaths">
     /// Projects in the scan. When empty, only the scan root's props file is consulted.
     /// </param>
-    internal static IReadOnlyDictionary<string, string> ReadEffectiveCentralVersions(
+    internal static IReadOnlyList<CentralPin> ReadEffectiveCentralVersions(
         string? basePath,
         IEnumerable<string>? projectPaths = null
     )
     {
-        var effective = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var effective = new List<CentralPin>();
 
         var directories = (projectPaths ?? [])
             .Select(project => Path.GetDirectoryName(Path.GetFullPath(project)))
@@ -674,7 +696,7 @@ public class CpmDriftAnalyzer : IAnalyzer
     private static void AddEffectiveCentralVersions(
         string propsPath,
         string? basePath,
-        Dictionary<string, string> effective
+        List<CentralPin> effective
     )
     {
         var props = ReadProps(propsPath);
@@ -689,12 +711,22 @@ public class CpmDriftAnalyzer : IAnalyzer
             var entry in central.Where(entry => !string.IsNullOrWhiteSpace(entry.Value.Version))
         )
         {
-            // The nearest file wins for a project, but a caller asking across a whole scan wants
-            // every pin that is in force somewhere. First writer wins here only so the result is
-            // stable; the props paths are iterated in sorted order for the same reason.
-            effective.TryAdd(entry.Key, entry.Value.Version!);
+            // Every distinct pin, not one per package. Collapsing by package let a root file's exact
+            // pin hide a nested file's floating one — the nested project's dependency would then
+            // pass as reproducible when it is not, which is the failure this whole rule exists to
+            // catch.
+            var pin = new CentralPin(entry.Key, entry.Value.Version!);
+            if (!effective.Contains(pin))
+            {
+                effective.Add(pin);
+            }
         }
     }
+
+    /// <summary>One central pin: a package and the version specification exactly as written.</summary>
+    /// <param name="Package">Package id.</param>
+    /// <param name="Version">The specification, verbatim.</param>
+    internal readonly record struct CentralPin(string Package, string Version);
 
     /// <summary>
     /// Finds the <c>Directory.Packages.props</c> in effect, walking up from the scan root the way

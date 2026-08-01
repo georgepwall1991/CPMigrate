@@ -203,9 +203,9 @@ public class FloatingVersionAnalyzer : IAnalyzer
                 // a nested props file's floating pin is just as unreproducible as the root's.
                 packageInfo.GetProjectsScanned()
             )
-            .Select(entry => new Declaration(
-                entry.Key,
-                entry.Value,
+            .Select(pin => new Declaration(
+                pin.Package,
+                pin.Version,
                 // The pin lives in the props file, not in any one project, so naming projects here
                 // would point at the wrong file to edit.
                 Project: string.Empty
