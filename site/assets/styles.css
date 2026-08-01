@@ -390,7 +390,9 @@ pre { position: relative; margin: 0; overflow-x: auto; background: #060a10; bord
 /* Cards are ~275px wide, so every install command overflowed and sat behind a
    scrollbar. Wrap instead — a command you cannot read is a command you cannot
    run, and these cards exist only to hand you one. */
-.panel h2, .card h2 { font-size: 1.45rem; line-height: 1.22; margin-bottom: 6px; }
+/* same call as h3: a card title is a label, not a statement, so it takes the
+   sans. The serif only carries section- and page-level statements. */
+.panel h2, .card h2 { font-family: var(--fb); font-weight: 600; font-size: 1.125rem; line-height: 1.3; letter-spacing: -.008em; margin-bottom: 6px; }
 .panel pre, .card pre { white-space: pre-wrap; overflow-wrap: break-word; overflow-x: hidden; }
 pre code { font-family: inherit; background: none; border: 0; padding: 0; color: inherit; }
 .copy-btn { position: absolute; top: 9px; right: 9px; font-family: var(--fm); font-size: .68rem; letter-spacing: .06em; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 6px; padding: 5px 10px; cursor: pointer; opacity: 0; transition: opacity .15s, color .15s, border-color .15s; z-index: 3; }
