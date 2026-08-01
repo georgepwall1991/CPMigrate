@@ -28,6 +28,9 @@ public class CpmDriftAnalyzer : IAnalyzer
     private const string PackageReferenceItem = "PackageReference";
     private const string EnablementProperty = "ManagePackageVersionsCentrally";
 
+    /// <summary>Unit separator: it cannot occur in a path, so composite keys stay unambiguous.</summary>
+    private const string KeySeparator = "\u001F";
+
     /// <inheritdoc />
     public string Name => "Central Package Management Drift";
 
@@ -106,7 +109,12 @@ public class CpmDriftAnalyzer : IAnalyzer
     )
     {
         var usable = new Dictionary<string, CentralContext>(StringComparer.OrdinalIgnoreCase);
-        var rejected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Keyed by props file *and* the directory the properties were resolved from, because two
+        // projects can share a props file while a nearer Directory.Build.props enables central
+        // management for one and not the other. Caching by props file alone let whichever project
+        // came first decide for both.
+        var enablement = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var reported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var projects = packageInfo.GetProjectsScanned();
 
         // With no projects at all there is still a solution-level props file worth checking, so a
@@ -124,10 +132,10 @@ public class CpmDriftAnalyzer : IAnalyzer
         foreach (var (project, directory) in directories)
         {
             var propsPath = ResolvePropsPath(directory);
-            if (propsPath is null || rejected.Contains(propsPath))
+            if (propsPath is null)
             {
-                // Not centrally managed, or already reported as unusable. Reporting "no props file"
-                // would fire on every pre-migration repository.
+                // Not centrally managed. Reporting "no props file" would fire on every
+                // pre-migration repository.
                 continue;
             }
 
@@ -135,15 +143,26 @@ public class CpmDriftAnalyzer : IAnalyzer
             // project can rely on a nearer Directory.Build.props for ManagePackageVersionsCentrally,
             // and reading the wrong one reports a valid project as CpmNotEnabled — a High finding.
             var propertyRoot = directory ?? packageInfo.BasePath;
+            var enablementKey = $"{propsPath}{KeySeparator}{propertyRoot}";
+
+            if (!enablement.TryGetValue(enablementKey, out var enabled))
+            {
+                enabled = IsUsable(propsPath, propertyRoot, packageInfo, issues, reported);
+                enablement[enablementKey] = enabled;
+            }
+
+            if (!enabled)
+            {
+                continue;
+            }
 
             if (!usable.TryGetValue(propsPath, out var context))
             {
-                if (!TryBuildContext(propsPath, propertyRoot, issues, out context))
-                {
-                    rejected.Add(propsPath);
-                    continue;
-                }
-
+                // Created only once a project has proved the file usable, so a props file every
+                // project turned out to be exempt from never reaches the orphan check.
+                var props = ReadProps(propsPath)!;
+                var (central, importsResolved) = ReadCentralVersions(props, propsPath);
+                context = new CentralContext(props, central, importsResolved);
                 usable[propsPath] = context;
             }
 
@@ -164,50 +183,80 @@ public class CpmDriftAnalyzer : IAnalyzer
     }
 
     /// <summary>
-    /// Reads one props file, reporting why it cannot be used rather than proceeding on a guess.
+    /// Whether one props file can be used for a project resolving properties from a given
+    /// directory, reporting why not rather than proceeding on a guess.
+    ///
+    /// <para>
+    /// A reason is reported once per file and enablement value, not once per project beneath it:
+    /// the misconfiguration is a property of the file, and repeating it turns one problem into a
+    /// wall.
+    /// </para>
     /// </summary>
-    private static bool TryBuildContext(
+    private static bool IsUsable(
         string propsPath,
-        string? basePath,
+        string? propertyRoot,
+        ProjectPackageInfo packageInfo,
         List<AnalysisIssue> issues,
-        out CentralContext context
+        HashSet<string> reported
     )
     {
-        context = null!;
+        var propsFile = DescribePropsPath(propsPath, packageInfo);
 
         var props = ReadProps(propsPath);
         if (props is null)
         {
-            issues.Add(
-                new AnalysisIssue(
-                    PropsFileName,
-                    $"{PropsFileName} exists but could not be parsed as XML, so central versions "
-                        + "cannot be verified.",
-                    Array.Empty<string>(),
-                    AnalysisIssueCode.CpmNotEnabled,
-                    AnalysisSeverity.High
-                )
-            );
+            if (reported.Add($"parse{propsPath}"))
+            {
+                issues.Add(
+                    new AnalysisIssue(
+                        propsFile,
+                        $"{propsFile} exists but could not be parsed as XML, so central versions "
+                            + "cannot be verified.",
+                        Array.Empty<string>(),
+                        AnalysisIssueCode.CpmNotEnabled,
+                        AnalysisSeverity.High,
+                        Metadata: PropsMetadata(propsFile)
+                    )
+                );
+            }
 
             return false;
         }
 
-        if (!IsCpmEnabled(props, propsPath, basePath, out var enablement))
+        if (IsCpmEnabled(props, propsPath, propertyRoot, out var enablement))
         {
-            AddCpmNotEnabledIssue(issues, enablement);
-
-            // Stop here for this file. With central management off, an inline version is not
-            // overriding anything — it is simply how every project beneath it declares its
-            // packages, so the remaining rules would report the entire dependency list as drift.
-            return false;
+            return true;
         }
 
-        // A props file may import others, and NuGet uses their entries too. Missing them would
-        // report perfectly valid references as MissingPackageVersion — a High finding that fails CI.
-        var (central, importsResolved) = ReadCentralVersions(props, propsPath);
+        if (reported.Add($"disabled{propsPath}{enablement}"))
+        {
+            AddCpmNotEnabledIssue(issues, propsFile, enablement);
+        }
 
-        context = new CentralContext(props, central, importsResolved);
-        return true;
+        // With central management off, an inline version is not overriding anything — it is simply
+        // how every project beneath this file declares its packages, so the remaining rules would
+        // report the entire dependency list as drift.
+        return false;
+    }
+
+    /// <summary>
+    /// The props file as a reader should see it: relative to the scan root, so it names which file
+    /// needs fixing when a repository has several, and stays identical on every machine.
+    /// </summary>
+    private static string DescribePropsPath(string propsPath, ProjectPackageInfo packageInfo)
+    {
+        var described = packageInfo.ProjectId(propsPath);
+        return string.IsNullOrEmpty(described) ? PropsFileName : described;
+    }
+
+    /// <summary>
+    /// Carries the props file into the finding's identity. Without it every unparseable or disabled
+    /// file hashes the same — package fixed to the file name, no affected projects — so a baseline
+    /// accepting one would silently suppress the others.
+    /// </summary>
+    private static Dictionary<string, string> PropsMetadata(string propsFile)
+    {
+        return new Dictionary<string, string>(StringComparer.Ordinal) { ["propsFile"] = propsFile };
     }
 
     /// <summary>One props file, what it pins, and the scanned projects it governs.</summary>
@@ -268,19 +317,24 @@ public class CpmDriftAnalyzer : IAnalyzer
         return false;
     }
 
-    private static void AddCpmNotEnabledIssue(List<AnalysisIssue> issues, string? enabled)
+    private static void AddCpmNotEnabledIssue(
+        List<AnalysisIssue> issues,
+        string propsFile,
+        string? enabled
+    )
     {
         issues.Add(
             new AnalysisIssue(
-                PropsFileName,
+                propsFile,
                 enabled is null
-                    ? $"{PropsFileName} exists but does not set ManagePackageVersionsCentrally, so "
+                    ? $"{propsFile} exists but does not set ManagePackageVersionsCentrally, so "
                         + "its PackageVersion entries are ignored."
-                    : $"{PropsFileName} sets ManagePackageVersionsCentrally to '{enabled}', so its "
+                    : $"{propsFile} sets ManagePackageVersionsCentrally to '{enabled}', so its "
                         + "PackageVersion entries are ignored.",
                 Array.Empty<string>(),
                 AnalysisIssueCode.CpmNotEnabled,
-                AnalysisSeverity.High
+                AnalysisSeverity.High,
+                Metadata: PropsMetadata(propsFile)
             )
         );
     }
@@ -679,15 +733,19 @@ public class CpmDriftAnalyzer : IAnalyzer
             directories.Add(basePath);
         }
 
+        // The directory is carried alongside its props file, not replaced by the scan root: whether
+        // that file's pins are in force depends on properties resolved from the project's own
+        // directory, so a repository disabling central management at the root and enabling it under
+        // tools/ would otherwise have the nested pins read as inert.
         foreach (
-            var propsPath in directories
-                .Select(ResolvePropsPath)
-                .Where(path => path is not null)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(path => path, StringComparer.Ordinal)
+            var resolved in directories
+                .Select(directory => (Directory: directory, Props: ResolvePropsPath(directory)))
+                .Where(entry => entry.Props is not null)
+                .DistinctBy(entry => $"{entry.Props}{KeySeparator}{entry.Directory}", StringComparer.OrdinalIgnoreCase)
+                .OrderBy(entry => entry.Props, StringComparer.Ordinal)
         )
         {
-            AddEffectiveCentralVersions(propsPath!, basePath, effective);
+            AddEffectiveCentralVersions(resolved.Props!, resolved.Directory, effective);
         }
 
         return effective;

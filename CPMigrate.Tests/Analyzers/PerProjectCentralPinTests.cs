@@ -195,6 +195,48 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_TwoProjectsSharingAPropsFileWithDifferentEnablement_AreJudgedSeparately()
+    {
+        // Caching enablement by props file alone let whichever project came first decide for both:
+        // if the disabled one was first, a valid project was skipped entirely.
+        WriteBuildProps("src/Exempt", enabled: false);
+        WriteProps(".", ("Serilog", "4.0.0"));
+        var governed = WriteProject("src/Api/Api.csproj", "Serilog");
+        var exempt = WriteProject("src/Exempt/Exempt.csproj", "Serilog");
+
+        // The exempt project comes first, which is what used to poison the shared cache entry.
+        var issues = Analyze(exempt, governed);
+
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.MissingPackageVersion);
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.OrphanedPackageVersion);
+    }
+
+    [Fact]
+    public void Analyze_TwoUnusablePropsFiles_AreDistinctFindings()
+    {
+        // Each names the props file as its package and no project at all, so without the file in
+        // the identity a baseline accepting one would silently suppress the other.
+        WriteDisabledProps(".");
+        WriteDisabledProps("tools");
+        var rootProject = WriteProject("src/Api/Api.csproj", "Serilog");
+        var toolProject = WriteProject("tools/Build/Build.csproj", "Serilog");
+
+        var issues = Analyze(rootProject, toolProject);
+
+        var fingerprints = issues
+            .Where(issue => issue.IssueCode == AnalysisIssueCode.CpmNotEnabled)
+            .Select(AnalysisIssueIdentity.Compute)
+            .ToList();
+
+        fingerprints.Should().HaveCount(2);
+        fingerprints.Distinct().Should().HaveCount(2);
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");
@@ -229,6 +271,43 @@ public class PerProjectCentralPinTests : IDisposable
         var marker = "Include=\"";
         var start = content.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
         return content[start..content.IndexOf('"', start)];
+    }
+
+    private void WriteBuildProps(string relativeDirectory, bool enabled)
+    {
+        var directory = Path.Combine(_root, relativeDirectory);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(
+            Path.Combine(directory, "Directory.Build.props"),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>{(
+                enabled ? "true" : "false"
+            )}</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+    }
+
+    private void WriteDisabledProps(string relativeDirectory)
+    {
+        var directory = Path.Combine(_root, relativeDirectory);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(
+            Path.Combine(directory, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
     }
 
     private void WriteProps(
