@@ -254,6 +254,12 @@ h1 code { font-family: var(--fm); font-size: .62em; font-weight: 600; color: var
 .d-low { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
 
 /* ── section heads + ghost numerals ──────────────────────────── */
+/* .section / .page-intro are the secondary-page equivalents of .sec / .sub.
+   They shipped with no rule at all, so every guide, comparison, the install
+   page and 404 rendered with no vertical rhythm and a default-styled intro. */
+.section { padding: 44px 0 4px; position: relative; }
+.section + .grid, .section + .split { margin-bottom: 34px; }
+.page-intro { color: var(--muted); font-size: 1.06rem; max-width: 68ch; margin: 0 0 4px; }
 .sec { padding: 58px 0; position: relative; }
 /* static so the ghost numeral below anchors to .sec and can sit in the right
    gutter instead of on top of the kicker and heading */
@@ -362,6 +368,11 @@ h1, h2, h3, .lede { text-wrap: balance; }
 /* code blocks w/ copy */
 .code-block { position: relative; margin: 14px 0; }
 pre { position: relative; margin: 0; overflow-x: auto; background: #060a10; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 15px 18px; font-family: var(--fm); font-size: .83rem; line-height: 1.7; color: #cfe1ec; }
+/* Cards are ~275px wide, so every install command overflowed and sat behind a
+   scrollbar. Wrap instead — a command you cannot read is a command you cannot
+   run, and these cards exist only to hand you one. */
+.panel h2, .card h2 { font-size: 1.45rem; line-height: 1.22; margin-bottom: 6px; }
+.panel pre, .card pre { white-space: pre-wrap; overflow-wrap: break-word; overflow-x: hidden; }
 pre code { font-family: inherit; background: none; border: 0; padding: 0; color: inherit; }
 .copy-btn { position: absolute; top: 9px; right: 9px; font-family: var(--fm); font-size: .68rem; letter-spacing: .06em; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 6px; padding: 5px 10px; cursor: pointer; opacity: 0; transition: opacity .15s, color .15s, border-color .15s; z-index: 3; }
 .code-block:hover .copy-btn, .copy-btn:focus-visible { opacity: 1; }
@@ -386,6 +397,9 @@ pre code { font-family: inherit; background: none; border: 0; padding: 0; color:
 
 /* cards grid + changes strip */
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px,1fr)); gap: 15px; margin: 24px 0; }
+/* for grids whose cards carry a shell command — 250px columns are narrow
+   enough that install commands break mid-token */
+.grid-wide { grid-template-columns: repeat(auto-fit, minmax(330px,1fr)); }
 .card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; overflow: hidden; transition: transform .18s, border-color .18s; }
 .card::before { content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity .25s; background: radial-gradient(300px circle at var(--mx,50%) var(--my,50%), rgba(255,61,139,.08), transparent 60%); pointer-events: none; }
 .card:hover::before { opacity: 1; }
