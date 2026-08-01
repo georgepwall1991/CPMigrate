@@ -364,6 +364,9 @@ h1, h2, h3, .lede { text-wrap: balance; }
 .fnum { width: 60px; height: 60px; display: grid; place-items: center; font-family: var(--fm); font-weight: 700; font-size: 1.05rem; color: var(--pink); background: radial-gradient(circle at 30% 20%, var(--surface-3), var(--surface)); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 0 24px rgba(255,61,139,.12); }
 .fstep h3 { margin: 8px 0 4px; }
 .fstep p { margin: 0 0 10px; color: var(--muted); font-size: .94rem; }
+/* a 20-character command was being stretched across 856px of empty bar —
+   size to the content instead, with a floor so the five steps stay a column */
+.fstep .code-block { width: fit-content; min-width: min(470px, 100%); max-width: 100%; }
 
 /* code blocks w/ copy */
 .code-block { position: relative; margin: 14px 0; }
