@@ -237,7 +237,8 @@ h1 code { font-family: var(--fm); font-size: .62em; font-weight: 600; color: var
 @keyframes tick { to { transform: translateX(-50%); } }
 .ticker .ti { display: inline-flex; align-items: center; gap: 9px; padding: 0 26px; font-family: var(--fm); font-size: .8rem; color: var(--muted); }
 .ticker .ti b { color: var(--ink-2); font-weight: 600; }
-.ticker .dot { width: 6px; height: 6px; border-radius: 50%; }
+/* not scoped to .ticker — the bisect legend reuses .dot and rendered 0×0 */
+.dot { flex: none; width: 6px; height: 6px; border-radius: 50%; }
 .d-crit { background: var(--red); box-shadow: 0 0 8px var(--red); }
 .d-high { background: var(--pink); box-shadow: 0 0 8px var(--pink); }
 .d-mod { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
