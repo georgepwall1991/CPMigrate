@@ -478,6 +478,64 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_EnablementSuppliedOnlyByAnImportedFragment_CountsAsEnabled()
+    {
+        // The fragment supplies both the redirect and the enablement, and the redirected file does
+        // not repeat the property. Reading the build props without following its imports reported
+        // CpmNotEnabled — a High finding — and dropped its pins, on a repository MSBuild manages
+        // perfectly well.
+        WriteImportingBuildProps("src", "Shared.props");
+        WriteRedirectFragment("src/Shared.props", "$(MSBuildThisFileDirectory)Packages.props");
+        WriteSilentNamedProps("src/Packages.props", ("Serilog", "4.0.0"));
+        var project = WriteProject("src/Api/Api.csproj", "Serilog");
+
+        var issues = Analyze(project);
+
+        issues.Should().NotContain(issue => issue.IssueCode == AnalysisIssueCode.CpmNotEnabled);
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.MissingPackageVersion);
+    }
+
+    [Fact]
+    public void Analyze_ARedirectBehindAPropertyAnchoredImport_IsStillFollowed()
+    {
+        // $(MSBuildThisFileDirectory) is statically known, and anchoring an import with it is the
+        // ordinary way to write a portable one. Rejecting the path for containing '$(' left the
+        // redirect unread and fell back to the conventional file.
+        WriteProps(".", ("Newtonsoft.Json", "13.0.1"));
+        WriteImportingBuildProps("src", "$(MSBuildThisFileDirectory)Shared.props");
+        WriteRedirectFragment("src/Shared.props", "$(MSBuildThisFileDirectory)Packages.props");
+        WriteNamedProps("src/Packages.props", ("Serilog", "4.0.0"));
+        var project = WriteProject("src/Api/Api.csproj", "Serilog");
+
+        var issues = Analyze(project);
+
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.MissingPackageVersion);
+    }
+
+    [Fact]
+    public void Analyze_ARedirectInsideAConditionedImportGroup_IsNotFollowed()
+    {
+        // Whether the group applies depends on properties this cannot evaluate, so following it
+        // could swap in an unrelated pin set — the same reason a conditioned Import is skipped. The
+        // conventional file governs instead, and it pins what the project references.
+        WriteProps(".", ("Serilog", "4.0.0"));
+        WriteConditionedGroupBuildProps("src", "Shared.props");
+        WriteRedirectFragment("src/Shared.props", "$(MSBuildThisFileDirectory)Packages.props");
+        WriteNamedProps("src/Packages.props", ("Newtonsoft.Json", "13.0.1"));
+        var project = WriteProject("src/Api/Api.csproj", "Serilog");
+
+        var issues = Analyze(project);
+
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.MissingPackageVersion);
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");
@@ -586,10 +644,50 @@ public class PerProjectCentralPinTests : IDisposable
         );
     }
 
+    /// <summary>
+    /// A <c>Directory.Build.props</c> whose import sits inside a conditioned <c>ImportGroup</c>.
+    /// </summary>
+    private void WriteConditionedGroupBuildProps(string relativeDirectory, string import)
+    {
+        var directory = Path.Combine(_root, relativeDirectory);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(
+            Path.Combine(directory, "Directory.Build.props"),
+            $"""
+            <Project>
+              <ImportGroup Condition="'$(Flavour)' == 'Internal'">
+                <Import Project="{import}" />
+              </ImportGroup>
+            </Project>
+            """
+        );
+    }
+
     /// <summary>Pins in a file that is not named <c>Directory.Packages.props</c>.</summary>
     private void WriteNamedProps(
         string relativePath,
         params (string Package, string Version)[] pins
+    )
+    {
+        WriteNamedPropsFile(relativePath, declaresEnablement: true, pins);
+    }
+
+    /// <summary>
+    /// The same, without repeating the enablement property — so a test that needs enablement to
+    /// come from elsewhere cannot pass on the redirected file quietly supplying it.
+    /// </summary>
+    private void WriteSilentNamedProps(
+        string relativePath,
+        params (string Package, string Version)[] pins
+    )
+    {
+        WriteNamedPropsFile(relativePath, declaresEnablement: false, pins);
+    }
+
+    private void WriteNamedPropsFile(
+        string relativePath,
+        bool declaresEnablement,
+        (string Package, string Version)[] pins
     )
     {
         var path = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -602,13 +700,16 @@ public class PerProjectCentralPinTests : IDisposable
             )
         );
 
+        var properties = declaresEnablement
+            ? "\n  <PropertyGroup>\n    "
+                + "<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>"
+                + "\n  </PropertyGroup>"
+            : string.Empty;
+
         File.WriteAllText(
             path,
             $"""
-            <Project>
-              <PropertyGroup>
-                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-              </PropertyGroup>
+            <Project>{properties}
               <ItemGroup>
                 {items}
               </ItemGroup>
