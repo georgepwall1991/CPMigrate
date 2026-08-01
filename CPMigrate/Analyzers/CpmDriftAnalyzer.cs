@@ -28,6 +28,8 @@ public class CpmDriftAnalyzer : IAnalyzer
     private const string PackageReferenceItem = "PackageReference";
     private const string EnablementProperty = "ManagePackageVersionsCentrally";
 
+    private const string RedirectProperty = "DirectoryPackagesPropsPath";
+
     /// <summary>Unit separator: it cannot occur in a path, so composite keys stay unambiguous.</summary>
     private const string KeySeparator = "\u001F";
 
@@ -852,15 +854,40 @@ public class CpmDriftAnalyzer : IAnalyzer
     {
         var effective = new List<CentralPin>();
 
-        var directories = (projectPaths ?? [])
-            .Select(project => Path.GetDirectoryName(Path.GetFullPath(project)))
-            .Where(directory => directory is not null)
-            .Distinct(PathComparer)
+        var supplied = (projectPaths ?? []).ToList();
+
+        // Each project's own enablement travels with its directory. Discarding the project path here
+        // meant this reader could not see a project's opt-out, so pins inert for every project
+        // governed by the file were still reported — and a floating pin in a file a project opted
+        // into was still missed.
+        var contexts = supplied
+            .Select(project =>
+                (
+                    Directory: Path.GetDirectoryName(Path.GetFullPath(project)),
+                    Enablement: ReadProjectEnablement(project)
+                )
+            )
+            .Where(entry =>
+                entry.Directory is not null
+                && !string.Equals(entry.Enablement, "false", StringComparison.OrdinalIgnoreCase)
+            )
+            .Select(entry =>
+                (
+                    entry.Directory,
+                    OptedIn: string.Equals(
+                        entry.Enablement,
+                        "true",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+            )
             .ToList();
 
-        if (directories.Count == 0)
+        // Only when no project was supplied at all. A scan whose every project opted out has no
+        // governed pins to read, and falling back to the scan root would invent them.
+        if (supplied.Count == 0)
         {
-            directories.Add(basePath);
+            contexts.Add((basePath, false));
         }
 
         // The directory is carried alongside its props file, not replaced by the scan root: whether
@@ -868,17 +895,26 @@ public class CpmDriftAnalyzer : IAnalyzer
         // directory, so a repository disabling central management at the root and enabling it under
         // tools/ would otherwise have the nested pins read as inert.
         foreach (
-            var resolved in directories
-                .Select(directory => (Directory: directory, Props: ResolvePropsPath(directory)))
+            var resolved in contexts
+                .Select(entry =>
+                    (entry.Directory, entry.OptedIn, Props: ResolvePropsPath(entry.Directory))
+                )
                 .Where(entry => entry.Props is not null)
                 .DistinctBy(
-                    entry => $"{entry.Props}{KeySeparator}{entry.Directory}",
+                    entry =>
+                        $"{entry.Props}{KeySeparator}{entry.Directory}{KeySeparator}{entry.OptedIn}",
                     StringComparer.OrdinalIgnoreCase
                 )
                 .OrderBy(entry => entry.Props, StringComparer.Ordinal)
         )
         {
-            AddEffectiveCentralVersions(resolved.Props!, resolved.Directory, basePath, effective);
+            AddEffectiveCentralVersions(
+                resolved.Props!,
+                resolved.Directory,
+                basePath,
+                resolved.OptedIn,
+                effective
+            );
         }
 
         return effective;
@@ -888,11 +924,14 @@ public class CpmDriftAnalyzer : IAnalyzer
         string propsPath,
         string? propertyRoot,
         string? scanRoot,
+        // The governed project turned central management on for itself, so the surrounding files
+        // cannot call this file inert.
+        bool optedIn,
         List<CentralPin> effective
     )
     {
         var props = ReadProps(propsPath);
-        if (props is null || !IsCpmEnabled(props, propsPath, propertyRoot, out _))
+        if (props is null || (!IsCpmEnabled(props, propsPath, propertyRoot, out _) && !optedIn))
         {
             return;
         }
@@ -1133,18 +1172,27 @@ public class CpmDriftAnalyzer : IAnalyzer
             return false;
         }
 
-        var declared = ReadProps(buildPropsPath)
-            ?.Descendants()
-            .Where(element => element.Name.LocalName == "DirectoryPackagesPropsPath")
-            .Select(element => element.Value.Trim())
-            .LastOrDefault(value => !string.IsNullOrWhiteSpace(value));
-
-        if (declared is null)
+        var document = ReadProps(buildPropsPath);
+        if (document is null)
         {
             return false;
         }
 
-        var directory = Path.GetDirectoryName(Path.GetFullPath(buildPropsPath))!;
+        // Followed through imports, because delegating shared settings to an imported fragment is
+        // ordinary and MSBuild observes the redirect wherever it is written. Reading only the outer
+        // document fell back to the conventional file and judged the project against pins it never
+        // receives.
+        if (
+            ReadRedirectThroughImports(document, buildPropsPath, new HashSet<string>(PathComparer))
+            is not { } declaration
+        )
+        {
+            return false;
+        }
+
+        // The directory of the file that *declared* it, not the outer one: a redirect anchored with
+        // $(MSBuildThisFileDirectory) means its own file, and so does a bare relative path.
+        var (declared, directory) = declaration;
 
         var expanded = declared
             .Replace(
@@ -1170,6 +1218,88 @@ public class CpmDriftAnalyzer : IAnalyzer
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// The last <c>DirectoryPackagesPropsPath</c> assignment in a document, following unconditional
+    /// imports in evaluation order exactly as <see cref="ReadCpmEnablementThroughImports"/> does,
+    /// paired with the directory of the file that declared it.
+    ///
+    /// <para>
+    /// An import that cannot be resolved by reading XML — conditioned, globbed, or built from
+    /// properties — is skipped rather than followed, the same trade made for the enablement
+    /// property: acting on an import that may not apply is worse than not reading it.
+    /// </para>
+    /// </summary>
+    private static (string Value, string Directory)? ReadRedirectThroughImports(
+        XDocument document,
+        string documentPath,
+        HashSet<string> visited
+    )
+    {
+        var fullPath = Path.GetFullPath(documentPath);
+        if (!visited.Add(fullPath))
+        {
+            return null;
+        }
+
+        var directory = Path.GetDirectoryName(fullPath);
+        if (directory is null)
+        {
+            return null;
+        }
+
+        (string Value, string Directory)? resolved = null;
+
+        foreach (var element in document.Descendants())
+        {
+            if (element.Name.LocalName.Equals(RedirectProperty, StringComparison.OrdinalIgnoreCase))
+            {
+                var value = element.Value.Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    resolved = (value, directory);
+                }
+
+                continue;
+            }
+
+            if (!element.Name.LocalName.Equals("Import", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(element.Attribute("Condition")?.Value))
+            {
+                continue;
+            }
+
+            var relative = element.Attribute("Project")?.Value;
+            if (
+                string.IsNullOrWhiteSpace(relative)
+                || relative.Contains("$(", StringComparison.Ordinal)
+                || relative.Contains('*')
+            )
+            {
+                continue;
+            }
+
+            var importedPath = Path.GetFullPath(
+                Path.Combine(directory, relative.Replace('\\', Path.DirectorySeparatorChar))
+            );
+            var imported = ReadProps(importedPath);
+            if (imported is null)
+            {
+                continue;
+            }
+
+            if (ReadRedirectThroughImports(imported, importedPath, visited) is { } inherited)
+            {
+                resolved = inherited;
+            }
+        }
+
+        return resolved;
     }
 
     /// <summary>

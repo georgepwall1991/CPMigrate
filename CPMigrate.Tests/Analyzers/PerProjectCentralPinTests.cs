@@ -428,6 +428,56 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_ARedirectDeclaredInAnImportedFile_IsStillFollowed()
+    {
+        // MSBuild observes a redirect wherever an unconditional import puts it. Reading only the
+        // outer document's descendants fell back to the conventional file and judged the project
+        // against pins it never receives — the same defect the redirect support exists to remove.
+        WriteProps(".", ("Newtonsoft.Json", "13.0.1"));
+        WriteImportingBuildProps("src", "Shared.props");
+        WriteRedirectFragment("src/Shared.props", "$(MSBuildThisFileDirectory)Packages.props");
+        WriteNamedProps("src/Packages.props", ("Serilog", "4.0.0"));
+        var project = WriteProject("src/Api/Api.csproj", "Serilog");
+
+        var issues = Analyze(project);
+
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.MissingPackageVersion);
+    }
+
+    [Fact]
+    public void ReadEffectiveCentralVersions_AProjectOptingOut_ContributesNoPins()
+    {
+        // Floating-pin discovery resolved enablement from the project's directory alone, so the
+        // project's own opt-out never reached it and inert central pins were still reported.
+        WriteProps(".", ("Serilog", "4.*"));
+        var project = WriteProject(
+            "src/Legacy/Legacy.csproj",
+            "Serilog",
+            inlineVersion: "3.1.1",
+            centrallyManaged: false
+        );
+
+        CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root, [project]).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ReadEffectiveCentralVersions_AProjectOptingIn_ContributesItsPins()
+    {
+        // And the other way: a project turning central management on for itself really is governed,
+        // so a floating pin in the file governing it is a finding FloatingVersion must still make.
+        WriteSilentProps(".", ("Serilog", "4.*"));
+        WriteBuildProps("src", enabled: false);
+        var project = WriteProject("src/Api/Api.csproj", "Serilog", centrallyManaged: true);
+
+        CpmDriftAnalyzer
+            .ReadEffectiveCentralVersions(_root, [project])
+            .Should()
+            .Contain(pin => pin.Package == "Serilog");
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");
@@ -490,6 +540,41 @@ public class PerProjectCentralPinTests : IDisposable
         Directory.CreateDirectory(directory);
         File.WriteAllText(
             Path.Combine(directory, "Directory.Build.props"),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                <DirectoryPackagesPropsPath>{propsPath}</DirectoryPackagesPropsPath>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+    }
+
+    /// <summary>
+    /// A <c>Directory.Build.props</c> that delegates its settings to an unconditional import.
+    /// </summary>
+    private void WriteImportingBuildProps(string relativeDirectory, string import)
+    {
+        var directory = Path.Combine(_root, relativeDirectory);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(
+            Path.Combine(directory, "Directory.Build.props"),
+            $"""
+            <Project>
+              <Import Project="{import}" />
+            </Project>
+            """
+        );
+    }
+
+    /// <summary>An imported fragment carrying the redirect and the enablement property.</summary>
+    private void WriteRedirectFragment(string relativePath, string propsPath)
+    {
+        var path = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(
+            path,
             $"""
             <Project>
               <PropertyGroup>
