@@ -598,6 +598,30 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_TwoRedirectsToLikeNamedFilesOutsideTheScanRoot_AreDistinctFindings()
+    {
+        // Both redirected files carry the conventional name but are different files. Labelling each
+        // by the convention gave them one identity, so a baseline accepting one would suppress the
+        // other — and neither finding named the file it meant.
+        WriteNamedProps("left/Directory.Packages.props", ("Newtonsoft.Json", "13.0.1"));
+        WriteNamedProps("right/Directory.Packages.props", ("Newtonsoft.Json", "13.0.1"));
+        WriteRedirect("scan/a", "../../left/Directory.Packages.props");
+        WriteRedirect("scan/b", "../../right/Directory.Packages.props");
+        var left = WriteProject("scan/a/Api/Api.csproj", "Serilog");
+        var right = WriteProject("scan/b/Api/Api.csproj", "Serilog");
+
+        var issues = AnalyzeFrom(Path.Combine(_root, "scan"), left, right);
+
+        var described = issues
+            .Where(issue => issue.IssueCode == AnalysisIssueCode.MissingPackageVersion)
+            .Select(issue => issue.Description)
+            .ToList();
+
+        described.Should().HaveCount(2);
+        described.Distinct().Should().HaveCount(2);
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");

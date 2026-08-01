@@ -40,6 +40,15 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// on Linux — where <c>tools/</c> and <c>Tools/</c> are different directories that can hold
     /// different props files. Folding them together would let whichever was read first govern
     /// both, and drop the other file's pins entirely.
+    ///
+    /// <para>
+    /// Known limitation, tracked in issue #111: the OS is not the right thing to ask. A macOS volume
+    /// can be formatted case-sensitive, and Windows supports per-directory case sensitivity, so on
+    /// those this folds directories that the filesystem keeps apart. Fixing it means deriving the
+    /// comparer from the scan root and threading it through the static helpers; it is left alone
+    /// here because no CI runner presents a case-sensitive filesystem, so the change could not be
+    /// verified.
+    /// </para>
     /// </summary>
     private static readonly StringComparer PathComparer = OperatingSystem.IsLinux()
         ? StringComparer.Ordinal
@@ -311,18 +320,14 @@ public class CpmDriftAnalyzer : IAnalyzer
         var relative = Path.GetRelativePath(basePath, Path.GetFullPath(propsPath));
         var normalized = relative.Replace(Path.DirectorySeparatorChar, '/').Replace('\\', '/');
 
-        if (!ProjectPackageInfo.EscapesRoot(relative))
-        {
-            return normalized;
-        }
-
-        // Outside the scan root. The conventional file is named by its convention: there is only one
-        // meaning for it, and the '../' depth is noise. A redirected custom file is not — calling it
-        // Directory.Packages.props names a file that does not exist, and collapses two different
-        // custom files onto one identity, so a baseline accepting one would suppress the other.
-        return PathComparer.Equals(Path.GetFileName(propsPath), PropsFileName)
-            ? PropsFileName
-            : normalized;
+        // The path is kept even when it escapes the scan root. Collapsing to the conventional name
+        // was only ever safe while one scan could reach a single file above its root; a redirect
+        // reaches any file, and two subtrees can redirect to different files that happen to share
+        // the conventional name. Both would then name neither actual path and carry one identity,
+        // so a baseline accepting one would silently suppress the other. A '../' prefix is the
+        // honest answer: the file really is outside the scan, and the path stays relative, so it is
+        // still identical on every machine.
+        return normalized;
     }
 
     /// <summary>
