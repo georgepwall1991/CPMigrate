@@ -170,6 +170,42 @@ public sealed class DiscoverabilityMetadataTests
         );
     }
 
+    /// <summary>
+    /// Every CPMigrate version the landing page shows a reader must be the shipped one, not just
+    /// the two spots <see cref="Landing_page_states_the_shipped_version"/> pins.
+    ///
+    /// <para>
+    /// Guarded because pinning only the install command and the schema.org tag left the hero
+    /// badge and the terminal simulation four releases behind, so the page contradicted itself:
+    /// the hero announced v3.51.0 while the install block below it installed 3.55.0. Package
+    /// versions in the sample XML (Serilog 3.1.1, Polly 8.4.1) are deliberately outside both
+    /// patterns — they are example content, not claims about the tool.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Landing_page_never_shows_a_stale_cpmigrate_version()
+    {
+        var landingPage = File.ReadAllText(Path.Combine(RepositoryRoot, "site", "index.html"));
+
+        // "CPMigrate 3.55.0" / "CPMigrate v3.55.0", and bare badge forms like "· v3.55.0".
+        var toolVersions = Regex
+            .Matches(landingPage, @"CPMigrate\s+v?(?<ver>\d+\.\d+\.\d+)")
+            .Concat(Regex.Matches(landingPage, @"(?<![\w.])v(?<ver>\d+\.\d+\.\d+)"))
+            .Select(m => m.Groups["ver"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.NotEmpty(toolVersions);
+        Assert.All(
+            toolVersions,
+            version =>
+                Assert.True(
+                    version == ExpectedVersion,
+                    $"Landing page shows CPMigrate {version} but the shipped version is {ExpectedVersion}."
+                )
+        );
+    }
+
     [Fact]
     public void Package_packs_assets_for_nuget_readme_rendering()
     {
