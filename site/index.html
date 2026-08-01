@@ -714,10 +714,14 @@ brew install cpmigrate</code></pre></div></div>
       }
     });
     document.getElementById("term").addEventListener("click", function () { input.focus(); });
-    /* auto demo */
+    /* auto demo — deliberately does NOT focus the input when it finishes.
+       The terminal now sits below the poster hero, so a programmatic focus is
+       specified to scroll it into view and would skip the headline and CTAs on
+       load. Seizing the caret also moves focus out from under keyboard and
+       screen-reader users who never asked for it. Clicking the terminal (above)
+       still focuses it, which is the point at which the reader has asked. */
     pushLines(['<span class="t-p">➜</span> <span class="t-cmd">analyze</span>'].concat(CMDS.analyze()), function () {
-      input.placeholder = "your turn — type 'help' and press enter";
-      input.focus();
+      input.placeholder = "your turn — click here, then type 'help' and press enter";
     });
   })();
   </script>
