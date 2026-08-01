@@ -189,8 +189,8 @@
       <div class="sec-head">
         <span class="ghost">02</span>
         <div class="kicker">migration</div>
-        <h2>Drag to see what CPM actually changes</h2>
-        <p class="sub">Inline <code>Version</code> attributes vanish from every project; one central <code>PackageVersion</code> per package appears instead. Drag the handle.</p>
+        <h2>See exactly what CPM changes</h2>
+        <p class="sub">Inline <code>Version</code> attributes vanish from every project; one central <code>PackageVersion</code> per package appears instead.<span class="wide-only"> Drag the divider to compare.</span></p>
       </div>
       <div class="ba" id="ba">
         <div class="ba-pane ba-before" id="baBefore">
@@ -466,9 +466,13 @@ brew install cpmigrate</code></pre></div></div>
     if (reduce || !("IntersectionObserver" in window)) {
       reveals.forEach(function (e) { e.classList.add("in"); });
     } else {
+      /* Sections run 800-1200px tall, so a 0.12 ratio meant a section only
+         started fading once a good screenful of it was already scrolled past —
+         the reader got a blank viewport first. Trigger as it approaches
+         instead, so the fade has finished by the time it is in view. */
       var io = new IntersectionObserver(function (es) {
         es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
-      }, { threshold: 0.12 });
+      }, { threshold: 0, rootMargin: "200px 0px 200px 0px" });
       reveals.forEach(function (e) { io.observe(e); });
     }
     var rail = document.querySelectorAll(".rail a");

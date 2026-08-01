@@ -403,8 +403,9 @@ pre code { font-family: inherit; background: none; border: 0; padding: 0; color:
 /* cards grid + changes strip */
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px,1fr)); gap: 15px; margin: 24px 0; }
 /* for grids whose cards carry a shell command — 250px columns are narrow
-   enough that install commands break mid-token */
-.grid-wide { grid-template-columns: repeat(auto-fit, minmax(330px,1fr)); }
+   enough that install commands break mid-token. min(...,100%) so the track
+   still collapses on a 320px phone instead of overflowing the viewport. */
+.grid-wide { grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr)); }
 .card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; overflow: hidden; transition: transform .18s, border-color .18s; }
 .card::before { content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity .25s; background: radial-gradient(300px circle at var(--mx,50%) var(--my,50%), rgba(255,61,139,.08), transparent 60%); pointer-events: none; }
 .card:hover::before { opacity: 1; }
@@ -528,6 +529,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
   .man .row { grid-template-columns: 70px 1fr; }
   /* no gutter left to hold the watermark without landing on the heading */
   .ghost { display: none; }
+  /* the drag handle is hidden below, so retract the instruction with it */
+  .wide-only { display: none; }
   /* no room to drag two code columns — stack them and drop the handle */
   .ba { flex-direction: column; }
   .ba-before, .ba-after { flex: 0 0 auto; }
