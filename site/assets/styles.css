@@ -115,16 +115,17 @@ kbd {
 }
 .brand:hover .brand-mark { transform: rotate(90deg) scale(1.08); }
 .brand-mark::after { content: "›"; position: absolute; inset: 0; display: grid; place-items: center; color: #06121a; font-family: var(--fm); font-weight: 700; font-size: .8rem; }
-.nav { display: flex; flex-wrap: wrap; align-items: center; gap: 22px; }
-.nav a { color: var(--muted); font-size: .92rem; font-weight: 500; position: relative; }
-.nav a::after { content: ""; position: absolute; left: 0; bottom: -6px; height: 2px; width: 100%; background: linear-gradient(90deg, var(--pink), var(--cyan)); transform: scaleX(0); transform-origin: left; transition: transform .22s; }
+.nav { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; }
+/* padding, not margin, so the tap target clears 44px without moving the text */
+.nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; color: var(--muted); font-size: .92rem; font-weight: 500; position: relative; }
+.nav a::after { content: ""; position: absolute; left: 4px; bottom: 9px; height: 2px; width: calc(100% - 8px); background: linear-gradient(90deg, var(--pink), var(--cyan)); transform: scaleX(0); transform-origin: left; transition: transform .22s; }
 .nav a:hover { color: var(--ink); }
 .nav a:hover::after { transform: scaleX(1); }
 .cmdk {
   display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
   font-family: var(--fm); /* buttons do not inherit — this was rendering in Arial */
   color: var(--muted); background: var(--surface-2); border: 1px solid var(--line);
-  border-radius: 8px; padding: 6px 9px 6px 11px; font-size: .82rem; transition: border-color .15s, color .15s;
+  border-radius: 8px; min-height: 40px; padding: 6px 9px 6px 11px; font-size: .82rem; transition: border-color .15s, color .15s;
 }
 .cmdk:hover { color: var(--ink); border-color: var(--line-2); }
 .cmdk kbd { margin-left: 2px; }
@@ -132,6 +133,8 @@ kbd {
 /* ── progress rail ───────────────────────────────────────────── */
 .rail { position: fixed; left: 18px; top: 50%; transform: translateY(-50%); z-index: 40; display: flex; flex-direction: column; gap: 14px; }
 .rail a { width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); position: relative; transition: background .2s, transform .2s; }
+/* 9px dots are almost unclickable — widen the hit area, keep the dot small */
+.rail a::after { content: ""; position: absolute; inset: -13px; border-radius: 50%; }
 .rail a::before { content: attr(data-label); position: absolute; left: 18px; top: 50%; transform: translateY(-50%); white-space: nowrap; font-family: var(--fm); font-size: .68rem; color: var(--muted); opacity: 0; pointer-events: none; transition: opacity .15s; }
 .rail a:hover::before { opacity: 1; }
 .rail a.on { background: var(--pink); box-shadow: 0 0 10px var(--glow-pink); transform: scale(1.4); }
@@ -445,7 +448,7 @@ tr.hl td:first-child { box-shadow: inset 3px 0 0 var(--pink); }
 .install { position: relative; border-radius: var(--r); padding: 34px; background: linear-gradient(135deg, rgba(255,61,139,.07), rgba(47,217,230,.06)), var(--surface); border: 1px solid var(--line-2); overflow: hidden; }
 .install::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--pink), var(--cyan), var(--green)); }
 .tabs { display: inline-flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 4px; margin: 8px 0 18px; }
-.tabs button { font-family: var(--fm); font-size: .8rem; color: var(--muted); background: transparent; border: 0; border-radius: 7px; padding: 8px 16px; cursor: pointer; transition: all .15s; }
+.tabs button { font-family: var(--fm); font-size: .8rem; min-height: 40px; color: var(--muted); background: transparent; border: 0; border-radius: 7px; padding: 8px 18px; cursor: pointer; transition: color .15s, background .15s; }
 .tabs button.on { color: #190410; background: linear-gradient(135deg, var(--pink), #ff5e9c); font-weight: 600; }
 .tabs button:not(.on):hover { color: var(--ink); }
 .tab-pane { display: none; }
