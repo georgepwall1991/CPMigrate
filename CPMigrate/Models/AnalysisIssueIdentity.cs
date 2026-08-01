@@ -99,15 +99,11 @@ public static class AnalysisIssueIdentity
             return string.Empty;
         }
 
-        foreach (var key in DiscriminatingMetadata)
-        {
-            if (issue.Metadata.TryGetValue(key, out var value))
-            {
-                return value.Trim().ToLowerInvariant();
-            }
-        }
+        var parts = DiscriminatingMetadata
+            .Where(key => issue.Metadata.ContainsKey(key))
+            .Select(key => issue.Metadata[key].Trim().ToLowerInvariant());
 
-        return string.Empty;
+        return string.Join('\u001F', parts);
     }
 
     /// <summary>
@@ -118,6 +114,15 @@ public static class AnalysisIssueIdentity
     /// have. <c>propsFile</c> separates findings about different <c>Directory.Packages.props</c>
     /// files in one repository: those name the file as their package and no project at all, so
     /// without it a baseline accepting one would silently suppress the rest.
+    /// </para>
+    ///
+    /// <para>
+    /// A finding about the conventional root props file deliberately carries no <c>propsFile</c>
+    /// key. It is the only file that could produce a finding before nested files were read, so
+    /// adding one to the seed would change every stored fingerprint for it — a committed baseline
+    /// would stop matching the High finding it had accepted, and SARIF would reopen it, on upgrade
+    /// and with no scheme change to explain why. Emitting the key only for nested files leaves
+    /// every pre-existing identity exactly as it was.
     /// </para>
     /// </summary>
     private static readonly string[] DiscriminatingMetadata = ["versionSpecification", "propsFile"];

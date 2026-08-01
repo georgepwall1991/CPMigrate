@@ -87,7 +87,12 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             if (context.ImportsResolved && !transitivePinning)
             {
-                AddOrphanedVersionIssues(issues, context.Central, referenced);
+                AddOrphanedVersionIssues(
+                    issues,
+                    context.Central,
+                    referenced,
+                    DescribePropsPath(propsPath, packageInfo)
+                );
             }
         }
 
@@ -245,8 +250,21 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// </summary>
     private static string DescribePropsPath(string propsPath, ProjectPackageInfo packageInfo)
     {
-        var described = packageInfo.ProjectId(propsPath);
-        return string.IsNullOrEmpty(described) ? PropsFileName : described;
+        return DescribePropsPath(propsPath, packageInfo.BasePath);
+    }
+
+    /// <inheritdoc cref="DescribePropsPath(string, ProjectPackageInfo)" />
+    private static string DescribePropsPath(string propsPath, string? basePath)
+    {
+        if (string.IsNullOrWhiteSpace(basePath))
+        {
+            return PropsFileName;
+        }
+
+        var relative = Path.GetRelativePath(basePath, Path.GetFullPath(propsPath));
+        return ProjectPackageInfo.EscapesRoot(relative)
+            ? PropsFileName
+            : relative.Replace(Path.DirectorySeparatorChar, '/').Replace('\\', '/');
     }
 
     /// <summary>
@@ -254,9 +272,15 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// file hashes the same — package fixed to the file name, no affected projects — so a baseline
     /// accepting one would silently suppress the others.
     /// </summary>
-    private static Dictionary<string, string> PropsMetadata(string propsFile)
+    private static Dictionary<string, string>? PropsMetadata(string propsFile)
     {
-        return new Dictionary<string, string>(StringComparer.Ordinal) { ["propsFile"] = propsFile };
+        // Nothing for the conventional root file. It is the only one that could produce a finding
+        // before nested files were read, so adding a key would change every stored fingerprint for
+        // it: a committed baseline would stop matching the High finding it had accepted, and SARIF
+        // would reopen it, on upgrade and with no scheme change to explain why.
+        return string.Equals(propsFile, PropsFileName, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : new Dictionary<string, string>(StringComparer.Ordinal) { ["propsFile"] = propsFile };
     }
 
     /// <summary>One props file, what it pins, and the scanned projects it governs.</summary>
@@ -495,7 +519,8 @@ public class CpmDriftAnalyzer : IAnalyzer
     private static void AddOrphanedVersionIssues(
         List<AnalysisIssue> issues,
         IReadOnlyDictionary<string, CentralEntry> central,
-        HashSet<string> referenced
+        HashSet<string> referenced,
+        string propsFile
     )
     {
         foreach (
@@ -513,12 +538,16 @@ public class CpmDriftAnalyzer : IAnalyzer
             issues.Add(
                 new AnalysisIssue(
                     packageName,
-                    $"Pinned at {entry.Version ?? "an unspecified version"} in {PropsFileName} but "
+                    $"Pinned at {entry.Version ?? "an unspecified version"} in {propsFile} but "
                         + "referenced by no project. Remove it, or the pin outlives what it was for.",
                     Array.Empty<string>(),
                     AnalysisIssueCode.OrphanedPackageVersion,
                     AnalysisSeverity.Low,
-                    Fixable: false
+                    Fixable: false,
+                    // Names which file to edit when a repository has several, and keeps two files
+                    // orphaning the same package from sharing one identity — a baseline would
+                    // otherwise record one and suppress both.
+                    Metadata: PropsMetadata(propsFile)
                 )
             );
         }
@@ -741,11 +770,19 @@ public class CpmDriftAnalyzer : IAnalyzer
             var resolved in directories
                 .Select(directory => (Directory: directory, Props: ResolvePropsPath(directory)))
                 .Where(entry => entry.Props is not null)
-                .DistinctBy(entry => $"{entry.Props}{KeySeparator}{entry.Directory}", StringComparer.OrdinalIgnoreCase)
+                .DistinctBy(
+                    entry => $"{entry.Props}{KeySeparator}{entry.Directory}",
+                    StringComparer.OrdinalIgnoreCase
+                )
                 .OrderBy(entry => entry.Props, StringComparer.Ordinal)
         )
         {
-            AddEffectiveCentralVersions(resolved.Props!, resolved.Directory, effective);
+            AddEffectiveCentralVersions(
+                resolved.Props!,
+                resolved.Directory,
+                effective,
+                DescribePropsPath(resolved.Props!, basePath)
+            );
         }
 
         return effective;
@@ -754,7 +791,8 @@ public class CpmDriftAnalyzer : IAnalyzer
     private static void AddEffectiveCentralVersions(
         string propsPath,
         string? basePath,
-        List<CentralPin> effective
+        List<CentralPin> effective,
+        string propsFile
     )
     {
         var props = ReadProps(propsPath);
@@ -773,7 +811,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             // pin hide a nested file's floating one — the nested project's dependency would then
             // pass as reproducible when it is not, which is the failure this whole rule exists to
             // catch.
-            var pin = new CentralPin(entry.Key, entry.Value.Version!);
+            var pin = new CentralPin(entry.Key, entry.Value.Version!, propsFile);
             if (!effective.Contains(pin))
             {
                 effective.Add(pin);
@@ -781,10 +819,11 @@ public class CpmDriftAnalyzer : IAnalyzer
         }
     }
 
-    /// <summary>One central pin: a package and the version specification exactly as written.</summary>
+    /// <summary>One central pin: a package, the specification verbatim, and where it was written.</summary>
     /// <param name="Package">Package id.</param>
     /// <param name="Version">The specification, verbatim.</param>
-    internal readonly record struct CentralPin(string Package, string Version);
+    /// <param name="PropsFile">The props file the pin was read from, relative to the scan root.</param>
+    internal readonly record struct CentralPin(string Package, string Version, string PropsFile);
 
     /// <summary>
     /// Finds the <c>Directory.Packages.props</c> in effect, walking up from the scan root the way

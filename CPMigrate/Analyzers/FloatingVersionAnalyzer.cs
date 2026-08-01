@@ -35,7 +35,17 @@ public class FloatingVersionAnalyzer : IAnalyzer
     /// Project id, or empty for a central pin — which lives in the props file rather than in any one
     /// project, so naming projects would point at the wrong file to edit.
     /// </param>
-    private sealed record Declaration(string PackageName, string Version, string Project);
+    /// <param name="Source">
+    /// The props file a central pin came from, or empty for a project declaration. Part of the
+    /// finding's identity: two files declaring the same floating specification are two pins, and
+    /// fixing one leaves the other floating.
+    /// </param>
+    private sealed record Declaration(
+        string PackageName,
+        string Version,
+        string Project,
+        string Source = ""
+    );
 
     /// <inheritdoc />
     public string Name => "Floating Versions";
@@ -68,7 +78,8 @@ public class FloatingVersionAnalyzer : IAnalyzer
             .GroupBy(declaration =>
                 (
                     Package: declaration.PackageName.ToLowerInvariant(),
-                    Specification: declaration.Version.Trim().ToLowerInvariant()
+                    Specification: declaration.Version.Trim().ToLowerInvariant(),
+                    declaration.Source
                 )
             )
             .Select(group => Report(group.ToList()))
@@ -90,6 +101,7 @@ public class FloatingVersionAnalyzer : IAnalyzer
             .OrderBy(project => project, StringComparer.Ordinal)
             .ToList();
 
+        var source = group[0].Source;
         var explanation =
             kind == WildcardKind
                 ? "resolves to whatever the feed holds at restore time"
@@ -97,8 +109,11 @@ public class FloatingVersionAnalyzer : IAnalyzer
 
         return new AnalysisIssue(
             packageName,
-            $"Version '{specification}' {explanation}. Pin an exact version so the same commit "
-                + "restores the same package.",
+            string.IsNullOrEmpty(source)
+                ? $"Version '{specification}' {explanation}. Pin an exact version so the same commit "
+                    + "restores the same package."
+                : $"Version '{specification}' in {source} {explanation}. Pin an exact version so the "
+                    + "same commit restores the same package.",
             projects,
             AnalysisIssueCode.FloatingVersion,
             AnalysisSeverity.Moderate,
@@ -106,12 +121,36 @@ public class FloatingVersionAnalyzer : IAnalyzer
             // which this pass does not query. Claiming otherwise would have --fix report "no
             // changes were needed" over a finding it never touched.
             Fixable: false,
-            Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["versionSpecification"] = specification,
-                ["kind"] = kind,
-            }
+            Metadata: BuildMetadata(specification, kind, source)
         );
+    }
+
+    /// <summary>
+    /// Finding metadata. The props file is included only for a nested one: the conventional root
+    /// file is the only source that could produce a finding before nested files were read, so
+    /// naming it would change fingerprints stored against earlier releases.
+    /// </summary>
+    private static Dictionary<string, string> BuildMetadata(
+        string specification,
+        string kind,
+        string source
+    )
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["versionSpecification"] = specification,
+            ["kind"] = kind,
+        };
+
+        if (
+            !string.IsNullOrEmpty(source)
+            && !string.Equals(source, CpmDriftAnalyzer.PropsFileName, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            metadata["propsFile"] = source;
+        }
+
+        return metadata;
     }
 
     /// <summary>
@@ -207,8 +246,9 @@ public class FloatingVersionAnalyzer : IAnalyzer
                 pin.Package,
                 pin.Version,
                 // The pin lives in the props file, not in any one project, so naming projects here
-                // would point at the wrong file to edit.
-                Project: string.Empty
+                // would point at the wrong file to edit. The file itself is carried instead.
+                Project: string.Empty,
+                Source: pin.PropsFile
             ))
             .ToList();
     }
