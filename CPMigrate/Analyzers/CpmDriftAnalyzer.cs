@@ -37,14 +37,124 @@ public class CpmDriftAnalyzer : IAnalyzer
         ArgumentNullException.ThrowIfNull(packageInfo);
 
         var issues = new List<AnalysisIssue>();
-        var propsPath = ResolvePropsPath(packageInfo.BasePath);
 
-        if (propsPath is null)
+        // Grouped by the props file that actually governs each project, because MSBuild resolves
+        // Directory.Packages.props from the project's own directory. Judging every project against
+        // one set is wrong in both directions: a project under a nested props file gets measured
+        // against pins it never sees — MissingPackageVersion, a High finding, on references that
+        // restore perfectly well — and a pin is called orphaned because the projects using it were
+        // reading a different file.
+        var governed = GroupProjectsByGoverningProps(packageInfo, issues);
+
+        // Sorted so a report is identical run to run, whatever order discovery happened to produce.
+        foreach (
+            var (propsPath, context) in governed.OrderBy(entry => entry.Key, StringComparer.Ordinal)
+        )
         {
-            // Not a centrally-managed solution: there is nothing to drift from, and reporting
-            // "no props file" as a finding would fire on every pre-migration repository.
-            return new AnalyzerResult(Name, issues);
+            // A GlobalPackageReference applies to every project by definition, so it is never
+            // orphaned — seeding it here keeps the orphan check from reporting all of them.
+            var referenced = new HashSet<string>(
+                context.Central.Where(entry => entry.Value.IsGlobal).Select(entry => entry.Key),
+                StringComparer.OrdinalIgnoreCase
+            );
+
+            foreach (var projectPath in context.Projects)
+            {
+                InspectProject(
+                    issues,
+                    packageInfo,
+                    projectPath,
+                    context.Central,
+                    referenced,
+                    context.ImportsResolved
+                );
+            }
+
+            // Both remaining rules compare against the full central set. If an import could not be
+            // followed, that set is incomplete, and every conclusion drawn from it would be a guess.
+            if (
+                context.ImportsResolved
+                && !IsTransitivePinningEnabled(context.Props, propsPath, packageInfo.BasePath)
+            )
+            {
+                AddOrphanedVersionIssues(issues, context.Central, referenced);
+            }
         }
+
+        return new AnalyzerResult(Name, issues);
+    }
+
+    /// <summary>
+    /// The props file governing each scanned project, and the projects it governs.
+    ///
+    /// <para>
+    /// Unusable files — unparseable, or with central management switched off — are reported once
+    /// each and then excluded. Once per <em>file</em>, not once per project beneath it: the
+    /// misconfiguration is a property of the file, and repeating it turns one problem into a wall.
+    /// </para>
+    /// </summary>
+    private static Dictionary<string, CentralContext> GroupProjectsByGoverningProps(
+        ProjectPackageInfo packageInfo,
+        List<AnalysisIssue> issues
+    )
+    {
+        var usable = new Dictionary<string, CentralContext>(StringComparer.OrdinalIgnoreCase);
+        var rejected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var projects = packageInfo.GetProjectsScanned();
+
+        // With no projects at all there is still a solution-level props file worth checking, so a
+        // misconfigured one is reported rather than passing unexamined.
+        var directories =
+            projects.Count > 0
+                ? projects.Select(project =>
+                    (
+                        Project: (string?)project,
+                        Directory: Path.GetDirectoryName(Path.GetFullPath(project))
+                    )
+                )
+                : [(Project: (string?)null, Directory: packageInfo.BasePath)];
+
+        foreach (var (project, directory) in directories)
+        {
+            var propsPath = ResolvePropsPath(directory);
+            if (propsPath is null || rejected.Contains(propsPath))
+            {
+                // Not centrally managed, or already reported as unusable. Reporting "no props file"
+                // would fire on every pre-migration repository.
+                continue;
+            }
+
+            if (!usable.TryGetValue(propsPath, out var context))
+            {
+                if (!TryBuildContext(propsPath, packageInfo.BasePath, issues, out context))
+                {
+                    rejected.Add(propsPath);
+                    continue;
+                }
+
+                usable[propsPath] = context;
+            }
+
+            if (project is not null)
+            {
+                context.Projects.Add(project);
+            }
+        }
+
+        return usable;
+    }
+
+    /// <summary>
+    /// Reads one props file, reporting why it cannot be used rather than proceeding on a guess.
+    /// </summary>
+    private static bool TryBuildContext(
+        string propsPath,
+        string? basePath,
+        List<AnalysisIssue> issues,
+        out CentralContext context
+    )
+    {
+        context = null!;
 
         var props = ReadProps(propsPath);
         if (props is null)
@@ -60,43 +170,35 @@ public class CpmDriftAnalyzer : IAnalyzer
                 )
             );
 
-            return new AnalyzerResult(Name, issues);
+            return false;
         }
 
-        if (!IsCpmEnabled(props, propsPath, packageInfo.BasePath, out var enablement))
+        if (!IsCpmEnabled(props, propsPath, basePath, out var enablement))
         {
             AddCpmNotEnabledIssue(issues, enablement);
 
-            // Stop here. With central management off, an inline version is not overriding anything —
-            // it is simply how every project in the solution declares its packages, so the remaining
-            // rules would report the entire dependency list as drift.
-            return new AnalyzerResult(Name, issues);
+            // Stop here for this file. With central management off, an inline version is not
+            // overriding anything — it is simply how every project beneath it declares its
+            // packages, so the remaining rules would report the entire dependency list as drift.
+            return false;
         }
 
         // A props file may import others, and NuGet uses their entries too. Missing them would
         // report perfectly valid references as MissingPackageVersion — a High finding that fails CI.
         var (central, importsResolved) = ReadCentralVersions(props, propsPath);
 
-        // A GlobalPackageReference applies to every project by definition, so it is never orphaned —
-        // seeding it here keeps the orphan check from reporting all of them.
-        var referenced = new HashSet<string>(
-            central.Where(entry => entry.Value.IsGlobal).Select(entry => entry.Key),
-            StringComparer.OrdinalIgnoreCase
-        );
+        context = new CentralContext(props, central, importsResolved);
+        return true;
+    }
 
-        foreach (var projectPath in packageInfo.GetProjectsScanned())
-        {
-            InspectProject(issues, packageInfo, projectPath, central, referenced, importsResolved);
-        }
-
-        // Both remaining rules compare against the full central set. If an import could not be
-        // followed, that set is incomplete, and every conclusion drawn from it would be a guess.
-        if (importsResolved && !IsTransitivePinningEnabled(props, propsPath, packageInfo.BasePath))
-        {
-            AddOrphanedVersionIssues(issues, central, referenced);
-        }
-
-        return new AnalyzerResult(Name, issues);
+    /// <summary>One props file, what it pins, and the scanned projects it governs.</summary>
+    private sealed record CentralContext(
+        XDocument Props,
+        Dictionary<string, CentralEntry> Central,
+        bool ImportsResolved
+    )
+    {
+        public List<string> Projects { get; } = [];
     }
 
     /// <summary>
@@ -526,35 +628,72 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// inert, so treating them as effective versions would report a finding about a value NuGet
     /// ignores.
     /// </para>
+    ///
+    /// <para>
+    /// Every props file governing a scanned project contributes, not only the one at the scan root:
+    /// a repository can hold several, each governing the projects beneath it, and a caller reading
+    /// only the root file would miss whatever a nested one pins.
+    /// </para>
     /// </summary>
     /// <param name="basePath">Directory the scan was rooted at.</param>
+    /// <param name="projectPaths">
+    /// Projects in the scan. When empty, only the scan root's props file is consulted.
+    /// </param>
     internal static IReadOnlyDictionary<string, string> ReadEffectiveCentralVersions(
-        string? basePath
+        string? basePath,
+        IEnumerable<string>? projectPaths = null
     )
     {
-        var empty = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var effective = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        var propsPath = ResolvePropsPath(basePath);
-        if (propsPath is null)
+        var directories = (projectPaths ?? [])
+            .Select(project => Path.GetDirectoryName(Path.GetFullPath(project)))
+            .Where(directory => directory is not null)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (directories.Count == 0)
         {
-            return empty;
+            directories.Add(basePath);
         }
 
+        foreach (
+            var propsPath in directories
+                .Select(ResolvePropsPath)
+                .Where(path => path is not null)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(path => path, StringComparer.Ordinal)
+        )
+        {
+            AddEffectiveCentralVersions(propsPath!, basePath, effective);
+        }
+
+        return effective;
+    }
+
+    private static void AddEffectiveCentralVersions(
+        string propsPath,
+        string? basePath,
+        Dictionary<string, string> effective
+    )
+    {
         var props = ReadProps(propsPath);
         if (props is null || !IsCpmEnabled(props, propsPath, basePath, out _))
         {
-            return empty;
+            return;
         }
 
         var (central, _) = ReadCentralVersions(props, propsPath);
 
-        return central
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.Value.Version))
-            .ToDictionary(
-                entry => entry.Key,
-                entry => entry.Value.Version!,
-                StringComparer.OrdinalIgnoreCase
-            );
+        foreach (
+            var entry in central.Where(entry => !string.IsNullOrWhiteSpace(entry.Value.Version))
+        )
+        {
+            // The nearest file wins for a project, but a caller asking across a whole scan wants
+            // every pin that is in force somewhere. First writer wins here only so the result is
+            // stable; the props paths are iterated in sorted order for the same reason.
+            effective.TryAdd(entry.Key, entry.Value.Version!);
+        }
     }
 
     /// <summary>

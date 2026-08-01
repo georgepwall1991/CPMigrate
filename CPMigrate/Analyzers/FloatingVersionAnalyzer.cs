@@ -57,7 +57,7 @@ public class FloatingVersionAnalyzer : IAnalyzer
                     ?? reference.Version,
                 packageInfo.ProjectId(reference.ProjectPath)
             ))
-            .Concat(ReadCentralPins(packageInfo.BasePath))
+            .Concat(ReadCentralPins(packageInfo))
             .Where(declaration => DescribeKind(declaration.Version) is not null)
             .ToList();
 
@@ -194,10 +194,15 @@ public class FloatingVersionAnalyzer : IAnalyzer
     /// as a floating version NuGet would never consult.
     /// </para>
     /// </summary>
-    private static IEnumerable<Declaration> ReadCentralPins(string? basePath)
+    private static IEnumerable<Declaration> ReadCentralPins(ProjectPackageInfo packageInfo)
     {
         return CpmDriftAnalyzer
-            .ReadEffectiveCentralVersions(basePath)
+            .ReadEffectiveCentralVersions(
+                packageInfo.BasePath,
+                // Every props file governing a scanned project, not only the one at the scan root:
+                // a nested props file's floating pin is just as unreproducible as the root's.
+                packageInfo.GetProjectsScanned()
+            )
             .Select(entry => new Declaration(
                 entry.Key,
                 entry.Value,

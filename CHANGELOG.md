@@ -6,6 +6,18 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.55.0] - 2026-08-01
+
+### Fixed
+- **Central pins are resolved per project, not once per scan.** MSBuild resolves `Directory.Packages.props` from each project's own directory, so a repository can hold several — a nested one governing `tools/`, say — each governing the projects beneath it. Judging every project against the file at the scan root was wrong in both directions: a project under a nested file was measured against pins it never sees, reporting `MissingPackageVersion` (a `High` finding that fails CI) for references that restore perfectly well, and a pin was called orphaned because the projects using it were reading a different file. Projects are now grouped by the props file that governs them and each group judged against its own pins.
+- An unusable props file — unparseable, or with central management switched off — is reported **once per file** rather than once per project beneath it. The misconfiguration is a property of the file; repeating it turned one problem into a wall.
+- `FloatingVersion` reads across every props file governing a scanned project, for the same reason: a nested file's floating pin is no more reproducible than the root's.
+
+### Notes
+- A props file governing **no** scanned project is deliberately not judged at all. Reporting its pins as orphaned would make every scoped scan — `--analyze -s tools` — accuse the wider repository's props file of being dead. With no evidence either way, silence is the honest answer.
+- Findings are emitted in sorted props-file order, so a report is identical run to run whatever order discovery produced.
+- This was raised in three consecutive review rounds against 3.54.0 and deferred each time as needing its own release. Validated against a cloned Serilog (6 projects, 4 issues, unchanged), a nested-solution fixture, and CPMigrate's own repository.
+
 ## [3.54.0] - 2026-08-01
 
 ### Fixed
