@@ -472,25 +472,30 @@ public class CpmDriftAnalyzer : IAnalyzer
 
     /// <summary>
     /// The project's own <c>ManagePackageVersionsCentrally</c>, or null when it does not set one.
+    ///
+    /// <para>
+    /// Read through the project's imports, like every other build property: a project delegating
+    /// its settings to a fragment is no different to MSBuild than one setting them inline, and
+    /// reading only the project's own descendants judged an imported opt-out centrally managed.
+    /// </para>
+    ///
+    /// <para>
     /// An unreadable project is treated as silent rather than as an opt-out, so a file this analyzer
     /// cannot parse never suppresses findings.
+    /// </para>
     /// </summary>
     private static string? ReadProjectEnablement(string projectPath)
     {
         var project = ReadProps(projectPath);
-        return project is null ? null : ReadCpmEnablement(project);
-    }
 
-    /// <summary>
-    /// Last-wins value of <c>ManagePackageVersionsCentrally</c> in a document, or null when absent.
-    /// </summary>
-    private static string? ReadCpmEnablement(XDocument document)
-    {
-        return document
-            .Descendants()
-            .Where(e => e.Name.LocalName == "ManagePackageVersionsCentrally")
-            .Select(e => e.Value.Trim())
-            .LastOrDefault();
+        return project is null
+            ? null
+            : ReadPropertyThroughImports(
+                project,
+                projectPath,
+                EnablementProperty,
+                new HashSet<string>(PathComparer)
+            )?.Value;
     }
 
     /// <summary>

@@ -536,6 +536,48 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_AProjectDelegatingItsOptOutToAnImport_IsNotJudgedAgainstCentralPins()
+    {
+        // A project can put its opt-out in an imported fragment as readily as in its own body, and
+        // MSBuild sees no difference. Reading only the project's own descendants judged it centrally
+        // managed and reported its ordinary inline versions as drift.
+        WriteProps(".", ("Serilog", "4.0.0"));
+        WriteEnablementFragment("src/Legacy/Exempt.props", enabled: false);
+        var project = WriteImportingProject(
+            "src/Legacy/Legacy.csproj",
+            "Serilog",
+            "3.1.1",
+            "Exempt.props"
+        );
+
+        var issues = Analyze(project);
+
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.InlineVersionUnderCpm);
+    }
+
+    [Fact]
+    public void ReadEffectiveCentralVersions_AProjectDelegatingItsOptInToAnImport_ContributesItsPins()
+    {
+        // And the inverse, through the reader floating-pin discovery uses.
+        WriteSilentProps(".", ("Serilog", "4.*"));
+        WriteBuildProps("src", enabled: false);
+        WriteEnablementFragment("src/Api/Governed.props", enabled: true);
+        var project = WriteImportingProject(
+            "src/Api/Api.csproj",
+            "Serilog",
+            "3.1.1",
+            "Governed.props"
+        );
+
+        CpmDriftAnalyzer
+            .ReadEffectiveCentralVersions(_root, [project])
+            .Should()
+            .Contain(pin => pin.Package == "Serilog");
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");
@@ -661,6 +703,53 @@ public class PerProjectCentralPinTests : IDisposable
             </Project>
             """
         );
+    }
+
+    /// <summary>A fragment carrying nothing but the enablement property, for a project to import.</summary>
+    private void WriteEnablementFragment(string relativePath, bool enabled)
+    {
+        var path = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(
+            path,
+            $"""
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>{(
+                enabled ? "true" : "false"
+            )}</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+    }
+
+    /// <summary>A project that delegates its properties to an unconditional import.</summary>
+    private string WriteImportingProject(
+        string relativePath,
+        string package,
+        string inlineVersion,
+        string import
+    )
+    {
+        var path = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(
+            path,
+            $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <Import Project="{import}" />
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="{package}" Version="{inlineVersion}" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        return path;
     }
 
     /// <summary>Pins in a file that is not named <c>Directory.Packages.props</c>.</summary>
