@@ -955,6 +955,16 @@ public class CpmDriftAnalyzer : IAnalyzer
             return null;
         }
 
+        // A repository can point central management at a file of its own choosing, and MSBuild then
+        // imports that instead of the nearest conventional one. Ignoring the redirect judged the
+        // project against pins it never receives and told the reader to edit a file MSBuild does not
+        // read for it. When the redirect cannot be resolved no file is claimed at all: saying
+        // nothing is better than measuring a project against the wrong file.
+        if (TryReadRedirectedPropsPath(basePath, out var redirected))
+        {
+            return redirected;
+        }
+
         var directory = new DirectoryInfo(Path.GetFullPath(basePath));
         while (directory is not null)
         {
@@ -1097,6 +1107,100 @@ public class CpmDriftAnalyzer : IAnalyzer
     {
         var git = Path.Combine(directory, ".git");
         return Directory.Exists(git) || File.Exists(git);
+    }
+
+    /// <summary>
+    /// The file <c>DirectoryPackagesPropsPath</c> names, when the nearest
+    /// <c>Directory.Build.props</c> sets one.
+    ///
+    /// <para>
+    /// Only <c>$(MSBuildThisFileDirectory)</c> is substituted. Anchoring the path to the file that
+    /// declares it is how this is written in practice, and any other property left unevaluated means
+    /// the real answer is unknown — a guess here picks the wrong file and every finding drawn from it
+    /// is wrong.
+    /// </para>
+    /// </summary>
+    /// <param name="startDirectory">Directory of the project whose props file is being resolved.</param>
+    /// <param name="resolved">The redirected file, or null when it could not be resolved.</param>
+    /// <returns>True when a redirect was declared at all, resolved or not.</returns>
+    private static bool TryReadRedirectedPropsPath(string startDirectory, out string? resolved)
+    {
+        resolved = null;
+
+        var buildPropsPath = WalkUpForBuildPropsPath(startDirectory);
+        if (buildPropsPath is null)
+        {
+            return false;
+        }
+
+        var declared = ReadProps(buildPropsPath)
+            ?.Descendants()
+            .Where(element => element.Name.LocalName == "DirectoryPackagesPropsPath")
+            .Select(element => element.Value.Trim())
+            .LastOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+        if (declared is null)
+        {
+            return false;
+        }
+
+        var directory = Path.GetDirectoryName(Path.GetFullPath(buildPropsPath))!;
+
+        var expanded = declared
+            .Replace(
+                "$(MSBuildThisFileDirectory)",
+                directory + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase
+            )
+            .Replace('\\', Path.DirectorySeparatorChar)
+            .Replace('/', Path.DirectorySeparatorChar);
+
+        if (expanded.Contains("$(", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var candidate = Path.GetFullPath(
+            Path.IsPathRooted(expanded) ? expanded : Path.Combine(directory, expanded)
+        );
+
+        if (File.Exists(candidate))
+        {
+            resolved = candidate;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Path of the nearest <c>Directory.Build.props</c> at or above a directory, stopping at the
+    /// repository root for the same reason the central props walk does.
+    /// </summary>
+    private static string? WalkUpForBuildPropsPath(string? startDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(startDirectory))
+        {
+            return null;
+        }
+
+        var directory = new DirectoryInfo(Path.GetFullPath(startDirectory));
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, "Directory.Build.props");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            if (IsRepositoryRoot(directory.FullName))
+            {
+                return null;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     /// <summary>

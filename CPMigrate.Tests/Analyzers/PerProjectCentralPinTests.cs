@@ -395,6 +395,39 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_AProjectRedirectingItsPropsFile_IsJudgedAgainstThatFile()
+    {
+        // DirectoryPackagesPropsPath makes MSBuild import the named file instead of the nearest
+        // conventional one. Judging the project against Directory.Packages.props measured it against
+        // pins it never receives, and named a file MSBuild does not read for it.
+        WriteProps(".", ("Newtonsoft.Json", "13.0.1"));
+        WriteRedirect("src", "$(MSBuildThisFileDirectory)Packages.props");
+        WriteNamedProps("src/Packages.props", ("Serilog", "4.0.0"));
+        var project = WriteProject("src/Api/Api.csproj", "Serilog");
+
+        var issues = Analyze(project);
+
+        issues
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.MissingPackageVersion);
+    }
+
+    [Fact]
+    public void Analyze_AProjectRedirectingToAPathItCannotResolve_IsLeftAlone()
+    {
+        // The redirect names a property this cannot evaluate, so which file governs the project is
+        // genuinely unknown. Falling back to the conventional file would judge it against pins it may
+        // never receive — saying nothing is the only honest answer.
+        WriteProps(".", ("Newtonsoft.Json", "13.0.1"));
+        WriteRedirect("src", "$(SomethingOnlyMSBuildKnows)/Packages.props");
+        var project = WriteProject("src/Api/Api.csproj", "Serilog");
+
+        var issues = Analyze(project);
+
+        issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");
@@ -443,6 +476,57 @@ public class PerProjectCentralPinTests : IDisposable
                 <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
               </PropertyGroup>
               <Import Project="{import}" />
+            </Project>
+            """
+        );
+    }
+
+    /// <summary>
+    /// A <c>Directory.Build.props</c> redirecting central management to a file of its own choosing.
+    /// </summary>
+    private void WriteRedirect(string relativeDirectory, string propsPath)
+    {
+        var directory = Path.Combine(_root, relativeDirectory);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(
+            Path.Combine(directory, "Directory.Build.props"),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                <DirectoryPackagesPropsPath>{propsPath}</DirectoryPackagesPropsPath>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+    }
+
+    /// <summary>Pins in a file that is not named <c>Directory.Packages.props</c>.</summary>
+    private void WriteNamedProps(
+        string relativePath,
+        params (string Package, string Version)[] pins
+    )
+    {
+        var path = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+        var items = string.Join(
+            "\n    ",
+            pins.Select(pin =>
+                $"""<PackageVersion Include="{pin.Package}" Version="{pin.Version}" />"""
+            )
+        );
+
+        File.WriteAllText(
+            path,
+            $"""
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                {items}
+              </ItemGroup>
             </Project>
             """
         );
