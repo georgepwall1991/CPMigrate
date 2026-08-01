@@ -237,6 +237,56 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_APinInheritedByANestedFile_IsNotOrphanedByTheFileThatDoesNotUseIt()
+    {
+        // The nested file imports the root, so the root's pin appears in both central sets. Judging
+        // each set alone had the root context call it orphaned — the only project using it is
+        // governed by the nested file — and the nested context call it orphaned in reverse.
+        WriteProps(".", ("Serilog", "4.0.0"));
+        WriteImportingProps("tools", "../Directory.Packages.props");
+        var rootProject = WriteProject("src/Api/Api.csproj", "Newtonsoft.Json");
+        var toolProject = WriteProject("tools/Build/Build.csproj", "Serilog");
+
+        var issues = Analyze(rootProject, toolProject);
+
+        issues
+            .Should()
+            .NotContain(issue =>
+                issue.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+                && issue.PackageName == "Serilog"
+            );
+    }
+
+    [Fact]
+    public void Analyze_APinDeclaredInAnImportedFile_NamesThatFile()
+    {
+        // Reporting it against the importing file points at the wrong place to edit — the pin is
+        // not in Directory.Packages.props at all.
+        WriteImportingProps(".", "Versions.props");
+        File.WriteAllText(
+            Path.Combine(_root, "Versions.props"),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Unused.Package" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject("src/Api/Api.csproj", "Newtonsoft.Json");
+
+        var issues = Analyze(project);
+
+        issues
+            .Should()
+            .Contain(issue =>
+                issue.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+                && issue.PackageName == "Unused.Package"
+                && issue.Description.Contains("Versions.props")
+            );
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");
@@ -271,6 +321,23 @@ public class PerProjectCentralPinTests : IDisposable
         var marker = "Include=\"";
         var start = content.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
         return content[start..content.IndexOf('"', start)];
+    }
+
+    private void WriteImportingProps(string relativeDirectory, string import)
+    {
+        var directory = Path.Combine(_root, relativeDirectory);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(
+            Path.Combine(directory, CpmDriftAnalyzer.PropsFileName),
+            $"""
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="{import}" />
+            </Project>
+            """
+        );
     }
 
     private void WriteBuildProps(string relativeDirectory, bool enabled)

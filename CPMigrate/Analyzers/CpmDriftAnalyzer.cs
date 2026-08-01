@@ -31,6 +31,15 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// <summary>Unit separator: it cannot occur in a path, so composite keys stay unambiguous.</summary>
     private const string KeySeparator = "\u001F";
 
+    /// <summary>
+    /// How two paths are compared for identity. Case-insensitively on Windows and macOS, exactly
+    /// on Linux — where <c>tools/</c> and <c>Tools/</c> are different directories that can hold
+    /// different props files. Folding them together would let whichever was read first govern
+    /// both, and drop the other file's pins entirely.
+    /// </summary>
+    private static readonly StringComparer PathComparer =
+        OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+
     /// <inheritdoc />
     public string Name => "Central Package Management Drift";
 
@@ -48,6 +57,15 @@ public class CpmDriftAnalyzer : IAnalyzer
         // restore perfectly well — and a pin is called orphaned because the projects using it were
         // reading a different file.
         var governed = GroupProjectsByGoverningProps(packageInfo, issues);
+
+        // Collected across every context and judged once at the end. A nested props file can import
+        // an ancestor, so the same pin appears in two central sets — and a pin used only by projects
+        // under the *other* file would be reported orphaned by this one, and the other way round.
+        var orphanCandidates =
+            new List<(
+                IReadOnlyDictionary<string, CentralEntry> Central,
+                HashSet<string> Referenced
+            )>();
 
         // Sorted so a report is identical run to run, whatever order discovery happened to produce.
         foreach (
@@ -87,14 +105,11 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             if (context.ImportsResolved && !transitivePinning)
             {
-                AddOrphanedVersionIssues(
-                    issues,
-                    context.Central,
-                    referenced,
-                    DescribePropsPath(propsPath, packageInfo)
-                );
+                orphanCandidates.Add((context.Central, referenced));
             }
         }
+
+        AddOrphanedVersionIssues(issues, orphanCandidates, packageInfo);
 
         return new AnalyzerResult(Name, issues);
     }
@@ -113,13 +128,13 @@ public class CpmDriftAnalyzer : IAnalyzer
         List<AnalysisIssue> issues
     )
     {
-        var usable = new Dictionary<string, CentralContext>(StringComparer.OrdinalIgnoreCase);
+        var usable = new Dictionary<string, CentralContext>(PathComparer);
         // Keyed by props file *and* the directory the properties were resolved from, because two
         // projects can share a props file while a nearer Directory.Build.props enables central
         // management for one and not the other. Caching by props file alone let whichever project
         // came first decide for both.
-        var enablement = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        var reported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var enablement = new Dictionary<string, bool>(PathComparer);
+        var reported = new HashSet<string>(PathComparer);
         var projects = packageInfo.GetProjectsScanned();
 
         // With no projects at all there is still a solution-level props file worth checking, so a
@@ -311,7 +326,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         enablement = ReadCpmEnablementThroughImports(
             props,
             propsPath,
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            new HashSet<string>(PathComparer)
         );
 
         if (string.Equals(enablement, "true", StringComparison.OrdinalIgnoreCase))
@@ -516,24 +531,49 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// Reports central entries nothing references. Harmless to restore, but they accumulate, and a
     /// stale pin is indistinguishable from a deliberate one when someone comes to upgrade.
     /// </summary>
+    /// <summary>
+    /// Reports central pins no scanned project references.
+    ///
+    /// <para>
+    /// Judged across every governing props file at once, and attributed to the file that
+    /// <em>declared</em> each pin. A nested props file may import an ancestor, so one pin can appear
+    /// in two central sets — reporting per set would call it orphaned in the file whose projects
+    /// happen not to use it while another file's projects do, and would report an inherited pin once
+    /// per file that imports it.
+    /// </para>
+    /// </summary>
     private static void AddOrphanedVersionIssues(
         List<AnalysisIssue> issues,
-        IReadOnlyDictionary<string, CentralEntry> central,
-        HashSet<string> referenced,
-        string propsFile
+        List<(
+            IReadOnlyDictionary<string, CentralEntry> Central,
+            HashSet<string> Referenced
+        )> candidates,
+        ProjectPackageInfo packageInfo
     )
     {
+        var pins = new Dictionary<string, (CentralEntry Entry, string Package)>(PathComparer);
+        var referencedAnywhere = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (central, referenced) in candidates)
+        {
+            referencedAnywhere.UnionWith(referenced);
+
+            foreach (var (packageName, entry) in central)
+            {
+                pins.TryAdd($"{entry.SourcePath}{KeySeparator}{packageName}", (entry, packageName));
+            }
+        }
+
         foreach (
-            var (packageName, entry) in central.OrderBy(
-                e => e.Key,
-                StringComparer.OrdinalIgnoreCase
-            )
+            var (_, (entry, packageName)) in pins.OrderBy(pin => pin.Key, StringComparer.Ordinal)
         )
         {
-            if (referenced.Contains(packageName))
+            if (referencedAnywhere.Contains(packageName))
             {
                 continue;
             }
+
+            var propsFile = DescribePropsPath(entry.SourcePath, packageInfo);
 
             issues.Add(
                 new AnalysisIssue(
@@ -553,24 +593,13 @@ public class CpmDriftAnalyzer : IAnalyzer
         }
     }
 
-    /// <summary>
-    /// Central versions by package ID. <c>GlobalPackageReference</c> counts: it supplies a version
-    /// centrally too, so a project referencing such a package is not missing anything.
-    /// </summary>
-    /// <summary>
-    /// Collects central versions from a props file and everything it imports.
-    ///
-    /// Returns whether every import could be followed. An import path built from MSBuild properties
-    /// or a glob cannot be resolved by reading XML, and when that happens the central set is
-    /// incomplete — so the caller must not conclude a reference is unversioned.
-    /// </summary>
     private static (
         Dictionary<string, CentralEntry> Central,
         bool ImportsResolved
     ) ReadCentralVersions(XDocument props, string propsPath)
     {
         var versions = new Dictionary<string, CentralEntry>(StringComparer.OrdinalIgnoreCase);
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var visited = new HashSet<string>(PathComparer);
         var resolved = CollectCentralVersions(props, propsPath, versions, visited);
 
         return (versions, resolved);
@@ -618,7 +647,11 @@ public class CpmDriftAnalyzer : IAnalyzer
                 element.Attribute("Include")?.Value ?? element.Attribute("Update")?.Value;
             if (!string.IsNullOrWhiteSpace(packageName))
             {
-                versions[packageName] = new CentralEntry(ReadVersion(element), isGlobal);
+                versions[packageName] = new CentralEntry(
+                    ReadVersion(element),
+                    isGlobal,
+                    documentPath
+                );
             }
         }
 
@@ -673,7 +706,13 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// A central version entry, and whether it came from <c>GlobalPackageReference</c> — which
     /// applies to every project implicitly, so it is never orphaned.
     /// </summary>
-    private readonly record struct CentralEntry(string? Version, bool IsGlobal);
+    /// <param name="Version">The specification as written, or null when the entry carries none.</param>
+    /// <param name="IsGlobal">Whether it is a GlobalPackageReference, which every project gets.</param>
+    /// <param name="SourcePath">
+    /// The file that declared it, which is not always the file being read: a props file may import
+    /// others, and a pin reported against the importing file names the wrong place to edit.
+    /// </param>
+    private readonly record struct CentralEntry(string? Version, bool IsGlobal, string SourcePath);
 
     private static bool IsPackageReference(XElement element)
     {
@@ -754,7 +793,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         var directories = (projectPaths ?? [])
             .Select(project => Path.GetDirectoryName(Path.GetFullPath(project)))
             .Where(directory => directory is not null)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(PathComparer)
             .ToList();
 
         if (directories.Count == 0)
@@ -777,12 +816,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                 .OrderBy(entry => entry.Props, StringComparer.Ordinal)
         )
         {
-            AddEffectiveCentralVersions(
-                resolved.Props!,
-                resolved.Directory,
-                effective,
-                DescribePropsPath(resolved.Props!, basePath)
-            );
+            AddEffectiveCentralVersions(resolved.Props!, resolved.Directory, effective);
         }
 
         return effective;
@@ -791,8 +825,7 @@ public class CpmDriftAnalyzer : IAnalyzer
     private static void AddEffectiveCentralVersions(
         string propsPath,
         string? basePath,
-        List<CentralPin> effective,
-        string propsFile
+        List<CentralPin> effective
     )
     {
         var props = ReadProps(propsPath);
@@ -811,7 +844,14 @@ public class CpmDriftAnalyzer : IAnalyzer
             // pin hide a nested file's floating one — the nested project's dependency would then
             // pass as reproducible when it is not, which is the failure this whole rule exists to
             // catch.
-            var pin = new CentralPin(entry.Key, entry.Value.Version!, propsFile);
+            // Attributed to the file that declared it, not the one that imported it: a pin
+            // reported against the importing file names the wrong place to edit, and the same
+            // inherited pin would be reported once per file that imports it.
+            var pin = new CentralPin(
+                entry.Key,
+                entry.Value.Version!,
+                DescribePropsPath(entry.Value.SourcePath, basePath)
+            );
             if (!effective.Contains(pin))
             {
                 effective.Add(pin);
