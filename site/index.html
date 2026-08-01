@@ -21,7 +21,7 @@
   <meta name="twitter:description" content="Migrate .NET solutions to NuGet Central Package Management and update packages safely with rollback." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600;700&amp;display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Instrument+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" />
   <link rel="stylesheet" href="/CPMigrate/assets/styles.css" />
   <script type="application/ld+json">
     {
@@ -91,45 +91,53 @@
     </div>
   </div>
 
-  <!-- ═══════ HERO ═══════ -->
-  <header class="shell">
-    <section class="hero" id="hero">
-      <div>
-        <div class="eyebrow"><span class="blip"></span> <span>live demo below</span> <span class="v">· v3.55.0</span></div>
-        <h1>One command to<br><span class="g">Central Package</span><br><span class="g">Management.</span><span class="caret"></span></h1>
-        <p class="hero-out"><span class="t-p">➜</span> every version lands in <code>Directory.Packages.props</code></p>
-        <p class="lede">A .NET global tool that migrates solutions to CPM, scores dependency health across 11 analyzers, and updates packages with test verification — rolling back the instant <code>dotnet test</code> goes red.</p>
-        <div class="cta-row">
-          <a class="button" href="/CPMigrate/install/">Install CPMigrate</a>
-          <a class="button-secondary" href="/CPMigrate/guides/migrate-directory-packages-props/">Migration guide</a>
+  <!-- ═══════ HERO — poster plate ═══════ -->
+  <header>
+    <section class="hero shell" id="hero">
+      <div class="eyebrow"><span class="blip"></span> <span>CPMigrate / .NET platform tooling</span> <span class="v">· v3.55.0</span></div>
+      <h1>One command to <span class="g">Central&nbsp;Package Management</span>.<span class="caret"></span></h1>
+      <div class="hero-grid">
+        <div>
+          <p class="hero-out"><span class="t-p">➜</span> every version lands in <code>Directory.Packages.props</code></p>
+          <p class="lede">A .NET global tool that migrates solutions to CPM, scores dependency health across 11 analyzers, and updates packages with test verification — rolling back the instant <code>dotnet test</code> goes red.</p>
         </div>
-        <div class="hints">
-          <span><kbd>⌘K</kbd> command palette</span>
-          <span><kbd>↑</kbd><kbd>↓</kbd> history</span>
-          <span><kbd>Tab</kbd> complete</span>
-        </div>
-        <div class="stat-strip">
-          <span><b>11</b> analyzers</span>
-          <span><b>4+1</b> output formats</span>
-          <span><b>.sln + .slnx</b></span>
-          <span><b>SDK 8.0+</b></span>
-          <span><b>MIT</b></span>
+        <div class="cta-col">
+          <div class="cta-row">
+            <a class="button" href="/CPMigrate/install/">Install CPMigrate</a>
+            <a class="button-secondary" href="/CPMigrate/guides/migrate-directory-packages-props/">Migration guide</a>
+          </div>
+          <div class="hints">
+            <span><kbd>⌘K</kbd> command palette</span>
+            <span><kbd>↑</kbd><kbd>↓</kbd> history</span>
+            <span><kbd>Tab</kbd> complete</span>
+          </div>
         </div>
       </div>
+      <div class="stat-strip">
+        <span><b>11</b> analyzers</span>
+        <span><b>4+1</b> output formats</span>
+        <span><b>.sln + .slnx</b></span>
+        <span><b>SDK 8.0+</b></span>
+        <span><b>MIT</b></span>
+      </div>
+    </section>
 
-      <!-- playable terminal -->
-      <div class="term" id="term">
-        <div class="term-bar">
-          <span class="d"></span><span class="d"></span><span class="d"></span>
-          <span class="t">cpmigrate — MySolution.sln — zsh</span>
-          <span class="live"><i></i> interactive</span>
+    <!-- playable terminal — full-bleed instrument panel under the poster -->
+    <section class="term-plate">
+      <div class="shell">
+        <div class="term" id="term">
+          <div class="term-bar">
+            <span class="d"></span><span class="d"></span><span class="d"></span>
+            <span class="t">cpmigrate — MySolution.sln — zsh</span>
+            <span class="live"><i></i> interactive</span>
+          </div>
+          <div class="term-body" id="termBody" aria-live="polite"></div>
+          <div class="term-in">
+            <span class="t-p">➜</span>
+            <input id="termInput" type="text" spellcheck="false" autocomplete="off" aria-label="terminal input" placeholder="type a command — try: help" />
+          </div>
+          <div class="term-hint">this is a real shell simulation · <kbd>help</kbd> <kbd>analyze</kbd> <kbd>doctor</kbd> <kbd>migrate</kbd> <kbd>bisect</kbd> <kbd>tree</kbd> <kbd>clear</kbd></div>
         </div>
-        <div class="term-body" id="termBody" aria-live="polite"></div>
-        <div class="term-in">
-          <span class="t-p">➜</span>
-          <input id="termInput" type="text" spellcheck="false" autocomplete="off" aria-label="terminal input" placeholder="type a command — try: help" />
-        </div>
-        <div class="term-hint">this is a real shell simulation · <kbd>help</kbd> <kbd>analyze</kbd> <kbd>doctor</kbd> <kbd>migrate</kbd> <kbd>bisect</kbd> <kbd>tree</kbd> <kbd>clear</kbd></div>
       </div>
     </section>
   </header>
