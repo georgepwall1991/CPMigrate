@@ -37,8 +37,9 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// different props files. Folding them together would let whichever was read first govern
     /// both, and drop the other file's pins entirely.
     /// </summary>
-    private static readonly StringComparer PathComparer =
-        OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+    private static readonly StringComparer PathComparer = OperatingSystem.IsLinux()
+        ? StringComparer.Ordinal
+        : StringComparer.OrdinalIgnoreCase;
 
     /// <inheritdoc />
     public string Name => "Central Package Management Drift";
@@ -87,7 +88,8 @@ public class CpmDriftAnalyzer : IAnalyzer
                     projectPath,
                     context.Central,
                     referenced,
-                    context.ImportsResolved
+                    context.ImportsResolved,
+                    DescribePropsPath(propsPath, packageInfo)
                 );
             }
 
@@ -438,7 +440,10 @@ public class CpmDriftAnalyzer : IAnalyzer
         string projectPath,
         IReadOnlyDictionary<string, CentralEntry> central,
         HashSet<string> referenced,
-        bool importsResolved
+        bool importsResolved,
+        // The file MSBuild actually reads for this project. Naming the root one told a project
+        // governed by a nested props file to edit a file MSBuild never consults for it.
+        string propsFile
     )
     {
         var project = ReadProps(projectPath);
@@ -497,7 +502,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                             ? $"Declares Version=\"{inlineVersion}\" inline, overriding the central "
                                 + $"{centralEntry.Version}. Remove the attribute so the central version applies."
                             : $"Declares Version=\"{inlineVersion}\" inline instead of centrally. "
-                                + $"Move it to {PropsFileName}.",
+                                + $"Move it to {propsFile}.",
                         new[] { projectId },
                         AnalysisIssueCode.InlineVersionUnderCpm,
                         AnalysisSeverity.Moderate,
@@ -516,7 +521,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                     new AnalysisIssue(
                         packageName,
                         $"Referenced with no version: neither an inline Version nor a PackageVersion "
-                            + $"entry in {PropsFileName}. Restore will fail.",
+                            + $"entry in {propsFile}. Restore will fail.",
                         new[] { projectId },
                         AnalysisIssueCode.MissingPackageVersion,
                         AnalysisSeverity.High,
@@ -552,23 +557,34 @@ public class CpmDriftAnalyzer : IAnalyzer
     )
     {
         var pins = new Dictionary<string, (CentralEntry Entry, string Package)>(PathComparer);
-        var referencedAnywhere = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Evidence is pooled only across the contexts that actually hold a given pin, not across
+        // every context. A reference under a nested file that does *not* import the root is no
+        // evidence at all that the root's pin is used — counting it would suppress a real orphan.
+        var evidence = new Dictionary<string, HashSet<string>>(PathComparer);
 
         foreach (var (central, referenced) in candidates)
         {
-            referencedAnywhere.UnionWith(referenced);
-
             foreach (var (packageName, entry) in central)
             {
-                pins.TryAdd($"{entry.SourcePath}{KeySeparator}{packageName}", (entry, packageName));
+                var key = $"{entry.SourcePath}{KeySeparator}{packageName}";
+                pins.TryAdd(key, (entry, packageName));
+
+                if (!evidence.TryGetValue(key, out var seen))
+                {
+                    seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    evidence[key] = seen;
+                }
+
+                seen.UnionWith(referenced);
             }
         }
 
         foreach (
-            var (_, (entry, packageName)) in pins.OrderBy(pin => pin.Key, StringComparer.Ordinal)
+            var (key, (entry, packageName)) in pins.OrderBy(pin => pin.Key, StringComparer.Ordinal)
         )
         {
-            if (referencedAnywhere.Contains(packageName))
+            if (evidence[key].Contains(packageName))
             {
                 continue;
             }
@@ -816,7 +832,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                 .OrderBy(entry => entry.Props, StringComparer.Ordinal)
         )
         {
-            AddEffectiveCentralVersions(resolved.Props!, resolved.Directory, effective);
+            AddEffectiveCentralVersions(resolved.Props!, resolved.Directory, basePath, effective);
         }
 
         return effective;
@@ -824,12 +840,13 @@ public class CpmDriftAnalyzer : IAnalyzer
 
     private static void AddEffectiveCentralVersions(
         string propsPath,
-        string? basePath,
+        string? propertyRoot,
+        string? scanRoot,
         List<CentralPin> effective
     )
     {
         var props = ReadProps(propsPath);
-        if (props is null || !IsCpmEnabled(props, propsPath, basePath, out _))
+        if (props is null || !IsCpmEnabled(props, propsPath, propertyRoot, out _))
         {
             return;
         }
@@ -850,7 +867,10 @@ public class CpmDriftAnalyzer : IAnalyzer
             var pin = new CentralPin(
                 entry.Key,
                 entry.Value.Version!,
-                DescribePropsPath(entry.Value.SourcePath, basePath)
+                // Relative to the *scan root*, not the project directory the properties were
+                // resolved from — otherwise a nested file reads as '../Directory.Packages.props'
+                // and two different nested files collapse onto one name.
+                DescribePropsPath(entry.Value.SourcePath, scanRoot)
             );
             if (!effective.Contains(pin))
             {

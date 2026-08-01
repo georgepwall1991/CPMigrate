@@ -287,6 +287,47 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_AProjectMissingAPin_IsToldToEditTheFileThatGovernsIt()
+    {
+        // Naming the root file told a project governed by a nested one to edit a file MSBuild never
+        // reads for it.
+        WriteProps(".", ("Newtonsoft.Json", "13.0.1"));
+        WriteProps("tools", ("Serilog", "4.0.0"));
+        var project = WriteProject("tools/Build/Build.csproj", "NotPinned.Anywhere");
+
+        var issues = Analyze(project);
+
+        issues
+            .Should()
+            .Contain(issue =>
+                issue.IssueCode == AnalysisIssueCode.MissingPackageVersion
+                && issue.Description.Contains("tools/Directory.Packages.props")
+            );
+    }
+
+    [Fact]
+    public void Analyze_AReferenceUnderANonImportingFile_IsNotEvidenceForAnotherFilesPin()
+    {
+        // Pooling references across every context let a Serilog reference in the nested file's
+        // scope vouch for the root's independent Serilog pin, suppressing a real orphan.
+        WriteProps(".", ("Serilog", "4.0.0"), ("Newtonsoft.Json", "13.0.1"));
+        WriteProps("tools", ("Serilog", "4.0.0"));
+        var rootProject = WriteProject("src/Api/Api.csproj", "Newtonsoft.Json");
+        var toolProject = WriteProject("tools/Build/Build.csproj", "Serilog");
+
+        var issues = Analyze(rootProject, toolProject);
+
+        issues
+            .Should()
+            .Contain(issue =>
+                issue.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+                && issue.PackageName == "Serilog"
+                && issue.Description.Contains("Directory.Packages.props")
+                && !issue.Description.Contains("tools/")
+            );
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");
