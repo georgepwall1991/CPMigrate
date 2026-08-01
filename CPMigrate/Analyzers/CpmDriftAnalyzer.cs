@@ -309,9 +309,20 @@ public class CpmDriftAnalyzer : IAnalyzer
         }
 
         var relative = Path.GetRelativePath(basePath, Path.GetFullPath(propsPath));
-        return ProjectPackageInfo.EscapesRoot(relative)
+        var normalized = relative.Replace(Path.DirectorySeparatorChar, '/').Replace('\\', '/');
+
+        if (!ProjectPackageInfo.EscapesRoot(relative))
+        {
+            return normalized;
+        }
+
+        // Outside the scan root. The conventional file is named by its convention: there is only one
+        // meaning for it, and the '../' depth is noise. A redirected custom file is not — calling it
+        // Directory.Packages.props names a file that does not exist, and collapses two different
+        // custom files onto one identity, so a baseline accepting one would suppress the other.
+        return PathComparer.Equals(Path.GetFileName(propsPath), PropsFileName)
             ? PropsFileName
-            : relative.Replace(Path.DirectorySeparatorChar, '/').Replace('\\', '/');
+            : normalized;
     }
 
     /// <summary>
@@ -339,8 +350,11 @@ public class CpmDriftAnalyzer : IAnalyzer
     {
         public List<string> Projects { get; } = [];
 
-        /// <summary>Directories the governed projects live in, for build-property lookups.</summary>
-        public HashSet<string> PropertyRoots { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>
+        /// Directories the governed projects live in, for build-property lookups. Compared the
+        /// platform's way, so two case-distinct directories on Linux stay two.
+        /// </summary>
+        public HashSet<string> PropertyRoots { get; } = new(PathComparer);
     }
 
     /// <summary>
@@ -931,7 +945,11 @@ public class CpmDriftAnalyzer : IAnalyzer
                 .DistinctBy(
                     entry =>
                         $"{entry.Props}{KeySeparator}{entry.Directory}{KeySeparator}{entry.OptedIn}",
-                    StringComparer.OrdinalIgnoreCase
+                    // The platform-aware comparer, for the reason it exists: on Linux tools/ and
+                    // Tools/ are different directories that can hold different props files, and
+                    // folding them here would drop whichever context came second — including its
+                    // floating pins, leaving the scan reported clean.
+                    PathComparer
                 )
                 .OrderBy(entry => entry.Props, StringComparer.Ordinal)
         )

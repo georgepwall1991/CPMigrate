@@ -578,6 +578,26 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_ARedirectedFileOutsideTheScanRoot_IsNamedByItsPath()
+    {
+        // Escaping the scan root, the conventional name is a fair label for the conventional file —
+        // there is only one meaning for it. For a redirected custom file it names a file that does
+        // not exist, and two different custom files collapse onto one identity.
+        WriteNamedProps("shared/Packages.props", ("Newtonsoft.Json", "13.0.1"));
+        WriteRedirect("scan", "../shared/Packages.props");
+        var project = WriteProject("scan/src/Api/Api.csproj", "Serilog");
+
+        var issues = AnalyzeFrom(Path.Combine(_root, "scan"), project);
+
+        issues
+            .Should()
+            .Contain(issue =>
+                issue.IssueCode == AnalysisIssueCode.MissingPackageVersion
+                && issue.Description.Contains("shared/Packages.props")
+            );
+    }
+
+    [Fact]
     public void Analyze_NoPropsFileAnywhere_ReportsNothing()
     {
         var project = WriteProject("src/Api/Api.csproj", "Serilog");
@@ -586,6 +606,15 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     private IReadOnlyList<AnalysisIssue> Analyze(params string[] projectPaths)
+    {
+        return AnalyzeFrom(_root, projectPaths);
+    }
+
+    /// <summary>Analyses with the scan rooted somewhere other than the fixture root.</summary>
+    private static IReadOnlyList<AnalysisIssue> AnalyzeFrom(
+        string basePath,
+        params string[] projectPaths
+    )
     {
         var references = projectPaths
             .Select(path => new PackageReference(
@@ -598,7 +627,7 @@ public class PerProjectCentralPinTests : IDisposable
 
         var packageInfo = new ProjectPackageInfo(
             references,
-            BasePath: _root,
+            BasePath: basePath,
             ScannedProjects: projectPaths,
             DeclaredReferences: references
         );
