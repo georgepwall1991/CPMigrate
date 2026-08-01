@@ -143,6 +143,33 @@ public sealed class DiscoverabilityMetadataTests
         }
     }
 
+    /// <summary>
+    /// The landing page states the version twice: once in the install command a reader copies, and
+    /// once as schema.org <c>softwareVersion</c>, which is what search engines read.
+    ///
+    /// <para>
+    /// Guarded because it drifted four releases behind while the README — which <em>was</em>
+    /// guarded — stayed correct. An install command pinned to a stale version is worse than an
+    /// unpinned one: it silently hands every new reader an old build.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Landing_page_states_the_shipped_version()
+    {
+        var landingPage = File.ReadAllText(Path.Combine(RepositoryRoot, "site", "index.html"));
+
+        Assert.Contains(
+            $"dotnet tool install --global CPMigrate --version {ExpectedVersion}",
+            landingPage,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            $"\"softwareVersion\": \"{ExpectedVersion}\"",
+            landingPage,
+            StringComparison.Ordinal
+        );
+    }
+
     [Fact]
     public void Package_packs_assets_for_nuget_readme_rendering()
     {

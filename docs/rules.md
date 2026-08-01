@@ -137,6 +137,31 @@ alternative, or vendor the functionality if no replacement exists.
 - Default severity: `Moderate`
 - Fixable: no
 
+## Which props file governs a project
+
+The four rules below are judged per project, against the props file MSBuild actually reads for it —
+not against one file for the whole scan. A repository can hold several: a root
+`Directory.Packages.props` and a nested one governing `tools/`, each governing the projects beneath
+it. Every finding names the file it was judged against, so the file you are told to edit is the one
+in force for that project.
+
+Resolution follows MSBuild:
+
+- **Walking up** from each project's own directory for the nearest `Directory.Packages.props`,
+  stopping at the repository root.
+- **`DirectoryPackagesPropsPath`**, when set, redirects to a file of your choosing and wins over the
+  walk. Where the redirect names a property CPMigrate cannot evaluate, no file is claimed and the
+  project is left unjudged rather than measured against the wrong one.
+- **Through imports** — an unconditional `<Import>` whose path is statically resolvable is followed,
+  including one anchored with `$(MSBuildThisFileDirectory)`. A conditioned import, or one inside a
+  conditioned `<ImportGroup>`, is not followed: whether it applies depends on properties that cannot
+  be evaluated from the XML alone.
+- **The project's own file has the last word** on `ManagePackageVersionsCentrally`, matching
+  MSBuild's evaluation order.
+
+A props file governing no scanned project is not judged at all — reporting its pins as orphaned would
+make every scoped scan accuse the wider repository's file of being dead.
+
 ## CpmNotEnabled
 
 **A `Directory.Packages.props` exists without central package management enabled.**
@@ -145,7 +170,13 @@ Without `ManagePackageVersionsCentrally` set to `true`, NuGet ignores every `Pac
 the file. The result is a props file that looks authoritative and does nothing, while projects
 silently keep using whatever versions they declare themselves.
 
-- Reported when the solution has a `Directory.Packages.props`
+The property is resolved the way MSBuild resolves it: through the props file's imports, from the
+nearest `Directory.Build.props` and its imports, and from the project's own file, which has the last
+word — so a single project can opt out with
+`<ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>` and is then exempt from all
+four CPM rules.
+
+- Reported once per props file, not once per project beneath it
 - Default severity: `High`
 - Fixable: no — add `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>`
 
@@ -157,7 +188,7 @@ An inline `Version` attribute overrides the central one, so the solution is quie
 NuGet does not warn about it — nothing surfaces until two projects disagree and something breaks at
 runtime. Remove the attribute so the central version applies.
 
-- Reported when the solution has a `Directory.Packages.props`
+- Reported for a project governed by a props file, judged against that file's pins
 - Default severity: `Moderate`
 - Fixable: no — removing a pin changes the resolved version, so review it yourself
 
@@ -168,9 +199,10 @@ runtime. Remove the attribute so the central version applies.
 Under central package management a `PackageReference` without a `Version` needs a matching
 `PackageVersion` entry. With neither, restore fails.
 
-- Reported when the solution has a `Directory.Packages.props`
+- Reported for a project governed by a props file, judged against that file's pins
 - Default severity: `High`
-- Fixable: no — add the package to `Directory.Packages.props`
+- Fixable: no — add the package to the props file the finding names, which is the one MSBuild reads
+  for that project
 
 ## OrphanedPackageVersion
 
@@ -179,7 +211,12 @@ Under central package management a `PackageReference` without a `Version` needs 
 Harmless to restore, but stale pins accumulate — and once nothing references a package, its pin is
 indistinguishable from a deliberate one when someone comes to upgrade.
 
-- Reported when the solution has a `Directory.Packages.props`
+A pin is judged against every project it governs, across all props files in the scan — a pin
+inherited by a nested file is not orphaned because the projects using it read that file rather than
+the one declaring it. Pins are attributed to the file that declares them, and a scan where transitive
+pinning is on reports no orphans, since a pin nothing references directly is then deliberate.
+
+- Reported once per declared pin, judged across every project governed by it
 - Default severity: `Low`
 - Fixable: no
 
@@ -208,9 +245,11 @@ input.
 `[4.0.0]` is *not* reported. A bracketed single version is the most exact form NuGet has; it locks
 the package to that release.
 
-Read from what the files declare and from `Directory.Packages.props`, never from the resolved graph
-— by the time restore has run, `4.*` is already a concrete version. A `VersionOverride` counts,
-because under central package management that is the version actually in force for that project.
+Read from what the files declare and from every props file governing a scanned project, never from
+the resolved graph — by the time restore has run, `4.*` is already a concrete version. A nested
+file's floating pin is exactly as unreproducible as the root's, so reading only the root would pass
+it as reproducible. A `VersionOverride` counts, because under central package management that is the
+version actually in force for that project.
 
 - Reported whenever a declared version is a wildcard or a range
 - Default severity: `Moderate`. Teams that accept ranges deliberately can re-grade or switch the

@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Documentation
+- `docs/rules.md` describes the four CPM rules as they actually behave since 3.55.0: judged per project against the props file governing it, rather than solution-wide against one file. Adds a **Which props file governs a project** section covering the walk up, `DirectoryPackagesPropsPath`, import following, and the project's own last word on enablement.
+- The landing page stated 3.51.0 in both its pinned install command and its schema.org `softwareVersion` — four releases behind. A pinned install command that goes stale hands every new reader an old build, so both are now covered by the same durable version test that already guarded the README.
+
 ## [3.55.0] - 2026-08-01
 
 ### Fixed
