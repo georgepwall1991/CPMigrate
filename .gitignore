@@ -56,3 +56,7 @@ cpmigrate*.log
 
 # Remotion hero video toolchain (media/hero-video)
 node_modules/
+
+# Scratch from review/QA browser tooling (codex + playwright MCP) run at repo root
+.playwright-mcp/
+cpmigrate-home-*.png
