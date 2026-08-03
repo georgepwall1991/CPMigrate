@@ -28,10 +28,10 @@ the terminal and published in JSON as `summary.disabledRules` and `summary.sever
 `issuesFound: 0` can always be told apart from findings that were configured away.
 
 Several rules below are marked **not fixable** because removing a pin or a reference changes which
-version restores, and a fixer cannot know whether that is acceptable. `cpmigrate -s ./Solution.sln
---verify` answers the question those rules leave open: it restores before and after the change and
-reports every resolved version that moved, so a fix you make by hand can be checked rather than hoped
-for.
+version restores, and a fixer cannot know whether that is acceptable.
+`cpmigrate -s ./Solution.sln --verify` answers the question those rules leave open: it restores
+before and after the change and reports every resolved version that moved, so a fix you make by hand
+can be checked rather than hoped for.
 
 Severities map onto SARIF levels as follows:
 

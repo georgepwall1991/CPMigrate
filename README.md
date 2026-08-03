@@ -524,7 +524,7 @@ Yes. `--audit` scans direct + transitive CVEs; `--fail-on High` narrows the gate
 <details>
 <summary><b>Which .NET versions are supported?</b></summary>
 
-The tool targets .NET 10 with `LatestMajor` roll-forward and runs on any machine with **.NET SDK 8.0+**. Your projects can target anything — CPMigrate edits XML directly and only builds your solution when you ask it to verify updates.
+The tool targets .NET 10 with `LatestMajor` roll-forward and runs on any machine with **.NET SDK 8.0+**. Your projects can target anything — CPMigrate edits XML directly, and only restores or builds your solution when you ask it to: `--verify`, `--update-packages`, `--transitive`, `--audit`, `--outdated`, and `--deprecated`.
 
 </details>
 

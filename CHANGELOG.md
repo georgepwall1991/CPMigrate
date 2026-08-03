@@ -6,7 +6,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
-## [3.56.0] - 2026-08-02
+## [3.56.0] - 2026-08-03
 
 ### Added
 - **`--verify`: prove the migration did not change what restores.** CPMigrate rewrites every project file and picks a winner for every version conflict, and until now the only evidence it worked was that it did not throw. `--update-packages` has restored and tested since 3.0; the namesake operation — the more invasive of the two — verified nothing. `--verify` captures the fully-resolved package graph before the migration, captures it again afterwards, and diffs the two per project and per target framework. It reads `project.assets.json` directly, so what it compares is the version that will actually be built against rather than the version a file declares.
@@ -49,10 +49,9 @@ A second round found seven more, including the two below that were **not** in th
 - `docs/benchmarks.md` publishes the cost rather than implying it: the same Serilog migration measured at ~2s without `--verify` and ~50s with it, plus what that scales with. A feature whose price is two restores should say so in the table, not only in a caveat.
 - `NEXT_STEPS.md`, `SESSION_SUMMARY.md`, and `REFACTORING_STATUS.md` are retired to `docs/history/` behind a README that says what each one was and why it is not current. All three were January-2026 working notes frozen mid-task — one still headlined as SonarCloud setup, citing 546 tests against a suite past 1300 and a `~/RiderProjects/` path that no longer exists. A stale `NEXT_STEPS.md` at the repository root reads as a live plan, which is the same failure the drift tests guard against everywhere else, applied to this repository's own documentation.
 - `docs/rules.md` points the rules marked *not fixable* — the ones documented as "removing this changes the resolved version, so review it yourself" — at `--verify`, which is now the thing that answers the question they leave open.
-
-### Documentation
 - `docs/rules.md` describes the four CPM rules as they actually behave since 3.55.0: judged per project against the props file governing it, rather than solution-wide against one file. Adds a **Which props file governs a project** section covering the walk up, `DirectoryPackagesPropsPath`, import following, and the project's own last word on enablement.
 - The landing page stated 3.51.0 in both its pinned install command and its schema.org `softwareVersion` — four releases behind. A pinned install command that goes stale hands every new reader an old build, so both are now covered by the same durable version test that already guarded the README.
+
 
 ## [3.55.0] - 2026-08-01
 
