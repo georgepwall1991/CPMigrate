@@ -196,19 +196,30 @@ public record ProjectPackageInfo(
     /// keeps a committed baseline from embedding one.
     /// </summary>
     /// <param name="projectPath">Full path to the project file.</param>
-    public string ProjectId(string projectPath)
+    public string ProjectId(string projectPath) => ProjectId(BasePath, projectPath);
+
+    /// <summary>
+    /// The same identifier, for callers that hold a scan root but not a
+    /// <see cref="ProjectPackageInfo"/> — the resolved-graph verification, which reports on projects
+    /// rather than on findings.
+    /// </summary>
+    /// <remarks>
+    /// One implementation on purpose. A second way of naming a project would drift from this one, and
+    /// the two would disagree about the same project in the same payload.
+    /// </remarks>
+    public static string ProjectId(string? basePath, string projectPath)
     {
         if (string.IsNullOrWhiteSpace(projectPath))
         {
             return string.Empty;
         }
 
-        if (string.IsNullOrWhiteSpace(BasePath))
+        if (string.IsNullOrWhiteSpace(basePath))
         {
             return Path.GetFileName(projectPath);
         }
 
-        var relative = Path.GetRelativePath(BasePath, Path.GetFullPath(projectPath));
+        var relative = Path.GetRelativePath(basePath, Path.GetFullPath(projectPath));
         if (EscapesRoot(relative))
         {
             return Path.GetFileName(projectPath);

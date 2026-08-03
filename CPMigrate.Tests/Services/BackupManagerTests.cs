@@ -24,6 +24,76 @@ public class BackupManagerTests : IDisposable
     }
 
     [Fact]
+    public void CreateBackupForProject_TwoProjectsWithTheSameFileName_DoesNotOverwriteEitherBackup()
+    {
+        // Backups were named from the file name plus one timestamp shared by the whole run, so a
+        // solution holding src/Api/Api.csproj and tests/Api/Api.csproj produced the same name twice.
+        // The copy overwrote, the manifest kept both entries pointing at the one surviving file, and
+        // a rollback wrote the second project's bytes into both originals — reporting success.
+        // Silent corruption by the mechanism the tool offers as its undo. Pre-existing; found by
+        // cross-review of the resolved-graph verification, which rolls back automatically and
+        // unattended, so nobody is watching.
+        var backupPath = Path.Combine(_testDirectory, "backups");
+        Directory.CreateDirectory(backupPath);
+
+        var first = WriteProjectAt("src/Api/Api.csproj", "<Project>first</Project>");
+        var second = WriteProjectAt("tests/Api/Api.csproj", "<Project>second</Project>");
+        var options = new Options();
+
+        var firstEntry = _backupManager.CreateBackupForProject(
+            options,
+            first,
+            backupPath,
+            "20260803010101001"
+        );
+        var secondEntry = _backupManager.CreateBackupForProject(
+            options,
+            second,
+            backupPath,
+            "20260803010101001"
+        );
+
+        firstEntry!.BackupFileName.Should().NotBe(secondEntry!.BackupFileName);
+        File.ReadAllText(Path.Combine(backupPath, firstEntry.BackupFileName))
+            .Should()
+            .Be("<Project>first</Project>");
+        File.ReadAllText(Path.Combine(backupPath, secondEntry.BackupFileName))
+            .Should()
+            .Be("<Project>second</Project>");
+    }
+
+    [Fact]
+    public void CreateBackupForProject_TheOrdinaryCase_KeepsThePlainName()
+    {
+        // The disambiguator is added only on collision, so existing manifests, listings and the
+        // timestamp grouping in GetBackupHistory are untouched.
+        var backupPath = Path.Combine(_testDirectory, "backups");
+        Directory.CreateDirectory(backupPath);
+
+        var project = WriteProjectAt("src/Api/Api.csproj", "<Project/>");
+
+        var entry = _backupManager.CreateBackupForProject(
+            new Options(),
+            project,
+            backupPath,
+            "20260803010101001"
+        );
+
+        entry!.BackupFileName.Should().Be("Api.csproj.backup_20260803010101001");
+    }
+
+    private string WriteProjectAt(string relativePath, string content)
+    {
+        var full = Path.Combine(
+            _testDirectory,
+            relativePath.Replace('/', Path.DirectorySeparatorChar)
+        );
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, content);
+        return full;
+    }
+
+    [Fact]
     public void CreateBackupDirectory_NoBackupTrue_ReturnsEmptyString()
     {
         var options = new Options { NoBackup = true };
@@ -36,11 +106,7 @@ public class BackupManagerTests : IDisposable
     [Fact]
     public void CreateBackupDirectory_NoBackupFalse_CreatesDirectory()
     {
-        var options = new Options
-        {
-            NoBackup = false,
-            BackupDir = _testDirectory
-        };
+        var options = new Options { NoBackup = false, BackupDir = _testDirectory };
 
         var result = BackupManager.CreateBackupDirectory(options);
 
@@ -52,11 +118,7 @@ public class BackupManagerTests : IDisposable
     [Fact]
     public void CreateBackupDirectory_EmptyBackupDir_UsesCurrentDirectory()
     {
-        var options = new Options
-        {
-            NoBackup = false,
-            BackupDir = ""
-        };
+        var options = new Options { NoBackup = false, BackupDir = "" };
 
         var result = BackupManager.CreateBackupDirectory(options);
 
@@ -67,11 +129,7 @@ public class BackupManagerTests : IDisposable
     [Fact]
     public void CreateBackupDirectory_WhitespaceOnlyBackupDir_FallsBackToCurrentDirectory()
     {
-        var options = new Options
-        {
-            NoBackup = false,
-            BackupDir = "   "
-        };
+        var options = new Options { NoBackup = false, BackupDir = "   " };
 
         var result = BackupManager.CreateBackupDirectory(options);
 
@@ -144,7 +202,7 @@ public class BackupManagerTests : IDisposable
         {
             AddBackupToGitignore = false,
             NoBackup = false,
-            GitignoreDir = _testDirectory
+            GitignoreDir = _testDirectory,
         };
         var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");
 
@@ -161,7 +219,7 @@ public class BackupManagerTests : IDisposable
         {
             AddBackupToGitignore = true,
             NoBackup = false,
-            GitignoreDir = _testDirectory
+            GitignoreDir = _testDirectory,
         };
         var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupPath);
@@ -187,7 +245,7 @@ public class BackupManagerTests : IDisposable
         {
             AddBackupToGitignore = true,
             NoBackup = false,
-            GitignoreDir = _testDirectory
+            GitignoreDir = _testDirectory,
         };
         var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupPath);
@@ -210,7 +268,7 @@ public class BackupManagerTests : IDisposable
         {
             AddBackupToGitignore = true,
             NoBackup = false,
-            GitignoreDir = _testDirectory
+            GitignoreDir = _testDirectory,
         };
         var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupPath);
@@ -241,9 +299,17 @@ public class BackupManagerTests : IDisposable
             PropsFilePath = "/path/to/Directory.Packages.props",
             Backups = new List<BackupEntry>
             {
-                new() { OriginalPath = "/path/to/Project1.csproj", BackupFileName = "Project1.csproj.backup_20231127120000" },
-                new() { OriginalPath = "/path/to/Project2.csproj", BackupFileName = "Project2.csproj.backup_20231127120000" }
-            }
+                new()
+                {
+                    OriginalPath = "/path/to/Project1.csproj",
+                    BackupFileName = "Project1.csproj.backup_20231127120000",
+                },
+                new()
+                {
+                    OriginalPath = "/path/to/Project2.csproj",
+                    BackupFileName = "Project2.csproj.backup_20231127120000",
+                },
+            },
         };
 
         await BackupManager.WriteManifestAsync(backupDir, manifest);
@@ -269,8 +335,12 @@ public class BackupManagerTests : IDisposable
             PropsFilePath = "/path/to/Directory.Packages.props",
             Backups = new List<BackupEntry>
             {
-                new() { OriginalPath = "/path/to/Project1.csproj", BackupFileName = "Project1.csproj.backup_20231127120000" }
-            }
+                new()
+                {
+                    OriginalPath = "/path/to/Project1.csproj",
+                    BackupFileName = "Project1.csproj.backup_20231127120000",
+                },
+            },
         };
 
         await BackupManager.WriteManifestAsync(backupDir, manifest);
@@ -328,7 +398,7 @@ public class BackupManagerTests : IDisposable
         var entry = new BackupEntry
         {
             OriginalPath = originalPath,
-            BackupFileName = backupFileName
+            BackupFileName = backupFileName,
         };
 
         BackupManager.RestoreFile(backupDir, entry);
@@ -346,7 +416,7 @@ public class BackupManagerTests : IDisposable
         var entry = new BackupEntry
         {
             OriginalPath = Path.Combine(_testDirectory, "Test.csproj"),
-            BackupFileName = "NonExistent.csproj.backup_20231127120000"
+            BackupFileName = "NonExistent.csproj.backup_20231127120000",
         };
 
         var action = () => BackupManager.RestoreFile(backupDir, entry);
@@ -372,8 +442,8 @@ public class BackupManagerTests : IDisposable
             PropsFilePath = "/path/to/props",
             Backups = new List<BackupEntry>
             {
-                new() { OriginalPath = "/path/to/Test.csproj", BackupFileName = backupFileName }
-            }
+                new() { OriginalPath = "/path/to/Test.csproj", BackupFileName = backupFileName },
+            },
         };
 
         var errors = BackupManager.CleanupBackups(backupDir, manifest);

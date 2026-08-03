@@ -65,8 +65,8 @@ cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > anal
 # 2 · preview the migration as a unified diff — nothing written
 cpmigrate -s ./MySolution.sln --dry-run --diff
 
-# 3 · migrate to Central Package Management
-cpmigrate -s ./MySolution.sln
+# 3 · migrate to Central Package Management — and prove it changed nothing that ships
+cpmigrate -s ./MySolution.sln --verify
 
 # 4 · update packages; tests fail → automatic rollback
 cpmigrate --update-packages --bisect
@@ -81,7 +81,7 @@ cpmigrate --update-packages --bisect
 Requires **.NET SDK 8.0** or later. The tool itself targets `net10.0` with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.55.0
+dotnet tool install --global CPMigrate --version 3.56.0
 ```
 
 ```bash
@@ -140,6 +140,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | Surface | What you get |
 |---------|--------------|
 | 🏗️ **CPM migration** | Generate `Directory.Packages.props`, strip inline versions, conflict strategies, `--merge` |
+| 🔎 **`--verify`** | Restores before *and* after, diffs the resolved graph, attributes every change to the decision that caused it |
 | 🔬 **Dependency analysis** | 12 analyzers + scoreboard + 0–100 health score; JSON / SARIF / Markdown / **CSV** |
 | 🩹 **Auto-fix** | Version, casing, redundant refs, transitive pin |
 | 🔁 **Safe updates** | Latest versions + `dotnet test` + automatic rollback |
@@ -186,6 +187,18 @@ cpmigrate --doctor                 # SDK, NuGet reachability, workspace, git —
 cpmigrate --status                 # repo-context dashboard, no wizard
 cpmigrate --tree --transitive      # ASCII dependency tree per project
 cpmigrate --init                   # scaffold .cpmigrate.json (interactive or CI-safe)
+```
+
+</details>
+
+<details open>
+<summary><b>🔎 Migration &amp; verification</b> — change the build, then prove what changed</summary>
+
+```bash
+cpmigrate -s ./MySolution.sln --dry-run --diff   # preview, nothing written
+cpmigrate -s ./MySolution.sln --verify           # migrate, then prove the graph didn't move
+cpmigrate -s ./MySolution.sln --verify --verify-strict   # demand a literal no-op
+cpmigrate -s ./MySolution.sln --verify --output Markdown # the receipt, for the PR body
 ```
 
 </details>
@@ -247,6 +260,8 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--conflict-strategy` | | `Highest` | `Highest` · `Lowest` · `Fail` |
 | `--interactive-conflicts` | | `false` | Prompt for each version conflict |
 | `--keep-attrs` | `-k` | `false` | Leave inline `Version` attributes in place |
+| `--verify` | | `false` | Prove the migration didn't change what restores. Two restores; exit `9` on drift nothing explains |
+| `--verify-strict` | | `false` | Fail on *any* graph change, including explained ones. Requires `--verify` |
 | `--interactive` | `-i` | `false` | Launch the Mission Control wizard |
 
 </details>
@@ -375,8 +390,11 @@ The contract a CI gate is written against — and the one thing a script can't d
 | `6` | UnexpectedError | Unhandled exception |
 | `7` | TestFailure | Tests failed after update (rollback done); with `--bisect`, only when *nothing* could be kept |
 | `8` | IncompleteAnalysis | A scan didn't finish — treat as **re-run**, never as clean |
+| `9` | GraphDrift | `--verify` found the resolved graph moved unexplained, or couldn't prove it hadn't |
 
 > ⚠️ **Exit `8` is the whole point of the gate.** If a project fails to scan, the run reports *nothing* for the part it couldn't read. A green `0` on an incomplete scan would let a vulnerability slip through. Always branch on `8`.
+
+> ⚠️ **Exit `9` is the only code that says the files are fine and the *build* isn't.** A migration that rewrites every `.csproj` perfectly and quietly ships a different version of a package exits `0` on every other measure.
 
 ---
 
@@ -426,6 +444,28 @@ cpmigrate --analyze --audit --outdated --output Markdown --quiet >> "$GITHUB_STE
 
 Verdict-first, severity breakdown, findings linked to their rules, baselined rows marked, incomplete scans flagged, long lists collapsed behind `<details>`. Post to a PR with `gh pr comment "$N" --body-file report.md`. Full guide: [georgepwall1991.github.io/CPMigrate/guides/ci-cd](https://georgepwall1991.github.io/CPMigrate/guides/ci-cd/).
 
+### Gate a migration PR on the resolved graph
+
+A migration PR is sixty changed files, and `git diff` cannot answer the only question that matters: does this change what we ship? `--verify` answers it, and exits `9` when it can't.
+
+```yaml
+- name: Migrate and verify
+  id: migrate
+  run: |
+    set +e
+    cpmigrate -s ./MySolution.sln --verify --force --output Markdown --quiet > receipt.md
+    echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+- name: Publish the receipt
+  if: always() && hashFiles('receipt.md') != ''
+  run: cat receipt.md >> "$GITHUB_STEP_SUMMARY"
+- name: Require an accounted-for graph
+  run: |
+    code="${{ steps.migrate.outputs.exit_code }}"
+    [ "$code" = "0" ] || { echo "::error::resolved graph moved unexplained (exit $code)"; exit 1; }
+```
+
+`--verify` rolls the migration back on drift it can't account for, so a failed job leaves the tree as it found it. Add `--verify-strict` when the migration must be a literal no-op — then *any* graph change fails, even one the receipt explains.
+
 ---
 
 ## ❓ FAQ
@@ -433,7 +473,16 @@ Verdict-first, severity breakdown, findings linked to their rules, baselined row
 <details>
 <summary><b>How do I migrate a solution to Central Package Management?</b></summary>
 
-`cpmigrate -s ./MySolution.sln --dry-run --diff` to preview, then drop `--dry-run --diff` to apply. CPMigrate extracts every `<PackageReference>`, resolves conflicts by strategy, generates `Directory.Packages.props`, and strips inline `Version` attributes — with a timestamped backup you can `--rollback` to.
+`cpmigrate -s ./MySolution.sln --dry-run --diff` to preview, then `cpmigrate -s ./MySolution.sln --verify` to apply. CPMigrate extracts every `<PackageReference>`, resolves conflicts by strategy, generates `Directory.Packages.props`, and strips inline `Version` attributes — with a timestamped backup you can `--rollback` to. `--verify` then proves the result restores to the same graph it started from.
+
+</details>
+
+<details>
+<summary><b>Does migrating to CPM change what my code builds against?</b></summary>
+
+It can, and that's the point of `--verify`. Moving a version from a `.csproj` into `Directory.Packages.props` is a no-op — but when two projects disagree about a package, the migration has to pick one, and `--conflict-strategy Highest` (the default) silently upgrades the loser. That's a real change to shipped binaries, and `git diff` can't show it to you.
+
+`--verify` restores before and after, diffs the fully-resolved graph per project and target framework, and reports every version that moved alongside the decision that caused it — plus anything reachable from it. Changes nothing accounts for fail the run (exit `9`) and roll the migration back. On Serilog it reports: 221 resolved versions, 216 unchanged, 5 moved, all from one `PolySharp` unification.
 
 </details>
 
@@ -507,6 +556,10 @@ Discovered by walking up from the solution/project path (or cwd). Contradictory 
 - **Projects:** `.csproj` / `.fsproj` / `.vbproj`
 - **Solutions:** `.sln` and `.slnx`
 - **CPM:** generates and consumes standard NuGet Central Package Management files
+- **`--verify` costs two full solution restores** — one for the baseline, one for the result — and needs the feed both times. It is opt-in for that reason. A restore that fails either time is reported as exit `9`, never as a clean graph.
+- **`--verify` fails closed rather than guessing.** Three shapes it will not measure, each reported by name rather than silently skipped: two projects in one directory (they share a single `obj/project.assets.json`, so neither can be read independently); two projects that would be reported under the same name; and a project that redirects its intermediate output (`MSBuildProjectExtensionsPath`, `BaseIntermediateOutputPath`, `ProjectAssetsFile`), since finding its graph needs MSBuild evaluation this pass does not perform. In each case the run exits `9` — a verification that cannot tell two projects apart has verified neither.
+- **`--verify` needs the solution, not a directory holding several.** Discovery can pick one interactively, but the restore still targets the directory, which `dotnet restore` rejects. Pass `-s ./Path/To/Solution.slnx` when a directory contains more than one.
+- **`--verify` is incompatible with `--output Csv`**, which carries analyzer findings and has no shape for a receipt. Use `--output Json` or `--output Markdown`.
 
 ## 🧪 Examples & benchmarks
 

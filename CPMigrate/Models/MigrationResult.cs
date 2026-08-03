@@ -1,4 +1,5 @@
 using CPMigrate.Fixers;
+using CPMigrate.Services.Verify;
 
 namespace CPMigrate.Models;
 
@@ -107,4 +108,11 @@ public class MigrationResult
     /// implementation of the policy drifts from the first.
     /// </summary>
     public int? GatedIssueCount { get; init; }
+
+    /// <summary>
+    /// The resolved-graph verification, when <c>--verify</c> was passed. Null otherwise, so a run that
+    /// never verified stays distinguishable from one that verified and found nothing — the same
+    /// "absence is meaningful" contract the rest of the payload keeps.
+    /// </summary>
+    public VerificationReport? Verification { get; init; }
 }

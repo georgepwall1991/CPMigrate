@@ -39,6 +39,27 @@
 - name: Analyze dependency health
   run: cpmigrate --analyze --audit --outdated --deprecated --output Json --quiet > analysis.json</code></pre>
       </div>
+      <div class="panel">
+        <h2>Gate a migration PR on the resolved graph</h2>
+        <p>A migration pull request is sixty changed project files, and <code>git diff</code> cannot answer the only question a reviewer has: does this change what we ship? It can. <code>--conflict-strategy Highest</code> is the default, and when two projects disagree about a package version one of them is silently upgraded.</p>
+        <p><code>--verify</code> restores before and after the migration, diffs the fully-resolved package graph per project and target framework, and attributes every version that moved to the decision that caused it. Anything unaccounted for exits <code>9</code> and rolls the migration back, so a failed job leaves the tree as it found it.</p>
+        <pre><code>- name: Migrate and verify
+  id: migrate
+  run: |
+    set +e
+    cpmigrate -s ./MySolution.sln --verify --force --output Markdown --quiet > receipt.md
+    echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+- name: Publish the receipt
+  if: always() &amp;&amp; hashFiles('receipt.md') != ''
+  run: cat receipt.md >> "$GITHUB_STEP_SUMMARY"
+
+- name: Require an accounted-for graph
+  run: |
+    code="${{ steps.migrate.outputs.exit_code }}"
+    [ "$code" = "0" ] || { echo "::error::resolved graph moved unexplained (exit $code)"; exit 1; }</code></pre>
+        <p>Add <code>--verify-strict</code> when the migration must be a literal no-op — then any graph change fails, even one the receipt explains. Verification costs two full solution restores, which is why it is opt-in.</p>
+      </div>
     </section>
     <footer class="footer">
       Use JSON mode early. It turns CPMigrate into a dependable dependency gate rather than a human-only console tool.

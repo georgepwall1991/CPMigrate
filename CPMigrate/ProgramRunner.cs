@@ -69,7 +69,10 @@ public static class ProgramRunner
                     NormalizeValuelessRuleFlag(options, args);
                     if (
                         IsDiagnosticMode(options)
-                        && RejectsUnusableRulePolicy(options, services.ConsoleService)
+                        && (
+                            RejectsUnusableRulePolicy(options, services.ConsoleService)
+                            || RejectsUnusableVerifyRequest(options, services.ConsoleService)
+                        )
                     )
                     {
                         return ExitCodes.ValidationError;
@@ -286,6 +289,35 @@ public static class ProgramRunner
         try
         {
             options.ValidateRuleOptions();
+            return false;
+        }
+        catch (ArgumentException ex)
+        {
+            consoleService.Error(ex.Message);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Reports a <c>--verify</c> that this command cannot honour and says the run should stop.
+    /// </summary>
+    /// <remarks>
+    /// Same reason as the rule-policy check above, and a worse consequence. The diagnostic modes
+    /// return from here without reaching <c>CommandRouter</c>, so a rejection enforced only
+    /// downstream let <c>--verify --init</c> write a config file and exit <c>0</c> — a success from a
+    /// command that was asked to prove something and proved nothing. For a flag whose entire purpose
+    /// is to refuse to report an unmeasured run as clean, being silently dropped is the one failure
+    /// it must not have.
+    /// </remarks>
+    /// <returns>True when the combination is unsupported and the run must not proceed.</returns>
+    private static bool RejectsUnusableVerifyRequest(
+        Options options,
+        IConsoleService consoleService
+    )
+    {
+        try
+        {
+            options.ValidateVerifyOptions();
             return false;
         }
         catch (ArgumentException ex)

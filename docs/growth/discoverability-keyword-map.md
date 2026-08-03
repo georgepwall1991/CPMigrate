@@ -1,6 +1,9 @@
-# CPMigrate discoverability keyword map (3.7.0)
+# CPMigrate discoverability keyword map
 
 Session research for NuGet.org / GitHub conversion. Not marketing fiction — terms map to real product surfaces.
+
+> Originally written against 3.7.0. The competitor and gap tables below are that snapshot and have not
+> been re-run; the keyword lists are current as of 3.56.0.
 
 ## Primary keywords (high intent)
 
@@ -10,6 +13,7 @@ Session research for NuGet.org / GitHub conversion. Not marketing fiction — te
 4. **dependency analysis** (version drift, duplicates, transitive conflicts)
 5. **package updates with rollback** / **test verification**
 6. **Directory.Build.props** unification
+7. **verify CPM migration** / **did migrating to CPM change my package versions** — added 3.56.0 with `--verify`. No substitute on NuGet answers this, which is the point: every other tool in the table performs the migration and stops.
 
 ## Secondary / long-tail
 
@@ -20,6 +24,9 @@ Session research for NuGet.org / GitHub conversion. Not marketing fiction — te
 5. NuGet vulnerability audit / CVE package scan
 6. .slnx solution format
 7. bisect package updates (largest green subset)
+8. resolved dependency graph diff / package graph before and after
+9. does central package management change resolved versions
+10. conflict strategy Highest upgraded my package
 
 ## Competitor / substitute search phrases (live NuGet)
 

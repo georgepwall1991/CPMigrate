@@ -100,6 +100,9 @@
         "backup": {
           "$ref": "#/definitions/backup"
         },
+        "verification": {
+          "$ref": "#/definitions/verification"
+        },
         "dryRun": {
           "type": "boolean",
           "description": "Whether the run was a preview and wrote nothing"
@@ -412,6 +415,162 @@
         "filesBackedUp": {
           "type": "integer"
         }
+      },
+      "additionalProperties": false
+    },
+    "verification": {
+      "type": "object",
+      "description": "The resolved-graph receipt a --verify migration produces. Absent when --verify was not passed, so a run that never verified stays distinguishable from one that verified and found nothing. Added in output schema 1.5.0.",
+      "required": [
+        "verdict",
+        "passed",
+        "strict",
+        "rolledBack",
+        "projectsRestored",
+        "projectsExpected",
+        "resolvedVersions",
+        "unchanged",
+        "changed",
+        "unexplained"
+      ],
+      "properties": {
+        "verdict": {
+          "enum": ["unchanged", "explainedDrift", "unexplainedDrift", "failed"],
+          "description": "'failed' means no verdict could be reached — restore failed, or the two captures do not describe the same solution. Never read it as clean: not knowing is not the same as knowing nothing is wrong."
+        },
+        "passed": {
+          "type": "boolean",
+          "description": "Whether the run was allowed to stand, after --verify-strict is applied. This is what exit code 9 reflects."
+        },
+        "strict": {
+          "type": "boolean",
+          "description": "Whether --verify-strict was in force. Under it, drift the report can explain still fails."
+        },
+        "rolledBack": {
+          "type": "boolean",
+          "description": "Whether the migration was undone. False for a strict-only failure, where the tree is deliberately left in place to be read."
+        },
+        "projectsRestored": {
+          "type": "integer",
+          "description": "Projects whose graph was read after the migration."
+        },
+        "projectsExpected": {
+          "type": "integer",
+          "description": "Projects the baseline covered. A smaller projectsRestored is why a verdict can be 'failed' with no changes listed."
+        },
+        "resolvedVersions": {
+          "type": "integer",
+          "description": "Total resolved package versions compared, across every project and target framework."
+        },
+        "unchanged": { "type": "integer" },
+        "changed": { "type": "integer" },
+        "unexplained": {
+          "type": "integer",
+          "description": "Changes nothing the migration decided accounts for. Any non-zero value fails the run."
+        },
+        "failureReason": {
+          "type": "string",
+          "description": "Why no verdict could be reached. Absent unless verdict is 'failed'."
+        },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/verificationChange" }
+        },
+        "decisions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/verificationDecision" },
+          "description": "Which version won for each conflicted package, out of what, and at whose direction. summary.conflictsResolved is only a count and cannot answer any of those."
+        },
+        "integrityFailures": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/verificationIntegrityFailure" },
+          "description": "Why the two graphs could not be compared. Absent when they could."
+        }
+      },
+      "additionalProperties": false
+    },
+    "verificationChange": {
+      "type": "object",
+      "required": [
+        "project",
+        "targetFramework",
+        "packageId",
+        "kind",
+        "direction",
+        "direct",
+        "explanation",
+        "description"
+      ],
+      "properties": {
+        "project": { "type": "string" },
+        "targetFramework": { "type": "string" },
+        "packageId": { "type": "string" },
+        "kind": { "enum": ["changed", "added", "removed"] },
+        "before": {
+          "type": "string",
+          "description": "Absent for an addition."
+        },
+        "after": {
+          "type": "string",
+          "description": "Absent for a removal."
+        },
+        "direction": {
+          "enum": ["none", "upgrade", "downgrade", "unknown"],
+          "description": "'downgrade' is the one to gate on hardest: it is how a migration silently reverts a fix only one project had picked up."
+        },
+        "direct": {
+          "type": "boolean",
+          "description": "Whether the project references this package itself, as opposed to receiving it through another."
+        },
+        "explanation": {
+          "enum": ["unexplained", "conflictUnified", "transitiveFallout"]
+        },
+        "causedBy": {
+          "type": "string",
+          "description": "The package this change was reached from in the resolved graph. Absent unless explanation is 'transitiveFallout'."
+        },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "verificationDecision": {
+      "type": "object",
+      "required": ["packageId", "resolvedVersion", "source"],
+      "properties": {
+        "packageId": { "type": "string" },
+        "resolvedVersion": { "type": "string" },
+        "source": {
+          "enum": ["highest", "lowest", "interactive"],
+          "description": "'interactive' only when a prompt was actually answered; a non-TTY falls back to the configured strategy and is recorded as that."
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["version", "projects"],
+            "properties": {
+              "version": { "type": "string" },
+              "projects": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "verificationIntegrityFailure": {
+      "type": "object",
+      "required": ["project", "reason"],
+      "properties": {
+        "project": { "type": "string" },
+        "targetFramework": {
+          "type": "string",
+          "description": "Absent when the whole project, rather than one framework, is the problem."
+        },
+        "reason": { "type": "string" }
       },
       "additionalProperties": false
     },

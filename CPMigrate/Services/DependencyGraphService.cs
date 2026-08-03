@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CPMigrate.Models;
 using NuGet.Versioning;
 
 namespace CPMigrate.Services;
@@ -44,6 +45,207 @@ public class DependencyGraphService : IDependencyGraphService
             return [];
         }
     }
+
+    /// <inheritdoc />
+    public ProjectResolvedGraph? TryReadResolvedGraph(string projectFilePath)
+    {
+        var assetsPath = GetAssetsPath(projectFilePath);
+
+        if (!File.Exists(assetsPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = ReadAssetsDocument(assetsPath);
+
+            if (!DescribesProject(doc, projectFilePath))
+            {
+                return null;
+            }
+
+            return BuildResolvedGraph(projectFilePath, doc);
+        }
+        catch (Exception ex)
+            when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            _console.Warning(
+                $"Could not read the resolved graph for {Path.GetFileName(projectFilePath)}: {ex.Message}"
+            );
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Whether this assets file is actually about this project.
+    /// </summary>
+    /// <remarks>
+    /// It reads its own subject: NuGet records the project it restored as
+    /// <c>project.restore.projectPath</c>. Asking is the only way to tell a current graph from a
+    /// plausible one, and two situations produce a plausible one.
+    ///
+    /// <para>A project that redirects its intermediate output writes its real graph elsewhere while a
+    /// stale <c>obj/project.assets.json</c> from before the redirect can still sit here — read
+    /// happily, compared against itself in both snapshots, and reported unchanged over a migration
+    /// that changed the build. Cross-review caught it: failing closed on the file being *absent* was
+    /// never the same as failing closed on it being *wrong*.</para>
+    ///
+    /// <para>And two projects in one directory share this path, so whichever restored last answers
+    /// for both.</para>
+    ///
+    /// An assets file that does not say what it describes is trusted rather than rejected — older
+    /// NuGet versions omit the field, and refusing every project on those would make verification
+    /// unavailable rather than careful.
+    /// </remarks>
+    private static bool DescribesProject(JsonDocument doc, string projectFilePath)
+    {
+        if (
+            !doc.RootElement.TryGetProperty("project", out var project)
+            || !project.TryGetProperty("restore", out var restore)
+            || !restore.TryGetProperty("projectPath", out var recorded)
+        )
+        {
+            return true;
+        }
+
+        var recordedPath = recorded.GetString();
+
+        if (string.IsNullOrWhiteSpace(recordedPath))
+        {
+            return true;
+        }
+
+        return string.Equals(
+            Path.GetFullPath(recordedPath),
+            Path.GetFullPath(projectFilePath),
+            StringComparison.OrdinalIgnoreCase
+        );
+    }
+
+    /// <summary>
+    /// Builds the graph from the two sections that describe it, driven by the frameworks the *project*
+    /// declares rather than by whatever keys <c>targets</c> happens to carry.
+    ///
+    /// That direction matters twice. It is what lets a declared framework restore did not write be
+    /// reported as unresolved rather than as empty. And it skips the RID-qualified target keys
+    /// (<c>net10.0/win-x64</c>) that appear alongside the plain one when a project declares runtime
+    /// identifiers — counting those would multiply every package by the RID count and turn adding a RID
+    /// into hundreds of phantom additions.
+    /// </summary>
+    private static ProjectResolvedGraph? BuildResolvedGraph(
+        string projectFilePath,
+        JsonDocument doc
+    )
+    {
+        if (
+            !doc.RootElement.TryGetProperty("project", out var projectNode)
+            || !projectNode.TryGetProperty("frameworks", out var frameworksNode)
+            || !doc.RootElement.TryGetProperty("targets", out var targetsNode)
+        )
+        {
+            return null;
+        }
+
+        List<ResolvedFramework> frameworks = [];
+
+        foreach (var framework in frameworksNode.EnumerateObject())
+        {
+            var direct = new HashSet<string>(
+                ReadDirectPackages(framework.Value).Keys,
+                StringComparer.OrdinalIgnoreCase
+            );
+
+            if (!targetsNode.TryGetProperty(framework.Name, out var targetNode))
+            {
+                frameworks.Add(new ResolvedFramework(framework.Name, Resolved: false, []));
+                continue;
+            }
+
+            frameworks.Add(
+                new ResolvedFramework(
+                    framework.Name,
+                    Resolved: true,
+                    ReadResolvedPackages(targetNode, direct)
+                )
+            );
+        }
+
+        // Sorted so two runs over the same tree produce byte-identical reports whatever order the
+        // document enumerated in.
+        return new ProjectResolvedGraph(
+            projectFilePath,
+            [.. frameworks.OrderBy(f => f.TargetFramework, StringComparer.Ordinal)]
+        );
+    }
+
+    private static List<ResolvedPackage> ReadResolvedPackages(
+        JsonElement targetNode,
+        HashSet<string> direct
+    )
+    {
+        List<ResolvedPackage> packages = [];
+
+        foreach (var entry in targetNode.EnumerateObject())
+        {
+            // A ProjectReference appears here as "type": "project", carrying the referenced project's
+            // version rather than a package version. Counting one would make every version bump of a
+            // sibling project read as dependency drift.
+            if (
+                entry.Value.TryGetProperty("type", out var type)
+                && !string.Equals(
+                    type.GetString(),
+                    PackageTarget,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                continue;
+            }
+
+            var separator = entry.Name.LastIndexOf('/');
+            if (separator < 0)
+            {
+                continue;
+            }
+
+            var id = entry.Name[..separator];
+            packages.Add(
+                new ResolvedPackage(
+                    id,
+                    NormalizeVersion(entry.Name[(separator + 1)..]),
+                    direct.Contains(id),
+                    ReadDependencyIds(entry.Value)
+                )
+            );
+        }
+
+        return [.. packages.OrderBy(p => p.PackageId, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>
+    /// The package IDs one resolved node pulls in. Only the IDs: the versions on these edges are
+    /// requirement ranges, and what each requirement resolved to is already recorded as its own node.
+    /// </summary>
+    private static IReadOnlyList<string> ReadDependencyIds(JsonElement node)
+    {
+        if (!node.TryGetProperty("dependencies", out var dependencies))
+        {
+            return [];
+        }
+
+        return [.. dependencies.EnumerateObject().Select(d => d.Name)];
+    }
+
+    /// <summary>
+    /// Settles two spellings of one release onto a single form, through the shared normalizer.
+    ///
+    /// Two restores of the same tree can write <c>4.3</c>, <c>4.3.0</c>, or <c>4.3.0+build.5</c> for the
+    /// same package. Comparing the raw strings would manufacture drift nothing caused, and a report that
+    /// cries wolf is one nobody reads. Shared with the recorded migration decisions rather than
+    /// duplicated: normalizing only one side of a comparison is worse than normalizing neither.
+    /// </summary>
+    private static string NormalizeVersion(string raw) => VersionText.Normalize(raw);
 
     private static string GetAssetsPath(string projectFilePath)
     {

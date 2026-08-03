@@ -27,6 +27,12 @@ visible so the debt gets paid down. Whichever rules a run switched off or re-gra
 the terminal and published in JSON as `summary.disabledRules` and `summary.severityOverrides`, so
 `issuesFound: 0` can always be told apart from findings that were configured away.
 
+Several rules below are marked **not fixable** because removing a pin or a reference changes which
+version restores, and a fixer cannot know whether that is acceptable. `cpmigrate -s ./Solution.sln
+--verify` answers the question those rules leave open: it restores before and after the change and
+reports every resolved version that moved, so a fix you make by hand can be checked rather than hoped
+for.
+
 Severities map onto SARIF levels as follows:
 
 | CPMigrate severity | SARIF level |
@@ -102,7 +108,8 @@ genuinely needs to control that version.
 
 - Requires `--transitive`
 - Default severity: `Low`
-- Fixable: no — removing a direct reference can change the resolved version, so review it yourself
+- Fixable: no — removing a direct reference can change the resolved version, so review it yourself.
+  `cpmigrate -s ./Solution.sln --verify` will tell you whether it did
 
 ## FrameworkAlignment
 
@@ -190,7 +197,8 @@ runtime. Remove the attribute so the central version applies.
 
 - Reported for a project governed by a props file, judged against that file's pins
 - Default severity: `Moderate`
-- Fixable: no — removing a pin changes the resolved version, so review it yourself
+- Fixable: no — removing a pin changes the resolved version, so review it yourself.
+  `--verify` on the migration reports exactly which versions moved and what accounts for each
 
 ## MissingPackageVersion
 

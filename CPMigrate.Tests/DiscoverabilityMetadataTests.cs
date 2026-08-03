@@ -12,7 +12,7 @@ public sealed class DiscoverabilityMetadataTests
     private static string RepositoryRoot =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
 
-    private const string ExpectedVersion = "3.55.0";
+    private const string ExpectedVersion = "3.56.0";
 
     private const string RawBase =
         "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/";
@@ -177,7 +177,7 @@ public sealed class DiscoverabilityMetadataTests
     /// <para>
     /// Guarded because pinning only the install command and the schema.org tag left the hero
     /// badge and the terminal simulation four releases behind, so the page contradicted itself:
-    /// the hero announced v3.51.0 while the install block below it installed 3.55.0. Package
+    /// the hero announced v3.51.0 while the install block below it installed v3.55.0. Package
     /// versions in the sample XML (Serilog 3.1.1, Polly 8.4.1) are deliberately outside both
     /// patterns — they are example content, not claims about the tool.
     /// </para>
@@ -187,7 +187,7 @@ public sealed class DiscoverabilityMetadataTests
     {
         var landingPage = File.ReadAllText(Path.Combine(RepositoryRoot, "site", "index.html"));
 
-        // "CPMigrate 3.55.0" / "CPMigrate v3.55.0", and bare badge forms like "· v3.55.0".
+        // "CPMigrate 3.56.0" / "CPMigrate v3.56.0", and bare badge forms like "· v3.56.0".
         var toolVersions = Regex
             .Matches(landingPage, @"CPMigrate\s+v?(?<ver>\d+\.\d+\.\d+)")
             .Concat(Regex.Matches(landingPage, @"(?<![\w.])v(?<ver>\d+\.\d+\.\d+)"))

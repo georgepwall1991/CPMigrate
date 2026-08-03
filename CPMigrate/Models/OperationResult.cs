@@ -92,10 +92,168 @@ public class OperationResult
     public bool DryRun { get; init; }
 
     /// <summary>
+    /// The resolved-graph verification receipt, when <c>--verify</c> was passed.
+    /// </summary>
+    /// <remarks>
+    /// Absent otherwise, so a run that never verified stays distinguishable from one that verified and
+    /// found nothing. Present since output schema 1.5.0.
+    /// </remarks>
+    [JsonPropertyName("verification")]
+    public VerificationInfo? Verification { get; init; }
+
+    /// <summary>
     /// Timestamp when the operation completed.
     /// </summary>
     [JsonPropertyName("timestamp")]
     public string Timestamp { get; init; } = DateTime.UtcNow.ToString("o");
+}
+
+/// <summary>
+/// What <c>--verify</c> concluded, in the machine-readable payload.
+/// </summary>
+public class VerificationInfo
+{
+    /// <summary>
+    /// <c>unchanged</c>, <c>explainedDrift</c>, <c>unexplainedDrift</c>, or <c>failed</c>.
+    /// </summary>
+    [JsonPropertyName("verdict")]
+    public string Verdict { get; init; } = string.Empty;
+
+    /// <summary>Whether the run was allowed to stand, after <c>--verify-strict</c> is applied.</summary>
+    [JsonPropertyName("passed")]
+    public bool Passed { get; init; }
+
+    /// <summary>Whether <c>--verify-strict</c> was in force for this verdict.</summary>
+    [JsonPropertyName("strict")]
+    public bool Strict { get; init; }
+
+    /// <summary>Whether the migration was undone because verification could not vouch for it.</summary>
+    [JsonPropertyName("rolledBack")]
+    public bool RolledBack { get; init; }
+
+    [JsonPropertyName("projectsRestored")]
+    public int ProjectsRestored { get; init; }
+
+    [JsonPropertyName("projectsExpected")]
+    public int ProjectsExpected { get; init; }
+
+    [JsonPropertyName("resolvedVersions")]
+    public int ResolvedVersions { get; init; }
+
+    [JsonPropertyName("unchanged")]
+    public int Unchanged { get; init; }
+
+    [JsonPropertyName("changed")]
+    public int Changed { get; init; }
+
+    [JsonPropertyName("unexplained")]
+    public int Unexplained { get; init; }
+
+    /// <summary>Why no verdict could be reached. Absent unless <c>verdict</c> is <c>failed</c>.</summary>
+    [JsonPropertyName("failureReason")]
+    public string? FailureReason { get; init; }
+
+    [JsonPropertyName("changes")]
+    public List<VerificationChangeInfo> Changes { get; init; } = new();
+
+    /// <summary>
+    /// Which version won for each conflicted package, out of what, and at whose direction. Until this
+    /// existed the payload carried only a <c>conflictsResolved</c> count, which cannot answer any of
+    /// those questions.
+    /// </summary>
+    [JsonPropertyName("decisions")]
+    public List<VerificationDecisionInfo> Decisions { get; init; } = new();
+
+    /// <summary>
+    /// Why the two graphs could not be compared. Absent when they could.
+    /// </summary>
+    [JsonPropertyName("integrityFailures")]
+    public List<VerificationIntegrityFailureInfo>? IntegrityFailures { get; init; }
+}
+
+/// <summary>One package's fate in one project and target framework.</summary>
+public class VerificationChangeInfo
+{
+    [JsonPropertyName("project")]
+    public string Project { get; init; } = string.Empty;
+
+    [JsonPropertyName("targetFramework")]
+    public string TargetFramework { get; init; } = string.Empty;
+
+    [JsonPropertyName("packageId")]
+    public string PackageId { get; init; } = string.Empty;
+
+    /// <summary><c>changed</c>, <c>added</c>, or <c>removed</c>.</summary>
+    [JsonPropertyName("kind")]
+    public string Kind { get; init; } = string.Empty;
+
+    /// <summary>Absent for an addition.</summary>
+    [JsonPropertyName("before")]
+    public string? Before { get; init; }
+
+    /// <summary>Absent for a removal.</summary>
+    [JsonPropertyName("after")]
+    public string? After { get; init; }
+
+    /// <summary><c>upgrade</c>, <c>downgrade</c>, <c>none</c>, or <c>unknown</c>.</summary>
+    [JsonPropertyName("direction")]
+    public string Direction { get; init; } = string.Empty;
+
+    /// <summary>Whether the project references this package itself.</summary>
+    [JsonPropertyName("direct")]
+    public bool Direct { get; init; }
+
+    /// <summary><c>conflictUnified</c>, <c>transitiveFallout</c>, or <c>unexplained</c>.</summary>
+    [JsonPropertyName("explanation")]
+    public string Explanation { get; init; } = string.Empty;
+
+    /// <summary>The package this change was reached from. Absent unless it is transitive fallout.</summary>
+    [JsonPropertyName("causedBy")]
+    public string? CausedBy { get; init; }
+
+    [JsonPropertyName("description")]
+    public string Description { get; init; } = string.Empty;
+}
+
+/// <summary>A version choice the migration made on the user's behalf.</summary>
+public class VerificationDecisionInfo
+{
+    [JsonPropertyName("packageId")]
+    public string PackageId { get; init; } = string.Empty;
+
+    [JsonPropertyName("resolvedVersion")]
+    public string ResolvedVersion { get; init; } = string.Empty;
+
+    /// <summary><c>highest</c>, <c>lowest</c>, or <c>interactive</c>.</summary>
+    [JsonPropertyName("source")]
+    public string Source { get; init; } = string.Empty;
+
+    [JsonPropertyName("candidates")]
+    public List<VerificationCandidateInfo> Candidates { get; init; } = new();
+}
+
+/// <summary>One version a package was declared at, and the projects that declared it.</summary>
+public class VerificationCandidateInfo
+{
+    [JsonPropertyName("version")]
+    public string Version { get; init; } = string.Empty;
+
+    [JsonPropertyName("projects")]
+    public List<string> Projects { get; init; } = new();
+}
+
+/// <summary>A reason the two graphs could not be compared.</summary>
+public class VerificationIntegrityFailureInfo
+{
+    [JsonPropertyName("project")]
+    public string Project { get; init; } = string.Empty;
+
+    /// <summary>Absent when the whole project, rather than one framework, is the problem.</summary>
+    [JsonPropertyName("targetFramework")]
+    public string? TargetFramework { get; init; }
+
+    [JsonPropertyName("reason")]
+    public string Reason { get; init; } = string.Empty;
 }
 
 /// <summary>
