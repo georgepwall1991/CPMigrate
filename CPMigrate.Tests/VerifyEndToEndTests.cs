@@ -114,39 +114,6 @@ public class VerifyEndToEndTests : IDisposable
     }
 
     [Fact]
-    public async Task RestoresARelativeTarget()
-    {
-        // RunRestoreAsync runs from the target's own directory while passing the path through as the
-        // argument, so a relative `-s src/Solution.slnx` resolved to `src/src/Solution.slnx` and the
-        // baseline restore failed - reported as "this solution does not restore" about a solution
-        // that restores perfectly well, which is the worst kind of finding this feature can produce.
-        // Cross-review caught it; every other test here passes an absolute path.
-        //
-        // The relative path is built against the process working directory rather than by changing
-        // it. Directory.SetCurrentDirectory is global to the process and xUnit runs test classes in
-        // parallel, so two classes each saving and restoring it will hand one another a temp
-        // directory that the other then deletes - after which every GetCurrentDirectory in the run
-        // throws. That surfaces as dozens of unrelated failures a long way from the cause, which is
-        // exactly what happened when this test was first written that way.
-        WriteProject("src/Api/Api.csproj", "Newtonsoft.Json", "13.0.3");
-        WriteSolutionAt("src/Solution.slnx", "Api/Api.csproj");
-
-        var relativeSolution = Path.GetRelativePath(
-            Directory.GetCurrentDirectory(),
-            Path.Combine(_root, "src", "Solution.slnx")
-        );
-
-        Path.IsPathRooted(relativeSolution)
-            .Should()
-            .BeFalse("the point of the test is that a relative target resolves correctly");
-
-        var (exitCode, verification) = await Verify(target: relativeSolution);
-
-        exitCode.Should().Be(ExitCodes.Success);
-        verification.GetProperty("verdict").GetString().Should().Be("unchanged");
-    }
-
-    [Fact]
     public async Task FailsUnderStrict_OnDriftItCanNonethelessExplain()
     {
         // --verify-strict is not a stricter analysis; it is a different question. "Every change is
@@ -231,9 +198,18 @@ public class VerifyEndToEndTests : IDisposable
         return (exitCode, verification.Clone());
     }
 
-    private void WriteProject(string relativePath, string package, string version)
+    private void WriteProject(string relativePath, string package, string version) =>
+        WriteProjectUnder(_root, relativePath, package, version);
+
+    private static void WriteProjectUnder(
+        string root,
+        string relativePath,
+        string package,
+        string version
+    )
     {
-        WriteFile(
+        WriteFileUnder(
+            root,
             relativePath,
             $"""
             <Project Sdk="Microsoft.NET.Sdk">
@@ -251,7 +227,14 @@ public class VerifyEndToEndTests : IDisposable
     private void WriteSolution(params string[] projectPaths) =>
         WriteSolutionAt("Solution.slnx", projectPaths);
 
-    private void WriteSolutionAt(string solutionPath, params string[] projectPaths)
+    private void WriteSolutionAt(string solutionPath, params string[] projectPaths) =>
+        WriteSolutionUnder(_root, solutionPath, projectPaths);
+
+    private static void WriteSolutionUnder(
+        string root,
+        string solutionPath,
+        params string[] projectPaths
+    )
     {
         var projects = string.Join(
             Environment.NewLine,
@@ -262,7 +245,8 @@ public class VerifyEndToEndTests : IDisposable
 
         // .slnx rather than .sln: hand-written .sln fixtures are rejected by
         // Microsoft.VisualStudio.SolutionPersistence, and CPMigrate supports both.
-        WriteFile(
+        WriteFileUnder(
+            root,
             solutionPath,
             $"""
             <Solution>
@@ -272,9 +256,12 @@ public class VerifyEndToEndTests : IDisposable
         );
     }
 
-    private void WriteFile(string relativePath, string content)
+    private void WriteFile(string relativePath, string content) =>
+        WriteFileUnder(_root, relativePath, content);
+
+    private static void WriteFileUnder(string root, string relativePath, string content)
     {
-        var fullPath = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        var fullPath = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         File.WriteAllText(fullPath, content);
     }

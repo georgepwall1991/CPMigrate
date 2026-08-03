@@ -315,7 +315,7 @@ public class MigrationService
     /// anything is written, so it reads as "this solution does not restore" about a solution that
     /// restores perfectly well. Cross-review caught it.
     /// </remarks>
-    private static string RestoreTarget(Options options)
+    internal static string RestoreTarget(Options options)
     {
         return Path.GetFullPath(options.GetDiscoveryTargetPath());
     }

@@ -181,6 +181,44 @@ public class VerifyContractTests : IDisposable
         File.Exists(Path.Combine(_testDirectory, "Directory.Packages.props")).Should().BeFalse();
     }
 
+    // ── The restore target ────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("src/Solution.slnx")]
+    [InlineData("Solution.slnx")]
+    [InlineData("./nested/deeper/Solution.slnx")]
+    public void MakesTheRestoreTargetAbsolute(string relativeTarget)
+    {
+        // RunRestoreAsync runs from the target's own directory while passing the path through as the
+        // argument, so a relative `-s src/Solution.slnx` resolved to `src/src/Solution.slnx` and the
+        // baseline restore failed — reported as "this solution does not restore" about a solution
+        // that restores perfectly well, which is the worst kind of finding this feature can produce.
+        // Cross-review caught it.
+        //
+        // Asserted here rather than end to end, because an end-to-end version has to put a project
+        // somewhere a relative path can reach: under the working directory it inherits this
+        // repository's own Directory.Packages.props and migrates something else entirely, and in the
+        // system temp directory there may be no relative form at all — on Windows those are commonly
+        // different volumes. Both were tried; both tested the environment rather than the fix.
+        var options = new Options { SolutionFileDir = relativeTarget };
+
+        var target = MigrationService.RestoreTarget(options);
+
+        Path.IsPathRooted(target).Should().BeTrue();
+        target.Should().EndWith(Path.GetFileName(relativeTarget));
+    }
+
+    [Fact]
+    public void LeavesAnAbsoluteRestoreTargetAlone()
+    {
+        var absolute = Path.Combine(_testDirectory, "Solution.slnx");
+
+        MigrationService
+            .RestoreTarget(new Options { SolutionFileDir = absolute })
+            .Should()
+            .Be(Path.GetFullPath(absolute));
+    }
+
     // ── The exit-code matrix ──────────────────────────────────────────────────────────────────
 
     [Theory]
