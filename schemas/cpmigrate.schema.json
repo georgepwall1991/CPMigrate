@@ -57,6 +57,16 @@
       "default": "Info",
       "description": "Lowest finding severity that fails the build during --analyze. Info fails on any finding; Never reports without gating. Does not suppress exit 8 for an incomplete scan."
     },
+    "verify": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether every migration must prove it did not move the resolved dependency graph. Restores before and after, diffs the result, and exits 9 on drift nothing accounts for — rolling the migration back. Costs two full solution restores. Team-wide for the same reason failOn is: a policy that has to be remembered as a flag is one that gets forgotten on the run that mattered."
+    },
+    "verifyStrict": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether a verified migration must be a literal no-op, failing even on drift the receipt can explain. Requires verify."
+    },
     "rules": {
       "type": "object",
       "description": "Per-rule policy applied before --fail-on. Each key is a rule ID as published in JSON issueCode and SARIF ruleId (run 'cpmigrate --explain all' to list them); each value is either a severity or 'none' to switch the rule off. A disabled rule reports nothing at all, unlike a baseline, which keeps accepted findings visible. Rule IDs and severities are matched case-insensitively; the spellings listed here are the canonical ones. Names are listed as properties rather than constrained with propertyNames so an editor offers them without a differently-cased but perfectly valid policy failing schema validation — an unknown rule ID is rejected by the tool itself, with a message naming it.",

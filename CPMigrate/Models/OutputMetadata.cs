@@ -38,8 +38,15 @@ public static class OutputMetadata
     /// and a severity in <c>analysisIssues</c> cannot be reconciled with the one the rule
     /// documentation publishes.
     /// </para>
+    /// <para>
+    /// 1.5.0 additively introduced <c>verification</c>, the resolved-graph receipt a <c>--verify</c>
+    /// migration produces: the verdict, how much was compared, every version that moved, and what
+    /// accounts for it. Absent when <c>--verify</c> was not passed, so a run that never verified stays
+    /// distinguishable from one that verified and found nothing — the same distinction
+    /// <c>summary.disabledRules</c> draws for rule policy.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.4.0";
+    public const string SchemaVersion = "1.5.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

@@ -69,6 +69,16 @@ public static class ExitCodes
     /// part of the codebase went unexamined, and a gate must not read that as clean.
     /// </summary>
     public const int IncompleteAnalysis = 8;
+
+    /// <summary>
+    /// A <c>--verify</c> run found the resolved dependency graph moved in a way the migration's own
+    /// decisions do not account for, or could not establish that it had not moved.
+    ///
+    /// Separate from every other code because it is the only one that says the files on disk are fine
+    /// and what they build is not. A migration that rewrites correctly and quietly changes which
+    /// version of a package ships exits <see cref="Success"/> on every other measure.
+    /// </summary>
+    public const int GraphDrift = 9;
 }
 
 /// <summary>
@@ -160,6 +170,24 @@ public class Options
         HelpText = "How to handle version conflicts: Highest (default), Lowest, or Fail."
     )]
     public ConflictStrategy ConflictStrategy { get; set; }
+
+    [Option(
+        "verify",
+        Default = false,
+        HelpText = "Prove the migration did not change what restores. Captures the resolved package "
+            + "graph before and after, diffs it, and attributes every change to the decision that "
+            + "caused it. Anything unaccounted for exits 9 and rolls the migration back. Costs two "
+            + "full restores."
+    )]
+    public bool Verify { get; set; }
+
+    [Option(
+        "verify-strict",
+        Default = false,
+        HelpText = "Fail on any resolved-graph change, including ones --verify can explain. For teams "
+            + "that require the migration to be a literal no-op. Requires --verify."
+    )]
+    public bool VerifyStrict { get; set; }
 
     [Option(
         'r',
@@ -588,6 +616,7 @@ public class Options
                 "Fail if version conflicts are detected",
                 new Options { ConflictStrategy = ConflictStrategy.Fail }
             ),
+            new("Migrate and prove the resolved graph did not move", new Options { Verify = true }),
             new("Analyze packages for issues without migrating", new Options { Analyze = true }),
             new("Run in interactive wizard mode", new Options { Interactive = true }),
             new(
@@ -902,6 +931,7 @@ public class Options
         // the promised strict rejection never happened. Also means a typo costs a second rather
         // than a scan that can take minutes.
         ValidateRuleOptions();
+        ValidateVerifyOptions();
         ValidateSarifOptions();
         ValidateMarkdownOptions();
         ValidateBaselineOptions();
@@ -919,10 +949,14 @@ public class Options
             return;
         }
 
-        if (!Analyze)
+        // A verifying migration produces a report too — the resolved-graph receipt, which is the
+        // artefact most worth pasting into a pull request. Everything else under Markdown is analyzer
+        // findings, so --analyze remains the requirement in every other case.
+        if (!Analyze && !Verify)
         {
             throw new ArgumentException(
-                "--output Markdown requires --analyze; the report describes analyzer findings."
+                "--output Markdown requires --analyze, or --verify to report a migration's "
+                    + "resolved-graph verification."
             );
         }
 
@@ -1020,6 +1054,151 @@ public class Options
         if (InteractiveConflicts)
         {
             return "--interactive-conflicts";
+        }
+
+        if (UnifyProps)
+        {
+            return "--unify-props";
+        }
+
+        if (Rollback)
+        {
+            return "--rollback";
+        }
+
+        if (PruneBackups)
+        {
+            return "--prune-backups";
+        }
+
+        if (PruneAll)
+        {
+            return "--prune-all";
+        }
+
+        if (ListBackups)
+        {
+            return "--list-backups";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Verification measures a migration against itself, so it only makes sense for a command that
+    /// performs one. Each rejection names the flag rather than ignoring it: a run that silently
+    /// skipped verification would be indistinguishable from one that verified and found nothing, which
+    /// is the failure this feature exists to prevent, turned on itself.
+    /// </summary>
+    public void ValidateVerifyOptions()
+    {
+        if (VerifyStrict && !Verify)
+        {
+            throw new ArgumentException("--verify-strict requires --verify.");
+        }
+
+        if (!Verify)
+        {
+            return;
+        }
+
+        if (DryRun)
+        {
+            throw new ArgumentException(
+                "--verify cannot be used with --dry-run. Verification compares what restores before "
+                    + "and after the migration, and a dry run does not perform one."
+            );
+        }
+
+        if (Analyze)
+        {
+            throw new ArgumentException(
+                "--verify cannot be used with --analyze, which reports on the tree as it is rather "
+                    + "than migrating it. Run the migration to verify it."
+            );
+        }
+
+        var conflictingMode = FindModeInsteadOfMigration();
+        if (conflictingMode is not null)
+        {
+            throw new ArgumentException(
+                $"--verify cannot be combined with {conflictingMode}, which runs instead of a migration."
+            );
+        }
+
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            // Each solution would capture and compare its own graph, but the batch driver aggregates
+            // into a BatchResult that has no shape for the result — so the verification would run,
+            // cost two restores per solution, and report nothing at all.
+            throw new ArgumentException(
+                "--verify cannot be used with --batch; verify one solution at a time with -s."
+            );
+        }
+
+        if (Output == OutputFormat.Csv)
+        {
+            // The CSV writer serializes analyzer findings, and a migration has none — so the run
+            // would perform both restores, reach a verdict, and emit an empty file. Rejected rather
+            // than left to produce a document that silently contains no verification at all.
+            throw new ArgumentException(
+                "--verify cannot be used with --output Csv, which carries analyzer findings and has "
+                    + "no shape for a verification receipt. Use --output Json or --output Markdown."
+            );
+        }
+    }
+
+    /// <summary>
+    /// Returns the flag naming a mode that runs instead of a migration, or null when none is set.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <see cref="FindModeInsteadOfAnalysis"/>, which is a different question with a
+    /// different answer. <c>--interactive-conflicts</c> is on that list because it is not an analysis;
+    /// it is, however, a perfectly ordinary way to run a *migration* — it is how a person chooses the
+    /// winning version by hand, which verification then reports as an interactive decision. Reusing
+    /// the analysis list here would reject the combination the attribution code was written to
+    /// describe. <c>--analyze</c> is handled by its own message, which can say something more useful
+    /// than "runs instead of a migration".
+    /// </remarks>
+    private string? FindModeInsteadOfMigration()
+    {
+        // The four diagnostic modes return from ProgramRunner without ever reaching the router, so a
+        // combination rejected only downstream would let `--verify --init` write a config file and
+        // exit 0 with the verification silently dropped. Cross-review caught it: whether the flag was
+        // honoured depended on which command it was passed alongside.
+        if (Doctor)
+        {
+            return "--doctor";
+        }
+
+        if (Init)
+        {
+            return "--init";
+        }
+
+        if (Status)
+        {
+            return "--status";
+        }
+
+        if (Tree)
+        {
+            return "--tree";
+        }
+
+        if (Update)
+        {
+            return "--update";
+        }
+
+        if (UpdatePackages)
+        {
+            return "--update-packages";
+        }
+
+        if (Interactive)
+        {
+            return "--interactive";
         }
 
         if (UnifyProps)

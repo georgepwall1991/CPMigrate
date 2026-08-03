@@ -33,7 +33,7 @@
       "url": "https://georgepwall1991.github.io/CPMigrate/",
       "downloadUrl": "https://www.nuget.org/packages/CPMigrate/",
       "codeRepository": "https://github.com/georgepwall1991/CPMigrate",
-      "softwareVersion": "3.55.0",
+      "softwareVersion": "3.56.0",
       "description": "Migrate .NET solutions to NuGet Central Package Management, analyze dependency health, and update packages safely with rollback.",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     }
@@ -58,6 +58,7 @@
       "mainEntity": [
         { "@type": "Question", "name": "How do I migrate a .NET solution to Central Package Management?", "acceptedAnswer": { "@type": "Answer", "text": "Run cpmigrate -s ./MySolution.sln --dry-run to preview, then cpmigrate -s ./MySolution.sln to apply. CPMigrate extracts every PackageReference from your project files, resolves version conflicts, generates Directory.Packages.props, and strips inline Version attributes — with a timestamped backup you can roll back to." } },
         { "@type": "Question", "name": "What is Directory.Packages.props?", "acceptedAnswer": { "@type": "Answer", "text": "It is the file NuGet Central Package Management (CPM) reads package versions from, so every project in a solution shares one version per package instead of declaring its own. CPMigrate generates and maintains it for you." } },
+        { "@type": "Question", "name": "Does migrating to Central Package Management change what my code builds against?", "acceptedAnswer": { "@type": "Answer", "text": "It can. Moving a version into Directory.Packages.props is a no-op, but when two projects declare different versions the migration must pick one, and --conflict-strategy Highest silently upgrades the loser. cpmigrate --verify restores before and after the migration, diffs the fully-resolved package graph per project and target framework, and reports every version that moved alongside the decision that caused it. Changes nothing accounts for exit 9 and roll the migration back." } },
         { "@type": "Question", "name": "Can CPMigrate roll back a bad package update?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. --update-packages runs dotnet test after applying updates and rolls back automatically on failure. --update-packages --bisect keeps the largest subset that stays green and names the packages it held back. Migrations get timestamped backups restorable with cpmigrate --rollback." } },
         { "@type": "Question", "name": "Does CPMigrate work in CI/CD?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. --output Json --quiet gives strict JSON-only stdout against a published schema, --output Sarif uploads to GitHub code scanning as PR annotations, and --output Markdown drops a verdict-first report into the GitHub step summary. Exit codes are contract-level: 5 means findings, 8 means the scan did not complete." } },
         { "@type": "Question", "name": "Does CPMigrate support .slnx and monorepos?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. CPMigrate reads classic .sln and Visual Studio 17.10+ .slnx solutions, and --batch recursively discovers every solution in a monorepo — optionally in parallel and continuing past failures — with an isolated backup directory per solution." } },
@@ -94,7 +95,7 @@
   <!-- ═══════ HERO — poster plate ═══════ -->
   <header>
     <section class="hero shell" id="hero">
-      <div class="eyebrow"><span class="blip"></span> <span>CPMigrate / .NET platform tooling</span> <span class="v">· v3.55.0</span></div>
+      <div class="eyebrow"><span class="blip"></span> <span>CPMigrate / .NET platform tooling</span> <span class="v">· v3.56.0</span></div>
       <h1>One command to <span class="g">Central&nbsp;Package Management</span>.<span class="caret"></span></h1>
       <div class="hero-grid">
         <div>
@@ -299,7 +300,7 @@
         <div class="fstep"><div class="fnum">01</div><div><h3>Check the environment</h3><p>SDK, NuGet reachability, workspace, git — one diagnostic table.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --doctor</code></pre></div></div></div>
         <div class="fstep"><div class="fnum">02</div><div><h3>Score the graph</h3><p>CI-safe exit codes: <code>0</code> clean · <code>5</code> findings · <code>8</code> incomplete scan.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --analyze --audit --outdated --deprecated</code></pre></div></div></div>
         <div class="fstep"><div class="fnum">03</div><div><h3>Preview as a diff</h3><p><code>--diff</code> renders the exact <code>Directory.Packages.props</code> change before anything is written.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln --dry-run --diff</code></pre></div></div></div>
-        <div class="fstep"><div class="fnum">04</div><div><h3>Migrate</h3><p>Generates the props file, strips inline versions, keeps a timestamped backup.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln</code></pre></div></div></div>
+        <div class="fstep"><div class="fnum">04</div><div><h3>Migrate, and prove it</h3><p>Generates the props file, strips inline versions, keeps a timestamped backup — then <code>--verify</code> restores before and after and diffs the resolved graph. Exit <code>9</code> and an automatic rollback on drift nothing accounts for.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln --verify</code></pre></div></div></div>
         <div class="fstep"><div class="fnum">05</div><div><h3>Update without fear</h3><p>Tests fail? Everything rolls back. With <code>--bisect</code> the largest green subset stays.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --update-packages --bisect</code></pre></div></div></div>
       </div>
     </section>
@@ -312,6 +313,7 @@
         <h2>Built around the moments that break</h2>
       </div>
       <div class="grid">
+        <article class="card"><h3>Resolved-graph proof</h3><p><code>--verify</code> answers the only question a migration PR raises: does this change what we ship? Every moved version, attributed to the decision that caused it.</p><span class="cmd">cpmigrate -s ./Sln.sln --verify</span></article>
         <article class="card"><h3>Environment doctor</h3><p>One command verifies SDK, feed, workspace and git before you touch anything.</p><span class="cmd">cpmigrate --doctor</span></article>
         <article class="card"><h3>Config scaffolding</h3><p><code>--init</code> writes a <code>.cpmigrate.json</code> of team defaults — interactive or CI-safe.</p><span class="cmd">cpmigrate --init</span></article>
         <article class="card"><h3>Workspace status</h3><p>A repository-context dashboard without entering the wizard.</p><span class="cmd">cpmigrate --status</span></article>
@@ -406,9 +408,10 @@
         <h2>Asked before you ask</h2>
       </div>
       <details class="faq"><summary>How do I migrate a .NET solution to Central Package Management?</summary><div class="fb"><p>Run <code>cpmigrate -s ./MySolution.sln --dry-run</code> (add <code>--diff</code> for a unified diff), then <code>cpmigrate -s ./MySolution.sln</code> to apply. CPMigrate extracts every <code>&lt;PackageReference&gt;</code>, resolves conflicts, generates <code>Directory.Packages.props</code>, and strips inline <code>Version</code> attributes — with a backup you can roll back to.</p></div></details>
+      <details class="faq"><summary>Does migrating to CPM change what my code builds against?</summary><div class="fb"><p>It can &mdash; which is what <code>--verify</code> is for. Moving a version into <code>Directory.Packages.props</code> is a no-op, but when two projects disagree about a package the migration must pick one, and <code>--conflict-strategy Highest</code> silently upgrades the loser. <code>git diff</code> cannot show you that. <code>--verify</code> restores before and after, diffs the fully-resolved graph per project and target framework, and reports every version that moved with the decision that caused it. Anything unaccounted for exits <code>9</code> and rolls the migration back.</p></div></details>
       <details class="faq"><summary>What is Directory.Packages.props?</summary><div class="fb"><p>The file NuGet Central Package Management reads versions from, so every project shares one version per package. CPMigrate generates and maintains it. <a href="https://learn.microsoft.com/nuget/consume-packages/central-package-management">Microsoft's CPM docs</a> cover the format.</p></div></details>
       <details class="faq"><summary>Can CPMigrate roll back a bad package update?</summary><div class="fb"><p>Two ways. <code>--update-packages</code> runs <code>dotnet test</code> and rolls back on failure. <code>--update-packages --bisect</code> keeps the largest subset that stays green and names the held-back packages. Migrations get timestamped backups restorable with <code>cpmigrate --rollback</code>.</p></div></details>
-      <details class="faq"><summary>Does CPMigrate work in CI/CD?</summary><div class="fb"><p>Built for it. <code>--output Json --quiet</code> for strict JSON against a published schema; <code>--output Sarif</code> for PR annotations; <code>--output Markdown</code> for the step summary; <code>--output Csv</code> for spreadsheets. Exit code <code>8</code> means the scan didn't complete.</p></div></details>
+      <details class="faq"><summary>Does CPMigrate work in CI/CD?</summary><div class="fb"><p>Built for it. <code>--output Json --quiet</code> for strict JSON against a published schema; <code>--output Sarif</code> for PR annotations; <code>--output Markdown</code> for the step summary; <code>--output Csv</code> for spreadsheets. Exit code <code>8</code> means the scan didn't complete; <code>9</code> means a <code>--verify</code> migration moved the resolved graph in a way nothing accounts for.</p></div></details>
       <details class="faq"><summary>Does it support .slnx and monorepos?</summary><div class="fb"><p>Yes — classic <code>.sln</code> and VS 17.10+ <code>.slnx</code>, and <code>--batch</code> recursively discovers every solution, optionally in parallel and continue-on-failure, with an isolated backup per solution.</p></div></details>
       <details class="faq"><summary>Can it gate on vulnerabilities without failing on existing debt?</summary><div class="fb"><p>Yes. <code>--audit</code> scans direct and transitive CVEs; <code>--fail-on High</code> narrows the gate while still reporting everything; <code>--write-baseline</code> records today's findings once so CI fails only on <em>new</em> debt.</p></div></details>
     </section>
@@ -423,7 +426,7 @@
           <button data-t="brew">homebrew</button>
           <button data-t="winget">winget</button>
         </div>
-        <div class="tab-pane on" data-p="dotnet"><div class="code-block"><button class="copy-btn">copy</button><pre><code>dotnet tool install --global CPMigrate --version 3.55.0
+        <div class="tab-pane on" data-p="dotnet"><div class="code-block"><button class="copy-btn">copy</button><pre><code>dotnet tool install --global CPMigrate --version 3.56.0
 cpmigrate --doctor</code></pre></div></div>
         <div class="tab-pane" data-p="brew"><div class="code-block"><button class="copy-btn">copy</button><pre><code>brew tap georgepwall1991/cpmigrate
 brew install cpmigrate</code></pre></div></div>
@@ -431,6 +434,7 @@ brew install cpmigrate</code></pre></div></div>
         <div class="cta-row" style="margin-top:18px">
           <a class="button" href="https://www.nuget.org/packages/CPMigrate/">CPMigrate on NuGet</a>
           <a class="button-secondary" href="/CPMigrate/guides/ci-cd/">Use it in CI</a>
+          <a class="button-secondary" href="/CPMigrate/guides/verify-a-migration/">Verify a migration</a>
         </div>
       </div>
     </section>
@@ -649,7 +653,7 @@ brew install cpmigrate</code></pre></div></div>
       ]; },
       doctor: function () { return [
         '<span class="t-green">✔</span> SDK        <span class="t-dim">.NET 10.0.100</span>',
-        '<span class="t-green">✔</span> Tool       <span class="t-dim">CPMigrate v3.55.0</span>',
+        '<span class="t-green">✔</span> Tool       <span class="t-dim">CPMigrate v3.56.0</span>',
         '<span class="t-green">✔</span> NuGet      <span class="t-dim">nuget.org reachable (142ms)</span>',
         '<span class="t-green">✔</span> Solutions  <span class="t-dim">1 found (MySolution.sln)</span>',
         '<span class="t-green">✔</span> CPM        <span class="t-dim">Directory.Packages.props — 38 versions</span>',
@@ -689,7 +693,7 @@ brew install cpmigrate</code></pre></div></div>
         '<span class="t-pink t-b">Worker</span>',
         '└─ <span class="t-green">Serilog</span> <span class="t-dim">4.2.0</span>'
       ]; },
-      version: function () { return ['<span class="t-cyan">CPMigrate 3.55.0</span> <span class="t-dim">(net10.0, MIT)</span>']; },
+      version: function () { return ['<span class="t-cyan">CPMigrate 3.56.0</span> <span class="t-dim">(net10.0, MIT)</span>']; },
       clear: function () { body.innerHTML = ""; return null; }
     };
     var NAMES = Object.keys(CMDS);

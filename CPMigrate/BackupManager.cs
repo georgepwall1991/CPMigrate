@@ -16,7 +16,7 @@ public class BackupManager : IBackupManager
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
     /// <summary>
@@ -38,8 +38,11 @@ public class BackupManager : IBackupManager
         }
 
         var backupPath = Path.Combine(
-            Path.GetFullPath(string.IsNullOrWhiteSpace(backupSettings.BackupDir) ? "." : backupSettings.BackupDir),
-            BackupDirectoryName);
+            Path.GetFullPath(
+                string.IsNullOrWhiteSpace(backupSettings.BackupDir) ? "." : backupSettings.BackupDir
+            ),
+            BackupDirectoryName
+        );
 
         try
         {
@@ -52,7 +55,10 @@ public class BackupManager : IBackupManager
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
-            throw new IOException($"Cannot create backup directory '{backupPath}': {ex.Message}", ex);
+            throw new IOException(
+                $"Cannot create backup directory '{backupPath}': {ex.Message}",
+                ex
+            );
         }
     }
 
@@ -65,12 +71,27 @@ public class BackupManager : IBackupManager
     /// <param name="timestampOverride">Optional timestamp to group backups into a single set.</param>
     /// <returns>The backup entry, or null if backups are disabled.</returns>
     /// <exception cref="IOException">Thrown when the backup file cannot be created.</exception>
-    public BackupEntry? CreateBackupForProject(Options options, string filePath, string backupPath, string? timestampOverride = null)
+    public BackupEntry? CreateBackupForProject(
+        Options options,
+        string filePath,
+        string backupPath,
+        string? timestampOverride = null
+    )
     {
-        return CreateBackupForProject(BackupSettings.FromOptions(options), filePath, backupPath, timestampOverride);
+        return CreateBackupForProject(
+            BackupSettings.FromOptions(options),
+            filePath,
+            backupPath,
+            timestampOverride
+        );
     }
 
-    public BackupEntry? CreateBackupForProject(BackupSettings backupSettings, string filePath, string backupPath, string? timestampOverride = null)
+    public BackupEntry? CreateBackupForProject(
+        BackupSettings backupSettings,
+        string filePath,
+        string backupPath,
+        string? timestampOverride = null
+    )
     {
         if (!backupSettings.Enabled)
         {
@@ -80,7 +101,7 @@ public class BackupManager : IBackupManager
         var fileName = Path.GetFileName(filePath);
         // Use milliseconds for timestamp precision to avoid collisions in fast/parallel operations
         var timestamp = timestampOverride ?? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-        var backupFileName = $"{fileName}.backup_{timestamp}";
+        var backupFileName = ResolveBackupFileName(filePath, fileName, timestamp, backupPath);
         var backupFilePath = Path.Combine(backupPath, backupFileName);
 
         try
@@ -95,8 +116,48 @@ public class BackupManager : IBackupManager
         return new BackupEntry
         {
             OriginalPath = Path.GetFullPath(filePath),
-            BackupFileName = backupFileName
+            BackupFileName = backupFileName,
         };
+    }
+
+    /// <summary>
+    /// A backup file name that cannot collide with another project's in the same set.
+    /// </summary>
+    /// <remarks>
+    /// Backups were named from the file name and one timestamp shared by the whole run, so a solution
+    /// holding <c>src/Api/Api.csproj</c> and <c>tests/Api/Api.csproj</c> produced the same name twice.
+    /// The copy overwrote, the manifest kept both entries pointing at the one surviving file, and a
+    /// rollback wrote the second project's bytes into both originals — reporting success. Silent
+    /// corruption by the mechanism the tool offers as its undo.
+    ///
+    /// <para>Pre-existing, and found by cross-review of the resolved-graph verification, which made it
+    /// matter more: verification rolls back automatically and unattended, so nobody is watching.</para>
+    ///
+    /// <para>The disambiguator goes inside the file-name part rather than after the timestamp, because
+    /// <see cref="GetBackupHistory"/> groups a backup set by everything following <c>.backup_</c>. Appending
+    /// there would give every project its own "set". The ordinary case keeps its plain name: the hash
+    /// is added only when the plain one is already taken, so existing manifests and listings are
+    /// unaffected.</para>
+    /// </remarks>
+    private static string ResolveBackupFileName(
+        string filePath,
+        string fileName,
+        string timestamp,
+        string backupPath
+    )
+    {
+        var plain = $"{fileName}.backup_{timestamp}";
+
+        if (!File.Exists(Path.Combine(backupPath, plain)))
+        {
+            return plain;
+        }
+
+        var digest = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(filePath))
+        );
+
+        return $"{fileName}__{Convert.ToHexString(digest)[..8].ToLowerInvariant()}.backup_{timestamp}";
     }
 
     /// <summary>
@@ -111,14 +172,23 @@ public class BackupManager : IBackupManager
 
     public static async Task ManageGitIgnore(BackupSettings backupSettings, string? backupPath)
     {
-        if (!backupSettings.AddBackupToGitignore || !backupSettings.Enabled || string.IsNullOrEmpty(backupPath))
+        if (
+            !backupSettings.AddBackupToGitignore
+            || !backupSettings.Enabled
+            || string.IsNullOrEmpty(backupPath)
+        )
         {
             return;
         }
 
         var gitignorePath = Path.Combine(
-            Path.GetFullPath(string.IsNullOrEmpty(backupSettings.GitignoreDir) ? "." : backupSettings.GitignoreDir),
-            ".gitignore");
+            Path.GetFullPath(
+                string.IsNullOrEmpty(backupSettings.GitignoreDir)
+                    ? "."
+                    : backupSettings.GitignoreDir
+            ),
+            ".gitignore"
+        );
 
         var backupDirName = Path.GetFileName(backupPath);
         var entryToAdd = $"{backupDirName}/";
@@ -138,13 +208,17 @@ public class BackupManager : IBackupManager
                 return; // Already in gitignore
             }
 
-            await File.AppendAllTextAsync(gitignorePath,
-                $"{Environment.NewLine}# CPMigrate backup directory{Environment.NewLine}{entryToAdd}{Environment.NewLine}");
+            await File.AppendAllTextAsync(
+                gitignorePath,
+                $"{Environment.NewLine}# CPMigrate backup directory{Environment.NewLine}{entryToAdd}{Environment.NewLine}"
+            );
         }
         else
         {
-            await File.WriteAllTextAsync(gitignorePath,
-                $"# CPMigrate backup directory{Environment.NewLine}{entryToAdd}{Environment.NewLine}");
+            await File.WriteAllTextAsync(
+                gitignorePath,
+                $"# CPMigrate backup directory{Environment.NewLine}{entryToAdd}{Environment.NewLine}"
+            );
         }
     }
 
@@ -182,7 +256,9 @@ public class BackupManager : IBackupManager
         catch (JsonException ex)
         {
             // Log the error details for debugging - manifest is likely corrupted
-            await Console.Error.WriteLineAsync($"Warning: Failed to parse backup manifest: {ex.Message}");
+            await Console.Error.WriteLineAsync(
+                $"Warning: Failed to parse backup manifest: {ex.Message}"
+            );
             return null;
         }
     }
@@ -200,8 +276,11 @@ public class BackupManager : IBackupManager
     public static string GetBackupDirectoryPath(BackupSettings backupSettings)
     {
         return Path.Combine(
-            Path.GetFullPath(string.IsNullOrWhiteSpace(backupSettings.BackupDir) ? "." : backupSettings.BackupDir),
-            BackupDirectoryName);
+            Path.GetFullPath(
+                string.IsNullOrWhiteSpace(backupSettings.BackupDir) ? "." : backupSettings.BackupDir
+            ),
+            BackupDirectoryName
+        );
     }
 
     /// <summary>
@@ -232,8 +311,8 @@ public class BackupManager : IBackupManager
         var errors = new List<string>();
 
         // Delete backup files
-        var deleteErrors = manifest.Backups
-            .Select(entry => TryDeleteBackupFile(backupPath, entry))
+        var deleteErrors = manifest
+            .Backups.Select(entry => TryDeleteBackupFile(backupPath, entry))
             .Where(error => error != null)
             .Cast<string>();
         errors.AddRange(deleteErrors);
@@ -255,7 +334,10 @@ public class BackupManager : IBackupManager
         // Delete backup directory if empty
         try
         {
-            if (Directory.Exists(backupPath) && !Directory.EnumerateFileSystemEntries(backupPath).Any())
+            if (
+                Directory.Exists(backupPath)
+                && !Directory.EnumerateFileSystemEntries(backupPath).Any()
+            )
             {
                 Directory.Delete(backupPath);
             }
@@ -317,11 +399,7 @@ public class BackupManager : IBackupManager
 
             if (!backups.TryGetValue(timestamp, out var info))
             {
-                info = new BackupSetInfo
-                {
-                    Timestamp = timestamp,
-                    Files = new List<string>()
-                };
+                info = new BackupSetInfo { Timestamp = timestamp, Files = new List<string>() };
                 backups[timestamp] = info;
             }
 
@@ -329,9 +407,7 @@ public class BackupManager : IBackupManager
         }
 
         // Sort by timestamp descending (newest first)
-        return backups.Values
-            .OrderByDescending(b => b.Timestamp)
-            .ToList();
+        return backups.Values.OrderByDescending(b => b.Timestamp).ToList();
     }
 
     /// <summary>

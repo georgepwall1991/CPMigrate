@@ -243,6 +243,12 @@ public class ConfigService
         ),
         new(c => !string.IsNullOrEmpty(c.Baseline), "baseline", (o, c) => o.Baseline = c.Baseline),
         new(c => c.FailOn.HasValue, "fail-on", (o, c) => o.FailOn = c.FailOn.GetValueOrDefault()),
+        new(c => c.Verify.HasValue, "verify", (o, c) => o.Verify = c.Verify.GetValueOrDefault()),
+        new(
+            c => c.VerifyStrict.HasValue,
+            "verify-strict",
+            (o, c) => o.VerifyStrict = c.VerifyStrict.GetValueOrDefault()
+        ),
         // Flattened to the same Rule=Value spec the CLI takes, so the config file and the flag
         // cannot drift into two parsers that disagree about what a policy means.
         new(

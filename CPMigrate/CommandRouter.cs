@@ -1,5 +1,6 @@
 using CPMigrate.Models;
 using CPMigrate.Services;
+using CPMigrate.Services.Verify;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -1026,6 +1027,19 @@ internal static class CommandRouter
         IConsoleService consoleService
     )
     {
+        // A verifying migration has a report of its own, and it is the one worth pasting into a pull
+        // request: what the migration changed about the build, rather than what the analyzers think of
+        // the tree. Nothing else under --output Markdown reaches here without --analyze.
+        if (result.Verification is not null)
+        {
+            await JsonOutputWriter.EmitAsync(
+                VerificationMarkdown.Format(result.Verification, options.VerifyStrict),
+                options,
+                consoleService
+            );
+            return;
+        }
+
         // Report whatever the run produced, including the post-fix state when fixes were applied —
         // a reader wants to know what is in the tree now, not what was there before.
         var report =
@@ -1242,6 +1256,7 @@ internal static class CommandRouter
             Backup = string.IsNullOrWhiteSpace(result.BackupPath)
                 ? null
                 : new BackupInfo { Path = result.BackupPath, FilesBackedUp = 0 },
+            Verification = VerificationPayload.From(result.Verification, options.VerifyStrict),
             DryRun = result.WasDryRun,
             Timestamp = DateTime.UtcNow.ToString("o"),
         };

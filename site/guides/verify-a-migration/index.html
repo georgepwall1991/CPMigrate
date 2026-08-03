@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Verify a Central Package Management Migration Changed Nothing</title>
+  <meta name="description" content="Prove a Directory.Packages.props migration did not change which NuGet package versions your projects build against, using cpmigrate --verify." />
+  <link rel="canonical" href="https://georgepwall1991.github.io/CPMigrate/guides/verify-a-migration/" />
+  <meta property="og:title" content="Verify a CPM migration changed nothing" />
+  <meta property="og:description" content="cpmigrate --verify restores before and after, diffs the resolved package graph, and attributes every version that moved to the decision that caused it." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://georgepwall1991.github.io/CPMigrate/guides/verify-a-migration/" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Instrument+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" />
+  <link rel="stylesheet" href="/CPMigrate/assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/CPMigrate/"><span class="brand-mark"></span><span>CPMigrate</span></a>
+      <nav class="nav">
+        <a href="/CPMigrate/install/">Install</a>
+        <a href="/CPMigrate/guides/ci-cd/">CI/CD</a>
+      </nav>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="section">
+      <div class="eyebrow">Verification</div>
+      <h1>Prove a CPM migration changed nothing that ships</h1>
+      <p class="page-intro">A migration pull request is sixty changed <code>.csproj</code> files, and <code>git diff</code> cannot answer the one question a reviewer actually has: does this change what we build against? <code>cpmigrate --verify</code> answers it.</p>
+
+      <div class="panel">
+        <h2>Why the question is not rhetorical</h2>
+        <p>Moving a version out of a project file and into <code>Directory.Packages.props</code> is a no-op. Two projects <em>disagreeing</em> about a version is not.</p>
+        <p>Central package management allows one version per package, so a migration has to pick one. The default, <code>--conflict-strategy Highest</code>, silently upgrades every project on the losing side — and then the package that was upgraded pulls its own dependencies forward with it. That is a real change to the binaries you ship, arriving inside a change that reads as tidy-up.</p>
+        <p>Nothing in the file diff shows it. The project on the losing side loses a <code>Version</code> attribute, exactly like every other project in the PR.</p>
+      </div>
+
+      <div class="panel">
+        <h2>What <code>--verify</code> does</h2>
+        <p>It restores the solution, records the fully-resolved package graph for every project and every target framework, performs the migration, restores again, and diffs the two.</p>
+        <pre><code>cpmigrate -s ./MySolution.sln --verify</code></pre>
+        <pre><code>  Resolved-graph verification
+  ─────────────────────────────────────────────
+  Projects restored     6 / 6
+  Resolved versions     221
+  Unchanged             216
+  Changed                 5   ← all explained
+
+  Serilog.PerformanceTests.csproj [net10.0]
+    PolySharp  1.14.1 → 1.15.0  — conflict unified to 1.15.0 over 1.14.1 (Highest)
+
+  VERDICT  5 resolved version(s) moved, all accounted for by 1 deliberate decision.</code></pre>
+        <p>It reads <code>project.assets.json</code> rather than the project files, so what it compares is the version restore actually settled on — not the version a file declares.</p>
+      </div>
+
+      <div class="panel">
+        <h2>Explained, or an alarm</h2>
+        <p>Every version that moved is matched against the decisions the migration made. A direct reference landing on the version a conflict was unified to is <strong>explained</strong>. A transitive package is explained when it is genuinely reachable from an explained one in the resolved graph — read from the graph's own edges, not guessed from proximity.</p>
+        <p>Anything left over is <strong>unexplained</strong>: nothing the tool did accounts for it. That exits <code>9</code> and rolls the migration back, so a failed run leaves the tree as it found it.</p>
+      </div>
+
+      <div class="panel">
+        <h2>Demanding a literal no-op</h2>
+        <p><code>--verify-strict</code> fails on <em>any</em> graph change, including ones the report can explain. "Every change is accounted for" and "nothing changed" are different claims, and a team is entitled to require the second.</p>
+        <pre><code>cpmigrate -s ./MySolution.sln --verify --verify-strict</code></pre>
+        <p>A strict failure deliberately does not roll back — the drift is accounted for, and the person who asked for a no-op wants to read what stopped it being one.</p>
+      </div>
+
+      <div class="panel">
+        <h2>In a pull request</h2>
+        <p><code>--output Markdown</code> renders the receipt for a PR body or a job summary, including which version won for each conflicted package, out of what, and at whose direction.</p>
+        <pre><code>cpmigrate -s ./MySolution.sln --verify --force --output Markdown --quiet &gt; receipt.md
+cat receipt.md &gt;&gt; "$GITHUB_STEP_SUMMARY"</code></pre>
+        <p>The full workflow, including the gate, is in the <a href="/CPMigrate/guides/ci-cd/">CI/CD guide</a>. Set <code>"verify": true</code> in <code>.cpmigrate.json</code> to apply it to every migration in the repository.</p>
+      </div>
+
+      <div class="panel">
+        <h2>What it costs, and what it refuses to guess</h2>
+        <p>Two full solution restores — one for the baseline, one for the result. That is the whole cost, and it is why verification is opt-in rather than default.</p>
+        <p>A run that cannot reach a verdict is never reported as clean. A failed restore is a failure, not an empty graph. A target framework restore did not describe is a failure, not a framework with no packages — including when <em>both</em> captures lack it, where the two agree and nothing looks missing. And if the two captures do not cover the same projects, the comparison is abandoned rather than narrowed: quietly diffing only the projects they share would report "0 changed" over a project that stopped building, which looks exactly like a migration that was safe.</p>
+        <p>Three project layouts are refused outright rather than measured badly. Two projects in one directory share a single <code>obj/project.assets.json</code>, so neither can be read independently. Two projects that would be reported under the same name cannot be told apart in the diff. And a project that redirects its intermediate output — <code>MSBuildProjectExtensionsPath</code>, <code>BaseIntermediateOutputPath</code>, <code>ProjectAssetsFile</code> — puts its graph somewhere only full MSBuild evaluation could find, which this pass deliberately does not perform. Each is named in the report and exits <code>9</code>.</p>
+      </div>
+    </section>
+    <footer class="footer">
+      A migration you can prove is a migration you can merge on a Friday.
+    </footer>
+  </main>
+</body>
+</html>

@@ -67,6 +67,24 @@ public class ConfigModel
     [JsonPropertyName("baseline")]
     public string? Baseline { get; set; }
 
+    /// <summary>
+    /// Whether every migration in this repository must prove it did not move the resolved graph.
+    /// </summary>
+    /// <remarks>
+    /// Team-wide for the same reason <see cref="FailOn"/> is: "we do not merge a migration nobody can
+    /// vouch for" is a policy, and a policy that has to be remembered as a flag on every invocation is
+    /// one that gets forgotten on the invocation that mattered.
+    /// </remarks>
+    [JsonPropertyName("verify")]
+    public bool? Verify { get; set; }
+
+    /// <summary>
+    /// Whether a verified migration must be a literal no-op, failing even on drift the receipt can
+    /// account for. Requires <see cref="Verify"/>.
+    /// </summary>
+    [JsonPropertyName("verifyStrict")]
+    public bool? VerifyStrict { get; set; }
+
     [JsonPropertyName("outputFormat")]
     public OutputFormat? OutputFormat { get; set; }
 
