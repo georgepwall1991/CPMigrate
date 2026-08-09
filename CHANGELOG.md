@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.57.3] - 2026-08-09
+
+### Fixed
+- **The generated Homebrew formula now passes its own `brew test`.** CommandLineParser writes `--help` and `--version` output to stderr, while the formula checked stdout and therefore compared an empty string even though the installed tool ran successfully. The test now captures both streams and asserts the exact CPMigrate version, and the macOS distribution smoke job executes `brew test` so this cannot recur. The v3.57.2 Homebrew install itself worked; this patch repairs the formula contract and future release gate.
+
 ## [3.57.2] - 2026-08-09
 
 ### Fixed

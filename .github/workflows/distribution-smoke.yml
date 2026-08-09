@@ -63,7 +63,7 @@ jobs:
           TAP_DIR="$(brew --repo local/cpmigrate-smoke)"
           cp /tmp/cpmigrate.rb "$TAP_DIR/Formula/cpmigrate.rb"
           HOMEBREW_NO_AUTO_UPDATE=1 brew install local/cpmigrate-smoke/cpmigrate
-          cpmigrate --help >/dev/null
+          HOMEBREW_NO_AUTO_UPDATE=1 brew test local/cpmigrate-smoke/cpmigrate
           brew uninstall local/cpmigrate-smoke/cpmigrate
           brew untap local/cpmigrate-smoke
 
