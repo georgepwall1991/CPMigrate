@@ -36,23 +36,74 @@ public class CpmDriftAnalyzer : IAnalyzer
     private const string KeySeparator = "\u001F";
 
     /// <summary>
-    /// How two paths are compared for identity. Case-insensitively on Windows and macOS, exactly
-    /// on Linux — where <c>tools/</c> and <c>Tools/</c> are different directories that can hold
-    /// different props files. Folding them together would let whichever was read first govern
-    /// both, and drop the other file's pins entirely.
+    /// Chooses the path comparer for the filesystem containing a scan root.
     ///
     /// <para>
-    /// Known limitation, tracked in issue #111: the OS is not the right thing to ask. A macOS volume
-    /// can be formatted case-sensitive, and Windows supports per-directory case sensitivity, so on
-    /// those this folds directories that the filesystem keeps apart. Fixing it means deriving the
-    /// comparer from the scan root and threading it through the static helpers; it is left alone
-    /// here because no CI runner presents a case-sensitive filesystem, so the change could not be
-    /// verified.
+    /// The operating system is not a sufficient proxy for filesystem semantics: macOS can use a
+    /// case-sensitive APFS volume, and Windows supports case-sensitive directories. Probing beside
+    /// the scan root keeps two distinct contexts such as <c>tools/</c> and <c>Tools/</c> distinct
+    /// wherever the filesystem does. If the probe cannot run, ordinal comparison is the
+    /// conservative fallback: it may inspect one case-insensitive path twice, but it cannot merge
+    /// two contexts and silently lose one of their pins.
     /// </para>
     /// </summary>
-    private static readonly StringComparer PathComparer = OperatingSystem.IsLinux()
-        ? StringComparer.Ordinal
-        : StringComparer.OrdinalIgnoreCase;
+    internal static StringComparer PathComparerFor(string? scanRoot)
+    {
+        if (string.IsNullOrWhiteSpace(scanRoot))
+        {
+            return StringComparer.Ordinal;
+        }
+
+        var root = Path.GetFullPath(scanRoot);
+        if (!Directory.Exists(root))
+        {
+            return StringComparer.Ordinal;
+        }
+
+        var probeDirectory = Path.Combine(root, $".cpmigrate-case-probe-{Guid.NewGuid():N}");
+        var probeFile = Path.Combine(probeDirectory, "probe");
+        var differentlyCasedProbeFile = Path.Combine(probeDirectory, "PROBE");
+
+        try
+        {
+            Directory.CreateDirectory(probeDirectory);
+            File.WriteAllText(probeFile, string.Empty);
+
+            return File.Exists(differentlyCasedProbeFile)
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
+        }
+        catch (Exception ex) when (
+            ex is IOException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or NotSupportedException
+                or System.Security.SecurityException
+        )
+        {
+            return StringComparer.Ordinal;
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(probeDirectory))
+                {
+                    Directory.Delete(probeDirectory, recursive: true);
+                }
+            }
+            catch (Exception ex) when (
+                ex is IOException
+                    or UnauthorizedAccessException
+                    or ArgumentException
+                    or NotSupportedException
+                    or System.Security.SecurityException
+            )
+            {
+                // A failed cleanup must not make an otherwise valid scan fail.
+            }
+        }
+    }
 
     /// <inheritdoc />
     public string Name => "Central Package Management Drift";
@@ -61,6 +112,18 @@ public class CpmDriftAnalyzer : IAnalyzer
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
     {
         ArgumentNullException.ThrowIfNull(packageInfo);
+        return Analyze(packageInfo, PathComparerFor(packageInfo.BasePath));
+    }
+
+    /// <summary>
+    /// Analyzes a package scan with an explicit path comparer. The overload is internal so tests can
+    /// exercise case-distinct contexts even on a case-insensitive host; production scans always use
+    /// <see cref="PathComparerFor(string?)"/> for their scan root.
+    /// </summary>
+    internal AnalyzerResult Analyze(ProjectPackageInfo packageInfo, StringComparer pathComparer)
+    {
+        ArgumentNullException.ThrowIfNull(packageInfo);
+        ArgumentNullException.ThrowIfNull(pathComparer);
 
         var issues = new List<AnalysisIssue>();
 
@@ -70,7 +133,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         // against pins it never sees — MissingPackageVersion, a High finding, on references that
         // restore perfectly well — and a pin is called orphaned because the projects using it were
         // reading a different file.
-        var governed = GroupProjectsByGoverningProps(packageInfo, issues);
+        var governed = GroupProjectsByGoverningProps(packageInfo, issues, pathComparer);
 
         // Collected across every context and judged once at the end. A nested props file can import
         // an ancestor, so the same pin appears in two central sets — and a pin used only by projects
@@ -114,9 +177,14 @@ public class CpmDriftAnalyzer : IAnalyzer
             // on wherever it might be errs towards not accusing a project that is fine.
             var transitivePinning =
                 context.PropertyRoots.Count == 0
-                    ? IsTransitivePinningEnabled(context.Props, propsPath, packageInfo.BasePath)
+                    ? IsTransitivePinningEnabled(
+                        context.Props,
+                        propsPath,
+                        packageInfo.BasePath,
+                        pathComparer
+                    )
                     : context.PropertyRoots.Any(root =>
-                        IsTransitivePinningEnabled(context.Props, propsPath, root)
+                        IsTransitivePinningEnabled(context.Props, propsPath, root, pathComparer)
                     );
 
             // Added whatever the answer: the references are evidence for every pin this context
@@ -126,7 +194,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             );
         }
 
-        AddOrphanedVersionIssues(issues, orphanCandidates, packageInfo);
+        AddOrphanedVersionIssues(issues, orphanCandidates, packageInfo, pathComparer);
 
         return new AnalyzerResult(Name, issues);
     }
@@ -142,16 +210,17 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// </summary>
     private static Dictionary<string, CentralContext> GroupProjectsByGoverningProps(
         ProjectPackageInfo packageInfo,
-        List<AnalysisIssue> issues
+        List<AnalysisIssue> issues,
+        StringComparer pathComparer
     )
     {
-        var usable = new Dictionary<string, CentralContext>(PathComparer);
+        var usable = new Dictionary<string, CentralContext>(pathComparer);
         // Keyed by props file *and* the directory the properties were resolved from, because two
         // projects can share a props file while a nearer Directory.Build.props enables central
         // management for one and not the other. Caching by props file alone let whichever project
         // came first decide for both.
-        var enablement = new Dictionary<string, bool>(PathComparer);
-        var reported = new HashSet<string>(PathComparer);
+        var enablement = new Dictionary<string, bool>(pathComparer);
+        var reported = new HashSet<string>(pathComparer);
         var projects = packageInfo.GetProjectsScanned();
 
         // With no projects at all there is still a solution-level props file worth checking, so a
@@ -168,7 +237,7 @@ public class CpmDriftAnalyzer : IAnalyzer
 
         foreach (var (project, directory) in directories)
         {
-            var propsPath = ResolvePropsPath(directory);
+            var propsPath = ResolvePropsPath(directory, pathComparer);
             if (propsPath is null)
             {
                 // Not centrally managed. Reporting "no props file" would fire on every
@@ -186,7 +255,9 @@ public class CpmDriftAnalyzer : IAnalyzer
             // out of — or into — central management. Judging it by the surrounding files alone
             // reported every ordinary inline version in an opted-out project as drift, and skipped
             // an opted-in one as CpmNotEnabled.
-            var projectEnablement = project is null ? null : ReadProjectEnablement(project);
+            var projectEnablement = project is null
+                ? null
+                : ReadProjectEnablement(project, pathComparer);
 
             if (string.Equals(projectEnablement, "false", StringComparison.OrdinalIgnoreCase))
             {
@@ -205,7 +276,15 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             if (!enablement.TryGetValue(enablementKey, out var enabled))
             {
-                enabled = IsUsable(propsPath, propertyRoot, packageInfo, issues, reported, optedIn);
+                enabled = IsUsable(
+                    propsPath,
+                    propertyRoot,
+                    packageInfo,
+                    issues,
+                    reported,
+                    optedIn,
+                    pathComparer
+                );
                 enablement[enablementKey] = enabled;
             }
 
@@ -219,8 +298,12 @@ public class CpmDriftAnalyzer : IAnalyzer
                 // Created only once a project has proved the file usable, so a props file every
                 // project turned out to be exempt from never reaches the orphan check.
                 var props = ReadProps(propsPath)!;
-                var (central, importsResolved) = ReadCentralVersions(props, propsPath);
-                context = new CentralContext(props, central, importsResolved);
+                var (central, importsResolved) = ReadCentralVersions(
+                    props,
+                    propsPath,
+                    pathComparer
+                );
+                context = new CentralContext(props, central, importsResolved, pathComparer);
                 usable[propsPath] = context;
             }
 
@@ -258,7 +341,8 @@ public class CpmDriftAnalyzer : IAnalyzer
         HashSet<string> reported,
         // The project turned central management on for itself, so the surrounding files no longer
         // get to call the file inert. It must still parse.
-        bool optedIn
+        bool optedIn,
+        StringComparer pathComparer
     )
     {
         var propsFile = DescribePropsPath(propsPath, packageInfo);
@@ -284,7 +368,10 @@ public class CpmDriftAnalyzer : IAnalyzer
             return false;
         }
 
-        if (IsCpmEnabled(props, propsPath, propertyRoot, out var enablement) || optedIn)
+        if (
+            IsCpmEnabled(props, propsPath, propertyRoot, out var enablement, pathComparer)
+                || optedIn
+        )
         {
             return true;
         }
@@ -350,14 +437,16 @@ public class CpmDriftAnalyzer : IAnalyzer
     private sealed record CentralContext(
         XDocument Props,
         Dictionary<string, CentralEntry> Central,
-        bool ImportsResolved
+        bool ImportsResolved,
+        StringComparer PathComparer
     )
     {
         public List<string> Projects { get; } = [];
 
         /// <summary>
         /// Directories the governed projects live in, for build-property lookups. Compared the
-        /// platform's way, so two case-distinct directories on Linux stay two.
+        /// way the scan root's filesystem compares them, so case-distinct directories stay distinct
+        /// wherever the filesystem keeps them apart.
         /// </summary>
         public HashSet<string> PropertyRoots { get; } = new(PathComparer);
     }
@@ -371,14 +460,16 @@ public class CpmDriftAnalyzer : IAnalyzer
         XDocument props,
         string propsPath,
         string? basePath,
-        out string? enablement
+        out string? enablement,
+        StringComparer pathComparer
     )
     {
         enablement = ReadPropertyThroughImports(
             props,
             propsPath,
             EnablementProperty,
-            new HashSet<string>(PathComparer)
+            new HashSet<string>(pathComparer),
+            pathComparer
         )?.Value;
 
         if (string.Equals(enablement, "true", StringComparison.OrdinalIgnoreCase))
@@ -404,7 +495,8 @@ public class CpmDriftAnalyzer : IAnalyzer
                     nearest.Document,
                     nearest.Path,
                     EnablementProperty,
-                    new HashSet<string>(PathComparer)
+                    new HashSet<string>(pathComparer),
+                    pathComparer
                 )
                     is { } inherited
             )
@@ -450,10 +542,11 @@ public class CpmDriftAnalyzer : IAnalyzer
     private static bool IsTransitivePinningEnabled(
         XDocument props,
         string propsPath,
-        string? basePath
+        string? basePath,
+        StringComparer pathComparer
     )
     {
-        if (IsPropertyTrue(props, propsPath, TransitivePinningProperty))
+        if (IsPropertyTrue(props, propsPath, TransitivePinningProperty, pathComparer))
         {
             return true;
         }
@@ -464,7 +557,12 @@ public class CpmDriftAnalyzer : IAnalyzer
         var buildProps = ReadNearestBuildProps(propsPath, basePath);
 
         return buildProps is { } nearest
-            && IsPropertyTrue(nearest.Document, nearest.Path, TransitivePinningProperty);
+            && IsPropertyTrue(
+                nearest.Document,
+                nearest.Path,
+                TransitivePinningProperty,
+                pathComparer
+            );
     }
 
     /// <summary>
@@ -477,13 +575,19 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// transitive-only pins reported as orphaned.
     /// </para>
     /// </summary>
-    private static bool IsPropertyTrue(XDocument document, string documentPath, string propertyName)
+    private static bool IsPropertyTrue(
+        XDocument document,
+        string documentPath,
+        string propertyName,
+        StringComparer pathComparer
+    )
     {
         var effective = ReadPropertyThroughImports(
             document,
             documentPath,
             propertyName,
-            new HashSet<string>(PathComparer)
+            new HashSet<string>(pathComparer),
+            pathComparer
         )?.Value;
 
         return string.Equals(effective, "true", StringComparison.OrdinalIgnoreCase);
@@ -503,7 +607,10 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// cannot parse never suppresses findings.
     /// </para>
     /// </summary>
-    private static string? ReadProjectEnablement(string projectPath)
+    private static string? ReadProjectEnablement(
+        string projectPath,
+        StringComparer pathComparer
+    )
     {
         var project = ReadProps(projectPath);
 
@@ -513,7 +620,8 @@ public class CpmDriftAnalyzer : IAnalyzer
                 project,
                 projectPath,
                 EnablementProperty,
-                new HashSet<string>(PathComparer)
+                new HashSet<string>(pathComparer),
+                pathComparer
             )?.Value;
     }
 
@@ -640,15 +748,16 @@ public class CpmDriftAnalyzer : IAnalyzer
             HashSet<string> Referenced,
             bool CanOriginate
         )> candidates,
-        ProjectPackageInfo packageInfo
+        ProjectPackageInfo packageInfo,
+        StringComparer pathComparer
     )
     {
-        var pins = new Dictionary<string, (CentralEntry Entry, string Package)>(PathComparer);
+        var pins = new Dictionary<string, (CentralEntry Entry, string Package)>(pathComparer);
 
         // Evidence is pooled only across the contexts that actually hold a given pin, not across
         // every context. A reference under a nested file that does *not* import the root is no
         // evidence at all that the root's pin is used — counting it would suppress a real orphan.
-        var evidence = new Dictionary<string, HashSet<string>>(PathComparer);
+        var evidence = new Dictionary<string, HashSet<string>>(pathComparer);
 
         foreach (var (central, referenced, canOriginate) in candidates)
         {
@@ -707,11 +816,15 @@ public class CpmDriftAnalyzer : IAnalyzer
     private static (
         Dictionary<string, CentralEntry> Central,
         bool ImportsResolved
-    ) ReadCentralVersions(XDocument props, string propsPath)
+    ) ReadCentralVersions(
+        XDocument props,
+        string propsPath,
+        StringComparer pathComparer
+    )
     {
         var versions = new Dictionary<string, CentralEntry>(StringComparer.OrdinalIgnoreCase);
-        var visited = new HashSet<string>(PathComparer);
-        var resolved = CollectCentralVersions(props, propsPath, versions, visited);
+        var visited = new HashSet<string>(pathComparer);
+        var resolved = CollectCentralVersions(props, propsPath, versions, visited, pathComparer);
 
         return (versions, resolved);
     }
@@ -720,7 +833,8 @@ public class CpmDriftAnalyzer : IAnalyzer
         XDocument document,
         string documentPath,
         Dictionary<string, CentralEntry> versions,
-        HashSet<string> visited
+        HashSet<string> visited,
+        StringComparer pathComparer
     )
     {
         if (!visited.Add(Path.GetFullPath(documentPath)))
@@ -745,7 +859,13 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             if (element.Name.LocalName.Equals("Import", StringComparison.OrdinalIgnoreCase))
             {
-                allResolved &= FollowImport(element, documentPath, versions, visited);
+                allResolved &= FollowImport(
+                    element,
+                    documentPath,
+                    versions,
+                    visited,
+                    pathComparer
+                );
                 continue;
             }
 
@@ -777,7 +897,8 @@ public class CpmDriftAnalyzer : IAnalyzer
         XElement import,
         string documentPath,
         Dictionary<string, CentralEntry> versions,
-        HashSet<string> visited
+        HashSet<string> visited,
+        StringComparer pathComparer
     )
     {
         var relative = import.Attribute("Project")?.Value;
@@ -810,7 +931,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                 || string.IsNullOrEmpty(import.Attribute("Condition")?.Value);
         }
 
-        return CollectCentralVersions(imported, importedPath, versions, visited);
+        return CollectCentralVersions(imported, importedPath, versions, visited, pathComparer);
     }
 
     /// <summary>
@@ -896,10 +1017,12 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// </param>
     internal static IReadOnlyList<CentralPin> ReadEffectiveCentralVersions(
         string? basePath,
-        IEnumerable<string>? projectPaths = null
+        IEnumerable<string>? projectPaths = null,
+        StringComparer? pathComparer = null
     )
     {
         var effective = new List<CentralPin>();
+        pathComparer ??= PathComparerFor(basePath);
 
         var supplied = (projectPaths ?? []).ToList();
 
@@ -911,7 +1034,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             .Select(project =>
                 (
                     Directory: Path.GetDirectoryName(Path.GetFullPath(project)),
-                    Enablement: ReadProjectEnablement(project)
+                    Enablement: ReadProjectEnablement(project, pathComparer)
                 )
             )
             .Where(entry =>
@@ -944,17 +1067,21 @@ public class CpmDriftAnalyzer : IAnalyzer
         foreach (
             var resolved in contexts
                 .Select(entry =>
-                    (entry.Directory, entry.OptedIn, Props: ResolvePropsPath(entry.Directory))
+                    (
+                        entry.Directory,
+                        entry.OptedIn,
+                        Props: ResolvePropsPath(entry.Directory, pathComparer)
+                    )
                 )
                 .Where(entry => entry.Props is not null)
                 .DistinctBy(
                     entry =>
                         $"{entry.Props}{KeySeparator}{entry.Directory}{KeySeparator}{entry.OptedIn}",
-                    // The platform-aware comparer, for the reason it exists: on Linux tools/ and
-                    // Tools/ are different directories that can hold different props files, and
-                    // folding them here would drop whichever context came second — including its
-                    // floating pins, leaving the scan reported clean.
-                    PathComparer
+                    // The filesystem-aware comparer keeps case-distinct directories separate
+                    // wherever they can hold different props files. Folding them here would drop
+                    // whichever context came second — including its floating pins, leaving the
+                    // scan reported clean.
+                    pathComparer
                 )
                 .OrderBy(entry => entry.Props, StringComparer.Ordinal)
         )
@@ -964,7 +1091,8 @@ public class CpmDriftAnalyzer : IAnalyzer
                 resolved.Directory,
                 basePath,
                 resolved.OptedIn,
-                effective
+                effective,
+                pathComparer
             );
         }
 
@@ -978,16 +1106,20 @@ public class CpmDriftAnalyzer : IAnalyzer
         // The governed project turned central management on for itself, so the surrounding files
         // cannot call this file inert.
         bool optedIn,
-        List<CentralPin> effective
+        List<CentralPin> effective,
+        StringComparer pathComparer
     )
     {
         var props = ReadProps(propsPath);
-        if (props is null || (!IsCpmEnabled(props, propsPath, propertyRoot, out _) && !optedIn))
+        if (
+            props is null
+            || (!IsCpmEnabled(props, propsPath, propertyRoot, out _, pathComparer) && !optedIn)
+        )
         {
             return;
         }
 
-        var (central, _) = ReadCentralVersions(props, propsPath);
+        var (central, _) = ReadCentralVersions(props, propsPath, pathComparer);
 
         foreach (
             var entry in central.Where(entry => !string.IsNullOrWhiteSpace(entry.Value.Version))
@@ -1038,7 +1170,10 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// unreproducible on any other.
     /// </para>
     /// </summary>
-    private static string? ResolvePropsPath(string? basePath)
+    private static string? ResolvePropsPath(
+        string? basePath,
+        StringComparer pathComparer
+    )
     {
         if (string.IsNullOrWhiteSpace(basePath))
         {
@@ -1050,7 +1185,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         // project against pins it never receives and told the reader to edit a file MSBuild does not
         // read for it. When the redirect cannot be resolved no file is claimed at all: saying
         // nothing is better than measuring a project against the wrong file.
-        if (TryReadRedirectedPropsPath(basePath, out var redirected))
+        if (TryReadRedirectedPropsPath(basePath, pathComparer, out var redirected))
         {
             return redirected;
         }
@@ -1139,7 +1274,11 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// <param name="startDirectory">Directory of the project whose props file is being resolved.</param>
     /// <param name="resolved">The redirected file, or null when it could not be resolved.</param>
     /// <returns>True when a redirect was declared at all, resolved or not.</returns>
-    private static bool TryReadRedirectedPropsPath(string startDirectory, out string? resolved)
+    private static bool TryReadRedirectedPropsPath(
+        string startDirectory,
+        StringComparer pathComparer,
+        out string? resolved
+    )
     {
         resolved = null;
 
@@ -1159,7 +1298,8 @@ public class CpmDriftAnalyzer : IAnalyzer
                 document,
                 buildPropsPath,
                 RedirectProperty,
-                new HashSet<string>(PathComparer)
+                new HashSet<string>(pathComparer),
+                pathComparer
             )
             is not { } declaration
         )
@@ -1216,7 +1356,8 @@ public class CpmDriftAnalyzer : IAnalyzer
         XDocument document,
         string documentPath,
         string propertyName,
-        HashSet<string> visited
+        HashSet<string> visited,
+        StringComparer pathComparer
     )
     {
         var fullPath = Path.GetFullPath(documentPath);
@@ -1262,7 +1403,13 @@ public class CpmDriftAnalyzer : IAnalyzer
             }
 
             if (
-                ReadPropertyThroughImports(imported, importedPath, propertyName, visited) is
+                ReadPropertyThroughImports(
+                    imported,
+                    importedPath,
+                    propertyName,
+                    visited,
+                    pathComparer
+                ) is
                 { } inherited
             )
             {
