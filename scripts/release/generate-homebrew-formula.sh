@@ -7,6 +7,7 @@ if [[ $# -ne 3 ]]; then
 fi
 
 VERSION="$1"
+VERSION_REGEX="${VERSION//./\\.}"
 PACKAGE_URL="$2"
 PACKAGE_SHA="$3"
 
@@ -31,7 +32,10 @@ class Cpmigrate < Formula
   end
 
   test do
-    assert_match "CPMigrate", shell_output("#{bin}/cpmigrate --help")
+    # CommandLineParser writes version/help text to stderr. Capture both streams so the formula's
+    # own test checks the installed tool instead of comparing an empty stdout string.
+    output = shell_output("#{bin}/cpmigrate --version 2>&1")
+    assert_match(/\ACPMigrate ${VERSION_REGEX}(?:\+\S+)?\s*\z/, output)
   end
 end
 EOF
