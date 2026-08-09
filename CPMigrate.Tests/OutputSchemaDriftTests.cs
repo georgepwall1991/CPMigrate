@@ -18,23 +18,42 @@ namespace CPMigrate.Tests;
 public class OutputSchemaDriftTests
 {
     /// <summary>Model types and the schema location describing each.</summary>
-    public static TheoryData<string, string> DocumentedTypes() =>
-        new()
+    private static readonly (Type Model, string Definition)[] ModelDefinitions =
+    [
+        (typeof(OperationResult), "singleOperation"),
+        (typeof(OperationSummary), "summary"),
+        (typeof(AnalysisIssueInfo), "analysisIssue"),
+        (typeof(FixInfo), "fix"),
+        (typeof(PackageUpdateInfo), "packageUpdate"),
+        (typeof(PropsFileInfo), "propsFile"),
+        (typeof(BackupInfo), "backup"),
+        // The verification receipt is a public contract too. Leaving these nested models out meant
+        // a field could be added without the reflection guard noticing that the payload schema was
+        // now stale.
+        (typeof(VerificationInfo), "verification"),
+        (typeof(VerificationChangeInfo), "verificationChange"),
+        (typeof(VerificationDecisionInfo), "verificationDecision"),
+        // VerificationCandidateInfo is intentionally inline under verificationDecision.candidates;
+        // a focused assertion below guards that existing public schema shape without rewriting it.
+        (typeof(VerificationIntegrityFailureInfo), "verificationIntegrityFailure"),
+        // --batch serializes BatchResult, a different shape entirely. Omitting these let the
+        // schema require exitCode and summary on a payload that has neither, so valid batch
+        // output failed validation.
+        (typeof(BatchResult), "batchOperation"),
+        (typeof(SolutionResult), "solutionResult"),
+        (typeof(BatchTotals), "batchTotals"),
+    ];
+
+    public static TheoryData<string, string> DocumentedTypes()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var (model, definition) in ModelDefinitions)
         {
-            { nameof(OperationResult), "singleOperation" },
-            { nameof(OperationSummary), "summary" },
-            { nameof(AnalysisIssueInfo), "analysisIssue" },
-            { nameof(FixInfo), "fix" },
-            { nameof(PackageUpdateInfo), "packageUpdate" },
-            { nameof(PropsFileInfo), "propsFile" },
-            { nameof(BackupInfo), "backup" },
-            // --batch serializes BatchResult, a different shape entirely. Omitting these let the
-            // schema require exitCode and summary on a payload that has neither, so valid batch
-            // output failed validation.
-            { nameof(BatchResult), "batchOperation" },
-            { nameof(SolutionResult), "solutionResult" },
-            { nameof(BatchTotals), "batchTotals" },
-        };
+            data.Add(model.Name, definition);
+        }
+
+        return data;
+    }
 
     [Theory]
     [MemberData(nameof(DocumentedTypes))]
@@ -60,6 +79,57 @@ public class OutputSchemaDriftTests
         _ = typeName;
 
         Definition(definition).GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public void Schema_GuardsEveryModelReachableFromPayloadRoots()
+    {
+        var reachable = PayloadModelTypes(typeof(OperationResult), typeof(BatchResult));
+
+        ModelDefinitions
+            .Select(entry => entry.Model)
+            .Append(typeof(VerificationCandidateInfo))
+            .Should()
+            .BeEquivalentTo(
+                reachable,
+                "every nested payload model needs the same reflection guard as its root"
+            );
+    }
+
+    [Fact]
+    public void Schema_MapsEveryObjectDefinitionToAModel()
+    {
+        var objectDefinitions = Schema()
+            .GetProperty("definitions")
+            .EnumerateObject()
+            .Where(
+                property =>
+                    property.Value.TryGetProperty("type", out var type)
+                    && type.GetString() == "object"
+            )
+            .Select(property => property.Name);
+
+        ModelDefinitions
+            .Select(entry => entry.Definition)
+            .Should()
+            .BeEquivalentTo(
+                objectDefinitions,
+                "an unguarded object definition can drift away from the model it documents"
+            );
+    }
+
+    [Fact]
+    public void Schema_DescribesExactlyTheFieldsTheVerificationCandidateEmits()
+    {
+        var candidate = VerificationCandidateSchema();
+
+        SchemaPropertyNames(candidate)
+            .Should()
+            .BeEquivalentTo(
+                JsonPropertyNames(nameof(VerificationCandidateInfo)),
+                "candidate versions and their declaring projects are part of the verification receipt"
+            );
+        candidate.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
     }
 
     [Fact]
@@ -195,6 +265,63 @@ public class OutputSchemaDriftTests
             ],
             PropsFile = new PropsFileInfo { Path = "Directory.Packages.props" },
             Backup = new BackupInfo { Path = ".cpmigrate_backup", FilesBackedUp = 2 },
+            Verification = new VerificationInfo
+            {
+                Verdict = "failed",
+                Passed = false,
+                Strict = true,
+                RolledBack = true,
+                ProjectsRestored = 1,
+                ProjectsExpected = 2,
+                ResolvedVersions = 3,
+                Unchanged = 2,
+                Changed = 1,
+                Unexplained = 1,
+                FailureReason = "one framework was not restored",
+                Changes =
+                [
+                    new VerificationChangeInfo
+                    {
+                        Project = "src/Api/Api.csproj",
+                        TargetFramework = "net10.0",
+                        PackageId = "Newtonsoft.Json",
+                        Kind = "changed",
+                        Before = "12.0.3",
+                        After = "13.0.1",
+                        Direction = "upgrade",
+                        Direct = true,
+                        Explanation = "transitiveFallout",
+                        CausedBy = "Contoso.Root",
+                        Description = "resolved version moved",
+                    },
+                ],
+                Decisions =
+                [
+                    new VerificationDecisionInfo
+                    {
+                        PackageId = "Contoso.Root",
+                        ResolvedVersion = "2.0.0",
+                        Source = "highest",
+                        Candidates =
+                        [
+                            new VerificationCandidateInfo
+                            {
+                                Version = "1.0.0",
+                                Projects = ["src/Api/Api.csproj"],
+                            },
+                        ],
+                    },
+                ],
+                IntegrityFailures =
+                [
+                    new VerificationIntegrityFailureInfo
+                    {
+                        Project = "src/Worker/Worker.csproj",
+                        TargetFramework = "net10.0",
+                        Reason = "restore failed",
+                    },
+                ],
+            },
         };
 
         var json = JsonSerializer.Serialize(
@@ -228,6 +355,82 @@ public class OutputSchemaDriftTests
         {
             issueKeys.Should().Contain(property.Name);
         }
+
+        var verification = document.RootElement.GetProperty("verification");
+        AssertDocumentedKeys(verification, Definition("verification"));
+        AssertDocumentedKeys(
+            verification.GetProperty("changes")[0],
+            Definition("verificationChange")
+        );
+
+        var decision = verification.GetProperty("decisions")[0];
+        AssertDocumentedKeys(decision, Definition("verificationDecision"));
+        AssertDocumentedKeys(decision.GetProperty("candidates")[0], VerificationCandidateSchema());
+        AssertDocumentedKeys(
+            verification.GetProperty("integrityFailures")[0],
+            Definition("verificationIntegrityFailure")
+        );
+    }
+
+    private static void AssertDocumentedKeys(JsonElement payload, JsonElement schema)
+    {
+        var documented = SchemaPropertyNames(schema).ToHashSet(StringComparer.Ordinal);
+        foreach (var property in payload.EnumerateObject())
+        {
+            documented
+                .Should()
+                .Contain(property.Name, "the schema must document every emitted key");
+        }
+    }
+
+    private static IReadOnlySet<Type> PayloadModelTypes(params Type[] roots)
+    {
+        var result = new HashSet<Type>();
+        foreach (var root in roots)
+        {
+            Visit(root);
+        }
+
+        return result;
+
+        void Visit(Type candidate)
+        {
+            candidate = Nullable.GetUnderlyingType(candidate) ?? candidate;
+            if (candidate == typeof(string) || candidate.IsPrimitive || candidate.IsEnum)
+            {
+                return;
+            }
+
+            if (candidate.IsArray)
+            {
+                Visit(candidate.GetElementType()!);
+                return;
+            }
+
+            if (candidate.IsGenericType)
+            {
+                foreach (var argument in candidate.GetGenericArguments())
+                {
+                    Visit(argument);
+                }
+
+                return;
+            }
+
+            if (candidate.Assembly != typeof(OperationResult).Assembly || !result.Add(candidate))
+            {
+                return;
+            }
+
+            foreach (
+                var property in candidate
+                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(p => p.GetCustomAttribute<JsonIgnoreAttribute>() is null)
+            )
+            {
+                Visit(property.PropertyType);
+            }
+        }
     }
 
     private static IEnumerable<string> JsonPropertyNames(string typeName)
@@ -245,10 +448,20 @@ public class OutputSchemaDriftTests
 
     private static IEnumerable<string> SchemaPropertyNames(string definition)
     {
-        return Definition(definition)
+        return SchemaPropertyNames(Definition(definition));
+    }
+
+    private static IEnumerable<string> SchemaPropertyNames(JsonElement schema)
+    {
+        return schema.GetProperty("properties").EnumerateObject().Select(property => property.Name);
+    }
+
+    private static JsonElement VerificationCandidateSchema()
+    {
+        return Definition("verificationDecision")
             .GetProperty("properties")
-            .EnumerateObject()
-            .Select(p => p.Name);
+            .GetProperty("candidates")
+            .GetProperty("items");
     }
 
     private static JsonElement Definition(string definition)

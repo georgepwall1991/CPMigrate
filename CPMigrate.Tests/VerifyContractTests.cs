@@ -343,6 +343,39 @@ public class VerifyContractTests : IDisposable
             .BeNull();
     }
 
+    [Fact]
+    public void PayloadMapsEveryIntegrityFailureField()
+    {
+        var report = new VerificationReport(
+            VerificationVerdict.Failed,
+            ProjectsRestored: 1,
+            ProjectsExpected: 2,
+            ResolvedVersionCount: 10,
+            UnchangedCount: 9,
+            Changes: [],
+            IntegrityFailures:
+            [
+                new GraphIntegrityFailure(
+                    "src/Worker/Worker.csproj",
+                    "net10.0",
+                    "framework was not restored"
+                ),
+            ],
+            Decisions: [],
+            FailureReason: "the captures did not cover the same frameworks"
+        );
+
+        var failure = VerificationPayload
+            .From(report, strict: false)!
+            .IntegrityFailures.Should()
+            .ContainSingle()
+            .Which;
+
+        failure.Project.Should().Be("src/Worker/Worker.csproj");
+        failure.TargetFramework.Should().Be("net10.0");
+        failure.Reason.Should().Be("framework was not restored");
+    }
+
     // ── The Markdown receipt ──────────────────────────────────────────────────────────────────
 
     [Fact]

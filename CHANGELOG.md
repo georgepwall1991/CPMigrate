@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.57.2] - 2026-08-09
+
+### Fixed
+- **Nested output-schema drift now fails CI.** The reflection guard walks every model reachable from the single-operation and batch JSON roots, directly compares all five verification receipt models — including the inline candidate shape — with the published schema, and serializes a populated receipt so nested serializer keys are checked too. Adding or renaming a verification field without updating the public contract can no longer pass behind a correct top-level `verification` property.
+- **Nested backup-retention settings have the same config-schema protection as root settings.** `RetentionConfig` fields are now compared with the published `.cpmigrate.json` schema, closing the last known nested schema blind spot.
+
 ## [3.57.1] - 2026-08-09
 
 ### Fixed
