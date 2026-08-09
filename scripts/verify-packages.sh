@@ -34,7 +34,9 @@ for term in \
   "vulnerability" \
   "Directory.Build.props"
 do
-  printf '%s' "$nuspec" | grep -Fq "$term" || {
+  # Do not pipe a large payload into grep -q under pipefail: grep exits after the match and
+  # printf can then receive SIGPIPE on Linux, turning a present term into a false failure.
+  grep -Fq "$term" <<<"$nuspec" || {
     echo "Nuspec missing discoverability term: $term" >&2
     exit 1
   }
@@ -46,7 +48,7 @@ for asset in \
   assets/flow-cpm-migration.svg \
   assets/flow-update-bisect.svg
 do
-  printf '%s' "$readme_in_pkg" | grep -Fq "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/${asset}" || {
+  grep -Fq "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/${asset}" <<<"$readme_in_pkg" || {
     echo "Packaged README missing absolute HTTPS URL for ${asset}" >&2
     exit 1
   }

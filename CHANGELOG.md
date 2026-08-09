@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.57.1] - 2026-08-09
+
+### Fixed
+- **The release package contract gate is reliable under Linux `pipefail`.** `scripts/verify-packages.sh` no longer pipes large package metadata into `grep -q`, whose early exit could send `printf` `SIGPIPE` and reject a valid package. The v3.57.0 tag built and tested correctly but its publish job stopped at this gate before publishing; no artifact was pushed.
+
 ## [3.57.0] - 2026-08-09
 
 ### Fixed
