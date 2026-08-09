@@ -28,6 +28,29 @@ public class ConfigSchemaDriftTests
         documented.Should().BeEquivalentTo(modelled);
     }
 
+    [Fact]
+    public void Schema_CoversEveryRetentionConfigProperty()
+    {
+        var documented = SchemaProperties()["retention"]
+            .GetProperty("properties")
+            .EnumerateObject()
+            .Select(property => property.Name);
+
+        var modelled = typeof(RetentionConfig)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(
+                property =>
+                    property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name
+            );
+
+        documented
+            .Should()
+            .BeEquivalentTo(
+                modelled,
+                "nested retention settings are part of the public configuration contract too"
+            );
+    }
+
     [Theory]
     [InlineData("outputFormat", typeof(OutputFormat))]
     [InlineData("failOn", typeof(FailOnSeverity))]
