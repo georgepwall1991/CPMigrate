@@ -81,7 +81,7 @@ cpmigrate --update-packages --bisect
 Requires **.NET SDK 8.0** or later. The tool itself targets `net10.0` with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.57.0
+dotnet tool install --global CPMigrate --version 3.57.1
 ```
 
 ```bash
@@ -91,7 +91,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | Channel | Command |
 |---------|---------|
 |  **Homebrew** | `brew tap georgepwall1991/cpmigrate && brew install cpmigrate` |
-| 🪟 **Winget** | `winget install GeorgeWall.CPMigrate` |
+| 🪟 **Winget** | `winget install GeorgeWall.CPMigrate` *(after the package is indexed)* |
 | 📦 **Windows portable** | `CPMigrate-portable-win-x64.zip` from [Releases](https://github.com/georgepwall1991/CPMigrate/releases) |
 | ‍💻 **From source** | `git clone https://github.com/georgepwall1991/CPMigrate.git && dotnet build` |
 
