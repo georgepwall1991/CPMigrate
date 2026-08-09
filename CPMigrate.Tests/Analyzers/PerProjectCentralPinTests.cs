@@ -38,6 +38,107 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void PathComparerFor_ReflectsFilesystemCaseSensitivity_AndCleansItsProbe()
+    {
+        var comparer = CpmDriftAnalyzer.PathComparerFor(_root);
+        var markerDirectory = Path.Combine(_root, $"case-marker-{Guid.NewGuid():N}");
+
+        try
+        {
+            Directory.CreateDirectory(markerDirectory);
+            var lower = Path.Combine(markerDirectory, "marker");
+            File.WriteAllText(lower, string.Empty);
+            var upperExists = File.Exists(Path.Combine(markerDirectory, "MARKER"));
+
+            comparer
+                .Should()
+                .BeSameAs(
+                    upperExists ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal,
+                    "path identity must follow the filesystem, not the host operating system"
+                );
+        }
+        finally
+        {
+            if (Directory.Exists(markerDirectory))
+            {
+                Directory.Delete(markerDirectory, recursive: true);
+            }
+        }
+
+        Directory
+            .GetDirectories(_root, ".cpmigrate-case-probe-*")
+            .Should()
+            .BeEmpty("case detection must not leave files in the scanned tree");
+    }
+
+    [Fact]
+    public void PathComparerFor_UsesOrdinalWhenTheScanRootCannotBeProbed()
+    {
+        CpmDriftAnalyzer
+            .PathComparerFor(Path.Combine(_root, "does-not-exist"))
+            .Should()
+            .BeSameAs(StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void Analyze_CaseDistinctPropsDirectories_FollowsFilesystemIdentity()
+    {
+        // On a case-sensitive volume these are two independent MSBuild contexts. On a
+        // case-insensitive volume they intentionally collapse to one physical props file; the test
+        // asserts that observed result too, rather than silently returning with no assertion.
+        WriteProps("tools", ("Lower.Only", "1.0.0"));
+        WriteProps("Tools", ("Upper.Only", "2.0.0"));
+        var lowerProject = WriteProject("tools/Lower/Lower.csproj", "Lower.Only");
+        var upperProject = WriteProject("Tools/Upper/Upper.csproj", "Upper.Only");
+
+        var comparer = CpmDriftAnalyzer.PathComparerFor(_root);
+        var lowerDirectory = Path.GetFullPath(Path.Combine(_root, "tools"));
+        var upperDirectory = Path.GetFullPath(Path.Combine(_root, "Tools"));
+        var caseDistinct = !comparer.Equals(lowerDirectory, upperDirectory);
+        var issues = Analyze(lowerProject, upperProject);
+
+        if (caseDistinct)
+        {
+            issues
+                .Should()
+                .NotContain(issue =>
+                    issue.IssueCode == AnalysisIssueCode.MissingPackageVersion
+                    && (issue.PackageName == "Lower.Only" || issue.PackageName == "Upper.Only")
+                );
+        }
+        else
+        {
+            issues
+                .Should()
+                .Contain(issue =>
+                    issue.IssueCode == AnalysisIssueCode.MissingPackageVersion
+                    && issue.PackageName == "Lower.Only"
+                );
+            issues
+                .Should()
+                .NotContain(issue =>
+                    issue.IssueCode == AnalysisIssueCode.MissingPackageVersion
+                    && issue.PackageName == "Upper.Only"
+                );
+        }
+
+        var pins = CpmDriftAnalyzer.ReadEffectiveCentralVersions(
+            _root,
+            new[] { lowerProject, upperProject }
+        );
+
+        pins.Should().Contain(pin => pin.Package == "Upper.Only");
+        if (caseDistinct)
+        {
+            pins.Should().Contain(pin => pin.Package == "Lower.Only");
+        }
+        else
+        {
+            pins.Should().NotContain(pin => pin.Package == "Lower.Only");
+        }
+    }
+
+    [Fact]
     public void Analyze_AProjectGovernedByANestedPropsFile_IsJudgedAgainstIt()
     {
         // Serilog is pinned only in the nested file. Judged against the root file it has no central

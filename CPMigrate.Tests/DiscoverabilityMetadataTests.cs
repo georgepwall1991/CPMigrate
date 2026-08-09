@@ -12,7 +12,16 @@ public sealed class DiscoverabilityMetadataTests
     private static string RepositoryRoot =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
 
-    private const string ExpectedVersion = "3.56.0";
+    /// <summary>
+    /// The docs must track the version the project will pack. Reading it from the project metadata
+    /// avoids turning every release into a second, manually maintained version contract.
+    /// </summary>
+    private static string ExpectedVersion =>
+        XDocument
+            .Load(Path.Combine(RepositoryRoot, "CPMigrate", "CPMigrate.csproj"))
+            .Descendants("Version")
+            .Single()
+            .Value;
 
     private const string RawBase =
         "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/";
@@ -187,7 +196,7 @@ public sealed class DiscoverabilityMetadataTests
     {
         var landingPage = File.ReadAllText(Path.Combine(RepositoryRoot, "site", "index.html"));
 
-        // "CPMigrate 3.56.0" / "CPMigrate v3.56.0", and bare badge forms like "· v3.56.0".
+        // "CPMigrate <version>" / "CPMigrate v<version>", and bare badge forms like "· v<version>".
         var toolVersions = Regex
             .Matches(landingPage, @"CPMigrate\s+v?(?<ver>\d+\.\d+\.\d+)")
             .Concat(Regex.Matches(landingPage, @"(?<![\w.])v(?<ver>\d+\.\d+\.\d+)"))

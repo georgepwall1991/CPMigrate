@@ -4,16 +4,22 @@ on:
   pull_request:
     paths:
       - 'CPMigrate/CPMigrate.csproj'
+      - 'README.md'
+      - 'assets/**'
       - '.github/workflows/distribution-smoke.yml'
       - 'scripts/release/**'
+      - 'scripts/verify-packages.sh'
       - 'packaging/homebrew/**'
       - 'packaging/winget/**'
   push:
     branches: [main]
     paths:
       - 'CPMigrate/CPMigrate.csproj'
+      - 'README.md'
+      - 'assets/**'
       - '.github/workflows/distribution-smoke.yml'
       - 'scripts/release/**'
+      - 'scripts/verify-packages.sh'
       - 'packaging/homebrew/**'
       - 'packaging/winget/**'
 
@@ -28,6 +34,8 @@ jobs:
       - run: dotnet restore
       - run: dotnet build --configuration Release --no-restore
       - run: dotnet pack CPMigrate/CPMigrate.csproj --configuration Release --no-build --output ./artifacts
+      - name: Verify NuGet package contract
+        run: bash ./scripts/verify-packages.sh ./artifacts
       - name: Install local tool package
         run: |
           VERSION="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' CPMigrate/CPMigrate.csproj | head -1)"

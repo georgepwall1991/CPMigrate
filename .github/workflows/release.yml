@@ -77,11 +77,23 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore
 
+      - name: Verify release tag matches project version
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          actual="$(dotnet msbuild CPMigrate/CPMigrate.csproj -getProperty:Version -nologo | tr -d '[:space:]')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Release tag $expected does not match project version $actual"
+            exit 1
+          fi
+
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
       - name: Pack
         run: dotnet pack --configuration Release --no-build --output ./artifacts
+
+      - name: Verify NuGet package contract
+        run: bash ./scripts/verify-packages.sh ./artifacts
 
       - name: Download Windows portable package
         uses: actions/download-artifact@v5

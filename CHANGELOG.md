@@ -6,6 +6,15 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.57.0] - 2026-08-09
+
+### Fixed
+- **Filesystem-aware path identity closes [#111](https://github.com/georgepwall1991/CPMigrate/issues/111).** CPM drift and floating-pin discovery now probe the filesystem containing the scan root instead of assuming every macOS volume is case-insensitive or every Windows directory shares one behavior. Case-distinct contexts such as `tools/` and `Tools/` stay separate on case-sensitive APFS and Windows directories, while an inaccessible probe falls back conservatively to ordinal comparison rather than merging contexts and silently dropping pins. The probe is temporary and cleaned up before the scan continues.
+
+### CI
+- **Pull requests now run the full build and test matrix on Ubuntu, Windows, and macOS.** Ubuntu provides the guaranteed case-sensitive filesystem leg for the path-identity contract; release CI already covered it, but PR CI did not.
+- **Release publishing fails closed when the tag and project version disagree, and verifies the packed NuGet contract before publishing.** The tag names the download URL and package artifact, while the project controls the package version; checking both prevents a release from publishing the wrong binary or stale README/assets.
+
 ## [3.56.0] - 2026-08-03
 
 ### Added
@@ -63,7 +72,7 @@ A second round found seven more, including the two below that were **not** in th
 - **`DirectoryPackagesPropsPath` is honoured**, including when an unconditional `<Import>` is what declares it. A repository redirecting central management to a file of its own choosing was still judged against the nearest `Directory.Packages.props` — pins the project never receives, and a file it does not read. Where the redirect names a property that cannot be evaluated, no governing file is claimed and the project is left alone rather than measured against the wrong one.
 - **Every build property is now resolved the same way**, through one reader — including a project's own, which may equally be delegated to an imported fragment. `ManagePackageVersionsCentrally`, `DirectoryPackagesPropsPath`, and `CentralPackageTransitivePinningEnabled` previously had separate traversals that disagreed about which imports exist, so a property set in an imported fragment was honoured for one rule and invisible to another. The shared reader also substitutes `$(MSBuildThisFileDirectory)` in an import path — the ordinary way to write a portable import, previously rejected as unresolvable — and treats a `Condition` on an enclosing `ImportGroup` as making the import unresolved, consistently with the policy already applied to a condition on the import itself.
 - A props file **outside the scan root** is named by its path rather than by the conventional file name. A scan rooted in a subdirectory whose `DirectoryPackagesPropsPath` redirects elsewhere in the repository previously labelled that file `Directory.Packages.props` — naming a file that does not exist, and collapsing two different custom files onto one fingerprint.
-- Path comparisons in pin discovery use the platform-aware comparer throughout. On Linux, `tools/` and `Tools/` are different directories that can hold different props files; folding them dropped one context entirely, including its floating pins. That comparer still decides from the OS rather than the filesystem, so a case-sensitive macOS volume is not yet handled — tracked in [#111](https://github.com/georgepwall1991/CPMigrate/issues/111), and not fixed here because no CI runner can verify it.
+- Path comparisons in pin discovery use the platform-aware comparer throughout. On Linux, `tools/` and `Tools/` are different directories that can hold different props files; folding them dropped one context entirely, including its floating pins. The comparer still decided from the OS rather than the filesystem, so a case-sensitive macOS volume was not yet handled — tracked in [#111](https://github.com/georgepwall1991/CPMigrate/issues/111) and fixed in 3.57.0 after Ubuntu was added to the pull-request matrix.
 - `FloatingVersion` honours a project's own enablement too. Its pin discovery kept only each project's directory, so an opt-out never reached it: pins inert for every governed project were still reported, and a floating pin in a file a project opted into was missed.
 - Every governing context's references now count as evidence that a pin is used. A context with transitive pinning enabled states no orphans of its own, but dropping it entirely lost the proof that the packages its projects reference are live, and those pins were reported orphaned against the file declaring them.
 - `InlineVersionUnderCpm` and `MissingPackageVersion` name the props file that actually governs the project, so the file they tell you to edit is the one MSBuild reads for it.

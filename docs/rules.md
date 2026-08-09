@@ -165,6 +165,9 @@ Resolution follows MSBuild:
   be evaluated from the XML alone.
 - **The project's own file has the last word** on `ManagePackageVersionsCentrally`, matching
   MSBuild's evaluation order.
+- Path identity follows a temporary case-sensitivity probe at the scan root, not the host OS. This
+  keeps `tools/` and `Tools/` separate on case-sensitive filesystems; if the probe cannot run,
+  CPMigrate falls back to ordinal comparison so contexts are not silently merged.
 
 A props file governing no scanned project is not judged at all — reporting its pins as orphaned would
 make every scoped scan accuse the wider repository's file of being dead.
