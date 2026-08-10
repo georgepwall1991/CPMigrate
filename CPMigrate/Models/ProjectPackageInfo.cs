@@ -342,6 +342,7 @@ public record ProjectPackageInfo(
     {
         property = string.Empty;
         value = string.Empty;
+        condition = TrimGroupingParentheses(condition);
         if (
             condition.Contains("&&", StringComparison.Ordinal)
             || condition.Contains("||", StringComparison.Ordinal)
@@ -375,6 +376,69 @@ public record ProjectPackageInfo(
         }
 
         return false;
+    }
+
+    private static string TrimGroupingParentheses(string condition)
+    {
+        var trimmed = condition.Trim();
+        while (
+            trimmed.Length >= 2
+            && trimmed[0] == '('
+            && trimmed[^1] == ')'
+            && IsWrappedByGroupingParentheses(trimmed)
+        )
+        {
+            trimmed = trimmed[1..^1].Trim();
+        }
+
+        return trimmed;
+    }
+
+    private static bool IsWrappedByGroupingParentheses(string condition)
+    {
+        var depth = 0;
+        var inSingleQuotedLiteral = false;
+        var inDoubleQuotedLiteral = false;
+        for (var index = 0; index < condition.Length; index++)
+        {
+            var character = condition[index];
+            if (character == '\'' && !inDoubleQuotedLiteral)
+            {
+                inSingleQuotedLiteral = !inSingleQuotedLiteral;
+                continue;
+            }
+
+            if (character == '"' && !inSingleQuotedLiteral)
+            {
+                inDoubleQuotedLiteral = !inDoubleQuotedLiteral;
+                continue;
+            }
+
+            if (inSingleQuotedLiteral || inDoubleQuotedLiteral)
+            {
+                continue;
+            }
+
+            if (character == '(')
+            {
+                depth++;
+            }
+            else if (character == ')')
+            {
+                depth--;
+                if (depth == 0 && index != condition.Length - 1)
+                {
+                    return false;
+                }
+
+                if (depth < 0)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return depth == 0 && !inSingleQuotedLiteral && !inDoubleQuotedLiteral;
     }
 
     private static bool IsPropertyOperand(string operand)

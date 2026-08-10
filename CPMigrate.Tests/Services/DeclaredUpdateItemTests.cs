@@ -768,6 +768,35 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ParenthesizedConditionsAreRecognizedAsMutuallyExclusive()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" />
+              </ItemGroup>
+              <ItemGroup Condition="('$(TargetFramework)' == 'net8.0')">
+                <PackageReference Update="Serilog" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="('$(TargetFramework)' == 'net9.0')">
+                <PackageReference Update="Serilog" Version="" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Serilog", "2.0.0", path, "App.csproj") },
+            DeclaredReferences: declaredReferences
+        );
+
+        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeFalse();
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_MutablePropertyConditionsRemainPotentiallyOverlapping()
     {
         var path = WriteProject(
