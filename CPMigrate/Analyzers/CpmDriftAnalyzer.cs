@@ -298,7 +298,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                 // Created only once a project has proved the file usable, so a props file every
                 // project turned out to be exempt from never reaches the orphan check.
                 var props = ReadProps(propsPath)!;
-                var (central, importsResolved) = ReadCentralVersions(
+                var (central, _, importsResolved) = ReadCentralVersions(
                     props,
                     propsPath,
                     pathComparer
@@ -815,6 +815,7 @@ public class CpmDriftAnalyzer : IAnalyzer
 
     private static (
         Dictionary<string, CentralEntry> Central,
+        List<ConditionalCentralEntry> Conditional,
         bool ImportsResolved
     ) ReadCentralVersions(
         XDocument props,
@@ -823,16 +824,25 @@ public class CpmDriftAnalyzer : IAnalyzer
     )
     {
         var versions = new Dictionary<string, CentralEntry>(StringComparer.OrdinalIgnoreCase);
+        var conditional = new List<ConditionalCentralEntry>();
         var visited = new HashSet<string>(pathComparer);
-        var resolved = CollectCentralVersions(props, propsPath, versions, visited, pathComparer);
+        var resolved = CollectCentralVersions(
+            props,
+            propsPath,
+            versions,
+            conditional,
+            visited,
+            pathComparer
+        );
 
-        return (versions, resolved);
+        return (versions, conditional, resolved);
     }
 
     private static bool CollectCentralVersions(
         XDocument document,
         string documentPath,
         Dictionary<string, CentralEntry> versions,
+        List<ConditionalCentralEntry> conditional,
         HashSet<string> visited,
         StringComparer pathComparer
     )
@@ -863,6 +873,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                     element,
                     documentPath,
                     versions,
+                    conditional,
                     visited,
                     pathComparer
                 );
@@ -876,6 +887,26 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             var packageName =
                 element.Attribute("Include")?.Value ?? element.Attribute("Update")?.Value;
+
+            if (HasCondition(element))
+            {
+                // A conditional pin may not exist in every evaluated configuration. Keep it in a
+                // separate stream for rules such as FloatingVersion that can still inspect its
+                // declaration, but do not merge it into the universal set used for drift conclusions.
+                allResolved = false;
+                if (!string.IsNullOrWhiteSpace(packageName))
+                {
+                    conditional.Add(
+                        new ConditionalCentralEntry(
+                            packageName,
+                            new CentralEntry(ReadVersion(element), isGlobal, documentPath)
+                        )
+                    );
+                }
+
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(packageName))
             {
                 versions[packageName] = new CentralEntry(
@@ -890,48 +921,39 @@ public class CpmDriftAnalyzer : IAnalyzer
     }
 
     /// <summary>
-    /// Follows one <c>Import</c>. Returns false when the path cannot be resolved by reading XML —
-    /// an MSBuild property or a glob — since the central set is then incomplete.
+    /// Follows one <c>Import</c>. Returns false when the path cannot be resolved by reading XML, or
+    /// when a condition makes its applicability unknown, since the central set is then incomplete.
     /// </summary>
     private static bool FollowImport(
         XElement import,
         string documentPath,
         Dictionary<string, CentralEntry> versions,
+        List<ConditionalCentralEntry> conditional,
         HashSet<string> visited,
         StringComparer pathComparer
     )
     {
-        var relative = import.Attribute("Project")?.Value;
-        if (string.IsNullOrWhiteSpace(relative))
-        {
-            return true;
-        }
-
-        if (relative.Contains("$(", StringComparison.Ordinal) || relative.Contains('*'))
-        {
-            return false;
-        }
-
         var directory = Path.GetDirectoryName(Path.GetFullPath(documentPath));
-        if (directory is null)
+        if (directory is null || !TryResolveImportPath(import, directory, out var importedPath))
         {
             return false;
         }
 
-        var importedPath = Path.GetFullPath(
-            Path.Combine(directory, relative.Replace('\\', Path.DirectorySeparatorChar))
-        );
         var imported = ReadProps(importedPath);
 
         if (imported is null)
         {
-            // A conditional import of a file that is not there is normal, so this is not treated as
-            // an unresolved import.
-            return !File.Exists(importedPath)
-                || string.IsNullOrEmpty(import.Attribute("Condition")?.Value);
+            return false;
         }
 
-        return CollectCentralVersions(imported, importedPath, versions, visited, pathComparer);
+        return CollectCentralVersions(
+            imported,
+            importedPath,
+            versions,
+            conditional,
+            visited,
+            pathComparer
+        );
     }
 
     /// <summary>
@@ -945,6 +967,8 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// others, and a pin reported against the importing file names the wrong place to edit.
     /// </param>
     private readonly record struct CentralEntry(string? Version, bool IsGlobal, string SourcePath);
+
+    private readonly record struct ConditionalCentralEntry(string Package, CentralEntry Entry);
 
     private static bool IsPackageReference(XElement element)
     {
@@ -1009,6 +1033,12 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// Every props file governing a scanned project contributes, not only the one at the scan root:
     /// a repository can hold several, each governing the projects beneath it, and a caller reading
     /// only the root file would miss whatever a nested one pins.
+    /// </para>
+    ///
+    /// <para>
+    /// Conditional central entries are retained here for rules that can inspect the declaration
+    /// itself, such as <c>FloatingVersion</c>. The drift rules use the separate complete central set
+    /// and mark the context incomplete instead of treating those entries as universally effective.
     /// </para>
     /// </summary>
     /// <param name="basePath">Directory the scan was rooted at.</param>
@@ -1119,11 +1149,12 @@ public class CpmDriftAnalyzer : IAnalyzer
             return;
         }
 
-        var (central, _) = ReadCentralVersions(props, propsPath, pathComparer);
+        var (central, conditional, _) = ReadCentralVersions(props, propsPath, pathComparer);
+        var allEntries = central
+            .Select(entry => (Package: entry.Key, Entry: entry.Value))
+            .Concat(conditional.Select(entry => (entry.Package, entry.Entry)));
 
-        foreach (
-            var entry in central.Where(entry => !string.IsNullOrWhiteSpace(entry.Value.Version))
-        )
+        foreach (var entry in allEntries.Where(entry => !string.IsNullOrWhiteSpace(entry.Entry.Version)))
         {
             // Every distinct pin, not one per package. Collapsing by package let a root file's exact
             // pin hide a nested file's floating one — the nested project's dependency would then
@@ -1133,12 +1164,12 @@ public class CpmDriftAnalyzer : IAnalyzer
             // reported against the importing file names the wrong place to edit, and the same
             // inherited pin would be reported once per file that imports it.
             var pin = new CentralPin(
-                entry.Key,
-                entry.Value.Version!,
+                entry.Package,
+                entry.Entry.Version!,
                 // Relative to the *scan root*, not the project directory the properties were
                 // resolved from — otherwise a nested file reads as '../Directory.Packages.props'
                 // and two different nested files collapse onto one name.
-                DescribePropsPath(entry.Value.SourcePath, scanRoot)
+                DescribePropsPath(entry.Entry.SourcePath, scanRoot)
             );
             if (!effective.Contains(pin))
             {
@@ -1445,12 +1476,9 @@ public class CpmDriftAnalyzer : IAnalyzer
     {
         resolved = string.Empty;
 
-        for (XElement? enclosing = element; enclosing is not null; enclosing = enclosing.Parent)
+        if (HasCondition(element))
         {
-            if (!string.IsNullOrWhiteSpace(enclosing.Attribute("Condition")?.Value))
-            {
-                return false;
-            }
+            return false;
         }
 
         var relative = element.Attribute("Project")?.Value;
@@ -1475,6 +1503,22 @@ public class CpmDriftAnalyzer : IAnalyzer
         );
 
         return true;
+    }
+
+    private static bool HasCondition(XElement element)
+    {
+        for (XElement? enclosing = element; enclosing is not null; enclosing = enclosing.Parent)
+        {
+            if (
+                enclosing.Name.LocalName.Equals("Otherwise", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrWhiteSpace(enclosing.Attribute("Condition")?.Value)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

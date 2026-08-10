@@ -161,8 +161,12 @@ Resolution follows MSBuild:
   project is left unjudged rather than measured against the wrong one.
 - **Through imports** — an unconditional `<Import>` whose path is statically resolvable is followed,
   including one anchored with `$(MSBuildThisFileDirectory)`. A conditioned import, or one inside a
-  conditioned `<ImportGroup>`, is not followed: whether it applies depends on properties that cannot
-  be evaluated from the XML alone.
+  conditioned `<ImportGroup>`, is not followed: CPMigrate does not evaluate even filesystem-only
+  conditions, so whether the import applies is left unresolved. Conditional package entries inside
+  `<When>`, `<Otherwise>`, or a conditioned item group are likewise not merged into the universal
+  drift set, although `FloatingVersion` still reports a floating specification declared there. The
+  central set is marked incomplete in those cases, so `MissingPackageVersion` and
+  `OrphanedPackageVersion` stand down rather than guessing.
 - **The project's own file has the last word** on `ManagePackageVersionsCentrally`, matching
   MSBuild's evaluation order.
 - Path identity follows a temporary case-sensitivity probe at the scan root, not the host OS. This

@@ -192,6 +192,27 @@ public class FloatingVersionAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_ConditionalCentralPin_IsReportedAsFloating()
+    {
+        // Drift completeness must stand down for a configuration-specific pin, but the pin can
+        // still float whenever that configuration applies and must remain visible to this rule.
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageVersion Include="Serilog" Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        Analyze().Issues.Should().ContainSingle().Which.PackageName.Should().Be("Serilog");
+    }
+
+    [Fact]
     public void Analyze_CentralPinWithCentralManagementSwitchedOff_IsNotReported()
     {
         // NuGet ignores every PackageVersion in a props file that does not enable central

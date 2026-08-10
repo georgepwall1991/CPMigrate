@@ -336,6 +336,220 @@ public class CpmDriftAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_ConditionalImport_SuppressesRulesThatNeedACompleteCentralSet()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, "Release.Packages.props"),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Only.In.Release" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="Release.Packages.props" Condition="'$(Configuration)' == 'Release'" />
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().NotContain(i =>
+            i.IssueCode == AnalysisIssueCode.MissingPackageVersion
+            || i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+        );
+    }
+
+    [Fact]
+    public void Analyze_ExistsCondition_SuppressesRulesThatNeedACompleteCentralSet()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, "Release.Packages.props"),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Only.In.Release" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="Release.Packages.props" Condition="Exists('Release.Packages.props')" />
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().NotContain(i =>
+            i.IssueCode == AnalysisIssueCode.MissingPackageVersion
+            || i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+        );
+    }
+
+    [Fact]
+    public void Analyze_ConditionalImportGroup_SuppressesRulesThatNeedACompleteCentralSet()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, "Release.Packages.props"),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Only.In.Release" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ImportGroup Condition="'$(Configuration)' == 'Release'">
+                <Import Project="Release.Packages.props" />
+              </ImportGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().NotContain(i =>
+            i.IssueCode == AnalysisIssueCode.MissingPackageVersion
+            || i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+        );
+    }
+
+    [Fact]
+    public void Analyze_ConditionalCentralPin_SuppressesRulesThatNeedACompleteCentralSet()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageVersion Include="Only.In.Net8" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().NotContain(i =>
+            i.IssueCode == AnalysisIssueCode.MissingPackageVersion
+            || i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+        );
+    }
+
+    [Fact]
+    public void Analyze_UnconditionalMalformedImport_SuppressesRulesThatNeedACompleteCentralSet()
+    {
+        File.WriteAllText(Path.Combine(_root, "Broken.Packages.props"), "<Project><ItemGroup>");
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="Broken.Packages.props" />
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().NotContain(i =>
+            i.IssueCode == AnalysisIssueCode.MissingPackageVersion
+            || i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+        );
+    }
+
+    [Fact]
+    public void Analyze_MissingUnconditionalImport_SuppressesRulesThatNeedACompleteCentralSet()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="Missing.Packages.props" />
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().NotContain(i =>
+            i.IssueCode == AnalysisIssueCode.MissingPackageVersion
+            || i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+        );
+    }
+
+    [Fact]
+    public void Analyze_ThisFileDirectoryImport_IsFollowed()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, "Packages.Shared.props"),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Newtonsoft.Json" Version="13.0.1" />
+                <PackageVersion Include="Only.In.Import" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="$(MSBuildThisFileDirectory)Packages.Shared.props" />
+            </Project>
+            """
+        );
+        var project = WriteProject("Api.csproj", "<PackageReference Include=\"Newtonsoft.Json\" />");
+
+        var result = _analyzer.Analyze(PackageInfoFor(project));
+
+        result.Issues.Should().ContainSingle(i =>
+            i.IssueCode == AnalysisIssueCode.OrphanedPackageVersion
+            && i.PackageName == "Only.In.Import"
+        );
+    }
+
+    [Fact]
     public void Analyze_ImportPathBuiltFromAnMsBuildProperty_SuppressesTheUnverifiableRules()
     {
         // An import path the analyzer cannot resolve means the central set is incomplete. Guessing

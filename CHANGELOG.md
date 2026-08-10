@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.58.0] - 2026-08-10
+
+### Fixed
+- **Conditional central package content is no longer treated as universally effective.** The analyzer now skips `<Import>` elements guarded by an MSBuild `Condition`, imports inside a conditional `ImportGroup`, and central pin items inside conditioned item groups or `<Choose>` branches for the universal drift set, while `FloatingVersion` still reports floating declarations there. It also treats missing or malformed unconditional imports as incomplete. The central set is marked incomplete so rules that would guess at missing or orphaned pins stand down. Regression coverage protects these boundaries.
+
 ## [3.57.3] - 2026-08-09
 
 ### Fixed
