@@ -444,6 +444,48 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanProjectPackages_IndependentChooseOtherwiseBranches_RemainSeparate()
+    {
+        var path = WriteProject(
+            """
+              <Choose>
+                <When Condition="'$(TargetFramework)' == 'net8.0'">
+                  <ItemGroup>
+                    <PackageReference Update="Serilog" Version="4.0.0" />
+                  </ItemGroup>
+                </When>
+                <Otherwise>
+                  <ItemGroup>
+                    <PackageReference Update="Serilog" Version="4.*" />
+                  </ItemGroup>
+                </Otherwise>
+              </Choose>
+              <Choose>
+                <When Condition="'$(TargetFramework)' == 'net9.0'">
+                  <ItemGroup>
+                    <PackageReference Update="Serilog" Version="5.0.0" />
+                  </ItemGroup>
+                </When>
+                <Otherwise>
+                  <ItemGroup>
+                    <PackageReference Update="Serilog" Version="4.0.0" />
+                  </ItemGroup>
+                </Otherwise>
+              </Choose>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanProjectPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(4);
+        references.Should().Contain(reference => reference.Version == "4.*");
+        references.Should().Contain(reference => reference.Version == "4.0.0");
+        references.Should().Contain(reference => reference.Version == "5.0.0");
+    }
+
+    [Fact]
     public void ScanProjectPackages_UnconditionalUpdateAfterConditionalUpdate_ClearsConditionality()
     {
         var path = WriteProject(

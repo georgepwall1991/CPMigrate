@@ -110,17 +110,46 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         {
             if (!string.IsNullOrEmpty(current.Condition))
             {
-                conditions.Add(current.Condition.Trim());
+                var condition = current.Condition.Trim();
+                conditions.Add(
+                    current is ProjectWhenElement
+                        ? $"{condition}@{GetElementPath(current)}"
+                        : condition
+                );
             }
 
             // <Otherwise> has no Condition of its own but applies exactly when no sibling <When> did.
             if (current is ProjectOtherwiseElement)
             {
-                conditions.Add("<Otherwise>");
+                conditions.Add($"<Otherwise>@{GetElementPath(current)}");
             }
         }
 
         return conditions.Count == 0 ? null : string.Join(" -> ", conditions);
+    }
+
+    private static string GetElementPath(ProjectElement element)
+    {
+        List<int> path = [];
+        for (ProjectElement? current = element; current?.Parent is not null; current = current.Parent)
+        {
+            var parent = current.Parent;
+            var index = 0;
+            foreach (var child in parent.Children)
+            {
+                if (ReferenceEquals(child, current))
+                {
+                    break;
+                }
+
+                index++;
+            }
+
+            path.Add(index);
+        }
+
+        path.Reverse();
+        return string.Join('.', path);
     }
 
     /// <inheritdoc />
