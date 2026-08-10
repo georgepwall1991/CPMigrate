@@ -240,12 +240,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     }
 
                     if (
-                        itemConditionalScope is null
-                        && !string.IsNullOrWhiteSpace(versionMetadataCondition)
+                        !string.IsNullOrWhiteSpace(versionMetadataCondition)
                         && !string.IsNullOrWhiteSpace(versionOverrideMetadataCondition)
                         && !string.Equals(
-                            versionMetadataCondition.Trim(),
-                            versionOverrideMetadataCondition.Trim(),
+                            NormalizeConditionSyntax(versionMetadataCondition.Trim()),
+                            NormalizeConditionSyntax(versionOverrideMetadataCondition.Trim()),
                             StringComparison.Ordinal
                         )
                     )
