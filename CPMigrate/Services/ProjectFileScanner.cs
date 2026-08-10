@@ -619,16 +619,28 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             var character = condition[index];
             if (character == '\'' && !inDoubleQuotedLiteral)
             {
+                var isClosingQuote = inSingleQuotedLiteral;
                 inSingleQuotedLiteral = !inSingleQuotedLiteral;
                 normalized.Append(character);
+                if (isClosingQuote && IsEqualityOperatorAfter(condition, index))
+                {
+                    CanonicalizeTrailingSimpleConditionLiteral(normalized);
+                }
+
                 index++;
                 continue;
             }
 
             if (character == '"' && !inSingleQuotedLiteral)
             {
+                var isClosingQuote = inDoubleQuotedLiteral;
                 inDoubleQuotedLiteral = !inDoubleQuotedLiteral;
                 normalized.Append(character);
+                if (isClosingQuote && IsEqualityOperatorAfter(condition, index))
+                {
+                    CanonicalizeTrailingSimpleConditionLiteral(normalized);
+                }
+
                 index++;
                 continue;
             }
@@ -680,6 +692,49 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         return normalized.ToString();
     }
 
+    private static bool IsEqualityOperatorAfter(string condition, int index)
+    {
+        var nextIndex = index + 1;
+        while (nextIndex < condition.Length && char.IsWhiteSpace(condition[nextIndex]))
+        {
+            nextIndex++;
+        }
+
+        return IsEqualityOperatorAt(condition, nextIndex);
+    }
+
+    private static void CanonicalizeTrailingSimpleConditionLiteral(StringBuilder condition)
+    {
+        if (condition.Length < 2 || (condition[^1] != '\'' && condition[^1] != '"'))
+        {
+            return;
+        }
+
+        var quote = condition[^1];
+        var openingQuote = condition.Length - 2;
+        while (openingQuote >= 0 && condition[openingQuote] != quote)
+        {
+            openingQuote--;
+        }
+
+        if (openingQuote < 0)
+        {
+            return;
+        }
+
+        var value = condition.ToString(
+            openingQuote + 1,
+            condition.Length - openingQuote - 2
+        );
+        if (!IsSimpleConditionLiteral(value))
+        {
+            return;
+        }
+
+        condition.Remove(openingQuote + 1, value.Length);
+        condition.Insert(openingQuote + 1, value.ToUpperInvariant());
+    }
+
     private static bool IsEqualityOperatorAt(string condition, int index)
     {
         return index + 1 < condition.Length
@@ -711,13 +766,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
 
         value = condition[(start + 1)..closingQuote];
-        if (
-            string.IsNullOrEmpty(value)
-            || !value.All(character =>
-                char.IsLetterOrDigit(character)
-                || character is '.' or '-' or '_'
-            )
-        )
+        if (!IsSimpleConditionLiteral(value))
         {
             value = string.Empty;
             return false;
@@ -725,6 +774,15 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
         end = closingQuote;
         return true;
+    }
+
+    private static bool IsSimpleConditionLiteral(string value)
+    {
+        return !string.IsNullOrEmpty(value)
+            && value.All(character =>
+                char.IsLetterOrDigit(character)
+                || character is '.' or '-' or '_'
+            );
     }
 
     private static bool IsConditionNormalizationBoundary(char character)
