@@ -355,7 +355,9 @@ public record ProjectPackageInfo(
         return property.StartsWith("$(", StringComparison.Ordinal)
             && property.EndsWith(")", StringComparison.Ordinal)
             && value.Length > 0
-            && !value.Contains("$(", StringComparison.Ordinal);
+            && !value.Contains("$(", StringComparison.Ordinal)
+            && !value.Contains("@(", StringComparison.Ordinal)
+            && !value.Contains("%(", StringComparison.Ordinal);
     }
 
     /// <summary>
