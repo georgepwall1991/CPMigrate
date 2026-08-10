@@ -184,17 +184,32 @@ public class VersionInconsistencyFixer : IFixer
                 // older one — and the fix reads as a tidy-up, so nobody looks here when the build goes red.
                 // Overlap cannot be evaluated outside a build, so a conditional pin is left alone.
                 .Where(e => !IsConditional(e));
+            var packageRefList = packageRefs.ToList();
 
             var modified = false;
             var containsUnresolvedVersion = false;
 
-            foreach (var packageRef in packageRefs)
+            for (var index = 0; index < packageRefList.Count; index++)
             {
+                var packageRef = packageRefList[index];
+                var ignoreSupersededPropertyVersion = IsSupersededPropertyVersion(
+                    packageRefList,
+                    index,
+                    packageName
+                );
                 var metadataResults = new[]
                 {
-                    UpdateVersionMetadata(packageRef.Attribute("Version"), targetVersion),
+                    UpdateVersionMetadata(
+                        packageRef.Attribute("Version"),
+                        targetVersion,
+                        ignoreSupersededPropertyVersion
+                    ),
                     UpdateVersionMetadata(packageRef.Attribute("VersionOverride"), targetVersion),
-                    UpdateVersionMetadata(packageRef.Element("Version"), targetVersion),
+                    UpdateVersionMetadata(
+                        packageRef.Element("Version"),
+                        targetVersion,
+                        ignoreSupersededPropertyVersion
+                    ),
                     UpdateVersionMetadata(packageRef.Element("VersionOverride"), targetVersion),
                 };
 
@@ -239,9 +254,55 @@ public class VersionInconsistencyFixer : IFixer
         }
     }
 
+    private static bool IsSupersededPropertyVersion(
+        IReadOnlyList<XElement> packageReferences,
+        int currentIndex,
+        string packageName
+    )
+    {
+        var currentVersionValues = GetVersionMetadata(packageReferences[currentIndex]);
+        if (!currentVersionValues.Any(IsPropertyVersion))
+        {
+            return false;
+        }
+
+        var latestUpdateVersion = packageReferences
+            .Skip(currentIndex + 1)
+            .Where(element =>
+                string.IsNullOrWhiteSpace(element.Attribute("Include")?.Value)
+                && string.Equals(
+                    element.Attribute("Update")?.Value,
+                    packageName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .SelectMany(GetVersionMetadata)
+            .LastOrDefault();
+
+        return latestUpdateVersion is not null && !IsPropertyVersion(latestUpdateVersion);
+    }
+
+    private static IEnumerable<string> GetVersionMetadata(XElement packageReference)
+    {
+        var versionAttribute = packageReference.Attribute("Version");
+        if (versionAttribute is not null)
+        {
+            yield return versionAttribute.Value;
+        }
+
+        var versionElement = packageReference.Element("Version");
+        if (versionElement is not null)
+        {
+            yield return versionElement.Value;
+        }
+    }
+
+    private static bool IsPropertyVersion(string version) => version.Contains("$(", StringComparison.Ordinal);
+
     private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
         XAttribute? metadata,
-        string targetVersion
+        string targetVersion,
+        bool ignoreSupersededPropertyVersion = false
     )
     {
         if (metadata is null || metadata.Value == targetVersion)
@@ -249,9 +310,9 @@ public class VersionInconsistencyFixer : IFixer
             return (false, false);
         }
 
-        if (metadata.Value.Contains("$(", StringComparison.Ordinal))
+        if (IsPropertyVersion(metadata.Value))
         {
-            return (false, true);
+            return ignoreSupersededPropertyVersion ? (false, false) : (false, true);
         }
 
         metadata.Value = targetVersion;
@@ -260,7 +321,8 @@ public class VersionInconsistencyFixer : IFixer
 
     private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
         XElement? metadata,
-        string targetVersion
+        string targetVersion,
+        bool ignoreSupersededPropertyVersion = false
     )
     {
         if (metadata is null || metadata.Value == targetVersion)
@@ -268,9 +330,9 @@ public class VersionInconsistencyFixer : IFixer
             return (false, false);
         }
 
-        if (metadata.Value.Contains("$(", StringComparison.Ordinal))
+        if (IsPropertyVersion(metadata.Value))
         {
-            return (false, true);
+            return ignoreSupersededPropertyVersion ? (false, false) : (false, true);
         }
 
         metadata.Value = targetVersion;

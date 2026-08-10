@@ -510,6 +510,41 @@ public class FloatingVersionAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_WiderConditionalVersionOverrideAmendsNarrowerProjection()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="4.*" />
+                <PackageReference
+                    Update="Serilog"
+                    Condition="'$(Configuration)' == 'Debug'"
+                    Version="4.*" />
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().OnlyContain(reference => reference.VersionOverride == "4.0.0");
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Analyze_ExplicitEmptyVersionOverrideClearsPriorOverride()
     {
         var projectPath = Path.Combine(_testDirectory, "App.csproj");

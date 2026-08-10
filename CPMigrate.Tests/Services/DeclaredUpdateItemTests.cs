@@ -258,6 +258,28 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_WiderConditionalVersionOverrideAmendsNarrowerProjection()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="4.*" />
+                <PackageReference
+                    Update="Serilog"
+                    Condition="'$(Configuration)' == 'Debug'"
+                    Version="4.*" />
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().OnlyContain(reference => reference.VersionOverride == "4.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ExplicitEmptyVersionOverrideClearsPriorOverride()
     {
         var path = WriteProject(

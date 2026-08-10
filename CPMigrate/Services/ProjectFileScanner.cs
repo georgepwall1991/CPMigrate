@@ -459,10 +459,19 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     !isConditional
                     || (
                         item.existing.IsConditional
-                        && string.Equals(
-                            item.existing.ConditionalScope,
-                            conditionalScope,
-                            StringComparison.Ordinal
+                        && (
+                            string.Equals(
+                                item.existing.ConditionalScope,
+                                conditionalScope,
+                                StringComparison.Ordinal
+                            )
+                            // A wider Update also amends projections created for nested scopes. The
+                            // projection is a scanner representation of the same MSBuild item, not an
+                            // independent declaration that may retain superseded metadata.
+                            || IsWiderConditionalScope(
+                                conditionalScope,
+                                item.existing.ConditionalScope
+                            )
                         )
                     )
                 )
