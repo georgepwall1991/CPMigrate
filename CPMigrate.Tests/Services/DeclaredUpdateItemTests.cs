@@ -1413,6 +1413,34 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_DoesNotAmendAcrossPropertyReassignment()
+    {
+        var path = WriteProject(
+            """
+              <PropertyGroup>
+                <Mode>A</Mode>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="5.*" Condition="'$(Mode)' == 'A'" />
+              </ItemGroup>
+              <PropertyGroup>
+                <Mode>B</Mode>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="6.0.0" Condition="'$(Mode)' == 'A'" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().Contain(reference => reference.Version == "5.*");
+        references.Should().Contain(reference => reference.Version == "6.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_EquivalentOtherwiseBranchesInIndependentChooseElementsAmend()
     {
         var path = WriteProject(
