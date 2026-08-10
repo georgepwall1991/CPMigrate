@@ -176,9 +176,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         continue;
                     }
 
-                    var version =
-                        item.Metadata.FirstOrDefault(m => m.Name == "Version")?.Value
-                        ?? string.Empty;
+                    var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
+                    var version = versionMetadata?.Value ?? string.Empty;
 
                     // Carried separately from Version: under central package management this is the
                     // version actually in force, and it can float exactly as a Version can — but a
@@ -212,7 +211,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // other declaration-based rules can still see the package name. Version rules filter
                     // its empty effective version from their comparisons.
                     var hasVersionMetadata =
-                        !string.IsNullOrWhiteSpace(version)
+                        versionMetadata is not null
                         // Presence matters here: VersionOverride="" explicitly clears inherited
                         // metadata even though its normalized value is empty.
                         || versionOverride is not null;
@@ -276,6 +275,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             references,
                             amendedIndices,
                             version,
+                            versionMetadata is not null,
                             versionOverride?.Trim(),
                             isConditional
                         );
@@ -293,7 +293,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         references,
                         isUpdate,
                         isConditional,
-                        version,
+                        versionMetadata is not null,
                         packageName,
                         conditionalScope
                     );
@@ -396,6 +396,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             references,
                             amendedIndices,
                             versionMetadata.Value,
+                            true,
                             null,
                             isConditional
                         );
@@ -504,12 +505,12 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         IReadOnlyList<PackageReference> references,
         bool isUpdate,
         bool isConditional,
-        string version,
+        bool hasVersionMetadata,
         string packageName,
         string? conditionalScope
     )
     {
-        if (!isUpdate || !isConditional || !string.IsNullOrWhiteSpace(version))
+        if (!isUpdate || !isConditional || hasVersionMetadata)
         {
             return null;
         }
@@ -591,6 +592,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         List<PackageReference> references,
         IReadOnlyList<int> amendedIndices,
         string version,
+        bool hasVersionMetadata,
         string? versionOverride,
         bool isConditional
     )
@@ -620,7 +622,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             );
             references[amendedIndex] = existing with
             {
-                Version = string.IsNullOrWhiteSpace(version) ? existing.Version : version,
+                Version = hasVersionMetadata ? version : existing.Version,
                 IsConditional = foldsConditionalUpdates
                     || (existing.IsConditional && (!existing.IsConditionalUpdate || conditionalMetadataSurvives)),
                 VersionOverride = GetAmendedVersionOverride(existing, versionOverride),

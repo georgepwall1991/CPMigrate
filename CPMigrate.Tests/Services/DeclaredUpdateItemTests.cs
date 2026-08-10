@@ -343,6 +343,24 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ExplicitEmptyVersionClearsPriorVersion()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="2.*" />
+                <PackageReference Update="Serilog" Version="" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_UnconditionalUpdateFoldsOverriddenConditionalUpdate()
     {
         var path = WriteProject(
