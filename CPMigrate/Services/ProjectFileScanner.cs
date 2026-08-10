@@ -501,8 +501,36 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         // Conditions from independent ancestor branches may not form an ordered suffix, but a wider
         // conjunction still applies to a narrower one when every wider condition is present in it.
         return widerConditions.All(condition =>
-            narrowerConditions.Contains(condition, StringComparer.Ordinal)
+            narrowerConditions.Any(narrowerCondition =>
+                ConditionalScopeConditionsMatch(condition, narrowerCondition)
+            )
         );
+    }
+
+    private static bool ConditionalScopeConditionsMatch(string left, string right)
+    {
+        var (leftCondition, leftBranchPath) = SplitConditionalScopePart(left);
+        var (rightCondition, rightBranchPath) = SplitConditionalScopePart(right);
+        return string.Equals(leftCondition, rightCondition, StringComparison.Ordinal)
+            && (
+                leftBranchPath is null
+                || rightBranchPath is null
+                || string.Equals(leftBranchPath, rightBranchPath, StringComparison.Ordinal)
+            );
+    }
+
+    private static (string Condition, string? BranchPath) SplitConditionalScopePart(string part)
+    {
+        var separator = part.LastIndexOf('@');
+        if (separator < 0 || separator == part.Length - 1)
+        {
+            return (part, null);
+        }
+
+        var branchPath = part[(separator + 1)..];
+        return branchPath.All(character => char.IsDigit(character) || character == '.')
+            ? (part[..separator], branchPath)
+            : (part, null);
     }
 
     private static string? FindInheritedVersion(
@@ -615,7 +643,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 && !hasUnconditionalReference
                 && hasConditionalReference
                 && !hasSurvivingConditionalClear
-                && !string.IsNullOrWhiteSpace(version)
+                && (
+                    !string.IsNullOrWhiteSpace(version)
+                    || !string.IsNullOrWhiteSpace(versionOverride)
+                )
                 ? amendedIndices
                     .Select(index => references[index])
                     .FirstOrDefault(existing =>

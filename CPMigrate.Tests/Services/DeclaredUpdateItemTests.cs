@@ -226,6 +226,59 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_UnconditionalVersionOverrideAfterConditionalIncludeRetainsPotentialInheritedReference()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="5.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference =>
+            reference.IsConditional && reference.VersionOverride == "5.0.0"
+        );
+        references.Should().Contain(reference =>
+            !reference.IsConditional && reference.VersionOverride == "5.0.0"
+        );
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_ChooseConditionMatchesEquivalentExternalUpdate()
+    {
+        var path = WriteProject(
+            """
+              <Choose>
+                <When Condition="'$(Configuration)' == 'Debug'">
+                  <ItemGroup>
+                    <PackageReference Include="Serilog" Version="4.*" />
+                  </ItemGroup>
+                </When>
+              </Choose>
+              <ItemGroup>
+                <PackageReference
+                    Update="Serilog"
+                    Condition="'$(Configuration)' == 'Debug'"
+                    Version="4.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalVersionOnlyUpdateKeepsLatestSameScopeVersionOverride()
     {
         var path = WriteProject(
