@@ -452,22 +452,23 @@ public class VersionInconsistencyFixer : IFixer
     private static bool IsMatchingUpdate(XElement packageReference, string packageName)
     {
         return string.IsNullOrWhiteSpace(packageReference.Attribute("Include")?.Value)
-            && string.Equals(
-                packageReference.Attribute("Update")?.Value,
-                packageName,
-                StringComparison.OrdinalIgnoreCase
-            );
+            && ContainsPackageName(packageReference.Attribute("Update")?.Value, packageName);
     }
 
     private static bool IsMatchingDeclaration(XElement packageReference, string packageName)
     {
-        return string.Equals(
-            string.IsNullOrWhiteSpace(packageReference.Attribute("Include")?.Value)
-                ? packageReference.Attribute("Update")?.Value
-                : packageReference.Attribute("Include")?.Value,
-            packageName,
-            StringComparison.OrdinalIgnoreCase
-        );
+        var specification = string.IsNullOrWhiteSpace(packageReference.Attribute("Include")?.Value)
+            ? packageReference.Attribute("Update")?.Value
+            : packageReference.Attribute("Include")?.Value;
+        return ContainsPackageName(specification, packageName);
+    }
+
+    private static bool ContainsPackageName(string? specification, string packageName)
+    {
+        return specification?.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        ).Any(name => string.Equals(name, packageName, StringComparison.OrdinalIgnoreCase)) == true;
     }
 
     private static IEnumerable<string> GetMetadataValues(

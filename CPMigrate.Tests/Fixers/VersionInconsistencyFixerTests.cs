@@ -475,6 +475,44 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_MultiItemUpdateUpdatesMatchingPackage()
+    {
+        var projectPath = Path.Combine(_testDirectory, "MultiItemUpdate.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Update="Foo;Bar" Version="2.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherMultiItemUpdate.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "2.0.0 (MultiItemUpdate.csproj), 3.0.0 (OtherMultiItemUpdate.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "2.0.0", projectPath, "MultiItemUpdate.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherMultiItemUpdate.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        File.ReadAllText(projectPath).Should().Contain("Update=\"Foo;Bar\" Version=\"3.0.0\"");
+    }
+
+    [Fact]
     public void Fix_UpdateOnlyVersionOverride_UpdatesVersionOverrideAttribute()
     {
         // Arrange: VersionOverride is the effective project-level pin under central package management,

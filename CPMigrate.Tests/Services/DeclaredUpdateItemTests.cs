@@ -832,6 +832,63 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ReassignedTargetFrameworkPropertyRemainsPotentiallyOverlapping()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETCoreApp'">
+                <PackageReference Update="Serilog" Version="1.0.0" />
+              </ItemGroup>
+              <PropertyGroup>
+                <TargetFrameworkIdentifier>.NETStandard</TargetFrameworkIdentifier>
+              </PropertyGroup>
+              <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETStandard'">
+                <PackageReference Update="Serilog" Version="" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Serilog", "2.0.0", path, "App.csproj") },
+            DeclaredReferences: declaredReferences
+        );
+
+        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeTrue();
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_MultiItemUpdateAmendsEachPackage()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Foo" Version="1.*" />
+                <PackageReference Include="Bar" Version="2.*" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Foo;Bar" Version="3.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().OnlyContain(reference => reference.Version == "3.0.0");
+        references.Should().Contain(reference => reference.PackageName == "Foo");
+        references.Should().Contain(reference => reference.PackageName == "Bar");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_EquivalentOtherwiseBranchesInIndependentChooseElementsAmend()
     {
         var path = WriteProject(

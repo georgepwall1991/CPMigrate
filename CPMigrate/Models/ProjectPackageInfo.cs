@@ -393,9 +393,7 @@ public record ProjectPackageInfo(
 
     private static bool IsKnownImmutableConditionProperty(string property)
     {
-        return property.Equals("$(TargetFramework)", StringComparison.OrdinalIgnoreCase)
-            || property.Equals("$(TargetFrameworkIdentifier)", StringComparison.OrdinalIgnoreCase)
-            || property.Equals("$(TargetFrameworkVersion)", StringComparison.OrdinalIgnoreCase);
+        return property.Equals("$(TargetFramework)", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

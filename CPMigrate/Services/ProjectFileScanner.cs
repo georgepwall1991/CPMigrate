@@ -215,112 +215,35 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         // Presence matters here: VersionOverride="" explicitly clears inherited
                         // metadata even though its normalized value is empty.
                         || versionOverride is not null;
-                    var hasPriorReference = isUpdate
-                        && references.Any(existing =>
-                            string.Equals(
-                                existing.PackageName,
-                                packageName,
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                        );
-                    if (isUpdate && !hasVersionMetadata && hasPriorReference)
+                    foreach (var expandedPackageName in ExpandPackageNames(packageName))
                     {
-                        continue;
-                    }
-
-                    var reference = new PackageReference(
-                        packageName,
-                        version,
-                        projectFilePath,
-                        projectName,
-                        IsTransitive: false,
-                        IsConditional: isConditional,
-                        VersionOverride: string.IsNullOrWhiteSpace(versionOverride)
-                            ? null
-                            : versionOverride.Trim()
-                    )
-                    {
-                        HasVersionMetadata = versionMetadata is not null,
-                        HasVersionOverrideMetadata = versionOverrideMetadata is not null,
-                        HasConditionalUpdateVersionMetadata = isUpdate
-                            && isConditional
-                            && versionMetadata is not null,
-                        ConditionalScope = conditionalScope,
-                    };
-                    if (isUpdate)
-                    {
-                        reference = reference with
+                        var hasPriorReference = isUpdate
+                            && references.Any(existing =>
+                                string.Equals(
+                                    existing.PackageName,
+                                    expandedPackageName,
+                                    StringComparison.OrdinalIgnoreCase
+                                )
+                            );
+                        if (isUpdate && !hasVersionMetadata && hasPriorReference)
                         {
-                            IsMetadataOnlyUpdate = !hasVersionMetadata,
-                            IsConditionalUpdate = isConditional,
-                            ConditionalScope = conditionalScope,
-                        };
-                    }
-
-                    // An unconditional, version-bearing Update amends every item already declared rather
-                    // than adding another one, so recording it separately would have RedundantReference
-                    // report a duplicate that does not exist, and would leave the superseded version in
-                    // the list for FloatingVersion to read. Existing conditionality is preserved: an
-                    // unconditional Update applies to a conditional item when that item exists, but it
-                    // does not make a later conditional Include inert. A conditional Update stays separate
-                    // from other conditional branches, while sequential Updates in the same branch fold.
-                    // Metadata-only Updates were ignored above because they do not declare a version for
-                    // these rules to compare.
-                    var amendedIndices = FindAmendmentIndices(
-                        references,
-                        isUpdate,
-                        isConditional,
-                        packageName,
-                        conditionalScope
-                    );
-
-                    if (amendedIndices.Count > 0)
-                    {
-                        ApplyAmendments(
-                            references,
-                            amendedIndices,
-                            version,
-                            versionMetadata is not null,
-                            versionOverride?.Trim(),
-                            versionOverrideMetadata is not null,
-                            isConditional
-                        );
-
-                        continue;
-                    }
-
-                    // A conditional Update can target an inherited item represented by an earlier
-                    // unconditional VersionOverride record. MSBuild retains that override when the Update
-                    // changes only Version, so carry it onto the conditional projection instead of
-                    // inventing a floating effective version for the branch. Resolve it only after checking
-                    // for a same-scope amendment so a newer conditional override is never overwritten by an
-                    // older unconditional one.
-                    var inheritedVersion = FindInheritedVersion(
-                        references,
-                        isUpdate,
-                        isConditional,
-                        versionMetadata is not null,
-                        packageName,
-                        conditionalScope
-                    );
-                    var inheritedVersionOverride = FindInheritedVersionOverride(
-                        references,
-                        isUpdate,
-                        isConditional,
-                        versionOverride,
-                        packageName,
-                        conditionalScope
-                    );
-
-                    references.Add(
-                        reference with
-                        {
-                            Version = inheritedVersion ?? reference.Version,
-                            VersionOverride = inheritedVersionOverride ?? reference.VersionOverride,
-                            HasVersionOverrideMetadata = inheritedVersionOverride is not null
-                                || reference.HasVersionOverrideMetadata,
+                            continue;
                         }
-                    );
+
+                        AddDeclaredPackageReference(
+                            references,
+                            expandedPackageName,
+                            projectFilePath,
+                            projectName,
+                            version,
+                            versionOverride,
+                            versionMetadata is not null,
+                            versionOverrideMetadata is not null,
+                            isUpdate,
+                            isConditional,
+                            conditionalScope
+                        );
+                    }
                 }
 
                 return (references, true);
@@ -335,6 +258,120 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             _logger.LogDebug(ex, "Could not read declarations from {Project}", projectName);
             return ([], false);
         }
+    }
+
+    private static IEnumerable<string> ExpandPackageNames(string packageName)
+    {
+        return packageName.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static void AddDeclaredPackageReference(
+        List<PackageReference> references,
+        string packageName,
+        string projectFilePath,
+        string projectName,
+        string version,
+        string? versionOverride,
+        bool hasVersionMetadata,
+        bool hasVersionOverrideMetadata,
+        bool isUpdate,
+        bool isConditional,
+        string? conditionalScope
+    )
+    {
+        var reference = new PackageReference(
+            packageName,
+            version,
+            projectFilePath,
+            projectName,
+            IsTransitive: false,
+            IsConditional: isConditional,
+            VersionOverride: string.IsNullOrWhiteSpace(versionOverride)
+                ? null
+                : versionOverride.Trim()
+        )
+        {
+            HasVersionMetadata = hasVersionMetadata,
+            HasVersionOverrideMetadata = hasVersionOverrideMetadata,
+            HasConditionalUpdateVersionMetadata = isUpdate
+                && isConditional
+                && hasVersionMetadata,
+            ConditionalScope = conditionalScope,
+        };
+        if (isUpdate)
+        {
+            reference = reference with
+            {
+                IsMetadataOnlyUpdate = !hasVersionMetadata && !hasVersionOverrideMetadata,
+                IsConditionalUpdate = isConditional,
+                ConditionalScope = conditionalScope,
+            };
+        }
+
+        // An unconditional, version-bearing Update amends every item already declared rather
+        // than adding another one, so recording it separately would have RedundantReference
+        // report a duplicate that does not exist, and would leave the superseded version in
+        // the list for FloatingVersion to read. Existing conditionality is preserved: an
+        // unconditional Update applies to a conditional item when that item exists, but it
+        // does not make a later conditional Include inert. A conditional Update stays separate
+        // from other conditional branches, while sequential Updates in the same branch fold.
+        // Metadata-only Updates were ignored above because they do not declare a version for
+        // these rules to compare.
+        var amendedIndices = FindAmendmentIndices(
+            references,
+            isUpdate,
+            isConditional,
+            packageName,
+            conditionalScope
+        );
+
+        if (amendedIndices.Count > 0)
+        {
+            ApplyAmendments(
+                references,
+                amendedIndices,
+                version,
+                hasVersionMetadata,
+                versionOverride?.Trim(),
+                hasVersionOverrideMetadata,
+                isConditional
+            );
+
+            return;
+        }
+
+        // A conditional Update can target an inherited item represented by an earlier
+        // unconditional VersionOverride record. MSBuild retains that override when the Update
+        // changes only Version, so carry it onto the conditional projection instead of
+        // inventing a floating effective version for the branch. Resolve it only after checking
+        // for a same-scope amendment so a newer conditional override is never overwritten by an
+        // older unconditional one.
+        var inheritedVersion = FindInheritedVersion(
+            references,
+            isUpdate,
+            isConditional,
+            hasVersionMetadata,
+            packageName,
+            conditionalScope
+        );
+        var inheritedVersionOverride = FindInheritedVersionOverride(
+            references,
+            isUpdate,
+            isConditional,
+            versionOverride,
+            packageName,
+            conditionalScope
+        );
+
+        references.Add(
+            reference with
+            {
+                Version = inheritedVersion ?? reference.Version,
+                VersionOverride = inheritedVersionOverride ?? reference.VersionOverride,
+                HasVersionOverrideMetadata = inheritedVersionOverride is not null
+                    || reference.HasVersionOverrideMetadata,
+            }
+        );
     }
 
     public (List<PackageReference> References, bool Success) ScanProjectPackages(
@@ -375,58 +412,61 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
                     var conditionalScope = GetConditionalScope(item);
                     var isConditional = conditionalScope is not null;
-                    var amendedIndices = FindAmendmentIndices(
-                        references,
-                        isUpdate,
-                        isConditional,
-                        packageName,
-                        conditionalScope
-                    );
-
-                    if (IsExpandableVersion(versionMetadata.Value))
+                    foreach (var expandedPackageName in ExpandPackageNames(packageName))
                     {
-                        _logger.LogDebug(
-                            "Skipping MSBuild variable version '{Version}' for package {Package} in {Project}",
-                            versionMetadata.Value,
-                            packageName,
-                            projectName
-                        );
-                        for (var amendedPosition = amendedIndices.Count - 1; amendedPosition >= 0; amendedPosition--)
-                        {
-                            references.RemoveAt(amendedIndices[amendedPosition]);
-                        }
-                        continue;
-                    }
-
-                    if (amendedIndices.Count > 0)
-                    {
-                        ApplyAmendments(
+                        var amendedIndices = FindAmendmentIndices(
                             references,
-                            amendedIndices,
-                            versionMetadata.Value,
-                            true,
-                            null,
-                            false,
-                            isConditional
+                            isUpdate,
+                            isConditional,
+                            expandedPackageName,
+                            conditionalScope
                         );
-                        continue;
-                    }
 
-                    references.Add(
-                            new PackageReference(
-                                packageName,
+                        if (IsExpandableVersion(versionMetadata.Value))
+                        {
+                            _logger.LogDebug(
+                                "Skipping MSBuild variable version '{Version}' for package {Package} in {Project}",
                                 versionMetadata.Value,
-                                projectFilePath,
-                                projectName,
-                                IsConditional: isConditional
-                            )
+                                expandedPackageName,
+                                projectName
+                            );
+                            for (var amendedPosition = amendedIndices.Count - 1; amendedPosition >= 0; amendedPosition--)
                             {
-                                HasVersionMetadata = true,
-                                HasConditionalUpdateVersionMetadata = isUpdate && isConditional,
-                                IsConditionalUpdate = isUpdate && isConditional,
-                                ConditionalScope = conditionalScope,
+                                references.RemoveAt(amendedIndices[amendedPosition]);
                             }
-                        );
+                            continue;
+                        }
+
+                        if (amendedIndices.Count > 0)
+                        {
+                            ApplyAmendments(
+                                references,
+                                amendedIndices,
+                                versionMetadata.Value,
+                                true,
+                                null,
+                                false,
+                                isConditional
+                            );
+                            continue;
+                        }
+
+                        references.Add(
+                                new PackageReference(
+                                    expandedPackageName,
+                                    versionMetadata.Value,
+                                    projectFilePath,
+                                    projectName,
+                                    IsConditional: isConditional
+                                )
+                                {
+                                    HasVersionMetadata = true,
+                                    HasConditionalUpdateVersionMetadata = isUpdate && isConditional,
+                                    IsConditionalUpdate = isUpdate && isConditional,
+                                    ConditionalScope = conditionalScope,
+                                }
+                            );
+                    }
                 }
 
                 return (references, true);
