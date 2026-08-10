@@ -9,7 +9,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 ## [3.61.0] - 2026-08-10
 
 ### Fixed
-- **Version inconsistency fixes now update `PackageReference Update` declarations.** Update-only references are reported by the scanner and analyzer as real project declarations, version-bearing Updates amend every matching unconditional Include while remaining distinct across conditional boundaries, and the fixer now rewrites their `Version` or `VersionOverride` metadata instead of reporting a successful no-op. Metadata-only Updates are ignored for version comparison, non-literal conditional pins remain protected, MSBuild-property versions are never literalized, and unsafe fallback scans no longer retain superseded or inert Update entries.
+- **Version inconsistency fixes now update `PackageReference Update` declarations.** Update-only references are reported by the scanner and analyzer as real project declarations, version-bearing Updates amend every earlier matching Include while preserving each item's conditionality, and the fixer now rewrites their `Version` or `VersionOverride` metadata instead of reporting a successful no-op. Metadata-only Updates are ignored for version comparison, non-literal conditional pins remain protected, MSBuild-property versions are never literalized, and unsafe fallback scans no longer retain superseded or inert Update entries.
 
 ## [3.60.0] - 2026-08-10
 
