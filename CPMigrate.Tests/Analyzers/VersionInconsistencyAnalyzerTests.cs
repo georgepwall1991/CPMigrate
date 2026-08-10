@@ -293,6 +293,46 @@ public class VersionInconsistencyAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_ConditionalExactVersionRangeMatchesResolvedVersion()
+    {
+        const string projectPath = "ConditionalResolvedRange.csproj";
+        var unconditional = new PackageReference("Pkg", "1.0.0", projectPath, projectPath)
+        {
+            HasVersionMetadata = true,
+        };
+        var conditionalExactRange = new PackageReference(
+            "Pkg",
+            "[2.0.0]",
+            projectPath,
+            projectPath,
+            IsConditional: true
+        )
+        {
+            HasVersionMetadata = true,
+            ConditionalScope = "'$(TargetFramework)' == 'net8.0'",
+        };
+        var conditionalResolved = new PackageReference("Pkg", "2.0.0", projectPath, projectPath);
+        var other = new PackageReference("Pkg", "3.0.0", "Other.csproj", "Other.csproj");
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                conditionalResolved,
+                other,
+            },
+            DeclaredReferences: new List<PackageReference>
+            {
+                unconditional,
+                conditionalExactRange,
+                other,
+            }
+        );
+
+        var result = _analyzer.Analyze(packageInfo);
+
+        result.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Analyze_ConditionallyDeclaredOverrideClearPreservesInheritedVersion()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateOverrideClearAnalyzer_{Guid.NewGuid():N}");

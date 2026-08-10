@@ -162,10 +162,9 @@ public record ProjectPackageInfo(
 
         var matching = declarations
             .Where(reference =>
-                string.Equals(
+                VersionMatchesResolvedVersion(
                     reference.VersionOverride ?? reference.Version,
-                    version,
-                    StringComparison.OrdinalIgnoreCase
+                    version
                 )
             )
             .ToList();
@@ -244,6 +243,30 @@ public record ProjectPackageInfo(
 
         return !NuGetVersion.TryParse(version, out _)
             && !IsExactVersionRange(version);
+    }
+
+    private static bool VersionMatchesResolvedVersion(string declaredVersion, string resolvedVersion)
+    {
+        if (string.Equals(declaredVersion, resolvedVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (
+            !NuGetVersion.TryParse(resolvedVersion, out var resolved)
+            || !VersionRange.TryParse(declaredVersion, out var range)
+            || range is null
+        )
+        {
+            return false;
+        }
+
+        return range.MinVersion is not null
+            && range.MaxVersion is not null
+            && range.IsMinInclusive
+            && range.IsMaxInclusive
+            && range.MinVersion.Equals(range.MaxVersion)
+            && range.MinVersion.Equals(resolved);
     }
 
     private static bool IsExactVersionRange(string version)
