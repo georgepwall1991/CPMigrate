@@ -450,7 +450,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
 
         var hasItemDeclaration = amendedIndices.Any(index => !references[index].IsConditionalUpdate);
-        return hasItemDeclaration
+        var hasSurvivingConditionalUpdate = amendedIndices.Any(index =>
+            ConditionalUpdateMetadataSurvives(references[index], versionOverride)
+        );
+        return hasItemDeclaration || hasSurvivingConditionalUpdate
             ? conditionalUpdateIndices
             : conditionalUpdateIndices.Skip(1).ToList();
     }
@@ -462,6 +465,15 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         string? versionOverride
     )
     {
+        var hasItemDeclaration = amendedIndices.Any(index => !references[index].IsConditionalUpdate);
+        var unconditionalRecordTemplate =
+            !hasItemDeclaration && !string.IsNullOrWhiteSpace(version)
+                ? amendedIndices
+                    .Select(index => references[index])
+                    .FirstOrDefault(existing =>
+                        ConditionalUpdateMetadataSurvives(existing, versionOverride)
+                    )
+                : null;
         var foldedIndices = FindFoldedConditionalUpdateIndices(
             references,
             amendedIndices,
@@ -489,6 +501,24 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         for (var foldedPosition = foldedIndices.Count - 1; foldedPosition >= 0; foldedPosition--)
         {
             references.RemoveAt(foldedIndices[foldedPosition]);
+        }
+
+        // A conditional VersionOverride can amend an inherited item without creating a local Include.
+        // When a later unconditional Update supplies the ordinary version, retain both facts: the
+        // conditional override for its target and an unconditional record for the base Update. Collapsing
+        // them into the conditional record hides the base version from cross-project drift analysis.
+        if (unconditionalRecordTemplate is not null)
+        {
+            references.Add(
+                unconditionalRecordTemplate with
+                {
+                    Version = version,
+                    IsConditional = false,
+                    VersionOverride = versionOverride,
+                    IsMetadataOnlyUpdate = false,
+                    IsConditionalUpdate = false,
+                }
+            );
         }
     }
 

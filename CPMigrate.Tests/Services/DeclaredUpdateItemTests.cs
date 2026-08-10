@@ -116,7 +116,7 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
-    public void ScanDeclaredPackages_UnconditionalVersionUpdatePreservesConditionalVersionOverride()
+    public void ScanDeclaredPackages_UnconditionalVersionUpdatePreservesConditionalVersionOverrideAndAddsBaseRecord()
     {
         var path = WriteProject(
             """
@@ -132,10 +132,17 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = Scan(path);
 
         success.Should().BeTrue();
-        var reference = references.Should().ContainSingle().Subject;
-        reference.Version.Should().Be("3.0.0");
-        reference.VersionOverride.Should().Be("9.0.0");
-        reference.IsConditional.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference =>
+            reference.Version == "3.0.0"
+            && reference.VersionOverride == null
+            && !reference.IsConditional
+        );
+        references.Should().Contain(reference =>
+            reference.Version == "3.0.0"
+            && reference.VersionOverride == "9.0.0"
+            && reference.IsConditional
+        );
     }
 
     [Fact]
