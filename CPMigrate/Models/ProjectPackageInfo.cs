@@ -46,6 +46,12 @@ public record PackageReference(
     /// statement, but it does not remove conditionality from an item that was conditionally included.
     /// </summary>
     public bool IsConditionalUpdate { get; init; }
+
+    /// <summary>
+    /// The ordered condition expressions that scope a conditional Update. Used to distinguish sequential
+    /// Updates in one conditional branch from Updates in different branches.
+    /// </summary>
+    public string? ConditionalScope { get; init; }
 }
 
 /// <summary>

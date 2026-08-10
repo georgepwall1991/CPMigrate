@@ -103,23 +103,24 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     /// checking two levels reported it as unconditional — and two mutually exclusive declarations then read
     /// as duplicates of each other.
     /// </summary>
-    private static bool HasConditionalAncestor(ProjectElement element)
+    private static string? GetConditionalScope(ProjectElement element)
     {
+        List<string> conditions = [];
         for (ProjectElement? current = element; current is not null; current = current.Parent)
         {
             if (!string.IsNullOrEmpty(current.Condition))
             {
-                return true;
+                conditions.Add(current.Condition.Trim());
             }
 
             // <Otherwise> has no Condition of its own but applies exactly when no sibling <When> did.
             if (current is ProjectOtherwiseElement)
             {
-                return true;
+                conditions.Add("<Otherwise>");
             }
         }
 
-        return false;
+        return conditions.Count == 0 ? null : string.Join(" -> ", conditions);
     }
 
     /// <inheritdoc />
@@ -161,7 +162,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // Kept rather than filtered, because "this package is declared twice, both times
                     // conditionally" is a different fact from "this package is declared twice" and only
                     // the caller knows which one it needs.
-                    var isConditional = HasConditionalAncestor(item);
+                    var conditionalScope = GetConditionalScope(item);
+                    var isConditional = conditionalScope is not null;
 
                     // Update rather than Include is how a project *amends* a reference — attaching a
                     // VersionOverride to an inherited one, or restating a version. Reading Include
@@ -213,6 +215,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         {
                             IsMetadataOnlyUpdate = !hasVersionMetadata,
                             IsConditionalUpdate = isConditional,
+                            ConditionalScope = conditionalScope,
                         };
                     }
 
@@ -221,14 +224,16 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // report a duplicate that does not exist, and would leave the superseded version in
                     // the list for FloatingVersion to read. Existing conditionality is preserved: an
                     // unconditional Update applies to a conditional item when that item exists, but it
-                    // does not make a later conditional Include inert. A conditional Update must stay
-                    // separate. Metadata-only Updates were ignored above because they do not declare a
-                    // version for these rules to compare.
+                    // does not make a later conditional Include inert. A conditional Update stays separate
+                    // from other conditional branches, while sequential Updates in the same branch fold.
+                    // Metadata-only Updates were ignored above because they do not declare a version for
+                    // these rules to compare.
                     var amendedIndices = FindAmendmentIndices(
                         references,
                         isUpdate,
                         isConditional,
-                        packageName
+                        packageName,
+                        conditionalScope
                     );
 
                     if (amendedIndices.Count > 0)
@@ -237,7 +242,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             references,
                             amendedIndices,
                             version,
-                            reference.VersionOverride
+                            reference.VersionOverride,
+                            isConditional
                         );
 
                         continue;
@@ -296,12 +302,14 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         continue;
                     }
 
-                    var isConditional = HasConditionalAncestor(item);
+                    var conditionalScope = GetConditionalScope(item);
+                    var isConditional = conditionalScope is not null;
                     var amendedIndices = FindAmendmentIndices(
                         references,
                         isUpdate,
                         isConditional,
-                        packageName
+                        packageName,
+                        conditionalScope
                     );
 
                     if (versionMetadata.Value.Contains("$("))
@@ -325,7 +333,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             references,
                             amendedIndices,
                             versionMetadata.Value,
-                            null
+                            null,
+                            isConditional
                         );
                         continue;
                     }
@@ -340,6 +349,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             )
                             {
                                 IsConditionalUpdate = isUpdate && isConditional,
+                                ConditionalScope = isUpdate ? conditionalScope : null,
                             }
                         );
                 }
@@ -363,10 +373,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         IReadOnlyList<PackageReference> references,
         bool isUpdate,
         bool isConditional,
-        string packageName
+        string packageName,
+        string? conditionalScope
     )
     {
-        if (!isUpdate || isConditional)
+        if (!isUpdate)
         {
             return [];
         }
@@ -378,6 +389,17 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     item.existing.PackageName,
                     packageName,
                     StringComparison.OrdinalIgnoreCase
+                )
+                && (
+                    !isConditional
+                    || (
+                        item.existing.IsConditionalUpdate
+                        && string.Equals(
+                            item.existing.ConditionalScope,
+                            conditionalScope,
+                            StringComparison.Ordinal
+                        )
+                    )
                 )
             )
             .Select(item => item.index)
@@ -414,12 +436,15 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         List<PackageReference> references,
         IReadOnlyList<int> amendedIndices,
         string version,
-        string? versionOverride
+        string? versionOverride,
+        bool isConditional
     )
     {
+        var foldsConditionalUpdates =
+            isConditional && amendedIndices.All(index => references[index].IsConditionalUpdate);
         var hasItemDeclaration = amendedIndices.Any(index => !references[index].IsConditionalUpdate);
         var unconditionalRecordTemplate =
-            !hasItemDeclaration && !string.IsNullOrWhiteSpace(version)
+            !isConditional && !hasItemDeclaration && !string.IsNullOrWhiteSpace(version)
                 ? amendedIndices
                     .Select(index => references[index])
                     .FirstOrDefault(existing =>
@@ -441,12 +466,12 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             references[amendedIndex] = existing with
             {
                 Version = string.IsNullOrWhiteSpace(version) ? existing.Version : version,
-                IsConditional =
-                    existing.IsConditional
-                    && (!existing.IsConditionalUpdate || conditionalMetadataSurvives),
+                IsConditional = foldsConditionalUpdates
+                    || (existing.IsConditional && (!existing.IsConditionalUpdate || conditionalMetadataSurvives)),
                 VersionOverride = versionOverride ?? existing.VersionOverride,
                 IsMetadataOnlyUpdate = false,
-                IsConditionalUpdate = existing.IsConditionalUpdate && conditionalMetadataSurvives,
+                IsConditionalUpdate = foldsConditionalUpdates
+                    || (existing.IsConditionalUpdate && conditionalMetadataSurvives),
             };
         }
 
@@ -469,6 +494,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     VersionOverride = versionOverride,
                     IsMetadataOnlyUpdate = false,
                     IsConditionalUpdate = false,
+                    ConditionalScope = null,
                 }
             );
         }

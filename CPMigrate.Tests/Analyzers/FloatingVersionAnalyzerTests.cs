@@ -1,5 +1,6 @@
 using CPMigrate.Analyzers;
 using CPMigrate.Models;
+using CPMigrate.Services;
 using FluentAssertions;
 
 namespace CPMigrate.Tests.Analyzers;
@@ -335,6 +336,37 @@ public class FloatingVersionAnalyzerTests : IDisposable
         );
 
         result.Issues.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Analyze_ConditionalUpdatesUnderSameCondition_DoNotReportSupersededFloat()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="4.*" />
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
     }
 
     [Theory]
