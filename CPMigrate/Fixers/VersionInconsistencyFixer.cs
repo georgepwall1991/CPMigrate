@@ -165,26 +165,18 @@ public class VersionInconsistencyFixer : IFixer
             var originalContent = File.ReadAllText(projectPath);
             var doc = XDocument.Parse(originalContent);
 
-            var packageRefs = doc.Descendants("PackageReference")
+            var allPackageRefs = doc.Descendants("PackageReference")
                 // Keep the attribute selection aligned with ProjectFileScanner: an empty Include means
                 // this is an Update item, so matching Include alone would report a successful no-op for a
                 // declared reference the analyzer just proved has a conflicting version.
-                .Where(e =>
-                    string.Equals(
-                        string.IsNullOrWhiteSpace(e.Attribute("Include")?.Value)
-                            ? e.Attribute("Update")?.Value
-                            : e.Attribute("Include")?.Value,
-                        packageName,
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
-                // A conditional declaration is deliberate: a multi-targeted project pinning a different
-                // version per framework is the ordinary way to express "the newer one does not support
-                // net8.0". Unifying them to the highest version silently breaks the target that needed the
-                // older one — and the fix reads as a tidy-up, so nobody looks here when the build goes red.
-                // Overlap cannot be evaluated outside a build, so a conditional pin is left alone.
-                .Where(e => !IsConditional(e));
-            var packageRefList = packageRefs.ToList();
+                .Where(e => IsMatchingDeclaration(e, packageName))
+                .ToList();
+            // A conditional declaration is deliberate: a multi-targeted project pinning a different
+            // version per framework is the ordinary way to express "the newer one does not support
+            // net8.0". Unifying them to the highest version silently breaks the target that needed the
+            // older one — and the fix reads as a tidy-up, so nobody looks here when the build goes red.
+            // Overlap cannot be evaluated outside a build, so a conditional pin is left alone.
+            var packageRefList = allPackageRefs.Where(e => !IsConditional(e)).ToList();
 
             var modified = false;
             var containsUnresolvedVersion = false;
@@ -204,12 +196,18 @@ public class VersionInconsistencyFixer : IFixer
                     packageName,
                     "VersionOverride"
                 );
+                var preserveOrdinaryVersion = HasConditionalOverrideClearAfter(
+                    allPackageRefs,
+                    packageRef,
+                    packageName
+                );
                 var metadataResults = new[]
                 {
                     UpdateVersionMetadata(
                         packageRef.Attribute("Version"),
                         targetVersion,
-                        ignoreSupersededPropertyVersion
+                        ignoreSupersededPropertyVersion,
+                        preserveOrdinaryVersion
                     ),
                     UpdateVersionMetadata(
                         packageRef.Attribute("VersionOverride"),
@@ -219,7 +217,8 @@ public class VersionInconsistencyFixer : IFixer
                     UpdateVersionMetadata(
                         packageRef.Element("Version"),
                         targetVersion,
-                        ignoreSupersededPropertyVersion
+                        ignoreSupersededPropertyVersion,
+                        preserveOrdinaryVersion
                     ),
                     UpdateVersionMetadata(
                         packageRef.Element("VersionOverride"),
@@ -299,7 +298,7 @@ public class VersionInconsistencyFixer : IFixer
         foreach (
             var element in packageReferences
                 .Take(currentIndex)
-                .Where(element => IsMatchingUpdate(element, packageName))
+                .Where(element => IsMatchingDeclaration(element, packageName))
         )
         {
             var precedingOverride = GetMetadataValues(element, "VersionOverride").LastOrDefault();
@@ -340,6 +339,38 @@ public class VersionInconsistencyFixer : IFixer
         return overrideIsActive || !ordinaryVersionIsCurrent;
     }
 
+    private static bool HasConditionalOverrideClearAfter(
+        IReadOnlyList<XElement> packageReferences,
+        XElement currentReference,
+        string packageName
+    )
+    {
+        var currentOverride = GetMetadataValues(currentReference, "VersionOverride").LastOrDefault();
+        if (currentOverride is null || string.IsNullOrWhiteSpace(currentOverride))
+        {
+            return false;
+        }
+
+        var currentIndex = -1;
+        for (var index = 0; index < packageReferences.Count; index++)
+        {
+            if (ReferenceEquals(packageReferences[index], currentReference))
+            {
+                currentIndex = index;
+                break;
+            }
+        }
+
+        return currentIndex >= 0
+            && packageReferences
+                .Skip(currentIndex + 1)
+                .Where(element => IsConditional(element) && IsMatchingUpdate(element, packageName))
+                .Any(element =>
+                    GetMetadataValues(element, "VersionOverride")
+                        .Any(value => string.IsNullOrWhiteSpace(value))
+                );
+    }
+
     private static bool IsMatchingUpdate(XElement packageReference, string packageName)
     {
         return string.IsNullOrWhiteSpace(packageReference.Attribute("Include")?.Value)
@@ -348,6 +379,17 @@ public class VersionInconsistencyFixer : IFixer
                 packageName,
                 StringComparison.OrdinalIgnoreCase
             );
+    }
+
+    private static bool IsMatchingDeclaration(XElement packageReference, string packageName)
+    {
+        return string.Equals(
+            string.IsNullOrWhiteSpace(packageReference.Attribute("Include")?.Value)
+                ? packageReference.Attribute("Update")?.Value
+                : packageReference.Attribute("Include")?.Value,
+            packageName,
+            StringComparison.OrdinalIgnoreCase
+        );
     }
 
     private static IEnumerable<string> GetMetadataValues(
@@ -373,10 +415,11 @@ public class VersionInconsistencyFixer : IFixer
     private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
         XAttribute? metadata,
         string targetVersion,
-        bool ignoreSupersededPropertyMetadata = false
+        bool ignoreSupersededPropertyMetadata = false,
+        bool skipUpdate = false
     )
     {
-        if (metadata is null || metadata.Value == targetVersion)
+        if (metadata is null || skipUpdate || metadata.Value == targetVersion)
         {
             return (false, false);
         }
@@ -393,10 +436,11 @@ public class VersionInconsistencyFixer : IFixer
     private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
         XElement? metadata,
         string targetVersion,
-        bool ignoreSupersededPropertyMetadata = false
+        bool ignoreSupersededPropertyMetadata = false,
+        bool skipUpdate = false
     )
     {
-        if (metadata is null || metadata.Value == targetVersion)
+        if (metadata is null || skipUpdate || metadata.Value == targetVersion)
         {
             return (false, false);
         }
