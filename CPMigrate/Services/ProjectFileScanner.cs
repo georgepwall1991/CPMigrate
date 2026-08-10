@@ -239,19 +239,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         continue;
                     }
 
-                    if (
-                        !string.IsNullOrWhiteSpace(versionMetadataCondition)
-                        && !string.IsNullOrWhiteSpace(versionOverrideMetadataCondition)
-                        && !string.Equals(
-                            NormalizeConditionSyntax(versionMetadataCondition.Trim()),
-                            NormalizeConditionSyntax(versionOverrideMetadataCondition.Trim()),
-                            StringComparison.Ordinal
-                        )
-                        && AreMutuallyExclusiveMetadataConditions(
-                            versionMetadataCondition,
-                            versionOverrideMetadataCondition
-                        )
-                    )
+                    if (ShouldSplitConditionedMetadata(versionMetadataCondition, versionOverrideMetadataCondition))
                     {
                         foreach (var expandedPackageName in ExpandPackageNames(packageName))
                         {
@@ -835,6 +823,155 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
         return string.Equals(leftProperty, rightProperty, StringComparison.OrdinalIgnoreCase)
             && !string.Equals(leftLiteral, rightLiteral, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldSplitConditionedMetadata(
+        string? versionCondition,
+        string? versionOverrideCondition
+    )
+    {
+        if (
+            string.IsNullOrWhiteSpace(versionCondition)
+            || string.IsNullOrWhiteSpace(versionOverrideCondition)
+        )
+        {
+            return false;
+        }
+
+        var normalizedVersionCondition = NormalizeConditionSyntax(versionCondition.Trim());
+        var normalizedOverrideCondition = NormalizeConditionSyntax(versionOverrideCondition.Trim());
+        if (string.Equals(normalizedVersionCondition, normalizedOverrideCondition, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (
+            AreMutuallyExclusiveMetadataConditions(
+                versionCondition,
+                versionOverrideCondition
+            )
+        )
+        {
+            return true;
+        }
+
+        if (
+            !TryGetConditionConjuncts(normalizedVersionCondition, out var versionConjuncts)
+            || !TryGetConditionConjuncts(normalizedOverrideCondition, out var versionOverrideConjuncts)
+        )
+        {
+            // Conditions using unsupported boolean forms may overlap; preserve both values on one
+            // conservative projection rather than inventing a disjoint Version-only branch.
+            return false;
+        }
+
+        // If every guard required by VersionOverride is also required by Version, the override covers
+        // every Version evaluation. Otherwise Version remains effective in at least a possible branch.
+        return !versionConjuncts.IsSupersetOf(versionOverrideConjuncts);
+    }
+
+    private static bool TryGetConditionConjuncts(
+        string condition,
+        out HashSet<string> conjuncts
+    )
+    {
+        conjuncts = new HashSet<string>(StringComparer.Ordinal);
+        var parts = SplitTopLevelCondition(condition, "And");
+        foreach (var part in parts)
+        {
+            var conjunct = part.Trim();
+            while (HasEnclosingParentheses(conjunct))
+            {
+                conjunct = conjunct[1..^1].Trim();
+            }
+
+            if (
+                string.IsNullOrEmpty(conjunct)
+                || SplitTopLevelCondition(conjunct, "Or").Count > 1
+                || SplitTopLevelCondition(conjunct, "And").Count > 1
+            )
+            {
+                conjuncts.Clear();
+                return false;
+            }
+
+            conjuncts.Add(conjunct);
+        }
+
+        return conjuncts.Count > 0;
+    }
+
+    private static List<string> SplitTopLevelCondition(string condition, string operatorText)
+    {
+        List<string> parts = [];
+        var start = 0;
+        var depth = 0;
+        var inSingleQuotedLiteral = false;
+        var inDoubleQuotedLiteral = false;
+        var index = 0;
+        while (index < condition.Length)
+        {
+            var character = condition[index];
+            if (character == '\'' && !inDoubleQuotedLiteral)
+            {
+                inSingleQuotedLiteral = !inSingleQuotedLiteral;
+                index++;
+                continue;
+            }
+
+            if (character == '"' && !inSingleQuotedLiteral)
+            {
+                inDoubleQuotedLiteral = !inDoubleQuotedLiteral;
+                index++;
+                continue;
+            }
+
+            if (inSingleQuotedLiteral || inDoubleQuotedLiteral)
+            {
+                index++;
+                continue;
+            }
+
+            if (character == '(')
+            {
+                depth++;
+                index++;
+                continue;
+            }
+
+            if (character == ')')
+            {
+                depth--;
+                index++;
+                continue;
+            }
+
+            if (
+                depth == 0
+                && index + operatorText.Length <= condition.Length
+                && string.Equals(
+                    condition.Substring(index, operatorText.Length),
+                    operatorText,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && (index == 0 || !char.IsLetterOrDigit(condition[index - 1]))
+                && (
+                    index + operatorText.Length == condition.Length
+                    || !char.IsLetterOrDigit(condition[index + operatorText.Length])
+                )
+            )
+            {
+                parts.Add(condition[start..index]);
+                start = index + operatorText.Length;
+                index += operatorText.Length;
+                continue;
+            }
+
+            index++;
+        }
+
+        parts.Add(condition[start..]);
+        return parts;
     }
 
     private static bool TryGetSimpleEqualityCondition(
