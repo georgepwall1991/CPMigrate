@@ -421,6 +421,25 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanProjectPackages_ConditionalIncludeAndUpdateUnderSameCondition_FoldSupersededVersion()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" Version="4.*" />
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanProjectPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+    }
+
+    [Fact]
     public void ScanProjectPackages_ConditionalUpdatesUnderDifferentConditions_RemainSeparate()
     {
         var path = WriteProject(
@@ -651,6 +670,24 @@ public class DeclaredUpdateItemTests : IDisposable
             """
               <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
                 <PackageReference Update="Serilog" Version="4.*" />
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_ConditionalIncludeAndUpdateUnderSameCondition_FoldSupersededVersion()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" Version="4.*" />
                 <PackageReference Update="Serilog" Version="4.0.0" />
               </ItemGroup>
             """

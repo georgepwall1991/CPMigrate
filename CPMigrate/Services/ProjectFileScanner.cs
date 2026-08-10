@@ -237,7 +237,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         VersionOverride: string.IsNullOrWhiteSpace(versionOverride)
                             ? null
                             : versionOverride.Trim()
-                    );
+                    )
+                    {
+                        ConditionalScope = conditionalScope,
+                    };
                     if (isUpdate)
                     {
                         reference = reference with
@@ -378,7 +381,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             )
                             {
                                 IsConditionalUpdate = isUpdate && isConditional,
-                                ConditionalScope = isUpdate ? conditionalScope : null,
+                                ConditionalScope = conditionalScope,
                             }
                         );
                 }
@@ -422,7 +425,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 && (
                     !isConditional
                     || (
-                        item.existing.IsConditionalUpdate
+                        item.existing.IsConditional
                         && string.Equals(
                             item.existing.ConditionalScope,
                             conditionalScope,
