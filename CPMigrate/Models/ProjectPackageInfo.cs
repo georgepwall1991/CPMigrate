@@ -41,6 +41,13 @@ public record PackageReference(
     public bool IsMetadataOnlyUpdate { get; init; }
 
     /// <summary>
+    /// Whether the declaration explicitly carries <c>Version</c>, including an empty value. An empty
+    /// conditional assignment can expose a central version in that branch and must remain distinguishable
+    /// from an Update that does not mention the metadata at all.
+    /// </summary>
+    public bool HasVersionMetadata { get; init; }
+
+    /// <summary>
     /// Whether this declaration's conditionality came from a conditional <c>Update</c> statement rather
     /// than from the item being conditionally included. A later unconditional Update overrides the former
     /// statement, but it does not remove conditionality from an item that was conditionally included.
@@ -168,6 +175,21 @@ public record ProjectPackageInfo(
         if (matching.Any(reference => !reference.IsConditional))
         {
             return false;
+        }
+
+        // An explicit conditional Version="" clears the inline value and exposes the central pin only
+        // in that branch. The resolved graph carries that concrete central version, so preserve the
+        // conditional protection even though the declaration's normalized Version is empty.
+        if (
+            declarations.Any(reference =>
+                reference.IsConditional
+                && reference.HasVersionMetadata
+                && string.IsNullOrWhiteSpace(reference.Version)
+                && reference.VersionOverride is null
+            )
+        )
+        {
+            return true;
         }
 
         // A conditional non-literal pin is deliberately treated as protected. The resolved graph contains

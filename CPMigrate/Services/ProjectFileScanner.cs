@@ -239,6 +239,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             : versionOverride.Trim()
                     )
                     {
+                        HasVersionMetadata = versionMetadata is not null,
                         HasVersionOverrideMetadata = versionOverrideMetadata is not null,
                         ConditionalScope = conditionalScope,
                     };
@@ -636,6 +637,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             references[amendedIndex] = existing with
             {
                 Version = hasVersionMetadata ? version : existing.Version,
+                HasVersionMetadata = hasVersionMetadata || existing.HasVersionMetadata,
                 IsConditional = foldsConditionalUpdates
                     || (existing.IsConditional && (!existing.IsConditionalUpdate || conditionalMetadataSurvives)),
                 VersionOverride = GetAmendedVersionOverride(existing, versionOverride),
@@ -662,6 +664,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 unconditionalRecordTemplate with
                 {
                     Version = version,
+                    HasVersionMetadata = hasVersionMetadata,
                     IsConditional = false,
                     VersionOverride = versionOverride,
                     HasVersionOverrideMetadata = hasVersionOverrideMetadata,
