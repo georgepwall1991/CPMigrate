@@ -239,6 +239,7 @@ public record ProjectPackageInfo(
             .Any(item =>
                 item.reference.IsConditionalUpdate
                 && hasMetadata(item.reference)
+                && string.IsNullOrWhiteSpace(getValue(item.reference))
                 && isClear(item.reference)
                 && declarations
                     .Take(item.index)

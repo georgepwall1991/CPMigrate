@@ -299,6 +299,59 @@ public class VersionInconsistencyAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_ConditionalVersionAssignmentsAreNotTreatedAsClears()
+    {
+        const string projectPath = "ConditionalAssignments.csproj";
+        var centralReference = new PackageReference("Pkg", string.Empty, projectPath, projectPath);
+        var firstConditionalVersion = new PackageReference(
+            "Pkg",
+            "1.0.0",
+            projectPath,
+            projectPath,
+            IsConditional: true
+        )
+        {
+            IsConditionalUpdate = true,
+            HasVersionMetadata = true,
+            ConditionalScope = "'$(TargetFramework)' == 'net8.0'",
+        };
+        var secondConditionalVersion = new PackageReference(
+            "Pkg",
+            "2.0.0",
+            projectPath,
+            projectPath,
+            IsConditional: true
+        )
+        {
+            IsConditionalUpdate = true,
+            HasVersionMetadata = true,
+            ConditionalScope = "'$(Configuration)' == 'Debug'",
+        };
+        var conditionalResolved = new PackageReference("Pkg", "3.0.0", projectPath, projectPath);
+        var other = new PackageReference("Pkg", "4.0.0", "Other.csproj", "Other.csproj");
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                conditionalResolved,
+                other,
+            },
+            DeclaredReferences: new List<PackageReference>
+            {
+                centralReference,
+                firstConditionalVersion,
+                secondConditionalVersion,
+                other,
+            }
+        );
+
+        var result = _analyzer.Analyze(packageInfo);
+
+        result.Issues.Should().ContainSingle();
+        result.Issues[0].Description.Should().Contain("3.0.0");
+        result.Issues[0].Description.Should().Contain("4.0.0");
+    }
+
+    [Fact]
     public void Analyze_ConditionalExactVersionRangeDoesNotHideUnconditionalDrift()
     {
         const string projectPath = "ConditionalRange.csproj";
