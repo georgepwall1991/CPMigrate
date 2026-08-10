@@ -274,7 +274,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             references,
                             amendedIndices,
                             version,
-                            reference.VersionOverride,
+                            versionOverride?.Trim(),
                             isConditional
                         );
 
@@ -290,7 +290,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     var inheritedVersionOverride =
                         isUpdate
                         && isConditional
-                        && string.IsNullOrWhiteSpace(versionOverride)
+                        && versionOverride is null
                             ? references
                                 .LastOrDefault(existing =>
                                     (
@@ -555,7 +555,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 Version = string.IsNullOrWhiteSpace(version) ? existing.Version : version,
                 IsConditional = foldsConditionalUpdates
                     || (existing.IsConditional && (!existing.IsConditionalUpdate || conditionalMetadataSurvives)),
-                VersionOverride = versionOverride ?? existing.VersionOverride,
+                VersionOverride = GetAmendedVersionOverride(existing, versionOverride),
                 IsMetadataOnlyUpdate = false,
                 IsConditionalUpdate = foldsConditionalUpdates
                     || (existing.IsConditionalUpdate && conditionalMetadataSurvives),
@@ -587,13 +587,26 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
     }
 
+    private static string? GetAmendedVersionOverride(
+        PackageReference existing,
+        string? versionOverride
+    )
+    {
+        if (versionOverride is null)
+        {
+            return existing.VersionOverride;
+        }
+
+        return string.IsNullOrWhiteSpace(versionOverride) ? null : versionOverride;
+    }
+
     private static bool ConditionalUpdateMetadataSurvives(
         PackageReference existing,
         string? versionOverride
     )
     {
         return existing.IsConditionalUpdate
-            && string.IsNullOrWhiteSpace(versionOverride)
+            && versionOverride is null
             && !string.IsNullOrWhiteSpace(existing.VersionOverride);
     }
 }
