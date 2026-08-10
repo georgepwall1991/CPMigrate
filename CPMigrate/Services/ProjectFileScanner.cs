@@ -113,7 +113,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 var condition = current.Condition.Trim();
                 conditions.Add(
                     current is ProjectWhenElement
-                        ? $"{condition}@{GetElementPath(current)}"
+                        ? $"{condition}@{GetConditionalBranchPath(current)}"
                         : condition
                 );
             }
@@ -121,7 +121,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             // <Otherwise> has no Condition of its own but applies exactly when no sibling <When> did.
             if (current is ProjectOtherwiseElement)
             {
-                conditions.Add($"<Otherwise>@{GetElementPath(current)}");
+                conditions.Add($"<Otherwise>@{GetConditionalBranchPath(current)}");
             }
         }
 
@@ -558,19 +558,30 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             return string.Equals(left, right, StringComparison.Ordinal);
         }
 
-        var leftSeparator = left.LastIndexOf('.');
-        var rightSeparator = right.LastIndexOf('.');
-        if (leftSeparator < 0 || rightSeparator < 0)
+        var leftGuardSeparator = left.IndexOf('|');
+        var rightGuardSeparator = right.IndexOf('|');
+        var leftGuard = leftGuardSeparator < 0 ? null : left[(leftGuardSeparator + 1)..];
+        var rightGuard = rightGuardSeparator < 0 ? null : right[(rightGuardSeparator + 1)..];
+        if (!string.Equals(leftGuard, rightGuard, StringComparison.Ordinal))
         {
-            return string.Equals(left, right, StringComparison.Ordinal);
+            return false;
         }
 
-        var leftChoosePath = left[..leftSeparator];
-        var rightChoosePath = right[..rightSeparator];
+        var leftPath = leftGuardSeparator < 0 ? left : left[..leftGuardSeparator];
+        var rightPath = rightGuardSeparator < 0 ? right : right[..rightGuardSeparator];
+        var leftSeparator = leftPath.LastIndexOf('.');
+        var rightSeparator = rightPath.LastIndexOf('.');
+        if (leftSeparator < 0 || rightSeparator < 0)
+        {
+            return string.Equals(leftPath, rightPath, StringComparison.Ordinal);
+        }
+
+        var leftChoosePath = leftPath[..leftSeparator];
+        var rightChoosePath = rightPath[..rightSeparator];
         return !string.Equals(leftChoosePath, rightChoosePath, StringComparison.Ordinal)
             || string.Equals(
-                left[(leftSeparator + 1)..],
-                right[(rightSeparator + 1)..],
+                leftPath[(leftSeparator + 1)..],
+                rightPath[(rightSeparator + 1)..],
                 StringComparison.Ordinal
             );
     }
@@ -584,9 +595,39 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
 
         var branchPath = part[(separator + 1)..];
-        return branchPath.All(character => char.IsDigit(character) || character == '.')
+        var pathSeparator = branchPath.IndexOf('|');
+        var choosePath = pathSeparator < 0 ? branchPath : branchPath[..pathSeparator];
+        return choosePath.Length > 0
+            && choosePath.All(character => char.IsDigit(character) || character == '.')
             ? (part[..separator], branchPath)
             : (part, null);
+    }
+
+    private static string GetConditionalBranchPath(ProjectElement branch)
+    {
+        var branchPath = GetElementPath(branch);
+        if (branch.Parent is null)
+        {
+            return branchPath;
+        }
+
+        List<string> precedingWhenConditions = [];
+        foreach (var sibling in branch.Parent.Children)
+        {
+            if (ReferenceEquals(sibling, branch))
+            {
+                break;
+            }
+
+            if (sibling is ProjectWhenElement && !string.IsNullOrEmpty(sibling.Condition))
+            {
+                precedingWhenConditions.Add(sibling.Condition.Trim());
+            }
+        }
+
+        return precedingWhenConditions.Count == 0
+            ? branchPath
+            : $"{branchPath}|{string.Join(" && ", precedingWhenConditions)}";
     }
 
     private static string? FindInheritedVersion(

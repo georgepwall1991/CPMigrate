@@ -338,6 +338,42 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_IndependentChooseBranchesWithDifferentPrecedingGuardsRemainSeparate()
+    {
+        var path = WriteProject(
+            """
+              <Choose>
+                <When Condition="'$(Configuration)' == 'Release'">
+                  <ItemGroup />
+                </When>
+                <When Condition="'$(Configuration)' == 'Debug'">
+                  <ItemGroup>
+                    <PackageReference Include="Serilog" Version="4.*" />
+                  </ItemGroup>
+                </When>
+              </Choose>
+              <Choose>
+                <When Condition="'$(Configuration)' == 'CI'">
+                  <ItemGroup />
+                </When>
+                <When Condition="'$(Configuration)' == 'Debug'">
+                  <ItemGroup>
+                    <PackageReference Update="Serilog" Version="4.0.0" />
+                  </ItemGroup>
+                </When>
+              </Choose>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference => reference.Version == "4.*");
+        references.Should().Contain(reference => reference.Version == "4.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalVersionOnlyUpdateKeepsLatestSameScopeVersionOverride()
     {
         var path = WriteProject(
