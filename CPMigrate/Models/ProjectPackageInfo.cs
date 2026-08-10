@@ -1,3 +1,5 @@
+using NuGet.Versioning;
+
 namespace CPMigrate.Models;
 
 /// <summary>
@@ -29,7 +31,15 @@ public record PackageReference(
     bool IsTransitive = false,
     bool IsConditional = false,
     string? VersionOverride = null
-);
+)
+{
+    /// <summary>
+    /// Whether this is a standalone <c>PackageReference Update</c> with no version metadata. It is retained
+    /// for declaration-based rules such as casing checks, but it does not declare a version and must not
+    /// decide whether a resolved version is conditionally pinned.
+    /// </summary>
+    public bool IsMetadataOnlyUpdate { get; init; }
+}
 
 /// <summary>
 /// Represents an outdated package discovered by dotnet package list --outdated.
@@ -96,6 +106,8 @@ public record ProjectPackageInfo(
 
         var declarations = DeclaredReferences
             .Where(reference =>
+                !reference.IsMetadataOnlyUpdate
+                &&
                 string.Equals(
                     reference.ProjectPath,
                     projectPath,
@@ -114,21 +126,58 @@ public record ProjectPackageInfo(
             return false;
         }
 
-        // Per *version*, not per package. A project can pin a package unconditionally and override it for
-        // one framework, and the two questions have opposite answers: asking about the pair either hid the
-        // unconditional pin from comparison, or left the conditional override in it — where the Highest
-        // strategy would pick the override and rewrite everyone else to a version meant for one framework.
+        // Per *effective version*, not per package. A project can pin a package unconditionally and override
+        // it for one framework, and the two questions have opposite answers: asking about the pair either
+        // hid the unconditional pin from comparison, or left the conditional override in it — where the
+        // Highest strategy would pick the override and rewrite everyone else to a version meant for one
+        // framework. VersionOverride is the effective version when present, even though Version stays empty
+        // because the project is centrally managed.
         var matching = declarations
             .Where(reference =>
-                string.Equals(reference.Version, version, StringComparison.OrdinalIgnoreCase)
+                string.Equals(
+                    reference.VersionOverride ?? reference.Version,
+                    version,
+                    StringComparison.OrdinalIgnoreCase
+                )
             )
             .ToList();
+
+        // An unconditional declaration that names the resolved version is authoritative even when another
+        // conditional declaration is versionless or non-literal. The conditional form cannot make the
+        // concrete unconditional pin disappear from a version comparison.
+        if (matching.Any(reference => !reference.IsConditional))
+        {
+            return false;
+        }
+
+        // A conditional non-literal pin is deliberately treated as protected. The resolved graph contains
+        // the value selected for one evaluation, but it cannot tell us whether another target gets a
+        // different value from a floating range, a NuGet range, or an MSBuild property. A blank version is
+        // not non-literal here: it is a central/versionless declaration, which the fallback below handles.
+        if (
+            declarations.Any(reference =>
+                reference.IsConditional
+                && IsNonLiteralVersion(reference.VersionOverride ?? reference.Version)
+            )
+        )
+        {
+            return true;
+        }
 
         // No declaration names this version — it came from a central pin, so the package-level answer is
         // the only one available.
         return matching.Count > 0
             ? matching.TrueForAll(reference => reference.IsConditional)
             : declarations.TrueForAll(reference => reference.IsConditional);
+    }
+
+    private static bool IsNonLiteralVersion(string version)
+    {
+        return !string.IsNullOrWhiteSpace(version)
+            && (
+                version.Contains("$(", StringComparison.Ordinal)
+                || !NuGetVersion.TryParse(version, out _)
+            );
     }
 
     /// <summary>

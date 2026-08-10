@@ -1,5 +1,7 @@
+using CPMigrate.Analyzers;
 using CPMigrate.Fixers;
 using CPMigrate.Models;
+using CPMigrate.Services;
 using FluentAssertions;
 
 namespace CPMigrate.Tests.Fixers;
@@ -304,6 +306,221 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_UpdateOnlyReference_UpdatesVersionAttribute()
+    {
+        // Arrange: the scanner reports an Update-only declaration as a real package reference, so the
+        // analyzer can produce a fixable cross-project version finding for it.
+        var updateOnlyPath = CreateUpdateOnlyProject("UpdateOnly.csproj", "Newtonsoft.Json", "12.0.1");
+        var includePath = CreateTestProject("Include.csproj", "Newtonsoft.Json", "13.0.1");
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (updateReferences, updateScanSucceeded) = scanner.ScanDeclaredPackages(updateOnlyPath);
+        var (includeReferences, includeScanSucceeded) = scanner.ScanDeclaredPackages(includePath);
+
+        updateScanSucceeded.Should().BeTrue();
+        includeScanSucceeded.Should().BeTrue();
+        updateReferences.Should().ContainSingle();
+
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                // Production analysis supplies resolved references here; the declared scan is carried
+                // separately so conditional filtering can still distinguish intentional project-file pins.
+                new("Newtonsoft.Json", "12.0.1", updateOnlyPath, "UpdateOnly.csproj"),
+                new("Newtonsoft.Json", "13.0.1", includePath, "Include.csproj"),
+            },
+            DeclaredReferences: updateReferences.Concat(includeReferences).ToList()
+        );
+        var issue = new VersionInconsistencyAnalyzer().Analyze(packageInfo).Issues.Should().ContainSingle().Subject;
+
+        // Act
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new Options { ConflictStrategy = ConflictStrategy.Highest },
+            dryRun: false
+        );
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Changes.Should().ContainSingle();
+        var updatedContent = File.ReadAllText(updateOnlyPath);
+        updatedContent.Should().Contain("Update=\"Newtonsoft.Json\" Version=\"13.0.1\"");
+        updatedContent.Should().NotContain("Version=\"12.0.1\"");
+    }
+
+    [Fact]
+    public void Fix_UpdateBeforeInclude_LeavesInertUpdateUntouched()
+    {
+        var projectPath = Path.Combine(_testDirectory, "Project1.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Update="Newtonsoft.Json" Version="12.0.1" />
+                <PackageReference Include="Newtonsoft.Json" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "1.0.0 (Project1), 2.0.0 (Project2)",
+            new[] { projectPath, "Project2.csproj" }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "1.0.0", projectPath, "Project1.csproj"),
+                new("Newtonsoft.Json", "2.0.0", "Project2.csproj", "Project2.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("Update=\"Newtonsoft.Json\" Version=\"12.0.1\"");
+        content.Should().Contain("Include=\"Newtonsoft.Json\" Version=\"2.0.0\"");
+    }
+
+    [Fact]
+    public void Fix_UpdateBeforeConditionalInclude_UpdatesUnconditionalUpdateOnly()
+    {
+        var projectPath = Path.Combine(_testDirectory, "ConditionalProject.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Update="Newtonsoft.Json" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Newtonsoft.Json" Version="9.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "1.0.0 (ConditionalProject), 2.0.0 (Project2)",
+            new[] { projectPath, "Project2.csproj" }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "1.0.0", projectPath, "ConditionalProject.csproj"),
+                new("Newtonsoft.Json", "2.0.0", "Project2.csproj", "Project2.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("Update=\"Newtonsoft.Json\" Version=\"2.0.0\"");
+        content.Should().Contain("Include=\"Newtonsoft.Json\" Version=\"9.0.0\"");
+    }
+
+    [Fact]
+    public void Fix_UpdateOnlyVersionOverride_UpdatesVersionOverrideAttribute()
+    {
+        // Arrange: VersionOverride is the effective project-level pin under central package management,
+        // even though the resolved reference supplies the concrete version to the analyzer.
+        var updateOnlyPath = CreateUpdateOnlyVersionOverrideProject(
+            "UpdateOnlyOverride.csproj",
+            "Newtonsoft.Json",
+            "12.0.1"
+        );
+        var includePath = CreateTestProject("IncludeOverride.csproj", "Newtonsoft.Json", "13.0.1");
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (updateReferences, updateScanSucceeded) = scanner.ScanDeclaredPackages(updateOnlyPath);
+        var (includeReferences, includeScanSucceeded) = scanner.ScanDeclaredPackages(includePath);
+
+        updateScanSucceeded.Should().BeTrue();
+        includeScanSucceeded.Should().BeTrue();
+        updateReferences.Should().ContainSingle();
+
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "12.0.1", updateOnlyPath, "UpdateOnlyOverride.csproj"),
+                new("Newtonsoft.Json", "13.0.1", includePath, "IncludeOverride.csproj"),
+            },
+            DeclaredReferences: updateReferences.Concat(includeReferences).ToList()
+        );
+        var issue = new VersionInconsistencyAnalyzer().Analyze(packageInfo).Issues.Should().ContainSingle().Subject;
+
+        // Act
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new Options { ConflictStrategy = ConflictStrategy.Highest },
+            dryRun: false
+        );
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Changes.Should().ContainSingle();
+        var updatedContent = File.ReadAllText(updateOnlyPath);
+        updatedContent.Should().Contain("Update=\"Newtonsoft.Json\" VersionOverride=\"13.0.1\"");
+        updatedContent.Should().NotContain("VersionOverride=\"12.0.1\"");
+    }
+
+    [Fact]
+    public void Fix_PropertyVersion_IsNotOverwritten()
+    {
+        var propertyPath = Path.Combine(_testDirectory, "PropertyVersion.csproj");
+        File.WriteAllText(
+            propertyPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="$(NewtonsoftVersion)" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherPropertyVersion.csproj", "Newtonsoft.Json", "13.0.1");
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "12.0.1 (PropertyVersion.csproj), 13.0.1 (OtherPropertyVersion.csproj)",
+            new[] { propertyPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "12.0.1", propertyPath, "PropertyVersion.csproj"),
+                new("Newtonsoft.Json", "13.0.1", otherPath, "OtherPropertyVersion.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new Options { ConflictStrategy = ConflictStrategy.Highest },
+            dryRun: false
+        );
+
+        result.Success.Should().BeFalse();
+        File.ReadAllText(propertyPath).Should().Contain("Version=\"$(NewtonsoftVersion)\"");
+        File.ReadAllText(propertyPath).Should().NotContain("Version=\"13.0.1\"");
+    }
+
+    [Fact]
     public void Fix_FileDoesNotExist_SkipsFile()
     {
         // Arrange
@@ -502,6 +719,42 @@ public class VersionInconsistencyFixerTests : IDisposable
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include=""{packageName}"" Version=""{version}"" />
+  </ItemGroup>
+</Project>";
+
+        var projectPath = Path.Combine(_testDirectory, projectName);
+        File.WriteAllText(projectPath, content);
+        return projectPath;
+    }
+
+    private string CreateUpdateOnlyProject(string projectName, string packageName, string version)
+    {
+        var content = $@"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Update=""{packageName}"" Version=""{version}"" />
+  </ItemGroup>
+</Project>";
+
+        var projectPath = Path.Combine(_testDirectory, projectName);
+        File.WriteAllText(projectPath, content);
+        return projectPath;
+    }
+
+    private string CreateUpdateOnlyVersionOverrideProject(
+        string projectName,
+        string packageName,
+        string version
+    )
+    {
+        var content = $@"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Update=""{packageName}"" VersionOverride=""{version}"" />
   </ItemGroup>
 </Project>";
 

@@ -32,6 +32,10 @@ public class VersionInconsistencyFixer : IFixer
         // conditional declaration when writing is not enough if it still decides what gets written.
         var references = packageInfo.References
             .Where(r => r.PackageName.Equals(issue.PackageName, StringComparison.OrdinalIgnoreCase))
+            // Versionless Update records are retained for declaration-based rules, but this fixer only
+            // acts on concrete resolved versions. Treating an empty value as a conflict would target an
+            // Update with no version metadata and report a successful no-op over the real finding.
+            .Where(r => !string.IsNullOrWhiteSpace(r.Version))
             .Where(r => !packageInfo.IsConditionallyDeclared(r.ProjectPath, r.PackageName, r.Version))
             .ToList();
 
@@ -161,9 +165,21 @@ public class VersionInconsistencyFixer : IFixer
             var originalContent = File.ReadAllText(projectPath);
             var doc = XDocument.Parse(originalContent);
 
-            var packageRefs = doc.Descendants("PackageReference")
-                .Where(e => e.Attribute("Include")?.Value
-                    .Equals(packageName, StringComparison.OrdinalIgnoreCase) == true)
+            var allPackageRefs = doc.Descendants("PackageReference").ToList();
+            var packageRefs = allPackageRefs
+                // Keep the attribute selection aligned with ProjectFileScanner: an empty Include means
+                // this is an Update item, so matching Include alone would report a successful no-op for a
+                // declared reference the analyzer just proved has a conflicting version.
+                .Where((e, index) =>
+                    string.Equals(
+                        string.IsNullOrWhiteSpace(e.Attribute("Include")?.Value)
+                            ? e.Attribute("Update")?.Value
+                            : e.Attribute("Include")?.Value,
+                        packageName,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    && !IsInertUpdateBeforeInclude(allPackageRefs, index)
+                )
                 // A conditional declaration is deliberate: a multi-targeted project pinning a different
                 // version per framework is the ordinary way to express "the newer one does not support
                 // net8.0". Unifying them to the highest version silently breaks the target that needed the
@@ -172,24 +188,27 @@ public class VersionInconsistencyFixer : IFixer
                 .Where(e => !IsConditional(e));
 
             var modified = false;
+            var containsUnresolvedVersion = false;
 
             foreach (var packageRef in packageRefs)
             {
-                // Handle Version attribute
-                var versionAttr = packageRef.Attribute("Version");
-                if (versionAttr != null && versionAttr.Value != targetVersion)
+                var metadataResults = new[]
                 {
-                    versionAttr.Value = targetVersion;
-                    modified = true;
-                }
+                    UpdateVersionMetadata(packageRef.Attribute("Version"), targetVersion),
+                    UpdateVersionMetadata(packageRef.Attribute("VersionOverride"), targetVersion),
+                    UpdateVersionMetadata(packageRef.Element("Version"), targetVersion),
+                    UpdateVersionMetadata(packageRef.Element("VersionOverride"), targetVersion),
+                };
 
-                // Handle nested Version element
-                var versionElement = packageRef.Element("Version");
-                if (versionElement != null && versionElement.Value != targetVersion)
-                {
-                    versionElement.Value = targetVersion;
-                    modified = true;
-                }
+                modified |= metadataResults.Any(result => result.Modified);
+                containsUnresolvedVersion |= metadataResults.Any(result => result.Unresolved);
+            }
+
+            if (containsUnresolvedVersion)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot standardize {packageName}: the project contains an MSBuild property version"
+                );
             }
 
             if (!modified)
@@ -220,5 +239,87 @@ public class VersionInconsistencyFixer : IFixer
             // permission or parse error nobody was told about.
             throw new FixWriteException(projectPath, ex);
         }
+    }
+
+    private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
+        XAttribute? metadata,
+        string targetVersion
+    )
+    {
+        if (metadata is null || metadata.Value == targetVersion)
+        {
+            return (false, false);
+        }
+
+        if (metadata.Value.Contains("$(", StringComparison.Ordinal))
+        {
+            return (false, true);
+        }
+
+        metadata.Value = targetVersion;
+        return (true, false);
+    }
+
+    private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
+        XElement? metadata,
+        string targetVersion
+    )
+    {
+        if (metadata is null || metadata.Value == targetVersion)
+        {
+            return (false, false);
+        }
+
+        if (metadata.Value.Contains("$(", StringComparison.Ordinal))
+        {
+            return (false, true);
+        }
+
+        metadata.Value = targetVersion;
+        return (true, false);
+    }
+
+    private static bool IsInertUpdateBeforeInclude(
+        IReadOnlyList<XElement> packageReferences,
+        int currentIndex
+    )
+    {
+        var current = packageReferences[currentIndex];
+        if (!string.IsNullOrWhiteSpace(current.Attribute("Include")?.Value))
+        {
+            return false;
+        }
+
+        var packageName = current.Attribute("Update")?.Value;
+        if (string.IsNullOrWhiteSpace(packageName))
+        {
+            return false;
+        }
+
+        var hasEarlierInclude = packageReferences
+            .Take(currentIndex)
+            .Any(reference =>
+                string.Equals(
+                    reference.Attribute("Include")?.Value,
+                    packageName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
+        if (hasEarlierInclude)
+        {
+            return false;
+        }
+
+        return packageReferences
+            .Skip(currentIndex + 1)
+            .Any(reference =>
+                !IsConditional(reference)
+                &&
+                string.Equals(
+                    reference.Attribute("Include")?.Value,
+                    packageName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
     }
 }

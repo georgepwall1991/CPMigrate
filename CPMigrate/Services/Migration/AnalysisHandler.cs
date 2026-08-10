@@ -494,10 +494,9 @@ internal sealed class AnalysisHandler
 
             // Not reused as the declared list, even though it also comes from the project file: this scan
             // exists to stand in for a resolved one, so it drops versionless items — every reference under
-            // central package management — and never records a Condition. Handing it over missed duplicates
-            // for most users, and reported a framework-conditional pin as an ordinary one, so the version
-            // fixer unified everything to it. Reintroduced by a refactor and caught by the test that was
-            // written for it the first time.
+            // central package management — but retains conditionality for version-bearing items. Handing
+            // it over without that distinction missed duplicates for most users and let the version fixer
+            // unify everything to a framework-conditional pin.
             var (fallbackDeclared, fallbackRead) = _projectAnalyzer.ScanDeclaredPackages(
                 projectPath
             );

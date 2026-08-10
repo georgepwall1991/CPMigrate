@@ -137,8 +137,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
             try
             {
-                foreach (var item in projectRoot.Items)
+                var items = projectRoot.Items.ToList();
+                for (var itemIndex = 0; itemIndex < items.Count; itemIndex++)
                 {
+                    var item = items[itemIndex];
                     if (item.ItemType != "PackageReference")
                     {
                         continue;
@@ -173,6 +175,27 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         continue;
                     }
 
+                    // Metadata-only Updates change how an existing item is consumed, not which version
+                    // it declares. Do not add one alongside an Include it amends, because declaration-based
+                    // duplicate rules would call that a duplicate; retain a standalone one so casing and
+                    // other declaration-based rules can still see the package name. Version rules filter
+                    // its empty effective version from their comparisons.
+                    var hasVersionMetadata =
+                        !string.IsNullOrWhiteSpace(version)
+                        || !string.IsNullOrWhiteSpace(versionOverride);
+                    var hasPriorReference = isUpdate
+                        && references.Any(existing =>
+                            string.Equals(
+                                existing.PackageName,
+                                packageName,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        );
+                    if (isUpdate && !hasVersionMetadata && hasPriorReference)
+                    {
+                        continue;
+                    }
+
                     var reference = new PackageReference(
                         packageName,
                         version,
@@ -184,32 +207,51 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             ? null
                             : versionOverride.Trim()
                     );
-
-                    // An Update amends the item already declared rather than adding another one, so
-                    // recording it separately would have RedundantReference report a duplicate that
-                    // does not exist, and would leave the superseded version in the list for
-                    // FloatingVersion to read. With no Include to amend it stands on its own: that
-                    // is a project adjusting a reference it inherits.
-                    var amended = isUpdate
-                        ? references.FindLastIndex(existing =>
-                            string.Equals(
-                                existing.PackageName,
-                                packageName,
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                        )
-                        : -1;
-
-                    if (amended >= 0)
+                    if (isUpdate && !hasVersionMetadata)
                     {
-                        references[amended] = references[amended] with
+                        reference = reference with { IsMetadataOnlyUpdate = true };
+                    }
+
+                    // An unconditional, version-bearing Update amends the item already declared rather
+                    // than adding another one, so recording it separately would have RedundantReference
+                    // report a duplicate that does not exist, and would leave the superseded version in
+                    // the list for FloatingVersion to read. A conditional Update must stay separate: it
+                    // does not make an unconditional Include conditional for every target framework. With
+                    // no Include to amend it stands on its own: that is a project adjusting a reference it
+                    // inherits. Metadata-only Updates were ignored above because they do not declare a
+                    // version for these rules to compare.
+                    var amendedIndices = FindUnconditionalAmendmentIndices(
+                        references,
+                        isUpdate,
+                        isConditional,
+                        packageName
+                    );
+
+                    if (
+                        isUpdate
+                        && !hasPriorReference
+                        && HasLaterInclude(items, itemIndex, packageName)
+                    )
+                    {
+                        continue;
+                    }
+
+                    if (amendedIndices.Count > 0)
+                    {
+                        foreach (var amendedIndex in amendedIndices)
                         {
-                            Version = string.IsNullOrWhiteSpace(version)
-                                ? references[amended].Version
-                                : version,
-                            VersionOverride =
-                                reference.VersionOverride ?? references[amended].VersionOverride,
-                        };
+                            references[amendedIndex] = references[amendedIndex] with
+                            {
+                                Version = string.IsNullOrWhiteSpace(version)
+                                    ? references[amendedIndex].Version
+                                    : version,
+                                IsConditional =
+                                    references[amendedIndex].IsConditional || reference.IsConditional,
+                                VersionOverride =
+                                    reference.VersionOverride ?? references[amendedIndex].VersionOverride,
+                                IsMetadataOnlyUpdate = false,
+                            };
+                        }
 
                         continue;
                     }
@@ -245,9 +287,18 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
             try
             {
-                foreach (var item in projectRoot.Items)
+                var items = projectRoot.Items.ToList();
+                for (var itemIndex = 0; itemIndex < items.Count; itemIndex++)
                 {
+                    var item = items[itemIndex];
                     if (item.ItemType != "PackageReference")
+                    {
+                        continue;
+                    }
+
+                    var isUpdate = string.IsNullOrWhiteSpace(item.Include);
+                    var packageName = isUpdate ? item.Update : item.Include;
+                    if (string.IsNullOrWhiteSpace(packageName))
                     {
                         continue;
                     }
@@ -258,23 +309,65 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         continue;
                     }
 
+                    var hasPriorReference = isUpdate
+                        && references.Any(existing =>
+                            string.Equals(
+                                existing.PackageName,
+                                packageName,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        );
+                    var isConditional = HasConditionalAncestor(item);
+                    var amendedIndices = FindUnconditionalAmendmentIndices(
+                        references,
+                        isUpdate,
+                        isConditional,
+                        packageName
+                    );
+
+                    if (
+                        isUpdate
+                        && !hasPriorReference
+                        && HasLaterInclude(items, itemIndex, packageName)
+                    )
+                    {
+                        continue;
+                    }
+
                     if (versionMetadata.Value.Contains("$("))
                     {
                         _logger.LogDebug(
                             "Skipping MSBuild variable version '{Version}' for package {Package} in {Project}",
                             versionMetadata.Value,
-                            item.Include,
+                            packageName,
                             projectName
                         );
+                        for (var amendedPosition = amendedIndices.Count - 1; amendedPosition >= 0; amendedPosition--)
+                        {
+                            references.RemoveAt(amendedIndices[amendedPosition]);
+                        }
+                        continue;
+                    }
+
+                    if (amendedIndices.Count > 0)
+                    {
+                        foreach (var amendedIndex in amendedIndices)
+                        {
+                            references[amendedIndex] = references[amendedIndex] with
+                            {
+                                Version = versionMetadata.Value,
+                            };
+                        }
                         continue;
                     }
 
                     references.Add(
                         new PackageReference(
-                            item.Include,
+                            packageName,
                             versionMetadata.Value,
                             projectFilePath,
-                            projectName
+                            projectName,
+                            IsConditional: isConditional
                         )
                     );
                 }
@@ -292,5 +385,54 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             _consoleService.Warning($"Could not scan {projectName}: {ex.Message}");
             return (references, false);
         }
+    }
+
+    private static bool HasLaterInclude(
+        IReadOnlyList<ProjectItemElement> items,
+        int currentIndex,
+        string packageName
+    )
+    {
+        for (var index = currentIndex + 1; index < items.Count; index++)
+        {
+            var item = items[index];
+            if (
+                item.ItemType == "PackageReference"
+                && !HasConditionalAncestor(item)
+                && string.Equals(item.Include, packageName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<int> FindUnconditionalAmendmentIndices(
+        IReadOnlyList<PackageReference> references,
+        bool isUpdate,
+        bool isConditional,
+        string packageName
+    )
+    {
+        if (!isUpdate || isConditional)
+        {
+            return [];
+        }
+
+        return references
+            .Select((existing, index) => (existing, index))
+            .Where(item =>
+                !item.existing.IsConditional
+                &&
+                string.Equals(
+                    item.existing.PackageName,
+                    packageName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .Select(item => item.index)
+            .ToList();
     }
 }
