@@ -374,6 +374,73 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_IndependentChooseBranchesWithEquivalentGuardSetsAmend()
+    {
+        var path = WriteProject(
+            """
+              <Choose>
+                <When Condition="'$(Configuration)' == 'Release'">
+                  <ItemGroup />
+                </When>
+                <When Condition="'$(TargetFramework)' == 'net9.0'">
+                  <ItemGroup />
+                </When>
+                <When Condition="'$(Configuration)' == 'Debug'">
+                  <ItemGroup>
+                    <PackageReference Include="Serilog" Version="4.*" />
+                  </ItemGroup>
+                </When>
+              </Choose>
+              <Choose>
+                <When Condition="'$(TargetFramework)' == 'net9.0'">
+                  <ItemGroup />
+                </When>
+                <When Condition="'$(Configuration)' == 'Release'">
+                  <ItemGroup />
+                </When>
+                <When Condition="'$(Configuration)' == 'Debug'">
+                  <ItemGroup>
+                    <PackageReference Update="Serilog" Version="4.0.0" />
+                  </ItemGroup>
+                </When>
+              </Choose>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_NoOpConditionalEmptyVersionDoesNotProtectCentralVersion()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().HaveCount(2);
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Serilog", "2.0.0", path, "App.csproj") },
+            DeclaredReferences: declaredReferences
+        );
+
+        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeFalse();
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalVersionOnlyUpdateKeepsLatestSameScopeVersionOverride()
     {
         var path = WriteProject(

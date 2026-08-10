@@ -180,14 +180,21 @@ public record ProjectPackageInfo(
         // An explicit conditional Version="" clears the inline value and exposes the central pin only
         // in that branch. The resolved graph carries that concrete central version, so preserve the
         // conditional protection even though the declaration's normalized Version is empty.
-        if (
-            declarations.Any(reference =>
-                reference.IsConditional
-                && reference.HasVersionMetadata
-                && string.IsNullOrWhiteSpace(reference.Version)
-                && reference.VersionOverride is null
-            )
-        )
+        var hasConditionalVersionClear = declarations
+            .Select((reference, index) => (reference, index))
+            .Any(item =>
+                item.reference.IsConditionalUpdate
+                && item.reference.HasVersionMetadata
+                && string.IsNullOrWhiteSpace(item.reference.Version)
+                && item.reference.VersionOverride is null
+                && declarations
+                    .Take(item.index)
+                    .Any(previous =>
+                        previous.HasVersionMetadata
+                        && !string.IsNullOrWhiteSpace(previous.Version)
+                    )
+            );
+        if (hasConditionalVersionClear)
         {
             return true;
         }
