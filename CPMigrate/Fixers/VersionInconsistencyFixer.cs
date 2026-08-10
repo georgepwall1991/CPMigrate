@@ -291,12 +291,32 @@ public class VersionInconsistencyFixer : IFixer
         }
 
         var ordinaryVersionIsCurrent = true;
+        var overrideIsActive = false;
+
+        // A preceding unconditional Update can establish the effective override for a later
+        // property-valued Version update. Carry that state forward so the property metadata is
+        // ignored instead of blocking a fix to the literal override that actually wins.
+        foreach (
+            var element in packageReferences
+                .Take(currentIndex)
+                .Where(element => IsMatchingUpdate(element, packageName))
+        )
+        {
+            var precedingOverride = GetMetadataValues(element, "VersionOverride").LastOrDefault();
+            if (precedingOverride is not null)
+            {
+                overrideIsActive = !string.IsNullOrWhiteSpace(precedingOverride);
+            }
+        }
+
         var currentOverride = GetMetadataValues(
             packageReferences[currentIndex],
             "VersionOverride"
         ).LastOrDefault();
-        var overrideIsActive =
-            currentOverride is not null && !string.IsNullOrWhiteSpace(currentOverride);
+        if (currentOverride is not null)
+        {
+            overrideIsActive = !string.IsNullOrWhiteSpace(currentOverride);
+        }
 
         foreach (
             var element in packageReferences

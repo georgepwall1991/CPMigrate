@@ -611,6 +611,51 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_PrecedingLiteralVersionOverrideSupersedesLaterPropertyVersion()
+    {
+        var projectPath = Path.Combine(_testDirectory, "PrecedingOverridePropertyVersion.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Update="Newtonsoft.Json" VersionOverride="1.0.0" />
+                <PackageReference Update="Newtonsoft.Json" Version="$(IgnoredVersion)" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherPrecedingOverridePropertyVersion.csproj", "Newtonsoft.Json", "2.0.0");
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "1.0.0 (PrecedingOverridePropertyVersion.csproj), 2.0.0 (OtherPrecedingOverridePropertyVersion.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "1.0.0", projectPath, "PrecedingOverridePropertyVersion.csproj"),
+                new("Newtonsoft.Json", "2.0.0", otherPath, "OtherPrecedingOverridePropertyVersion.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        result.Changes.Should().ContainSingle();
+        var updatedContent = File.ReadAllText(projectPath);
+        updatedContent.Should().Contain("VersionOverride=\"2.0.0\"");
+        updatedContent.Should().Contain("Version=\"$(IgnoredVersion)\"");
+    }
+
+    [Fact]
     public void Fix_EmptyOverrideClearSupersedesEarlierPropertyOverride()
     {
         var projectPath = Path.Combine(_testDirectory, "SupersededPropertyOverride.csproj");
