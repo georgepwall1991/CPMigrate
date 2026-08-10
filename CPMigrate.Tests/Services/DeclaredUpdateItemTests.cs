@@ -1174,6 +1174,62 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ConditionedMetadataOnUnconditionalIncludePreservesBaseProjection()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog">
+                  <Version Condition="'$(TargetFramework)' == 'net8.0'">2.0.0</Version>
+                </PackageReference>
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().Contain(reference =>
+            !reference.IsConditional
+            && reference.Version == string.Empty
+            && reference.VersionOverride == null
+        );
+        references.Should().Contain(reference =>
+            reference.IsConditional
+            && reference.Version == "2.0.0"
+        );
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_DuplicateMetadataConditionsFoldSameGuardUpdate()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Update="Serilog">
+                  <Version Condition="'$(TargetFramework)' == 'net8.0'">4.*</Version>
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">5.0.0</VersionOverride>
+                </PackageReference>
+                <PackageReference Update="Serilog">
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">6.0.0</VersionOverride>
+                </PackageReference>
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle(reference =>
+            reference.IsConditional
+            && reference.Version == "4.*"
+            && reference.VersionOverride == "6.0.0"
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_EquivalentOtherwiseBranchesInIndependentChooseElementsAmend()
     {
         var path = WriteProject(

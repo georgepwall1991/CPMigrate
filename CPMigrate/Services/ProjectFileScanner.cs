@@ -136,6 +136,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         var conditions = metadataElements
             .Where(metadata => !string.IsNullOrWhiteSpace(metadata?.Condition))
             .Select(metadata => metadata!.Condition.Trim())
+            .GroupBy(NormalizeConditionSyntax, StringComparer.Ordinal)
+            .Select(group => group.First())
             .ToArray();
         return conditions.Length == 0 ? null : string.Join(" || ", conditions);
     }
@@ -494,6 +496,40 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             && !hasConditionedOverride;
         if (!hasUnconditionalVersion && !hasUnconditionalOverride)
         {
+            if (
+                !conditionalReference.IsConditionalUpdate
+                && itemConditionalScope is null
+                && !references.Any(existing =>
+                    string.Equals(
+                        existing.PackageName,
+                        conditionalReference.PackageName,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    && !existing.IsConditional
+                    && !existing.IsMetadataOnlyUpdate
+                    && !existing.HasVersionMetadata
+                    && !existing.HasVersionOverrideMetadata
+                    && string.IsNullOrEmpty(existing.Version)
+                    && existing.VersionOverride is null
+                )
+            )
+            {
+                references.Add(
+                    conditionalReference with
+                    {
+                        Version = string.Empty,
+                        HasVersionMetadata = false,
+                        VersionOverride = null,
+                        HasVersionOverrideMetadata = false,
+                        HasConditionalUpdateVersionMetadata = false,
+                        IsConditional = false,
+                        IsConditionalUpdate = false,
+                        IsMetadataOnlyUpdate = false,
+                        ConditionalScope = null,
+                    }
+                );
+            }
+
             return;
         }
 
