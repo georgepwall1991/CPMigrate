@@ -140,6 +140,19 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         return conditions.Length == 0 ? null : string.Join(" || ", conditions);
     }
 
+    private static string? CombineConditionalScopes(
+        string? itemScope,
+        string? metadataScope
+    )
+    {
+        if (string.IsNullOrWhiteSpace(metadataScope))
+        {
+            return itemScope;
+        }
+
+        return itemScope is null ? metadataScope.Trim() : $"{itemScope} -> {metadataScope.Trim()}";
+    }
+
     private static string GetElementPath(ProjectElement element)
     {
         List<int> path = [];
@@ -202,17 +215,16 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // conditionally" is a different fact from "this package is declared twice" and only
                     // the caller knows which one it needs.
                     var itemConditionalScope = GetConditionalScope(item);
-                    var conditionalScope = itemConditionalScope;
+                    var versionMetadataCondition = versionMetadata?.Condition;
+                    var versionOverrideMetadataCondition = versionOverrideMetadata?.Condition;
                     var metadataConditionalScope = GetConditionalMetadataScope(
                         versionMetadata,
                         versionOverrideMetadata
                     );
-                    if (metadataConditionalScope is not null)
-                    {
-                        conditionalScope = conditionalScope is null
-                            ? metadataConditionalScope
-                            : $"{conditionalScope} -> {metadataConditionalScope}";
-                    }
+                    var conditionalScope = CombineConditionalScopes(
+                        itemConditionalScope,
+                        metadataConditionalScope
+                    );
                     var isConditional = conditionalScope is not null;
 
                     // Update rather than Include is how a project *amends* a reference — attaching a
@@ -224,6 +236,62 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
                     if (string.IsNullOrWhiteSpace(packageName))
                     {
+                        continue;
+                    }
+
+                    if (
+                        itemConditionalScope is null
+                        && !string.IsNullOrWhiteSpace(versionMetadataCondition)
+                        && !string.IsNullOrWhiteSpace(versionOverrideMetadataCondition)
+                        && !string.Equals(
+                            versionMetadataCondition.Trim(),
+                            versionOverrideMetadataCondition.Trim(),
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        foreach (var expandedPackageName in ExpandPackageNames(packageName))
+                        {
+                            AddDeclaredPackageReference(
+                                references,
+                                expandedPackageName,
+                                projectFilePath,
+                                projectName,
+                                version,
+                                null,
+                                versionMetadata is not null,
+                                false,
+                                isUpdate,
+                                true,
+                                CombineConditionalScopes(
+                                    itemConditionalScope,
+                                    versionMetadataCondition
+                                ),
+                                itemConditionalScope,
+                                versionMetadataCondition,
+                                null
+                            );
+                            AddDeclaredPackageReference(
+                                references,
+                                expandedPackageName,
+                                projectFilePath,
+                                projectName,
+                                string.Empty,
+                                versionOverride,
+                                false,
+                                versionOverrideMetadata is not null,
+                                isUpdate,
+                                true,
+                                CombineConditionalScopes(
+                                    itemConditionalScope,
+                                    versionOverrideMetadataCondition
+                                ),
+                                itemConditionalScope,
+                                null,
+                                versionOverrideMetadataCondition
+                            );
+                        }
+
                         continue;
                     }
 
@@ -265,8 +333,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             isConditional,
                             conditionalScope,
                             itemConditionalScope,
-                            versionMetadata?.Condition,
-                            versionOverrideMetadata?.Condition
+                            versionMetadataCondition,
+                            versionOverrideMetadataCondition
                         );
                     }
                 }
