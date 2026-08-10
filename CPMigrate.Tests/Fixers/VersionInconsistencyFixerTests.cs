@@ -906,7 +906,7 @@ public class VersionInconsistencyFixerTests : IDisposable
             new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
         );
 
-        result.Success.Should().BeTrue();
+        result.Success.Should().BeFalse();
         result.Changes.Should().BeEmpty();
         var content = File.ReadAllText(projectPath);
         content.Should().Contain("Version=\"\"");
@@ -955,6 +955,45 @@ public class VersionInconsistencyFixerTests : IDisposable
         var content = File.ReadAllText(projectPath);
         content.Should().Contain("Include=\"Foo\" Version=\"1.0.0\"");
         content.Should().Contain("Update=\"Foo\" Version=\"\"");
+    }
+
+    [Fact]
+    public void Fix_InheritedEmptyVersionClearDeclinesRewrite()
+    {
+        var projectPath = Path.Combine(_testDirectory, "InheritedEmptyVersionClear.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Update="Foo" Version="" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherInheritedEmptyVersionClear.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "2.0.0 (InheritedEmptyVersionClear.csproj), 3.0.0 (OtherInheritedEmptyVersionClear.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "2.0.0", projectPath, "InheritedEmptyVersionClear.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherInheritedEmptyVersionClear.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeFalse();
+        result.Changes.Should().BeEmpty();
+        File.ReadAllText(projectPath).Should().Contain("Update=\"Foo\" Version=\"\"");
     }
 
     [Fact]

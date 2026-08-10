@@ -612,12 +612,15 @@ public class VersionInconsistencyFixer : IFixer
 
         try
         {
-            var hasInlineVersion = false;
-            var hasActiveClear = false;
             var matchingReferences = XDocument
                 .Parse(File.ReadAllText(projectPath))
                 .Descendants("PackageReference")
-                .Where(reference => IsMatchingDeclaration(reference, packageName));
+                .Where(reference => IsMatchingDeclaration(reference, packageName))
+                .ToList();
+            var hasInlineVersion = !matchingReferences.Any(reference =>
+                !IsMatchingUpdate(reference, packageName)
+            );
+            var hasActiveClear = false;
 
             foreach (var reference in matchingReferences)
             {
