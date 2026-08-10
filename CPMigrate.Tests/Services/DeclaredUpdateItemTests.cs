@@ -1064,6 +1064,56 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_OverlappingConditionedMetadataPreservesOverridePrecedence()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Update="Serilog">
+                  <Version Condition="'$(TargetFramework)' == 'net8.0' And '$(Configuration)' == 'Debug'">4.*</Version>
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">5.0.0</VersionOverride>
+                </PackageReference>
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle(reference =>
+            reference.IsConditional
+            && reference.Version == "4.*"
+            && reference.VersionOverride == "5.0.0"
+        );
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_ConditionedMetadataWithPropertyNameCasingUsesOneProjection()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Update="Serilog">
+                  <Version Condition="'$(TargetFramework)' == 'net8.0'">4.*</Version>
+                  <VersionOverride Condition="'$(targetframework)' == 'net8.0'">5.0.0</VersionOverride>
+                </PackageReference>
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle(reference =>
+            reference.IsConditional
+            && reference.Version == "4.*"
+            && reference.VersionOverride == "5.0.0"
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_EquivalentOtherwiseBranchesInIndependentChooseElementsAmend()
     {
         var path = WriteProject(

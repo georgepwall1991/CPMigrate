@@ -247,6 +247,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             NormalizeConditionSyntax(versionOverrideMetadataCondition.Trim()),
                             StringComparison.Ordinal
                         )
+                        && AreMutuallyExclusiveMetadataConditions(
+                            versionMetadataCondition,
+                            versionOverrideMetadataCondition
+                        )
                     )
                     {
                         foreach (var expandedPackageName in ExpandPackageNames(packageName))
@@ -801,7 +805,194 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             }
         }
 
-        return NormalizeSimpleEqualityLiteralCase(normalized.ToString().Trim());
+        return NormalizePropertyNameCase(
+            NormalizeSimpleEqualityLiteralCase(normalized.ToString().Trim())
+        );
+    }
+
+    private static bool AreMutuallyExclusiveMetadataConditions(
+        string leftCondition,
+        string rightCondition
+    )
+    {
+        if (
+            !TryGetSimpleEqualityCondition(
+                leftCondition,
+                out var leftProperty,
+                out var leftLiteral
+            )
+            || !TryGetSimpleEqualityCondition(
+                rightCondition,
+                out var rightProperty,
+                out var rightLiteral
+            )
+        )
+        {
+            // Compound conditions may overlap even when their text differs. Keep both metadata values
+            // together unless the two simple equality guards prove that no item can satisfy both.
+            return false;
+        }
+
+        return string.Equals(leftProperty, rightProperty, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(leftLiteral, rightLiteral, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetSimpleEqualityCondition(
+        string condition,
+        out string property,
+        out string literal
+    )
+    {
+        property = string.Empty;
+        literal = string.Empty;
+        var normalized = NormalizeConditionSyntax(condition).Trim();
+        while (HasEnclosingParentheses(normalized))
+        {
+            normalized = normalized[1..^1].Trim();
+        }
+
+        var equalityIndex = normalized.IndexOf("==", StringComparison.Ordinal);
+        if (
+            equalityIndex <= 0
+            || normalized.IndexOf("==", equalityIndex + 2, StringComparison.Ordinal) >= 0
+        )
+        {
+            return false;
+        }
+
+        var left = normalized[..equalityIndex].Trim();
+        var right = normalized[(equalityIndex + 2)..].Trim();
+        if (!TryGetQuotedToken(left, out var leftToken) || !TryGetQuotedToken(right, out var rightToken))
+        {
+            return false;
+        }
+
+        if (TryGetSimplePropertyName(leftToken, out property))
+        {
+            literal = rightToken;
+            return IsSimpleConditionLiteral(literal);
+        }
+
+        if (TryGetSimplePropertyName(rightToken, out property))
+        {
+            literal = leftToken;
+            return IsSimpleConditionLiteral(literal);
+        }
+
+        property = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetQuotedToken(string value, out string token)
+    {
+        token = string.Empty;
+        if (value.Length < 2 || (value[0] != value[^1]) || (value[0] != '\'' && value[0] != '"'))
+        {
+            return false;
+        }
+
+        token = value[1..^1];
+        return !token.Contains(value[0]);
+    }
+
+    private static bool TryGetSimplePropertyName(string value, out string property)
+    {
+        property = string.Empty;
+        if (value.Length < 4 || !value.StartsWith("$(", StringComparison.Ordinal) || value[^1] != ')')
+        {
+            return false;
+        }
+
+        var candidate = value[2..^1];
+        if (!IsSimplePropertyName(candidate))
+        {
+            return false;
+        }
+
+        property = candidate;
+        return true;
+    }
+
+    private static string NormalizePropertyNameCase(string condition)
+    {
+        var normalized = new StringBuilder(condition.Length);
+        var index = 0;
+        while (index < condition.Length)
+        {
+            if (condition[index] == '$' && index + 1 < condition.Length && condition[index + 1] == '(')
+            {
+                var closingIndex = condition.IndexOf(')', index + 2);
+                if (closingIndex > index + 2)
+                {
+                    var property = condition[(index + 2)..closingIndex];
+                    if (IsSimplePropertyName(property))
+                    {
+                        normalized.Append("$(");
+                        normalized.Append(property.ToUpperInvariant());
+                        normalized.Append(')');
+                        index = closingIndex;
+                        index++;
+                        continue;
+                    }
+                }
+            }
+
+            normalized.Append(condition[index]);
+            index++;
+        }
+
+        return normalized.ToString();
+    }
+
+    private static bool IsSimplePropertyName(string value)
+    {
+        return !string.IsNullOrEmpty(value)
+            && value.All(character =>
+                char.IsLetterOrDigit(character) || character is '_' or '.' or '-'
+            );
+    }
+
+    private static bool HasEnclosingParentheses(string value)
+    {
+        if (value.Length < 2 || value[0] != '(' || value[^1] != ')')
+        {
+            return false;
+        }
+
+        var depth = 0;
+        var inSingleQuotedLiteral = false;
+        var inDoubleQuotedLiteral = false;
+        for (var index = 0; index < value.Length; index++)
+        {
+            var character = value[index];
+            if (character == '\'' && !inDoubleQuotedLiteral)
+            {
+                inSingleQuotedLiteral = !inSingleQuotedLiteral;
+                continue;
+            }
+
+            if (character == '"' && !inSingleQuotedLiteral)
+            {
+                inDoubleQuotedLiteral = !inDoubleQuotedLiteral;
+                continue;
+            }
+
+            if (inSingleQuotedLiteral || inDoubleQuotedLiteral)
+            {
+                continue;
+            }
+
+            if (character == '(')
+            {
+                depth++;
+            }
+            else if (character == ')' && --depth == 0 && index != value.Length - 1)
+            {
+                return false;
+            }
+        }
+
+        return depth == 0;
     }
 
     private static string NormalizeSimpleEqualityLiteralCase(string condition)
