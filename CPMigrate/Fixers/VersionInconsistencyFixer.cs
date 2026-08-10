@@ -360,9 +360,14 @@ public class VersionInconsistencyFixer : IFixer
             return false;
         }
 
+        var (segmentStart, segmentEnd) = GetPackageItemSegment(
+            packageReferences,
+            currentIndex,
+            packageName
+        );
         var overrideIsActive = false;
         var conditionalOverrideClearIsActive = false;
-        for (var index = 0; index < packageReferences.Count; index++)
+        for (var index = segmentStart; index < segmentEnd; index++)
         {
             var element = packageReferences[index];
             if (!IsMatchingDeclaration(element, packageName))
@@ -401,6 +406,46 @@ public class VersionInconsistencyFixer : IFixer
         }
 
         return conditionalOverrideClearIsActive;
+    }
+
+    private static (int Start, int End) GetPackageItemSegment(
+        IReadOnlyList<XElement> packageReferences,
+        int currentIndex,
+        string packageName
+    )
+    {
+        var start = currentIndex;
+        while (start > 0)
+        {
+            var preceding = packageReferences[start - 1];
+            if (
+                IsMatchingDeclaration(preceding, packageName)
+                && !IsMatchingUpdate(preceding, packageName)
+            )
+            {
+                start--;
+                break;
+            }
+
+            start--;
+        }
+
+        var end = currentIndex + 1;
+        while (end < packageReferences.Count)
+        {
+            var following = packageReferences[end];
+            if (
+                IsMatchingDeclaration(following, packageName)
+                && !IsMatchingUpdate(following, packageName)
+            )
+            {
+                break;
+            }
+
+            end++;
+        }
+
+        return (start, end);
     }
 
     private static bool IsMatchingUpdate(XElement packageReference, string packageName)

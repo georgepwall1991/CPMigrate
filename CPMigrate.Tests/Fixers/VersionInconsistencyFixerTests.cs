@@ -985,6 +985,56 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_ConditionalOverrideClear_IsScopedToEachIncludeSegment()
+    {
+        var projectPath = Path.Combine(_testDirectory, "ScopedConditionalClear.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="1.0.0" VersionOverride="2.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Newtonsoft.Json" VersionOverride="" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="3.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherScopedConditionalClear.csproj", "Newtonsoft.Json", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "2.0.0 (ScopedConditionalClear.csproj), 3.0.0 (OtherScopedConditionalClear.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "2.0.0", projectPath, "ScopedConditionalClear.csproj"),
+                new("Newtonsoft.Json", "3.0.0", otherPath, "OtherScopedConditionalClear.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        result.Changes.Should().ContainSingle();
+        var updatedContent = File.ReadAllText(projectPath);
+        updatedContent.Should().Contain("Include=\"Newtonsoft.Json\" Version=\"1.0.0\" VersionOverride=\"3.0.0\"");
+        updatedContent.Should().Contain("Include=\"Newtonsoft.Json\" Version=\"3.0.0\"");
+    }
+
+    [Fact]
     public void Fix_EmptyOverrideClearSupersedesEarlierPropertyOverride()
     {
         var projectPath = Path.Combine(_testDirectory, "SupersededPropertyOverride.csproj");
