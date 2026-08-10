@@ -203,6 +203,35 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ConditionalVersionOnlyUpdateKeepsLatestSameScopeVersionOverride()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="2.*" />
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference =>
+            reference.VersionOverride == "1.0.0" && !reference.IsConditional
+        );
+        references.Should().Contain(reference =>
+            reference.Version == "3.0.0"
+            && reference.VersionOverride == "2.*"
+            && reference.IsConditional
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_UnconditionalUpdateFoldsOverriddenConditionalUpdate()
     {
         var path = WriteProject(

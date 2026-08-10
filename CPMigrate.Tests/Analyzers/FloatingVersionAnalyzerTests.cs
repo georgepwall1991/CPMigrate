@@ -434,6 +434,43 @@ public class FloatingVersionAnalyzerTests : IDisposable
         new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Analyze_ConditionalVersionOnlyUpdateKeepsLatestSameScopeVersionOverride()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="2.*" />
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle(reference =>
+            reference.VersionOverride == "2.*" && reference.IsConditional
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        var issue = new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().ContainSingle().Subject;
+        issue.Metadata!["versionSpecification"].Should().Be("2.*");
+    }
+
     [Theory]
     [InlineData("not a version")]
     [InlineData("[1.0.0")]
