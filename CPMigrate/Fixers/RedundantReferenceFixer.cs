@@ -106,8 +106,8 @@ public class RedundantReferenceFixer : IFixer
             var doc = XDocument.Parse(originalContent);
 
             var packageRefs = doc.Descendants("PackageReference")
-                .Where(e => e.Attribute("Include")?.Value
-                    .Equals(packageName, StringComparison.OrdinalIgnoreCase) == true)
+                .Where(e => GetPackageNames(e.Attribute("Include")?.Value)
+                    .Any(name => string.Equals(name, packageName, StringComparison.OrdinalIgnoreCase)))
                 // Conditional declarations are not candidates for removal, whatever else the file
                 // contains. A project can hold two unconditional duplicates *and* a framework-specific
                 // declaration; removing everything after the first would then delete the very thing the
@@ -115,19 +115,47 @@ public class RedundantReferenceFixer : IFixer
                 .Where(e => !IsConditional(e))
                 .ToList();
 
-            if (packageRefs.Count <= 1)
+            var packageOccurrences = packageRefs
+                .SelectMany(reference => GetPackageNames(reference.Attribute("Include")?.Value))
+                .Count(name => string.Equals(name, packageName, StringComparison.OrdinalIgnoreCase));
+            if (packageOccurrences <= 1)
             {
                 return null;
             }
 
-            // Keep the first reference, remove the unconditional duplicates behind it.
-            var toRemove = packageRefs.Skip(1).ToList();
+            // Keep the first occurrence, removing only the target package from later list-valued Includes
+            // so sibling packages in the same declaration remain intact.
+            var keptOccurrence = false;
             var removedCount = 0;
-
-            foreach (var duplicate in toRemove)
+            foreach (var packageRef in packageRefs)
             {
-                duplicate.Remove();
-                removedCount++;
+                var include = packageRef.Attribute("Include");
+                var remainingNames = new List<string>();
+                foreach (var name in GetPackageNames(include?.Value))
+                {
+                    if (!string.Equals(name, packageName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        remainingNames.Add(name);
+                    }
+                    else if (!keptOccurrence)
+                    {
+                        remainingNames.Add(name);
+                        keptOccurrence = true;
+                    }
+                    else
+                    {
+                        removedCount++;
+                    }
+                }
+
+                if (remainingNames.Count == 0)
+                {
+                    packageRef.Remove();
+                }
+                else if (remainingNames.Count != GetPackageNames(include?.Value).Count())
+                {
+                    include!.Value = string.Join(';', remainingNames);
+                }
             }
 
             if (removedCount == 0)
@@ -158,5 +186,13 @@ public class RedundantReferenceFixer : IFixer
             // permission or parse error nobody was told about.
             throw new FixWriteException(projectPath, ex);
         }
+    }
+
+    private static IEnumerable<string> GetPackageNames(string? specification)
+    {
+        return specification?.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        ) ?? [];
     }
 }

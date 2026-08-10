@@ -339,6 +339,42 @@ public class RedundantReferenceFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_ListValuedInclude_RemovesOnlyTheDuplicatePackage()
+    {
+        var projectPath = Path.Combine(_testDirectory, "ListValuedInclude.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Foo;Bar" Version="1.0.0" />
+                <PackageReference Include="Foo" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var issue = new AnalysisIssue(
+            "Foo",
+            "Referenced 2 times with version 1.0.0",
+            new[] { "ListValuedInclude.csproj" }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "1.0.0", projectPath, "ListValuedInclude.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(issue, packageInfo, new FixRequest(string.Empty, ConflictStrategy.Highest, false));
+
+        result.Success.Should().BeTrue();
+        result.Changes.Should().ContainSingle();
+        var updatedContent = File.ReadAllText(projectPath);
+        updatedContent.Should().Contain("Include=\"Foo;Bar\"");
+        updatedContent.Should().NotContain("Include=\"Foo\" Version=\"1.0.0\"");
+    }
+
+    [Fact]
     public void Fix_CaseInsensitiveMatching_RemovesDuplicatesRegardlessOfCasing()
     {
         // Arrange

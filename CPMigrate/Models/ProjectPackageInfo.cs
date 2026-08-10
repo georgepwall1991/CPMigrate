@@ -1,3 +1,5 @@
+using NuGet.Versioning;
+
 namespace CPMigrate.Models;
 
 /// <summary>
@@ -29,7 +31,49 @@ public record PackageReference(
     bool IsTransitive = false,
     bool IsConditional = false,
     string? VersionOverride = null
-);
+)
+{
+    /// <summary>
+    /// Whether this is a standalone <c>PackageReference Update</c> with no version metadata. It is retained
+    /// for declaration-based rules such as casing checks, but it does not declare a version and must not
+    /// decide whether a resolved version is conditionally pinned.
+    /// </summary>
+    public bool IsMetadataOnlyUpdate { get; init; }
+
+    /// <summary>
+    /// Whether the declaration explicitly carries <c>Version</c>, including an empty value. An empty
+    /// conditional assignment can expose a central version in that branch and must remain distinguishable
+    /// from an Update that does not mention the metadata at all.
+    /// </summary>
+    public bool HasVersionMetadata { get; init; }
+
+    /// <summary>
+    /// Whether this declaration's conditionality came from a conditional <c>Update</c> statement rather
+    /// than from the item being conditionally included. A later unconditional Update overrides the former
+    /// statement, but it does not remove conditionality from an item that was conditionally included.
+    /// </summary>
+    public bool IsConditionalUpdate { get; init; }
+
+    /// <summary>
+    /// Whether ordinary <c>Version</c> metadata originated on a conditional <c>Update</c>. This remains
+    /// separate from <see cref="HasVersionMetadata"/> because a later unconditional Update can add
+    /// ordinary metadata to a conditional clear without making that metadata conditional.
+    /// </summary>
+    public bool HasConditionalUpdateVersionMetadata { get; init; }
+
+    /// <summary>
+    /// Whether the declaration explicitly carries <c>VersionOverride</c>, including an empty value.
+    /// An empty conditional assignment clears inherited override metadata and must remain distinguishable
+    /// from an Update that does not mention the metadata at all.
+    /// </summary>
+    public bool HasVersionOverrideMetadata { get; init; }
+
+    /// <summary>
+    /// The ordered condition expressions that scope a conditional Update. Used to distinguish sequential
+    /// Updates in one conditional branch from Updates in different branches.
+    /// </summary>
+    public string? ConditionalScope { get; init; }
+}
 
 /// <summary>
 /// Represents an outdated package discovered by dotnet package list --outdated.
@@ -96,6 +140,8 @@ public record ProjectPackageInfo(
 
         var declarations = DeclaredReferences
             .Where(reference =>
+                !reference.IsMetadataOnlyUpdate
+                &&
                 string.Equals(
                     reference.ProjectPath,
                     projectPath,
@@ -114,21 +160,242 @@ public record ProjectPackageInfo(
             return false;
         }
 
-        // Per *version*, not per package. A project can pin a package unconditionally and override it for
-        // one framework, and the two questions have opposite answers: asking about the pair either hid the
-        // unconditional pin from comparison, or left the conditional override in it — where the Highest
-        // strategy would pick the override and rewrite everyone else to a version meant for one framework.
         var matching = declarations
             .Where(reference =>
-                string.Equals(reference.Version, version, StringComparison.OrdinalIgnoreCase)
+                VersionMatchesResolvedVersion(
+                    reference.VersionOverride ?? reference.Version,
+                    version
+                )
             )
             .ToList();
+
+        // An explicit conditional Version="" or VersionOverride="" clears the local value and exposes
+        // the central pin only in that branch. The resolved graph carries that concrete central version,
+        // so preserve the conditional protection when no unconditional declaration names the requested
+        // version.
+        var hasConditionalVersionClear = HasConditionalMetadataClear(
+            declarations,
+            reference => reference.HasVersionMetadata,
+            reference => reference.Version,
+            reference => reference.VersionOverride is null
+        );
+        var hasConditionalVersionOverrideClear = HasConditionalMetadataClear(
+            declarations,
+            reference => reference.HasVersionOverrideMetadata,
+            reference => reference.VersionOverride,
+            reference => string.IsNullOrWhiteSpace(reference.Version)
+        );
+        if (
+            (hasConditionalVersionClear || hasConditionalVersionOverrideClear)
+            && !matching.Any(reference => !reference.IsConditional)
+        )
+        {
+            return true;
+        }
+
+        // A conditional non-literal pin is deliberately treated as protected before an unconditional
+        // match is accepted. The resolved graph contains the value selected for one evaluation, but it
+        // cannot tell us whether another target gets a different value from a range or MSBuild property.
+        if (
+            declarations.Any(reference =>
+                reference.IsConditional
+                && IsNonLiteralVersion(reference.VersionOverride ?? reference.Version)
+            )
+        )
+        {
+            return true;
+        }
+
+        // Per *effective version*, not per package. A project can pin a package unconditionally and override
+        // it for one framework, and the two questions have opposite answers: asking about the pair either
+        // hid the unconditional pin from comparison, or left the conditional override in it — where the
+        // Highest strategy would pick the override and rewrite everyone else to a version meant for one
+        // framework. VersionOverride is the effective version when present, even though Version stays empty
+        // because the project is centrally managed.
+        // An unconditional declaration that names the resolved version is authoritative even when another
+        // conditional declaration is versionless or non-literal. The conditional form cannot make the
+        // concrete unconditional pin disappear from a version comparison.
+        if (matching.Any(reference => !reference.IsConditional))
+        {
+            return false;
+        }
 
         // No declaration names this version — it came from a central pin, so the package-level answer is
         // the only one available.
         return matching.Count > 0
             ? matching.TrueForAll(reference => reference.IsConditional)
             : declarations.TrueForAll(reference => reference.IsConditional);
+    }
+
+    private static bool HasConditionalMetadataClear(
+        IReadOnlyList<PackageReference> declarations,
+        Func<PackageReference, bool> hasMetadata,
+        Func<PackageReference, string?> getValue,
+        Func<PackageReference, bool> isClear
+    )
+    {
+        return declarations
+            .Select((reference, index) => (reference, index))
+            .Any(item =>
+                item.reference.IsConditionalUpdate
+                && hasMetadata(item.reference)
+                && string.IsNullOrWhiteSpace(getValue(item.reference))
+                && isClear(item.reference)
+                && declarations
+                    .Take(item.index)
+                    .Any(previous =>
+                        hasMetadata(previous)
+                        && !string.IsNullOrWhiteSpace(getValue(previous))
+                        && ConditionalScopesMayOverlap(
+                            previous.ConditionalScope,
+                            item.reference.ConditionalScope
+                        )
+                    )
+            );
+    }
+
+    private static bool IsNonLiteralVersion(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return false;
+        }
+
+        if (version.Contains("$(", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return !NuGetVersion.TryParse(version, out _)
+            && !IsExactVersionRange(version);
+    }
+
+    private static bool VersionMatchesResolvedVersion(string declaredVersion, string resolvedVersion)
+    {
+        if (string.Equals(declaredVersion, resolvedVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (
+            !NuGetVersion.TryParse(resolvedVersion, out var resolved)
+            || !VersionRange.TryParse(declaredVersion, out var range)
+            || range is null
+        )
+        {
+            return false;
+        }
+
+        return range.MinVersion is not null
+            && range.MaxVersion is not null
+            && range.IsMinInclusive
+            && range.IsMaxInclusive
+            && range.MinVersion.Equals(range.MaxVersion)
+            && range.MinVersion.Equals(resolved);
+    }
+
+    private static bool IsExactVersionRange(string version)
+    {
+        if (!VersionRange.TryParse(version, out var range) || range is null)
+        {
+            return false;
+        }
+
+        return range.MinVersion is not null
+            && range.MaxVersion is not null
+            && range.IsMinInclusive
+            && range.IsMaxInclusive
+            && range.MinVersion.Equals(range.MaxVersion);
+    }
+
+    private static bool ConditionalScopesMayOverlap(string? leftScope, string? rightScope)
+    {
+        if (leftScope is null || rightScope is null)
+        {
+            return true;
+        }
+
+        var leftConditions = leftScope.Split(" -> ", StringSplitOptions.None);
+        var rightConditions = rightScope.Split(" -> ", StringSplitOptions.None);
+        return !leftConditions.Any(leftCondition =>
+            rightConditions.Any(rightCondition =>
+                AreMutuallyExclusiveConditions(leftCondition, rightCondition)
+            )
+        );
+    }
+
+    private static bool AreMutuallyExclusiveConditions(string left, string right)
+    {
+        var leftPart = SplitConditionalScopePart(left);
+        var rightPart = SplitConditionalScopePart(right);
+
+        if (
+            leftPart.BranchPath is not null
+            && rightPart.BranchPath is not null
+            && string.Equals(leftPart.Condition, "<Otherwise>", StringComparison.Ordinal)
+                != string.Equals(rightPart.Condition, "<Otherwise>", StringComparison.Ordinal)
+        )
+        {
+            return SameChoose(leftPart.BranchPath, rightPart.BranchPath);
+        }
+
+        if (
+            leftPart.BranchPath is not null
+            && rightPart.BranchPath is not null
+            && SameChoose(leftPart.BranchPath, rightPart.BranchPath)
+        )
+        {
+            return !SameChooseBranch(leftPart.BranchPath, rightPart.BranchPath);
+        }
+
+        return false;
+    }
+
+    private static (string Condition, string? BranchPath) SplitConditionalScopePart(string part)
+    {
+        var separator = part.LastIndexOf('@');
+        if (separator < 0 || separator == part.Length - 1)
+        {
+            return (part, null);
+        }
+
+        var branchPath = part[(separator + 1)..];
+        var pathSeparator = branchPath.IndexOf('|');
+        var choosePath = pathSeparator < 0 ? branchPath : branchPath[..pathSeparator];
+        return choosePath.Length > 0
+            && choosePath.All(character => char.IsDigit(character) || character == '.')
+            ? (part[..separator], branchPath)
+            : (part, null);
+    }
+
+    private static bool SameChoose(string leftBranchPath, string rightBranchPath)
+    {
+        var leftPath = BranchLocation(leftBranchPath);
+        var rightPath = BranchLocation(rightBranchPath);
+        var leftSeparator = leftPath.LastIndexOf('.');
+        var rightSeparator = rightPath.LastIndexOf('.');
+        return leftSeparator >= 0
+            && rightSeparator >= 0
+            && string.Equals(
+                leftPath[..leftSeparator],
+                rightPath[..rightSeparator],
+                StringComparison.Ordinal
+            );
+    }
+
+    private static bool SameChooseBranch(string leftBranchPath, string rightBranchPath)
+    {
+        return string.Equals(
+            BranchLocation(leftBranchPath),
+            BranchLocation(rightBranchPath),
+            StringComparison.Ordinal
+        );
+    }
+
+    private static string BranchLocation(string branchPath)
+    {
+        var guardSeparator = branchPath.IndexOf('|');
+        return guardSeparator < 0 ? branchPath : branchPath[..guardSeparator];
     }
 
     /// <summary>

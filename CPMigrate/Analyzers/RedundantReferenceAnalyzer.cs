@@ -15,6 +15,7 @@ public class RedundantReferenceAnalyzer : IAnalyzer
         var issues = packageInfo
             .GetDeclaredReferences()
             .Where(reference => !reference.IsConditional)
+            .Where(reference => !reference.IsMetadataOnlyUpdate)
             .Where(reference => !reference.IsTransitive)
             .GroupBy(r => r.ProjectPath)
             .SelectMany(projectGroup =>

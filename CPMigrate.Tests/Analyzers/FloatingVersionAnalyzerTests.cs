@@ -1,5 +1,6 @@
 using CPMigrate.Analyzers;
 using CPMigrate.Models;
+using CPMigrate.Services;
 using FluentAssertions;
 
 namespace CPMigrate.Tests.Analyzers;
@@ -335,6 +336,376 @@ public class FloatingVersionAnalyzerTests : IDisposable
         );
 
         result.Issues.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Analyze_ConditionalUpdatesUnderSameCondition_DoNotReportSupersededFloat()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="4.*" />
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_ConditionalIncludeAndUpdateUnderSameCondition_DoNotReportSupersededFloat()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" Version="4.*" />
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_CombinedMetadataGuards_DoNotPreserveSupersededFloat()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Update="Serilog">
+                  <Version Condition="'$(Configuration)' == 'Debug' And '$(TargetFramework)' == 'net8.0'">4.*</Version>
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">4.*</VersionOverride>
+                </PackageReference>
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" Condition="'$(TargetFramework)' == 'net8.0'" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_NestedPropertyFunctionMutationDoesNotFoldIdenticalGuards()
+    {
+        var projectPath = Path.Combine(_testDirectory, "NestedPropertyFunctionMutation.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <PropertyGroup>
+                <Mode>A</Mode>
+              </PropertyGroup>
+              <ItemGroup Condition="$([System.String]::Equals('$(Mode)', 'A'))">
+                <PackageReference Include="Serilog" Version="4.*" />
+              </ItemGroup>
+              <PropertyGroup>
+                <Mode>B</Mode>
+              </PropertyGroup>
+              <ItemGroup Condition="$([System.String]::Equals('$(Mode)', 'A'))">
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Analyze_ConditionalVersionUpdateWithInheritedVersionOverride_DoesNotReportSupersededFloat()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().HaveCount(2);
+        declaredReferences.Should().OnlyContain(reference => reference.VersionOverride == "4.0.0");
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_ConditionalVersionOnlyUpdateKeepsLatestSameScopeVersionOverride()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="2.*" />
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle(reference =>
+            reference.VersionOverride == "2.*" && reference.IsConditional
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        var issue = new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().ContainSingle().Subject;
+        issue.Metadata!["versionSpecification"].Should().Be("2.*");
+    }
+
+    [Fact]
+    public void Analyze_NarrowerConditionalVersionUpdateInheritsWiderScopeVersionOverride()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" />
+                <PackageReference
+                    Update="Serilog"
+                    Condition="'$(Configuration)' == 'Debug'"
+                    Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle(reference =>
+            reference.Version == "4.*"
+            && reference.VersionOverride == "4.0.0"
+            && reference.IsConditional
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_WiderConditionalVersionOverrideAmendsNarrowerProjection()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="4.*" />
+                <PackageReference
+                    Update="Serilog"
+                    Condition="'$(Configuration)' == 'Debug'"
+                    Version="4.*" />
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().OnlyContain(reference => reference.VersionOverride == "4.0.0");
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_ExplicitEmptyVersionOverrideClearsPriorOverride()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="2.*" />
+                <PackageReference Update="Serilog" Version="3.0.0" VersionOverride="" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle(reference =>
+            reference.Version == "3.0.0" && reference.VersionOverride == null
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_ExplicitEmptyVersionOverrideOnlyClearsPriorOverride()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="2.*" />
+                <PackageReference Update="Serilog" VersionOverride="" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle(reference => reference.VersionOverride == null);
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_ExplicitEmptyVersionClearsPriorVersion()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="2.*" />
+                <PackageReference Update="Serilog" Version="" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle(reference => reference.Version == "");
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
     }
 
     [Theory]

@@ -17,6 +17,11 @@ public class VersionInconsistencyAnalyzer : IAnalyzer
         // Group by package name (case-insensitive) to find all versions
         var packageGroups = packageInfo
             .References
+            // Versionless declaration records belong to declaration-based rules such as casing and
+            // duplicate analysis, but they are not evidence of a version conflict. The resolved scan is
+            // the source of concrete versions here; an empty value would otherwise become a fake third
+            // version when a scanner-backed test or fallback payload carries an Update-only declaration.
+            .Where(reference => !string.IsNullOrWhiteSpace(reference.Version))
             // A version pinned behind a Condition is deliberate — a multi-targeted project saying the
             // newer package does not support the older framework. Comparing it against the others reads
             // that as an inconsistency, and since the finding is fixable it would be "corrected" by

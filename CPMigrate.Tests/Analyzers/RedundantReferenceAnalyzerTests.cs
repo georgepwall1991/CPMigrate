@@ -75,4 +75,23 @@ public class RedundantReferenceAnalyzerTests
         result.Issues.Should().HaveCount(1);
         result.Issues[0].Description.Should().Contain("versions: 1.0.0, 2.0.0");
     }
+
+    [Fact]
+    public void Analyze_MetadataOnlyUpdateDoesNotCountAsRedundantReference()
+    {
+        const string projectPath = "P1.csproj";
+        var metadataOnlyUpdate = new PackageReference("Pkg", string.Empty, projectPath, projectPath)
+        {
+            IsMetadataOnlyUpdate = true,
+        };
+        var include = new PackageReference("Pkg", "1.0.0", projectPath, projectPath);
+        var packageInfo = new ProjectPackageInfo(
+            Array.Empty<PackageReference>(),
+            DeclaredReferences: new[] { metadataOnlyUpdate, include }
+        );
+
+        var result = _analyzer.Analyze(packageInfo);
+
+        result.Issues.Should().BeEmpty();
+    }
 }
