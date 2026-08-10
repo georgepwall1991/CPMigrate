@@ -39,6 +39,13 @@ public record PackageReference(
     /// decide whether a resolved version is conditionally pinned.
     /// </summary>
     public bool IsMetadataOnlyUpdate { get; init; }
+
+    /// <summary>
+    /// Whether this declaration's conditionality came from a conditional <c>Update</c> statement rather
+    /// than from the item being conditionally included. A later unconditional Update overrides the former
+    /// statement, but it does not remove conditionality from an item that was conditionally included.
+    /// </summary>
+    public bool IsConditionalUpdate { get; init; }
 }
 
 /// <summary>

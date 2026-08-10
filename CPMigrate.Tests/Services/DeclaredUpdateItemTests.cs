@@ -94,6 +94,103 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_UnconditionalUpdateAfterConditionalUpdate_ClearsConditionality()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        var reference = references.Should().ContainSingle().Subject;
+        reference.Version.Should().Be("4.0.0");
+        reference.IsConditional.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_UnconditionalVersionUpdatePreservesConditionalVersionOverride()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="9.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        var reference = references.Should().ContainSingle().Subject;
+        reference.Version.Should().Be("3.0.0");
+        reference.VersionOverride.Should().Be("9.0.0");
+        reference.IsConditional.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_UnconditionalVersionUpdateKeepsConditionalOverrideAlongsideInclude()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="9.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference =>
+            reference.Version == "3.0.0" && !reference.IsConditional
+        );
+        references.Should().Contain(reference =>
+            reference.VersionOverride == "9.0.0" && reference.IsConditional
+        );
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_UnconditionalUpdateFoldsOverriddenConditionalUpdate()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="2.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().Be("3.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalMetadataOnlyUpdate_DoesNotChangeIncludePin()
     {
         var path = WriteProject(
@@ -298,7 +395,54 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
-    public void ScanProjectPackages_UnconditionalUpdateAfterConditionalInclude_AmendsOnlyUnconditionalReference()
+    public void ScanProjectPackages_UnconditionalUpdateAfterConditionalUpdate_ClearsConditionality()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanProjectPackages(path);
+
+        success.Should().BeTrue();
+        var reference = references.Should().ContainSingle().Subject;
+        reference.Version.Should().Be("4.0.0");
+        reference.IsConditional.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ScanProjectPackages_UnconditionalUpdateFoldsOverriddenConditionalUpdate()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="2.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanProjectPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().Be("3.0.0");
+    }
+
+    [Fact]
+    public void ScanProjectPackages_UnconditionalUpdateAfterConditionalInclude_AmendsEveryEarlierReference()
     {
         var path = WriteProject(
             """
@@ -320,11 +464,11 @@ public class DeclaredUpdateItemTests : IDisposable
         success.Should().BeTrue();
         references.Should().HaveCount(2);
         references.Should().Contain(reference => reference.Version == "3.0.0" && !reference.IsConditional);
-        references.Should().Contain(reference => reference.Version == "2.0.0" && reference.IsConditional);
+        references.Should().Contain(reference => reference.Version == "3.0.0" && reference.IsConditional);
     }
 
     [Fact]
-    public void ScanDeclaredPackages_UnconditionalUpdateAfterConditionalInclude_RemainsSeparate()
+    public void ScanDeclaredPackages_UnconditionalUpdateAfterConditionalInclude_AmendsEarlierConditionalReference()
     {
         var path = WriteProject(
             """
@@ -340,9 +484,9 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = Scan(path);
 
         success.Should().BeTrue();
-        references.Should().HaveCount(2);
-        references.Should().Contain(reference => reference.Version == "4.0.0" && reference.IsConditional);
-        references.Should().Contain(reference => reference.Version == "5.0.0" && !reference.IsConditional);
+        var reference = references.Should().ContainSingle().Subject;
+        reference.Version.Should().Be("5.0.0");
+        reference.IsConditional.Should().BeTrue();
     }
 
     [Fact]

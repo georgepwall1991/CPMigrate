@@ -377,4 +377,57 @@ public class VersionInconsistencyAnalyzerTests
             }
         }
     }
+
+    [Fact]
+    public void Analyze_UnconditionalUpdateAfterConditionalUpdate_RemainsVisible()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateConditionalUpdateAnalyzer_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var projectPath = Path.Combine(directory, "Project.csproj");
+
+        try
+        {
+            File.WriteAllText(
+                projectPath,
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                    <PackageReference Update="Pkg" Version="1.0.0" />
+                  </ItemGroup>
+                  <ItemGroup>
+                    <PackageReference Update="Pkg" Version="4.0.0" />
+                  </ItemGroup>
+                </Project>
+                """
+            );
+
+            var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+            var (declarations, scanSucceeded) = scanner.ScanDeclaredPackages(projectPath);
+            scanSucceeded.Should().BeTrue();
+            declarations.Should().ContainSingle(reference =>
+                reference.Version == "4.0.0" && !reference.IsConditional
+            );
+
+            var otherDeclaration = new PackageReference("Pkg", "2.0.0", "P2.csproj", "P2.csproj");
+            var packageInfo = new ProjectPackageInfo(
+                new List<PackageReference>
+                {
+                    new("Pkg", "4.0.0", projectPath, "Project.csproj"),
+                    otherDeclaration,
+                },
+                DeclaredReferences: declarations.Append(otherDeclaration).ToList()
+            );
+
+            var result = _analyzer.Analyze(packageInfo);
+
+            result.Issues.Should().ContainSingle();
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
 }
