@@ -9,7 +9,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 ## [3.60.0] - 2026-08-10
 
 ### Fixed
-- **Duplicate package casing analysis and fixing now use declared project references.** Resolved-only transitive casing variations no longer create or drive a fixable finding that project files cannot repair.
+- **Duplicate package casing analysis and fixing now use declared project references.** The fixer rewrites both `Include` and `Update` attributes; resolved-only transitive casing variations no longer create or drive a fixable finding that project files cannot repair.
 
 ## [3.59.0] - 2026-08-10
 

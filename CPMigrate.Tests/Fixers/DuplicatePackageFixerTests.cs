@@ -1,5 +1,6 @@
 using CPMigrate.Fixers;
 using CPMigrate.Models;
+using CPMigrate.Services;
 using FluentAssertions;
 
 namespace CPMigrate.Tests.Fixers;
@@ -115,6 +116,83 @@ public class DuplicatePackageFixerTests : IDisposable
         var project2Content = File.ReadAllText(project2Path);
         project2Content.Should().Contain("Newtonsoft.Json");
         project2Content.Should().NotContain("newtonsoft.json");
+    }
+
+    [Fact]
+    public void Fix_CasingVariationInUpdateAttribute_StandardizesUpdate()
+    {
+        // Arrange
+        var project1Path = CreateTestProject("Project1.csproj", "Newtonsoft.Json", "13.0.1");
+        var project2Path = Path.Combine(_testDirectory, "Project2.csproj");
+        File.WriteAllText(project2Path, """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Update="newtonsoft.json" />
+              </ItemGroup>
+            </Project>
+            """);
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Package has casing variations",
+            new[] { project1Path, project2Path }
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (updateReferences, scanSucceeded) = scanner.ScanDeclaredPackages(project2Path);
+        scanSucceeded.Should().BeTrue();
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "13.0.1", project1Path, "Project1.csproj")
+            }.Concat(updateReferences).ToList()
+        );
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, new Options(), dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Changes.Should().HaveCount(1);
+        var project2Content = File.ReadAllText(project2Path);
+        project2Content.Should().Contain("Update=\"Newtonsoft.Json\"");
+        project2Content.Should().NotContain("Update=\"newtonsoft.json\"");
+    }
+
+    [Fact]
+    public void Fix_EmptyIncludeWithUpdate_StandardizesUpdate()
+    {
+        // Arrange
+        var project1Path = CreateTestProject("Project1.csproj", "Newtonsoft.Json", "13.0.1");
+        var project2Path = Path.Combine(_testDirectory, "Project2.csproj");
+        File.WriteAllText(project2Path, """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="" Update="newtonsoft.json" />
+              </ItemGroup>
+            </Project>
+            """);
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Package has casing variations",
+            new[] { project1Path, project2Path }
+        );
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", project1Path, "Project1.csproj"),
+            new("newtonsoft.json", "", project2Path, "Project2.csproj")
+        });
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, new Options(), dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Changes.Should().HaveCount(1);
+        var project2Content = File.ReadAllText(project2Path);
+        project2Content.Should().Contain("Update=\"Newtonsoft.Json\"");
+        project2Content.Should().NotContain("Update=\"newtonsoft.json\"");
     }
 
     [Fact]

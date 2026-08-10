@@ -82,20 +82,26 @@ public class DuplicatePackageFixer : IFixer
             var originalContent = File.ReadAllText(projectPath);
             var doc = XDocument.Parse(originalContent);
 
+            // Keep the attribute selection identical to ProjectFileScanner: an empty Include means
+            // the item is an Update, so choosing Include by null-coalescing would silently no-op.
             var packageRefs = doc.Descendants("PackageReference")
-                .Where(e => e.Attribute("Include")?.Value
-                    .Equals(packageNameInsensitive, StringComparison.OrdinalIgnoreCase) == true);
+                .Select(e => string.IsNullOrWhiteSpace(e.Attribute("Include")?.Value)
+                    ? e.Attribute("Update")
+                    : e.Attribute("Include"))
+                .OfType<XAttribute>()
+                .Where(attribute => attribute.Value
+                    .Equals(packageNameInsensitive, StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
             var modified = false;
             var oldCasings = new List<string>();
 
             foreach (var packageRef in packageRefs)
             {
-                var includeAttr = packageRef.Attribute("Include");
-                if (includeAttr != null && includeAttr.Value != standardCasing)
+                if (packageRef.Value != standardCasing)
                 {
-                    oldCasings.Add(includeAttr.Value);
-                    includeAttr.Value = standardCasing;
+                    oldCasings.Add(packageRef.Value);
+                    packageRef.Value = standardCasing;
                     modified = true;
                 }
             }
