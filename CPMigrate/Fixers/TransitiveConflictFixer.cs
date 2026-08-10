@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using CPMigrate.Models;
 using CPMigrate.Services;
 using CPMigrate.Services.Migration;
@@ -51,6 +53,31 @@ public class TransitiveConflictFixer : IFixer
         var bestVersion = _versionResolver.ResolveVersion(versions, request.ConflictStrategy);
 
         var originalContent = File.ReadAllText(propsPath);
+
+        try
+        {
+            var propsDocument = XDocument.Parse(originalContent, LoadOptions.PreserveWhitespace);
+            var targetPins = propsDocument
+                .Descendants()
+                .Where(element => element.Name.LocalName.Equals("PackageVersion", StringComparison.OrdinalIgnoreCase))
+                .Where(element => element.Attributes().Any(attribute =>
+                    (attribute.Name.LocalName.Equals("Include", StringComparison.OrdinalIgnoreCase) ||
+                     attribute.Name.LocalName.Equals("Update", StringComparison.OrdinalIgnoreCase)) &&
+                    attribute.Value.Equals(issue.PackageName, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            if (targetPins.Any(pin => IsConditional(pin) || pin.Descendants().Any(IsConditional)))
+            {
+                return FixResult.Failed(
+                    $"Cannot pin {issue.PackageName} because its central package version is conditional.");
+            }
+        }
+        catch (XmlException)
+        {
+            return FixResult.Failed(
+                $"Could not safely inspect Directory.Packages.props before pinning {issue.PackageName}.");
+        }
+
         string updatedContent;
 
         // Check if package already exists in props
@@ -62,6 +89,18 @@ public class TransitiveConflictFixer : IFixer
             updatedContent = Regex.Replace(originalContent, pattern,
                 match => match.Groups[1].Value + bestVersion + match.Groups[3].Value,
                 RegexOptions.IgnoreCase, TimeSpan.FromSeconds(2));
+
+            // MSBuild also accepts Version metadata as a child element. Keep the surrounding XML
+            // layout intact while changing only the value, so a repository using that form is not
+            // left with the original conflicting pin.
+            var childPattern = $@"(<PackageVersion\b[^>]*(?:Include|Update)=""{Regex.Escape(issue.PackageName)}""[^>]*(?<!/)>(?:(?!</?PackageVersion\b)[\s\S])*?<Version>\s*)([^<]*?)(\s*</Version>)";
+            updatedContent = Regex.Replace(
+                updatedContent,
+                childPattern,
+                match => match.Groups[1].Value + bestVersion + match.Groups[3].Value,
+                RegexOptions.IgnoreCase,
+                TimeSpan.FromSeconds(2)
+            );
         }
         else
         {
@@ -84,5 +123,19 @@ public class TransitiveConflictFixer : IFixer
             $"Pinned {issue.PackageName} to version {bestVersion} in Directory.Packages.props",
             new List<FileChange> { new FileChange(propsPath, "Modified", "...", $"Pinned {issue.PackageName} to {bestVersion}") }
         );
+    }
+
+    private static bool IsConditional(XElement element)
+    {
+        for (var current = element; current is not null; current = current.Parent)
+        {
+            if (!string.IsNullOrEmpty(current.Attribute("Condition")?.Value) ||
+                current.Name.LocalName.Equals("Otherwise", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

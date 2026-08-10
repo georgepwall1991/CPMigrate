@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.59.0] - 2026-08-10
+
+### Fixed
+- **Transitive conflict fixes now update child `<Version>` metadata.** MSBuild accepts both `Version="..."` attributes and child `<Version>...</Version>` elements on central package pins; the fixer handles both forms and refuses conditional pins whose effective version cannot be inferred safely.
+
 ## [3.58.0] - 2026-08-10
 
 ### Fixed

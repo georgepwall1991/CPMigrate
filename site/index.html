@@ -33,7 +33,7 @@
       "url": "https://georgepwall1991.github.io/CPMigrate/",
       "downloadUrl": "https://www.nuget.org/packages/CPMigrate/",
       "codeRepository": "https://github.com/georgepwall1991/CPMigrate",
-      "softwareVersion": "3.58.0",
+      "softwareVersion": "3.59.0",
       "description": "Migrate .NET solutions to NuGet Central Package Management, analyze dependency health, and update packages safely with rollback.",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     }
@@ -95,7 +95,7 @@
   <!-- ═══════ HERO — poster plate ═══════ -->
   <header>
     <section class="hero shell" id="hero">
-      <div class="eyebrow"><span class="blip"></span> <span>CPMigrate / .NET platform tooling</span> <span class="v">· v3.58.0</span></div>
+      <div class="eyebrow"><span class="blip"></span> <span>CPMigrate / .NET platform tooling</span> <span class="v">· v3.59.0</span></div>
       <h1>One command to <span class="g">Central&nbsp;Package Management</span>.<span class="caret"></span></h1>
       <div class="hero-grid">
         <div>
@@ -426,7 +426,7 @@
           <button data-t="brew">homebrew</button>
           <button data-t="winget">winget</button>
         </div>
-        <div class="tab-pane on" data-p="dotnet"><div class="code-block"><button class="copy-btn">copy</button><pre><code>dotnet tool install --global CPMigrate --version 3.58.0
+        <div class="tab-pane on" data-p="dotnet"><div class="code-block"><button class="copy-btn">copy</button><pre><code>dotnet tool install --global CPMigrate --version 3.59.0
 cpmigrate --doctor</code></pre></div></div>
         <div class="tab-pane" data-p="brew"><div class="code-block"><button class="copy-btn">copy</button><pre><code>brew tap georgepwall1991/cpmigrate
 brew install cpmigrate</code></pre></div></div>
@@ -653,7 +653,7 @@ brew install cpmigrate</code></pre></div></div>
       ]; },
       doctor: function () { return [
         '<span class="t-green">✔</span> SDK        <span class="t-dim">.NET 10.0.100</span>',
-        '<span class="t-green">✔</span> Tool       <span class="t-dim">CPMigrate v3.58.0</span>',
+        '<span class="t-green">✔</span> Tool       <span class="t-dim">CPMigrate v3.59.0</span>',
         '<span class="t-green">✔</span> NuGet      <span class="t-dim">nuget.org reachable (142ms)</span>',
         '<span class="t-green">✔</span> Solutions  <span class="t-dim">1 found (MySolution.sln)</span>',
         '<span class="t-green">✔</span> CPM        <span class="t-dim">Directory.Packages.props — 38 versions</span>',
@@ -693,7 +693,7 @@ brew install cpmigrate</code></pre></div></div>
         '<span class="t-pink t-b">Worker</span>',
         '└─ <span class="t-green">Serilog</span> <span class="t-dim">4.2.0</span>'
       ]; },
-      version: function () { return ['<span class="t-cyan">CPMigrate 3.58.0</span> <span class="t-dim">(net10.0, MIT)</span>']; },
+      version: function () { return ['<span class="t-cyan">CPMigrate 3.59.0</span> <span class="t-dim">(net10.0, MIT)</span>']; },
       clear: function () { body.innerHTML = ""; return null; }
     };
     var NAMES = Object.keys(CMDS);
