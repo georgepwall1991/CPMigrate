@@ -810,14 +810,19 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             narrower = narrower[1..^1].Trim();
         }
 
-        return SplitTopLevelCondition(wider, "Or").Any(disjunct =>
+        var widerDisjuncts = SplitTopLevelCondition(wider, "Or")
+            .Select(NormalizeConditionDisjunct)
+            .ToHashSet(StringComparer.Ordinal);
+        var narrowerDisjuncts = SplitTopLevelCondition(narrower, "Or")
+            .Select(NormalizeConditionDisjunct)
+            .ToHashSet(StringComparer.Ordinal);
+        if (widerDisjuncts.SetEquals(narrowerDisjuncts))
         {
-            var normalizedDisjunct = NormalizeConditionSyntax(disjunct.Trim());
-            while (HasEnclosingParentheses(normalizedDisjunct))
-            {
-                normalizedDisjunct = normalizedDisjunct[1..^1].Trim();
-            }
+            return true;
+        }
 
+        return widerDisjuncts.Any(normalizedDisjunct =>
+        {
             if (string.Equals(
                 normalizedDisjunct,
                 narrower,
@@ -831,6 +836,17 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 && TryGetConditionConjuncts(narrower, out var narrowerConjuncts)
                 && narrowerConjuncts.IsSupersetOf(widerConjuncts);
         });
+    }
+
+    private static string NormalizeConditionDisjunct(string disjunct)
+    {
+        var normalized = NormalizeConditionSyntax(disjunct.Trim());
+        while (HasEnclosingParentheses(normalized))
+        {
+            normalized = normalized[1..^1].Trim();
+        }
+
+        return normalized;
     }
 
     private static string NormalizeConditionSyntax(string condition)
