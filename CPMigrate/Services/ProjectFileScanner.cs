@@ -798,12 +798,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         existing.IsConditional
                         && existing.IsConditionalUpdate
                         && !IsExplicitVersionOverrideClear(existing)
+                        && ConditionalUpdateMetadataSurvives(existing, versionOverride)
                         && (
-                            !existing.IsConditionalUpdate
-                            || (
-                                ConditionalUpdateMetadataSurvives(existing, versionOverride)
-                                && !string.IsNullOrWhiteSpace(existing.VersionOverride)
-                            )
+                            !string.IsNullOrWhiteSpace(existing.VersionOverride)
+                            || !string.IsNullOrWhiteSpace(versionOverride)
                         )
                     )
                 : null;

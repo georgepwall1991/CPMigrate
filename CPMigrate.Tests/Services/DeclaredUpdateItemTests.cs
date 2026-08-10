@@ -786,6 +786,35 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_UnconditionalVersionOverrideAfterConditionalVersionUpdateRetainsBothEffectiveProjections()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+                <PackageReference Update="Serilog" Version="2.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="5.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference =>
+            !reference.IsConditional
+            && reference.VersionOverride == "5.0.0"
+        );
+        references.Should().Contain(reference =>
+            reference.IsConditional
+            && reference.Version == "2.0.0"
+            && reference.VersionOverride == "5.0.0"
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_NarrowerConditionalVersionUpdateInheritsWiderScopeVersionOverride()
     {
         var path = WriteProject(
