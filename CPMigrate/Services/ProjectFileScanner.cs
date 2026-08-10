@@ -876,7 +876,21 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     )
     {
         conjuncts = new HashSet<string>(StringComparer.Ordinal);
-        var parts = SplitTopLevelCondition(condition, "And");
+        return AddConditionConjuncts(condition, conjuncts);
+    }
+
+    private static bool AddConditionConjuncts(
+        string condition,
+        HashSet<string> conjuncts
+    )
+    {
+        var normalized = condition.Trim();
+        while (HasEnclosingParentheses(normalized))
+        {
+            normalized = normalized[1..^1].Trim();
+        }
+
+        var parts = SplitTopLevelCondition(normalized, "And");
         foreach (var part in parts)
         {
             var conjunct = part.Trim();
@@ -885,10 +899,20 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 conjunct = conjunct[1..^1].Trim();
             }
 
+            if (SplitTopLevelCondition(conjunct, "And").Count > 1)
+            {
+                if (!AddConditionConjuncts(conjunct, conjuncts))
+                {
+                    conjuncts.Clear();
+                    return false;
+                }
+
+                continue;
+            }
+
             if (
                 string.IsNullOrEmpty(conjunct)
                 || SplitTopLevelCondition(conjunct, "Or").Count > 1
-                || SplitTopLevelCondition(conjunct, "And").Count > 1
             )
             {
                 conjuncts.Clear();
