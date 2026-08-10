@@ -334,6 +334,40 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_EquivalentIndependentChooseGuardsWithDifferentSpacingAmend()
+    {
+        var path = WriteProject(
+            """
+              <Choose>
+                <When Condition="'$(A)' == '1'">
+                  <ItemGroup />
+                </When>
+                <When Condition="'$(Configuration)' == 'Debug'">
+                  <ItemGroup>
+                    <PackageReference Include="Serilog" Version="4.*" />
+                  </ItemGroup>
+                </When>
+              </Choose>
+              <Choose>
+                <When Condition="'$(A)'=='1'">
+                  <ItemGroup />
+                </When>
+                <When Condition="'$(Configuration)' == 'Debug'">
+                  <ItemGroup>
+                    <PackageReference Update="Serilog" Version="4.0.0" />
+                  </ItemGroup>
+                </When>
+              </Choose>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_IndependentChooseBranchesWithDifferentPrecedingGuardsRemainSeparate()
     {
         var path = WriteProject(

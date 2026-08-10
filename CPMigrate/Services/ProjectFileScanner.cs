@@ -713,7 +713,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
             if (sibling is ProjectWhenElement && !string.IsNullOrEmpty(sibling.Condition))
             {
-                precedingWhenConditions.Add(sibling.Condition.Trim());
+                precedingWhenConditions.Add(NormalizeConditionSyntax(sibling.Condition.Trim()));
             }
         }
 
