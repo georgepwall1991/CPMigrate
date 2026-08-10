@@ -118,6 +118,69 @@ public class DuplicatePackageFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_UsesDeclaredReferences_WhenResolvedGraphDoesNotExposeCasing()
+    {
+        // Arrange
+        var project1Path = CreateTestProject("Project1.csproj", "Newtonsoft.Json", "13.0.1");
+        var project2Path = CreateTestProject("Project2.csproj", "newtonsoft.json", "13.0.1");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Package has casing variations",
+            new[] { project1Path, project2Path }
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "13.0.1", project1Path, "Project1.csproj", IsTransitive: true),
+                new("Newtonsoft.Json", "13.0.1", project2Path, "Project2.csproj", IsTransitive: true)
+            },
+            DeclaredReferences: new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "13.0.1", project1Path, "Project1.csproj"),
+                new("newtonsoft.json", "13.0.1", project2Path, "Project2.csproj")
+            });
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, new Options(), dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Changes.Should().HaveCount(1);
+        File.ReadAllText(project2Path).Should().Contain("Newtonsoft.Json");
+        File.ReadAllText(project2Path).Should().NotContain("newtonsoft.json");
+    }
+
+    [Fact]
+    public void Fix_TransitiveFallbackCasing_ReturnsNoFixNeeded()
+    {
+        // Arrange
+        var project1Path = CreateTestProject("Project1.csproj", "Newtonsoft.Json", "13.0.1");
+        var project2Path = CreateTestProject("Project2.csproj", "newtonsoft.json", "13.0.1");
+        var originalProject2 = File.ReadAllText(project2Path);
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Package has casing variations",
+            new[] { project1Path, project2Path }
+        );
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", project1Path, "Project1.csproj", IsTransitive: true),
+            new("newtonsoft.json", "13.0.1", project2Path, "Project2.csproj", IsTransitive: true)
+        });
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, new Options(), dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Description.Should().Contain("No references found");
+        result.Changes.Should().BeEmpty();
+        File.ReadAllText(project2Path).Should().Be(originalProject2);
+    }
+
+    [Fact]
     public void Fix_MultipleCasingVariations_UsesFirstMostCommon()
     {
         // Arrange

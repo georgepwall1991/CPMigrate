@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.60.0] - 2026-08-10
+
+### Fixed
+- **Duplicate package casing analysis and fixing now use declared project references.** Resolved-only transitive casing variations no longer create or drive a fixable finding that project files cannot repair.
+
 ## [3.59.0] - 2026-08-10
 
 ### Fixed

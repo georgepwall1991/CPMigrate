@@ -24,7 +24,8 @@ public class DuplicatePackageFixer : IFixer
     public FixResult Fix(AnalysisIssue issue, ProjectPackageInfo packageInfo, FixRequest request)
     {
         // Find all references for this package (case-insensitive)
-        var references = packageInfo.References
+        var references = packageInfo.GetDeclaredReferences()
+            .Where(r => !r.IsTransitive)
             .Where(r => r.PackageName.Equals(issue.PackageName, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
