@@ -1467,6 +1467,34 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_AmendsAcrossTargetPropertyAssignment()
+    {
+        var path = WriteProject(
+            """
+              <PropertyGroup>
+                <Mode>A</Mode>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="5.*" Condition="'$(Mode)' == 'A'" />
+              </ItemGroup>
+              <Target Name="ChangeMode">
+                <PropertyGroup>
+                  <Mode>B</Mode>
+                </PropertyGroup>
+              </Target>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="6.0.0" Condition="'$(Mode)' == 'A'" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle(reference => reference.Version == "6.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_DoesNotAmendAcrossAnInterveningImport()
     {
         File.WriteAllText(

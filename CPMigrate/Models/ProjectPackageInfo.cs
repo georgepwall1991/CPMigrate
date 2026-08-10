@@ -160,33 +160,9 @@ public record ProjectPackageInfo(
             return false;
         }
 
-        // Per *effective version*, not per package. A project can pin a package unconditionally and override
-        // it for one framework, and the two questions have opposite answers: asking about the pair either
-        // hid the unconditional pin from comparison, or left the conditional override in it — where the
-        // Highest strategy would pick the override and rewrite everyone else to a version meant for one
-        // framework. VersionOverride is the effective version when present, even though Version stays empty
-        // because the project is centrally managed.
-        var matching = declarations
-            .Where(reference =>
-                string.Equals(
-                    reference.VersionOverride ?? reference.Version,
-                    version,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            .ToList();
-
-        // An unconditional declaration that names the resolved version is authoritative even when another
-        // conditional declaration is versionless or non-literal. The conditional form cannot make the
-        // concrete unconditional pin disappear from a version comparison.
-        if (matching.Any(reference => !reference.IsConditional))
-        {
-            return false;
-        }
-
         // An explicit conditional Version="" clears the inline value and exposes the central pin only
         // in that branch. The resolved graph carries that concrete central version, so preserve the
-        // conditional protection even though the declaration's normalized Version is empty.
+        // conditional protection even when another declaration names the same resolved value.
         var hasConditionalVersionClear = declarations
             .Select((reference, index) => (reference, index))
             .Any(item =>
@@ -210,10 +186,9 @@ public record ProjectPackageInfo(
             return true;
         }
 
-        // A conditional non-literal pin is deliberately treated as protected. The resolved graph contains
-        // the value selected for one evaluation, but it cannot tell us whether another target gets a
-        // different value from a floating range, a NuGet range, or an MSBuild property. A blank version is
-        // not non-literal here: it is a central/versionless declaration, which the fallback below handles.
+        // A conditional non-literal pin is deliberately treated as protected before an unconditional
+        // match is accepted. The resolved graph contains the value selected for one evaluation, but it
+        // cannot tell us whether another target gets a different value from a range or MSBuild property.
         if (
             declarations.Any(reference =>
                 reference.IsConditional
@@ -222,6 +197,30 @@ public record ProjectPackageInfo(
         )
         {
             return true;
+        }
+
+        // Per *effective version*, not per package. A project can pin a package unconditionally and override
+        // it for one framework, and the two questions have opposite answers: asking about the pair either
+        // hid the unconditional pin from comparison, or left the conditional override in it — where the
+        // Highest strategy would pick the override and rewrite everyone else to a version meant for one
+        // framework. VersionOverride is the effective version when present, even though Version stays empty
+        // because the project is centrally managed.
+        var matching = declarations
+            .Where(reference =>
+                string.Equals(
+                    reference.VersionOverride ?? reference.Version,
+                    version,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .ToList();
+
+        // An unconditional declaration that names the resolved version is authoritative even when another
+        // conditional declaration is versionless or non-literal. The conditional form cannot make the
+        // concrete unconditional pin disappear from a version comparison.
+        if (matching.Any(reference => !reference.IsConditional))
+        {
+            return false;
         }
 
         // No declaration names this version — it came from a central pin, so the package-level answer is

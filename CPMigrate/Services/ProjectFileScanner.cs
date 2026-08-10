@@ -214,6 +214,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 importVersion++;
             }
 
+            if (child is ProjectTargetElement)
+            {
+                continue;
+            }
+
             if (child is ProjectItemElement item)
             {
                 propertyMutationStates[GetElementPath(item)] = new PropertyMutationState(

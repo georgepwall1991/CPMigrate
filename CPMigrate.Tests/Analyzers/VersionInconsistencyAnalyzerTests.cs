@@ -173,6 +173,43 @@ public class VersionInconsistencyAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_ConditionalNonLiteralPinProtectsAnUnconditionalMatch()
+    {
+        const string conditionalProjectPath = "Conditional.csproj";
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Pkg", "2.0.0", conditionalProjectPath, conditionalProjectPath),
+                new("Pkg", "3.0.0", "Other.csproj", "Other.csproj"),
+            },
+            DeclaredReferences: new List<PackageReference>
+            {
+                new("Pkg", string.Empty, conditionalProjectPath, conditionalProjectPath, VersionOverride: "2.0.0")
+                {
+                    HasVersionOverrideMetadata = true,
+                },
+                new(
+                    "Pkg",
+                    string.Empty,
+                    conditionalProjectPath,
+                    conditionalProjectPath,
+                    IsConditional: true,
+                    VersionOverride: "$(SpecialVersion)"
+                )
+                {
+                    HasVersionOverrideMetadata = true,
+                    ConditionalScope = "'$(TargetFramework)' == 'net8.0'",
+                },
+                new("Pkg", "3.0.0", "Other.csproj", "Other.csproj"),
+            }
+        );
+
+        var result = _analyzer.Analyze(packageInfo);
+
+        result.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Analyze_ConditionallyDeclaredOverrideClearPreservesInheritedVersion()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateOverrideClearAnalyzer_{Guid.NewGuid():N}");
