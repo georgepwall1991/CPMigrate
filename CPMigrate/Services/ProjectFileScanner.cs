@@ -818,11 +818,18 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 normalizedDisjunct = normalizedDisjunct[1..^1].Trim();
             }
 
-            return string.Equals(
+            if (string.Equals(
                 normalizedDisjunct,
                 narrower,
                 StringComparison.Ordinal
-            );
+            ))
+            {
+                return true;
+            }
+
+            return TryGetConditionConjuncts(normalizedDisjunct, out var widerConjuncts)
+                && TryGetConditionConjuncts(narrower, out var narrowerConjuncts)
+                && narrowerConjuncts.IsSupersetOf(widerConjuncts);
         });
     }
 

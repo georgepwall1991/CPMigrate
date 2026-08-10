@@ -1365,6 +1365,30 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_WiderConjunctiveUpdateAmendsNarrowerConjunctiveProjection()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Update="Serilog">
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0' And '$(Configuration)' == 'Debug'">5.*</VersionOverride>
+                </PackageReference>
+                <PackageReference Update="Serilog">
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">6.0.0</VersionOverride>
+                </PackageReference>
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().NotContain(reference => reference.VersionOverride == "5.*");
+        references.Should().Contain(reference => reference.VersionOverride == "6.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_EquivalentOtherwiseBranchesInIndependentChooseElementsAmend()
     {
         var path = WriteProject(
