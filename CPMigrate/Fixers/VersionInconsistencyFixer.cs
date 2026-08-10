@@ -65,13 +65,14 @@ public class VersionInconsistencyFixer : IFixer
             .Where(r => r.Version != targetVersion)
             .GroupBy(r => r.ProjectPath);
 
-        var sharedPackageGroup = projectGroups.FirstOrDefault(group =>
+        var unsafePackageGroup = projectGroups.FirstOrDefault(group =>
             HasMultiplePackageDeclaration(group.Key, issue.PackageName)
+            || HasConditionedPackageMetadata(group.Key, issue.PackageName)
         );
-        if (sharedPackageGroup is not null)
+        if (unsafePackageGroup is not null)
         {
             return FixResult.Failed(
-                $"Cannot standardize {issue.PackageName}: a PackageReference declaration targets multiple packages; split it before fixing"
+                $"Cannot standardize {issue.PackageName}: a PackageReference declaration targets multiple packages or has condition-bearing version metadata"
             );
         }
 
@@ -144,6 +145,17 @@ public class VersionInconsistencyFixer : IFixer
     /// </summary>
     private static bool IsConditional(XElement element)
     {
+        if (
+            element.Elements().Any(metadata =>
+                (metadata.Name.LocalName == "Version"
+                    || metadata.Name.LocalName == "VersionOverride")
+                && !string.IsNullOrWhiteSpace(metadata.Attribute("Condition")?.Value)
+            )
+        )
+        {
+            return true;
+        }
+
         for (var current = element; current is not null; current = current.Parent)
         {
             if (!string.IsNullOrEmpty(current.Attribute("Condition")?.Value))
@@ -497,6 +509,31 @@ public class VersionInconsistencyFixer : IFixer
                         ? reference.Attribute("Update")?.Value
                         : reference.Attribute("Include")?.Value
                 ).Skip(1).Any());
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool HasConditionedPackageMetadata(string projectPath, string packageName)
+    {
+        if (!File.Exists(projectPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var document = XDocument.Parse(File.ReadAllText(projectPath));
+            return document
+                .Descendants("PackageReference")
+                .Where(reference => IsMatchingDeclaration(reference, packageName))
+                .Any(reference => reference.Elements().Any(metadata =>
+                    (metadata.Name.LocalName == "Version"
+                        || metadata.Name.LocalName == "VersionOverride")
+                    && !string.IsNullOrWhiteSpace(metadata.Attribute("Condition")?.Value)
+                ));
         }
         catch
         {

@@ -633,7 +633,7 @@ public class DeclaredUpdateItemTests : IDisposable
             DeclaredReferences: declaredReferences
         );
 
-        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeFalse();
+        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeTrue();
     }
 
     [Fact]
@@ -739,7 +739,7 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
-    public void ScanDeclaredPackages_LiteralFirstConditionsAreRecognizedAsMutuallyExclusive()
+    public void ScanDeclaredPackages_LiteralFirstConditionsRemainPotentiallyOverlapping()
     {
         var path = WriteProject(
             """
@@ -764,11 +764,11 @@ public class DeclaredUpdateItemTests : IDisposable
             DeclaredReferences: declaredReferences
         );
 
-        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeFalse();
+        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeTrue();
     }
 
     [Fact]
-    public void ScanDeclaredPackages_ParenthesizedConditionsAreRecognizedAsMutuallyExclusive()
+    public void ScanDeclaredPackages_ParenthesizedReassignedTargetFrameworkConditionsRemainOverlapping()
     {
         var path = WriteProject(
             """
@@ -778,6 +778,9 @@ public class DeclaredUpdateItemTests : IDisposable
               <ItemGroup Condition="('$(TargetFramework)' == 'net8.0')">
                 <PackageReference Update="Serilog" Version="1.0.0" />
               </ItemGroup>
+              <PropertyGroup>
+                <TargetFramework>net9.0</TargetFramework>
+              </PropertyGroup>
               <ItemGroup Condition="('$(TargetFramework)' == 'net9.0')">
                 <PackageReference Update="Serilog" Version="" />
               </ItemGroup>
@@ -793,7 +796,7 @@ public class DeclaredUpdateItemTests : IDisposable
             DeclaredReferences: declaredReferences
         );
 
-        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeFalse();
+        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeTrue();
     }
 
     [Fact]
@@ -915,6 +918,33 @@ public class DeclaredUpdateItemTests : IDisposable
         references.Should().OnlyContain(reference => reference.Version == "3.0.0");
         references.Should().Contain(reference => reference.PackageName == "Foo");
         references.Should().Contain(reference => reference.PackageName == "Bar");
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_ConditionedVersionMetadataRemainsConditional()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog">
+                  <Version Condition="'$(TargetFramework)' == 'net8.0'">1.0.0</Version>
+                </PackageReference>
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().Contain(reference =>
+            reference.IsConditional
+            && reference.PackageName == "Serilog"
+            && reference.Version == "1.0.0"
+        );
     }
 
     [Fact]

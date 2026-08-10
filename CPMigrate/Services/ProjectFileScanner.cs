@@ -129,6 +129,17 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         return conditions.Count == 0 ? null : string.Join(" -> ", conditions);
     }
 
+    private static string? GetConditionalMetadataScope(
+        params ProjectMetadataElement?[] metadataElements
+    )
+    {
+        var conditions = metadataElements
+            .Where(metadata => !string.IsNullOrWhiteSpace(metadata?.Condition))
+            .Select(metadata => metadata!.Condition.Trim())
+            .ToArray();
+        return conditions.Length == 0 ? null : string.Join(" || ", conditions);
+    }
+
     private static string GetElementPath(ProjectElement element)
     {
         List<int> path = [];
@@ -191,6 +202,16 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // conditionally" is a different fact from "this package is declared twice" and only
                     // the caller knows which one it needs.
                     var conditionalScope = GetConditionalScope(item);
+                    var metadataConditionalScope = GetConditionalMetadataScope(
+                        versionMetadata,
+                        versionOverrideMetadata
+                    );
+                    if (metadataConditionalScope is not null)
+                    {
+                        conditionalScope = conditionalScope is null
+                            ? metadataConditionalScope
+                            : $"{conditionalScope} -> {metadataConditionalScope}";
+                    }
                     var isConditional = conditionalScope is not null;
 
                     // Update rather than Include is how a project *amends* a reference — attaching a
@@ -411,6 +432,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     }
 
                     var conditionalScope = GetConditionalScope(item);
+                    var metadataConditionalScope = GetConditionalMetadataScope(versionMetadata);
+                    if (metadataConditionalScope is not null)
+                    {
+                        conditionalScope = conditionalScope is null
+                            ? metadataConditionalScope
+                            : $"{conditionalScope} -> {metadataConditionalScope}";
+                    }
                     var isConditional = conditionalScope is not null;
                     foreach (var expandedPackageName in ExpandPackageNames(packageName))
                     {

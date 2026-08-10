@@ -280,11 +280,7 @@ public record ProjectPackageInfo(
             return !SameChooseBranch(leftPart.BranchPath, rightPart.BranchPath);
         }
 
-        return TryGetSimpleEquality(leftPart.Condition, out var leftProperty, out var leftValue)
-            && TryGetSimpleEquality(rightPart.Condition, out var rightProperty, out var rightValue)
-            && string.Equals(leftProperty, rightProperty, StringComparison.OrdinalIgnoreCase)
-            && IsKnownImmutableConditionProperty(leftProperty)
-            && !string.Equals(leftValue, rightValue, StringComparison.OrdinalIgnoreCase);
+        return false;
     }
 
     private static (string Condition, string? BranchPath) SplitConditionalScopePart(string part)
@@ -332,132 +328,6 @@ public record ProjectPackageInfo(
     {
         var guardSeparator = branchPath.IndexOf('|');
         return guardSeparator < 0 ? branchPath : branchPath[..guardSeparator];
-    }
-
-    private static bool TryGetSimpleEquality(
-        string condition,
-        out string property,
-        out string value
-    )
-    {
-        property = string.Empty;
-        value = string.Empty;
-        condition = TrimGroupingParentheses(condition);
-        if (
-            condition.Contains("&&", StringComparison.Ordinal)
-            || condition.Contains("||", StringComparison.Ordinal)
-            || condition.Contains(" and ", StringComparison.OrdinalIgnoreCase)
-            || condition.Contains(" or ", StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return false;
-        }
-
-        var equality = condition.IndexOf("==", StringComparison.Ordinal);
-        if (equality < 0)
-        {
-            return false;
-        }
-
-        var leftOperand = condition[..equality].Trim().Trim('"', '\'');
-        var rightOperand = condition[(equality + 2)..].Trim().Trim('"', '\'');
-        if (IsPropertyOperand(leftOperand) && IsLiteralEqualityOperand(rightOperand))
-        {
-            property = leftOperand;
-            value = rightOperand;
-            return true;
-        }
-
-        if (IsPropertyOperand(rightOperand) && IsLiteralEqualityOperand(leftOperand))
-        {
-            property = rightOperand;
-            value = leftOperand;
-            return true;
-        }
-
-        return false;
-    }
-
-    private static string TrimGroupingParentheses(string condition)
-    {
-        var trimmed = condition.Trim();
-        while (
-            trimmed.Length >= 2
-            && trimmed[0] == '('
-            && trimmed[^1] == ')'
-            && IsWrappedByGroupingParentheses(trimmed)
-        )
-        {
-            trimmed = trimmed[1..^1].Trim();
-        }
-
-        return trimmed;
-    }
-
-    private static bool IsWrappedByGroupingParentheses(string condition)
-    {
-        var depth = 0;
-        var inSingleQuotedLiteral = false;
-        var inDoubleQuotedLiteral = false;
-        for (var index = 0; index < condition.Length; index++)
-        {
-            var character = condition[index];
-            if (character == '\'' && !inDoubleQuotedLiteral)
-            {
-                inSingleQuotedLiteral = !inSingleQuotedLiteral;
-                continue;
-            }
-
-            if (character == '"' && !inSingleQuotedLiteral)
-            {
-                inDoubleQuotedLiteral = !inDoubleQuotedLiteral;
-                continue;
-            }
-
-            if (inSingleQuotedLiteral || inDoubleQuotedLiteral)
-            {
-                continue;
-            }
-
-            if (character == '(')
-            {
-                depth++;
-            }
-            else if (character == ')')
-            {
-                depth--;
-                if (depth == 0 && index != condition.Length - 1)
-                {
-                    return false;
-                }
-
-                if (depth < 0)
-                {
-                    return false;
-                }
-            }
-        }
-
-        return depth == 0 && !inSingleQuotedLiteral && !inDoubleQuotedLiteral;
-    }
-
-    private static bool IsPropertyOperand(string operand)
-    {
-        return operand.StartsWith("$(", StringComparison.Ordinal)
-            && operand.EndsWith(")", StringComparison.Ordinal);
-    }
-
-    private static bool IsLiteralEqualityOperand(string operand)
-    {
-        return operand.Length > 0
-            && !operand.Contains("$(", StringComparison.Ordinal)
-            && !operand.Contains("@(", StringComparison.Ordinal)
-            && !operand.Contains("%(", StringComparison.Ordinal);
-    }
-
-    private static bool IsKnownImmutableConditionProperty(string property)
-    {
-        return property.Equals("$(TargetFramework)", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

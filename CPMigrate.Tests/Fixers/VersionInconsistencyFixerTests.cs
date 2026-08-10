@@ -516,6 +516,48 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_ConditionedVersionMetadataDeclinesRewrite()
+    {
+        var projectPath = Path.Combine(_testDirectory, "ConditionedMetadata.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Update="Foo">
+                  <Version Condition="'$(TargetFramework)' == 'net8.0'">2.0.0</Version>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherConditionedMetadata.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "2.0.0 (ConditionedMetadata.csproj), 3.0.0 (OtherConditionedMetadata.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "2.0.0", projectPath, "ConditionedMetadata.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherConditionedMetadata.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeFalse();
+        result.Changes.Should().BeEmpty();
+        File.ReadAllText(projectPath).Should().Contain(">2.0.0</Version>");
+        File.ReadAllText(otherPath).Should().Contain("Version=\"3.0.0\"");
+    }
+
+    [Fact]
     public void Fix_UpdateOnlyVersionOverride_UpdatesVersionOverrideAttribute()
     {
         // Arrange: VersionOverride is the effective project-level pin under central package management,
