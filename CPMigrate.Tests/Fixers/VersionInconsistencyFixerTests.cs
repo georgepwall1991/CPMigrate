@@ -916,6 +916,48 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_UnconditionalEmptyVersionClearDeclinesRewrite()
+    {
+        var projectPath = Path.Combine(_testDirectory, "UnconditionalEmptyVersionClear.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Foo" Version="1.0.0" />
+                <PackageReference Update="Foo" Version="" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherUnconditionalEmptyVersionClear.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "2.0.0 (UnconditionalEmptyVersionClear.csproj), 3.0.0 (OtherUnconditionalEmptyVersionClear.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "2.0.0", projectPath, "UnconditionalEmptyVersionClear.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherUnconditionalEmptyVersionClear.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeFalse();
+        result.Changes.Should().BeEmpty();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("Include=\"Foo\" Version=\"1.0.0\"");
+        content.Should().Contain("Update=\"Foo\" Version=\"\"");
+    }
+
+    [Fact]
     public void Fix_LiteralUpdateSupersedesEarlierPropertyVersion()
     {
         var projectPath = Path.Combine(_testDirectory, "SupersededPropertyVersion.csproj");

@@ -67,6 +67,7 @@ public class VersionInconsistencyFixer : IFixer
 
         var unsafePackageGroup = projectGroups.FirstOrDefault(group =>
             HasMultiplePackageDeclaration(group.Key, issue.PackageName)
+            || HasActiveUnconditionalVersionClear(group.Key, issue.PackageName)
             || HasConditionedPackageMetadata(group.Key, issue.PackageName)
         );
         if (unsafePackageGroup is not null)
@@ -595,6 +596,46 @@ public class VersionInconsistencyFixer : IFixer
             );
             var hasUnconditionalVersion = matchingReferences.Any(HasUnconditionalVersionMetadata);
             return hasConditionedMetadata && !hasUnconditionalVersion;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool HasActiveUnconditionalVersionClear(string projectPath, string packageName)
+    {
+        if (!File.Exists(projectPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var hasInlineVersion = false;
+            var hasActiveClear = false;
+            var matchingReferences = XDocument
+                .Parse(File.ReadAllText(projectPath))
+                .Descendants("PackageReference")
+                .Where(reference => IsMatchingDeclaration(reference, packageName));
+
+            foreach (var reference in matchingReferences)
+            {
+                foreach (var version in GetUnconditionalMetadataValues(reference, "Version"))
+                {
+                    if (string.IsNullOrWhiteSpace(version))
+                    {
+                        hasActiveClear = hasInlineVersion;
+                    }
+                    else
+                    {
+                        hasInlineVersion = true;
+                        hasActiveClear = false;
+                    }
+                }
+            }
+
+            return hasActiveClear;
         }
         catch
         {
