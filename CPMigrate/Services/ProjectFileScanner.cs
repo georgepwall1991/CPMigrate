@@ -532,8 +532,46 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 allowExternalBranchMatch
                     ? left.BranchPath is null
                         || right.BranchPath is null
-                        || string.Equals(left.BranchPath, right.BranchPath, StringComparison.Ordinal)
-                    : string.Equals(left.BranchPath, right.BranchPath, StringComparison.Ordinal)
+                        || ConditionalBranchPathsMatch(
+                            left.Condition,
+                            left.BranchPath,
+                            right.BranchPath
+                        )
+                    : left.BranchPath is not null
+                        && right.BranchPath is not null
+                        && ConditionalBranchPathsMatch(
+                            left.Condition,
+                            left.BranchPath,
+                            right.BranchPath
+                        )
+            );
+    }
+
+    private static bool ConditionalBranchPathsMatch(
+        string condition,
+        string left,
+        string right
+    )
+    {
+        if (string.Equals(condition, "<Otherwise>", StringComparison.Ordinal))
+        {
+            return string.Equals(left, right, StringComparison.Ordinal);
+        }
+
+        var leftSeparator = left.LastIndexOf('.');
+        var rightSeparator = right.LastIndexOf('.');
+        if (leftSeparator < 0 || rightSeparator < 0)
+        {
+            return string.Equals(left, right, StringComparison.Ordinal);
+        }
+
+        var leftChoosePath = left[..leftSeparator];
+        var rightChoosePath = right[..rightSeparator];
+        return !string.Equals(leftChoosePath, rightChoosePath, StringComparison.Ordinal)
+            || string.Equals(
+                left[(leftSeparator + 1)..],
+                right[(rightSeparator + 1)..],
+                StringComparison.Ordinal
             );
     }
 
