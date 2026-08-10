@@ -192,6 +192,57 @@ public class FloatingVersionAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_CentralPinInAConditionalImportedPropsFile_IsReportedAsFloating()
+    {
+        // The import may not apply in every configuration, so drift must not use its pin as
+        // universal evidence. The declaration is still real in the configurations where the
+        // import runs and must remain visible to the floating-version rule.
+        File.WriteAllText(
+            Path.Combine(_testDirectory, "Release.Packages.props"),
+            """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <Import Project="Release.Packages.props" Condition="'$(Configuration)' == 'Release'" />
+            </Project>
+            """
+        );
+
+        Analyze().Issues.Should().ContainSingle().Which.PackageName.Should().Be("Serilog");
+    }
+
+    [Fact]
+    public void Analyze_ConditionalCentralPin_IsReportedAsFloating()
+    {
+        // Drift completeness must stand down for a configuration-specific pin, but the pin can
+        // still float whenever that configuration applies and must remain visible to this rule.
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageVersion Include="Serilog" Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        Analyze().Issues.Should().ContainSingle().Which.PackageName.Should().Be("Serilog");
+    }
+
+    [Fact]
     public void Analyze_CentralPinWithCentralManagementSwitchedOff_IsNotReported()
     {
         // NuGet ignores every PackageVersion in a props file that does not enable central

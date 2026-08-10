@@ -159,10 +159,15 @@ Resolution follows MSBuild:
 - **`DirectoryPackagesPropsPath`**, when set, redirects to a file of your choosing and wins over the
   walk. Where the redirect names a property CPMigrate cannot evaluate, no file is claimed and the
   project is left unjudged rather than measured against the wrong one.
-- **Through imports** — an unconditional `<Import>` whose path is statically resolvable is followed,
-  including one anchored with `$(MSBuildThisFileDirectory)`. A conditioned import, or one inside a
-  conditioned `<ImportGroup>`, is not followed: whether it applies depends on properties that cannot
-  be evaluated from the XML alone.
+- **Through imports** — an import whose path is statically resolvable is followed, including one
+  anchored with `$(MSBuildThisFileDirectory)`. A condition on the import, or on its enclosing
+  `<ImportGroup>`, is not evaluated: declarations read through that import are retained for
+  `FloatingVersion`, but are not merged into the universal drift set. Conditional package entries
+  inside `<When>`, `<Otherwise>`, or a conditioned item group follow the same split. If any import or
+  conditional item makes the central set incomplete, `MissingPackageVersion` and
+  `OrphanedPackageVersion` stand down rather than guessing. An import whose path is missing,
+  malformed, globbed, or built from an unknown property contributes no declarations and also makes
+  the set incomplete.
 - **The project's own file has the last word** on `ManagePackageVersionsCentrally`, matching
   MSBuild's evaluation order.
 - Path identity follows a temporary case-sensitivity probe at the scan root, not the host OS. This
