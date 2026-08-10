@@ -647,6 +647,57 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_ConditionedOverrideDoesNotSupersedeUnconditionalPropertyOverride()
+    {
+        var projectPath = Path.Combine(_testDirectory, "ConditionedOverrideSupersession.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Foo" VersionOverride="$(FooVersion)" />
+                <PackageReference Update="Foo" Version="2.0.0">
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">3.0.0</VersionOverride>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject(
+            "OtherConditionedOverrideSupersession.csproj",
+            "Foo",
+            "1.0.0"
+        );
+        var issue = new AnalysisIssue(
+            "Foo",
+            "1.0.0 (ConditionedOverrideSupersession.csproj), 2.0.0 (OtherConditionedOverrideSupersession.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "1.0.0", projectPath, "ConditionedOverrideSupersession.csproj"),
+                new("Foo", "2.0.0", otherPath, "OtherConditionedOverrideSupersession.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeFalse();
+        result.Changes.Should().BeEmpty();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("VersionOverride=\"$(FooVersion)\"");
+        content.Should().Contain(
+            "<VersionOverride Condition=\"'$(TargetFramework)' == 'net8.0'\">3.0.0</VersionOverride>"
+        );
+        content.Should().Contain("Version=\"2.0.0\"");
+    }
+
+    [Fact]
     public void Fix_ConditionedVersionMetadataDeclinesRewrite()
     {
         var projectPath = Path.Combine(_testDirectory, "ConditionedMetadata.csproj");

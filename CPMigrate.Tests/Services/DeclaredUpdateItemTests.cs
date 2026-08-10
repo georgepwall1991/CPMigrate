@@ -72,6 +72,27 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_GlobbedVersionUpdateIsNotAFictitiousPackage()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Microsoft.Extensions.Logging" Version="1.0.0" />
+                <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="1.0.0" />
+                <PackageReference Update="Microsoft.*" Version="2.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().NotContain(reference => reference.PackageName == "Microsoft.*");
+        references.Should().OnlyContain(reference => reference.Version == "1.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalUpdateAmendingInclude_RemainsSeparate()
     {
         var path = WriteProject(

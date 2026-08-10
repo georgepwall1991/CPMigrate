@@ -343,6 +343,24 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         continue;
                     }
 
+                    var hasVersionMetadata =
+                        versionMetadata is not null
+                        // Presence matters here: VersionOverride="" explicitly clears inherited
+                        // metadata even though its normalized value is empty.
+                        || versionOverride is not null;
+                    if (
+                        isUpdate
+                        && hasVersionMetadata
+                        && IsGlobbedPackageSpecification(packageName)
+                    )
+                    {
+                        // A globbed Update applies to items selected by MSBuild, not to a package whose
+                        // literal ID is the glob. Without evaluating the full item graph, treating it as a
+                        // package declaration creates fictitious findings; retain the known declarations
+                        // and fail closed for this version-bearing Update.
+                        continue;
+                    }
+
                     if (ShouldSplitConditionedMetadata(versionMetadataCondition, versionOverrideMetadataCondition))
                     {
                         foreach (var expandedPackageName in ExpandPackageNames(packageName))
@@ -402,11 +420,6 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // duplicate rules would call that a duplicate; retain a standalone one so casing and
                     // other declaration-based rules can still see the package name. Version rules filter
                     // its empty effective version from their comparisons.
-                    var hasVersionMetadata =
-                        versionMetadata is not null
-                        // Presence matters here: VersionOverride="" explicitly clears inherited
-                        // metadata even though its normalized value is empty.
-                        || versionOverride is not null;
                     foreach (var expandedPackageName in ExpandPackageNames(packageName))
                     {
                         var hasPriorReference = isUpdate
@@ -460,6 +473,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     private static IEnumerable<string> ExpandPackageNames(string packageName)
     {
         return packageName.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static bool IsGlobbedPackageSpecification(string packageName)
+    {
+        return packageName.Contains('*') || packageName.Contains('?');
     }
 
     private static void AddDeclaredPackageReference(

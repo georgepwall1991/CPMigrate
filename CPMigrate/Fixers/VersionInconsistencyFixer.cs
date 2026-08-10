@@ -336,7 +336,10 @@ public class VersionInconsistencyFixer : IFixer
         string metadataName
     )
     {
-        var currentMetadataValues = GetMetadataValues(packageReferences[currentIndex], metadataName);
+        var currentMetadataValues = GetUnconditionalMetadataValues(
+            packageReferences[currentIndex],
+            metadataName
+        );
         if (!currentMetadataValues.Any(IsExpandableMetadata))
         {
             return false;
@@ -347,7 +350,7 @@ public class VersionInconsistencyFixer : IFixer
             return packageReferences
                 .Skip(currentIndex + 1)
                 .Where(element => IsMatchingUpdate(element, packageName))
-                .Any(element => GetMetadataValues(element, metadataName).Any());
+                .Any(element => GetUnconditionalMetadataValues(element, metadataName).Any());
         }
 
         var ordinaryVersionIsCurrent = true;
@@ -362,17 +365,22 @@ public class VersionInconsistencyFixer : IFixer
                 .Where(element => IsMatchingDeclaration(element, packageName))
         )
         {
-            var precedingOverride = GetMetadataValues(element, "VersionOverride").LastOrDefault();
+            var precedingOverride = GetUnconditionalMetadataValues(
+                    element,
+                    "VersionOverride"
+                )
+                .LastOrDefault();
             if (precedingOverride is not null)
             {
                 overrideIsActive = !string.IsNullOrWhiteSpace(precedingOverride);
             }
         }
 
-        var currentOverride = GetMetadataValues(
-            packageReferences[currentIndex],
-            "VersionOverride"
-        ).LastOrDefault();
+        var currentOverride = GetUnconditionalMetadataValues(
+                packageReferences[currentIndex],
+                "VersionOverride"
+            )
+            .LastOrDefault();
         if (currentOverride is not null)
         {
             overrideIsActive = !string.IsNullOrWhiteSpace(currentOverride);
@@ -384,13 +392,17 @@ public class VersionInconsistencyFixer : IFixer
                 .Where(element => IsMatchingUpdate(element, packageName))
         )
         {
-            var updatedVersion = GetMetadataValues(element, "Version").LastOrDefault();
+            var updatedVersion = GetUnconditionalMetadataValues(element, "Version").LastOrDefault();
             if (updatedVersion is not null)
             {
                 ordinaryVersionIsCurrent = false;
             }
 
-            var updatedOverride = GetMetadataValues(element, "VersionOverride").LastOrDefault();
+            var updatedOverride = GetUnconditionalMetadataValues(
+                    element,
+                    "VersionOverride"
+                )
+                .LastOrDefault();
             if (updatedOverride is not null)
             {
                 overrideIsActive = !string.IsNullOrWhiteSpace(updatedOverride);
@@ -611,6 +623,29 @@ public class VersionInconsistencyFixer : IFixer
 
         var metadataElement = packageReference.Element(metadataName);
         if (metadataElement is not null)
+        {
+            yield return metadataElement.Value;
+        }
+    }
+
+    private static IEnumerable<string> GetUnconditionalMetadataValues(
+        XElement packageReference,
+        string metadataName
+    )
+    {
+        if (!HasConditionalScope(packageReference))
+        {
+            var metadataAttribute = packageReference.Attribute(metadataName);
+            if (metadataAttribute is not null)
+            {
+                yield return metadataAttribute.Value;
+            }
+        }
+
+        foreach (
+            var metadataElement in packageReference.Elements(metadataName)
+                .Where(metadata => !HasConditionalScope(metadata))
+        )
         {
             yield return metadataElement.Value;
         }
