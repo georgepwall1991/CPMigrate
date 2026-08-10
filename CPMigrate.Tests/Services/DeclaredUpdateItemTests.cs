@@ -706,6 +706,36 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_UnconditionalVersionResetsConditionalVersionProvenance()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="2.0.0" VersionOverride="" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle(reference =>
+            !reference.IsConditional
+            && reference.Version == "3.0.0"
+            && reference.VersionOverride == null
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalVersionOnlyUpdateKeepsLatestSameScopeVersionOverride()
     {
         var path = WriteProject(

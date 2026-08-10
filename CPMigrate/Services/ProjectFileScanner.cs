@@ -873,6 +873,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         bool hasVersionMetadata
     )
     {
+        if (!isConditional && hasVersionMetadata)
+        {
+            return false;
+        }
+
         return existing.HasConditionalUpdateVersionMetadata
             || (isConditional && hasVersionMetadata && existing.IsConditionalUpdate);
     }
