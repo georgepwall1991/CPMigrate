@@ -53,6 +53,7 @@ public class TransitiveConflictFixer : IFixer
         var bestVersion = _versionResolver.ResolveVersion(versions, request.ConflictStrategy);
 
         var originalContent = File.ReadAllText(propsPath);
+        var hasActivePackagePin = false;
 
         try
         {
@@ -65,6 +66,8 @@ public class TransitiveConflictFixer : IFixer
                      attribute.Name.LocalName.Equals("Update", StringComparison.OrdinalIgnoreCase)) &&
                     attribute.Value.Equals(issue.PackageName, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
+
+            hasActivePackagePin = targetPins.Count > 0;
 
             if (targetPins.Any(pin => IsConditional(pin) || pin.Descendants().Any(IsConditional)))
             {
@@ -81,8 +84,7 @@ public class TransitiveConflictFixer : IFixer
         string updatedContent;
 
         // Check if package already exists in props
-        if (originalContent.Contains($"Include=\"{issue.PackageName}\"", StringComparison.OrdinalIgnoreCase) ||
-            originalContent.Contains($"Update=\"{issue.PackageName}\"", StringComparison.OrdinalIgnoreCase))
+        if (hasActivePackagePin)
         {
             // Update existing version
             var pattern = $@"(<PackageVersion\s+(?:Include|Update)=""{Regex.Escape(issue.PackageName)}""\s+Version="")([^""]+)("")";

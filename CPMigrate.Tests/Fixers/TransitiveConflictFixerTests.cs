@@ -337,6 +337,45 @@ public class TransitiveConflictFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_CommentedChildVersion_AddsActivePinWithoutChangingComment()
+    {
+        // Commented examples are not active central pins. They must not satisfy the existing-pin
+        // branch or be rewritten as if they controlled restore.
+        CreatePropsFile(@"<Project>
+  <ItemGroup>
+    <!-- <PackageVersion Include=""Newtonsoft.Json""><Version>12.0.1</Version></PackageVersion> -->
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "12.0.1", "Project1.csproj", "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        content.Should().Contain("<!-- <PackageVersion Include=\"Newtonsoft.Json\"><Version>12.0.1</Version></PackageVersion> -->");
+        content.Should().Contain("<PackageVersion Include=\"Newtonsoft.Json\" Version=\"13.0.1\" />");
+    }
+
+    [Fact]
     public void Fix_PackageExistsWithUpdate_UpdatesVersion()
     {
         // Arrange
