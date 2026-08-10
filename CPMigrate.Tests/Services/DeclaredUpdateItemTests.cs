@@ -300,6 +300,25 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ExplicitEmptyVersionOverrideOnlyClearsPriorOverride()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="2.*" />
+                <PackageReference Update="Serilog" VersionOverride="" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        var reference = references.Should().ContainSingle().Subject;
+        reference.VersionOverride.Should().BeNull();
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_UnconditionalUpdateFoldsOverriddenConditionalUpdate()
     {
         var path = WriteProject(

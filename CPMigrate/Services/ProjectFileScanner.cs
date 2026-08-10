@@ -213,7 +213,9 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // its empty effective version from their comparisons.
                     var hasVersionMetadata =
                         !string.IsNullOrWhiteSpace(version)
-                        || !string.IsNullOrWhiteSpace(versionOverride);
+                        // Presence matters here: VersionOverride="" explicitly clears inherited
+                        // metadata even though its normalized value is empty.
+                        || versionOverride is not null;
                     var hasPriorReference = isUpdate
                         && references.Any(existing =>
                             string.Equals(
