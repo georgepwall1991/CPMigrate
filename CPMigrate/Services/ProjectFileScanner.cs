@@ -241,6 +241,9 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     {
                         HasVersionMetadata = versionMetadata is not null,
                         HasVersionOverrideMetadata = versionOverrideMetadata is not null,
+                        HasConditionalUpdateVersionMetadata = isUpdate
+                            && isConditional
+                            && versionMetadata is not null,
                         ConditionalScope = conditionalScope,
                     };
                     if (isUpdate)
@@ -417,6 +420,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 IsConditional: isConditional
                             )
                             {
+                                HasVersionMetadata = true,
+                                HasConditionalUpdateVersionMetadata = isUpdate && isConditional,
                                 IsConditionalUpdate = isUpdate && isConditional,
                                 ConditionalScope = conditionalScope,
                             }
@@ -817,6 +822,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             {
                 Version = hasVersionMetadata ? version : existing.Version,
                 HasVersionMetadata = hasVersionMetadata || existing.HasVersionMetadata,
+                HasConditionalUpdateVersionMetadata = PropagateConditionalUpdateVersionMetadata(
+                    existing,
+                    isConditional,
+                    hasVersionMetadata
+                ),
                 IsConditional = foldsConditionalUpdates
                     || (existing.IsConditional && (!existing.IsConditionalUpdate || conditionalMetadataSurvives)),
                 VersionOverride = GetAmendedVersionOverride(existing, versionOverride),
@@ -845,6 +855,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 {
                     Version = version,
                     HasVersionMetadata = hasVersionMetadata,
+                    HasConditionalUpdateVersionMetadata = false,
                     IsConditional = false,
                     VersionOverride = versionOverride,
                     HasVersionOverrideMetadata = hasVersionOverrideMetadata,
@@ -854,6 +865,16 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 }
             );
         }
+    }
+
+    private static bool PropagateConditionalUpdateVersionMetadata(
+        PackageReference existing,
+        bool isConditional,
+        bool hasVersionMetadata
+    )
+    {
+        return existing.HasConditionalUpdateVersionMetadata
+            || (isConditional && hasVersionMetadata && existing.IsConditionalUpdate);
     }
 
     private static string? GetAmendedVersionOverride(
@@ -884,7 +905,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 (versionOverride is null && existing.HasVersionOverrideMetadata)
                 || (
                     versionOverride is not null
-                    && existing.HasVersionMetadata
+                    && existing.HasConditionalUpdateVersionMetadata
                 )
             );
     }

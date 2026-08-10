@@ -55,6 +55,13 @@ public record PackageReference(
     public bool IsConditionalUpdate { get; init; }
 
     /// <summary>
+    /// Whether ordinary <c>Version</c> metadata originated on a conditional <c>Update</c>. This remains
+    /// separate from <see cref="HasVersionMetadata"/> because a later unconditional Update can add
+    /// ordinary metadata to a conditional clear without making that metadata conditional.
+    /// </summary>
+    public bool HasConditionalUpdateVersionMetadata { get; init; }
+
+    /// <summary>
     /// Whether the declaration explicitly carries <c>VersionOverride</c>, including an empty value.
     /// An empty conditional assignment clears inherited override metadata and must remain distinguishable
     /// from an Update that does not mention the metadata at all.
