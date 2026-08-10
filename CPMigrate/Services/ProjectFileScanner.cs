@@ -289,33 +289,29 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // inventing a floating effective version for the branch. Resolve it only after checking
                     // for a same-scope amendment so a newer conditional override is never overwritten by an
                     // older unconditional one.
-                    var inheritedVersionOverride =
-                        isUpdate
-                        && isConditional
-                        && versionOverride is null
-                            ? references
-                                .LastOrDefault(existing =>
-                                    (
-                                        !existing.IsConditional
-                                        || IsWiderConditionalScope(
-                                            existing.ConditionalScope,
-                                            conditionalScope
-                                        )
-                                    )
-                                    && string.Equals(
-                                        existing.PackageName,
-                                        packageName,
-                                        StringComparison.OrdinalIgnoreCase
-                                    )
-                                    && !string.IsNullOrWhiteSpace(existing.VersionOverride)
-                                )
-                                ?.VersionOverride
-                            : null;
+                    var inheritedVersion = FindInheritedVersion(
+                        references,
+                        isUpdate,
+                        isConditional,
+                        version,
+                        packageName,
+                        conditionalScope
+                    );
+                    var inheritedVersionOverride = FindInheritedVersionOverride(
+                        references,
+                        isUpdate,
+                        isConditional,
+                        versionOverride,
+                        packageName,
+                        conditionalScope
+                    );
 
                     references.Add(
-                        inheritedVersionOverride is null
-                            ? reference
-                            : reference with { VersionOverride = inheritedVersionOverride }
+                        reference with
+                        {
+                            Version = inheritedVersion ?? reference.Version,
+                            VersionOverride = inheritedVersionOverride ?? reference.VersionOverride,
+                        }
                     );
                 }
 
@@ -502,6 +498,67 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 string.Equals(condition, currentConditions[offset + index], StringComparison.Ordinal)
             )
             .All(matches => matches);
+    }
+
+    private static string? FindInheritedVersion(
+        IReadOnlyList<PackageReference> references,
+        bool isUpdate,
+        bool isConditional,
+        string version,
+        string packageName,
+        string? conditionalScope
+    )
+    {
+        if (!isUpdate || !isConditional || !string.IsNullOrWhiteSpace(version))
+        {
+            return null;
+        }
+
+        return references
+            .LastOrDefault(existing =>
+                IsInheritedReference(existing, packageName, conditionalScope)
+                && !string.IsNullOrWhiteSpace(existing.Version)
+            )
+            ?.Version;
+    }
+
+    private static string? FindInheritedVersionOverride(
+        IReadOnlyList<PackageReference> references,
+        bool isUpdate,
+        bool isConditional,
+        string? versionOverride,
+        string packageName,
+        string? conditionalScope
+    )
+    {
+        if (!isUpdate || !isConditional || versionOverride is not null)
+        {
+            return null;
+        }
+
+        return references
+            .LastOrDefault(existing =>
+                IsInheritedReference(existing, packageName, conditionalScope)
+                && !string.IsNullOrWhiteSpace(existing.VersionOverride)
+            )
+            ?.VersionOverride;
+    }
+
+    private static bool IsInheritedReference(
+        PackageReference existing,
+        string packageName,
+        string? conditionalScope
+    )
+    {
+        return (
+            !existing.IsConditional
+            || IsWiderConditionalScope(existing.ConditionalScope, conditionalScope)
+        )
+            && string.Equals(
+                existing.PackageName,
+                packageName,
+                StringComparison.OrdinalIgnoreCase
+            );
     }
 
     private static List<int> FindFoldedConditionalUpdateIndices(

@@ -192,10 +192,17 @@ public class VersionInconsistencyFixer : IFixer
             for (var index = 0; index < packageRefList.Count; index++)
             {
                 var packageRef = packageRefList[index];
-                var ignoreSupersededPropertyVersion = IsSupersededPropertyVersion(
+                var ignoreSupersededPropertyVersion = IsSupersededPropertyMetadata(
                     packageRefList,
                     index,
-                    packageName
+                    packageName,
+                    "Version"
+                );
+                var ignoreSupersededPropertyOverride = IsSupersededPropertyMetadata(
+                    packageRefList,
+                    index,
+                    packageName,
+                    "VersionOverride"
                 );
                 var metadataResults = new[]
                 {
@@ -204,13 +211,21 @@ public class VersionInconsistencyFixer : IFixer
                         targetVersion,
                         ignoreSupersededPropertyVersion
                     ),
-                    UpdateVersionMetadata(packageRef.Attribute("VersionOverride"), targetVersion),
+                    UpdateVersionMetadata(
+                        packageRef.Attribute("VersionOverride"),
+                        targetVersion,
+                        ignoreSupersededPropertyOverride
+                    ),
                     UpdateVersionMetadata(
                         packageRef.Element("Version"),
                         targetVersion,
                         ignoreSupersededPropertyVersion
                     ),
-                    UpdateVersionMetadata(packageRef.Element("VersionOverride"), targetVersion),
+                    UpdateVersionMetadata(
+                        packageRef.Element("VersionOverride"),
+                        targetVersion,
+                        ignoreSupersededPropertyOverride
+                    ),
                 };
 
                 modified |= metadataResults.Any(result => result.Modified);
@@ -254,55 +269,91 @@ public class VersionInconsistencyFixer : IFixer
         }
     }
 
-    private static bool IsSupersededPropertyVersion(
+    private static bool IsSupersededPropertyMetadata(
         IReadOnlyList<XElement> packageReferences,
         int currentIndex,
-        string packageName
+        string packageName,
+        string metadataName
     )
     {
-        var currentVersionValues = GetVersionMetadata(packageReferences[currentIndex]);
-        if (!currentVersionValues.Any(IsPropertyVersion))
+        var currentMetadataValues = GetMetadataValues(packageReferences[currentIndex], metadataName);
+        if (!currentMetadataValues.Any(IsPropertyMetadata))
         {
             return false;
         }
 
-        var latestUpdateVersion = packageReferences
-            .Skip(currentIndex + 1)
-            .Where(element =>
-                string.IsNullOrWhiteSpace(element.Attribute("Include")?.Value)
-                && string.Equals(
-                    element.Attribute("Update")?.Value,
-                    packageName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            .SelectMany(GetVersionMetadata)
-            .LastOrDefault();
+        if (metadataName == "VersionOverride")
+        {
+            return packageReferences
+                .Skip(currentIndex + 1)
+                .Where(element => IsMatchingUpdate(element, packageName))
+                .Any(element => GetMetadataValues(element, metadataName).Any());
+        }
 
-        return latestUpdateVersion is not null && !IsPropertyVersion(latestUpdateVersion);
+        var ordinaryVersionIsCurrent = true;
+        var currentOverride = GetMetadataValues(
+            packageReferences[currentIndex],
+            "VersionOverride"
+        ).LastOrDefault();
+        var overrideIsActive =
+            currentOverride is not null && !string.IsNullOrWhiteSpace(currentOverride);
+
+        foreach (
+            var element in packageReferences
+                .Skip(currentIndex + 1)
+                .Where(element => IsMatchingUpdate(element, packageName))
+        )
+        {
+            var updatedVersion = GetMetadataValues(element, "Version").LastOrDefault();
+            if (updatedVersion is not null)
+            {
+                ordinaryVersionIsCurrent = false;
+            }
+
+            var updatedOverride = GetMetadataValues(element, "VersionOverride").LastOrDefault();
+            if (updatedOverride is not null)
+            {
+                overrideIsActive = !string.IsNullOrWhiteSpace(updatedOverride);
+            }
+        }
+
+        return overrideIsActive || !ordinaryVersionIsCurrent;
     }
 
-    private static IEnumerable<string> GetVersionMetadata(XElement packageReference)
+    private static bool IsMatchingUpdate(XElement packageReference, string packageName)
     {
-        var versionAttribute = packageReference.Attribute("Version");
-        if (versionAttribute is not null)
+        return string.IsNullOrWhiteSpace(packageReference.Attribute("Include")?.Value)
+            && string.Equals(
+                packageReference.Attribute("Update")?.Value,
+                packageName,
+                StringComparison.OrdinalIgnoreCase
+            );
+    }
+
+    private static IEnumerable<string> GetMetadataValues(
+        XElement packageReference,
+        string metadataName
+    )
+    {
+        var metadataAttribute = packageReference.Attribute(metadataName);
+        if (metadataAttribute is not null)
         {
-            yield return versionAttribute.Value;
+            yield return metadataAttribute.Value;
         }
 
-        var versionElement = packageReference.Element("Version");
-        if (versionElement is not null)
+        var metadataElement = packageReference.Element(metadataName);
+        if (metadataElement is not null)
         {
-            yield return versionElement.Value;
+            yield return metadataElement.Value;
         }
     }
 
-    private static bool IsPropertyVersion(string version) => version.Contains("$(", StringComparison.Ordinal);
+    private static bool IsPropertyMetadata(string value) => value.Contains("$(", StringComparison.Ordinal);
 
     private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
         XAttribute? metadata,
         string targetVersion,
-        bool ignoreSupersededPropertyVersion = false
+        bool ignoreSupersededPropertyMetadata = false
     )
     {
         if (metadata is null || metadata.Value == targetVersion)
@@ -310,9 +361,9 @@ public class VersionInconsistencyFixer : IFixer
             return (false, false);
         }
 
-        if (IsPropertyVersion(metadata.Value))
+        if (IsPropertyMetadata(metadata.Value))
         {
-            return ignoreSupersededPropertyVersion ? (false, false) : (false, true);
+            return ignoreSupersededPropertyMetadata ? (false, false) : (false, true);
         }
 
         metadata.Value = targetVersion;
@@ -322,7 +373,7 @@ public class VersionInconsistencyFixer : IFixer
     private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
         XElement? metadata,
         string targetVersion,
-        bool ignoreSupersededPropertyVersion = false
+        bool ignoreSupersededPropertyMetadata = false
     )
     {
         if (metadata is null || metadata.Value == targetVersion)
@@ -330,9 +381,9 @@ public class VersionInconsistencyFixer : IFixer
             return (false, false);
         }
 
-        if (IsPropertyVersion(metadata.Value))
+        if (IsPropertyMetadata(metadata.Value))
         {
-            return ignoreSupersededPropertyVersion ? (false, false) : (false, true);
+            return ignoreSupersededPropertyMetadata ? (false, false) : (false, true);
         }
 
         metadata.Value = targetVersion;

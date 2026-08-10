@@ -173,6 +173,62 @@ public class VersionInconsistencyAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_ConditionallyDeclaredOverrideClearPreservesInheritedVersion()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateOverrideClearAnalyzer_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var conditionalPath = Path.Combine(directory, "Conditional.csproj");
+
+        try
+        {
+            File.WriteAllText(
+                conditionalPath,
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>
+                    <TargetFramework>net8.0</TargetFramework>
+                  </PropertyGroup>
+                  <ItemGroup>
+                    <PackageReference Include="Pkg" Version="3.0.0" VersionOverride="2.0.0" />
+                  </ItemGroup>
+                  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                    <PackageReference Update="Pkg" VersionOverride="" />
+                  </ItemGroup>
+                </Project>
+                """
+            );
+
+            var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+            var (conditionalDeclaration, scanSucceeded) = scanner.ScanDeclaredPackages(conditionalPath);
+            scanSucceeded.Should().BeTrue();
+            conditionalDeclaration.Should().Contain(reference =>
+                reference.IsConditional
+                && reference.Version == "3.0.0"
+                && reference.VersionOverride == null
+            );
+
+            var otherDeclaration = new PackageReference("Pkg", "2.0.0", "P2.csproj", "P2.csproj");
+            var packageInfo = new ProjectPackageInfo(
+                new List<PackageReference>
+                {
+                    new("Pkg", "3.0.0", conditionalPath, "Conditional.csproj"),
+                    otherDeclaration,
+                },
+                DeclaredReferences: conditionalDeclaration.Append(otherDeclaration).ToList()
+            );
+
+            _analyzer.Analyze(packageInfo).Issues.Should().BeEmpty();
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Analyze_ConditionallyDeclaredMetadataOnlyUpdate_DoesNotHideVersionConflict()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateMetadataOnlyAnalyzer_{Guid.NewGuid():N}");

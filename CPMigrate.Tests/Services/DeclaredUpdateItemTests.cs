@@ -319,6 +319,30 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ConditionalOverrideClearPreservesInheritedVersion()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="3.0.0" VersionOverride="2.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().Contain(reference =>
+            reference.IsConditional
+            && reference.Version == "3.0.0"
+            && reference.VersionOverride == null
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_UnconditionalUpdateFoldsOverriddenConditionalUpdate()
     {
         var path = WriteProject(
