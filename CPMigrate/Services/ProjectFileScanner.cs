@@ -605,8 +605,15 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         var foldsConditionalUpdates =
             isConditional && amendedIndices.All(index => references[index].IsConditionalUpdate);
         var hasItemDeclaration = amendedIndices.Any(index => !references[index].IsConditionalUpdate);
+        var hasSurvivingConditionalClear = amendedIndices.Any(index =>
+            ConditionalUpdateMetadataSurvives(references[index], versionOverride)
+            && IsExplicitVersionOverrideClear(references[index])
+        );
         var unconditionalRecordTemplate =
-            !isConditional && !hasItemDeclaration && !string.IsNullOrWhiteSpace(version)
+            !isConditional
+                && !hasItemDeclaration
+                && !hasSurvivingConditionalClear
+                && !string.IsNullOrWhiteSpace(version)
                 ? amendedIndices
                     .Select(index => references[index])
                     .FirstOrDefault(existing =>
@@ -677,6 +684,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
 
         return string.IsNullOrWhiteSpace(versionOverride) ? null : versionOverride;
+    }
+
+    private static bool IsExplicitVersionOverrideClear(PackageReference reference)
+    {
+        return reference.HasVersionOverrideMetadata && string.IsNullOrWhiteSpace(reference.VersionOverride);
     }
 
     private static bool ConditionalUpdateMetadataSurvives(

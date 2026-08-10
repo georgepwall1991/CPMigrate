@@ -401,6 +401,38 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_InheritedClearBranchSuppressesProjectionAlongsideOverrideBranch()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+                <PackageReference Update="Serilog" VersionOverride="9.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().OnlyContain(reference => reference.IsConditional);
+        references.Should().Contain(reference =>
+            reference.Version == "3.0.0"
+            && reference.VersionOverride == null
+        );
+        references.Should().Contain(reference =>
+            reference.Version == "3.0.0"
+            && reference.VersionOverride == "9.0.0"
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ExplicitEmptyVersionClearsPriorVersion()
     {
         var path = WriteProject(
