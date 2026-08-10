@@ -283,6 +283,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 null,
                                 versionOverrideMetadataCondition,
                                 false,
+                                string.IsNullOrWhiteSpace(versionOverride),
                                 false
                             );
                         }
@@ -369,7 +370,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         string? versionMetadataCondition,
         string? versionOverrideMetadataCondition,
         bool allowUnconditionalMetadataProjection = true,
-        bool allowInheritedMetadata = true
+        bool allowInheritedVersion = true,
+        bool allowInheritedVersionOverride = true
     )
     {
         var reference = new PackageReference(
@@ -439,7 +441,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         // inventing a floating effective version for the branch. Resolve it only after checking
         // for a same-scope amendment so a newer conditional override is never overwritten by an
         // older unconditional one.
-        var inheritedVersion = allowInheritedMetadata
+        var inheritedVersion = allowInheritedVersion
             ? FindInheritedVersion(
                 references,
                 isUpdate,
@@ -449,7 +451,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 conditionalScope
             )
             : null;
-        var inheritedVersionOverride = allowInheritedMetadata
+        var inheritedVersionOverride = allowInheritedVersionOverride
             ? FindInheritedVersionOverride(
                 references,
                 isUpdate,
@@ -508,8 +510,19 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         if (!hasUnconditionalVersion && !hasUnconditionalOverride)
         {
             if (
-                !conditionalReference.IsConditionalUpdate
-                && itemConditionalScope is null
+                itemConditionalScope is null
+                && (
+                    !conditionalReference.IsConditionalUpdate
+                    || !references.Any(existing =>
+                        string.Equals(
+                            existing.PackageName,
+                            conditionalReference.PackageName,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        && !existing.IsConditional
+                        && !existing.IsMetadataOnlyUpdate
+                    )
+                )
             )
             {
                 references.Add(
@@ -786,9 +799,15 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     private static bool ConditionCovers(string widerCondition, string narrowerCondition)
     {
         var wider = widerCondition.Trim();
+        var narrower = narrowerCondition.Trim();
         while (HasEnclosingParentheses(wider))
         {
             wider = wider[1..^1].Trim();
+        }
+
+        while (HasEnclosingParentheses(narrower))
+        {
+            narrower = narrower[1..^1].Trim();
         }
 
         return SplitTopLevelCondition(wider, "Or").Any(disjunct =>
@@ -801,7 +820,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
             return string.Equals(
                 normalizedDisjunct,
-                narrowerCondition,
+                narrower,
                 StringComparison.Ordinal
             );
         });
