@@ -491,8 +491,14 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             return false;
         }
 
-        var widerConditions = widerScope.Split(" -> ", StringSplitOptions.None);
-        var narrowerConditions = narrowerScope.Split(" -> ", StringSplitOptions.None);
+        var widerConditions = widerScope
+            .Split(" -> ", StringSplitOptions.None)
+            .Select(SplitConditionalScopePart)
+            .ToArray();
+        var narrowerConditions = narrowerScope
+            .Split(" -> ", StringSplitOptions.None)
+            .Select(SplitConditionalScopePart)
+            .ToArray();
         if (widerConditions.Length > narrowerConditions.Length)
         {
             return false;
@@ -500,22 +506,34 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
         // Conditions from independent ancestor branches may not form an ordered suffix, but a wider
         // conjunction still applies to a narrower one when every wider condition is present in it.
+        // A pathless condition may stand for a Choose condition only when one whole scope is external;
+        // otherwise a pathless nested item condition must not bridge sibling Choose branches.
+        var allowExternalBranchMatch = widerConditions.All(part => part.BranchPath is null)
+            || narrowerConditions.All(part => part.BranchPath is null);
         return widerConditions.All(condition =>
             narrowerConditions.Any(narrowerCondition =>
-                ConditionalScopeConditionsMatch(condition, narrowerCondition)
+                ConditionalScopeConditionsMatch(
+                    condition,
+                    narrowerCondition,
+                    allowExternalBranchMatch
+                )
             )
         );
     }
 
-    private static bool ConditionalScopeConditionsMatch(string left, string right)
+    private static bool ConditionalScopeConditionsMatch(
+        (string Condition, string? BranchPath) left,
+        (string Condition, string? BranchPath) right,
+        bool allowExternalBranchMatch
+    )
     {
-        var (leftCondition, leftBranchPath) = SplitConditionalScopePart(left);
-        var (rightCondition, rightBranchPath) = SplitConditionalScopePart(right);
-        return string.Equals(leftCondition, rightCondition, StringComparison.Ordinal)
+        return string.Equals(left.Condition, right.Condition, StringComparison.Ordinal)
             && (
-                leftBranchPath is null
-                || rightBranchPath is null
-                || string.Equals(leftBranchPath, rightBranchPath, StringComparison.Ordinal)
+                allowExternalBranchMatch
+                    ? left.BranchPath is null
+                        || right.BranchPath is null
+                        || string.Equals(left.BranchPath, right.BranchPath, StringComparison.Ordinal)
+                    : string.Equals(left.BranchPath, right.BranchPath, StringComparison.Ordinal)
             );
     }
 
