@@ -282,6 +282,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 itemConditionalScope,
                                 null,
                                 versionOverrideMetadataCondition,
+                                false,
                                 false
                             );
                         }
@@ -367,7 +368,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         string? itemConditionalScope,
         string? versionMetadataCondition,
         string? versionOverrideMetadataCondition,
-        bool allowUnconditionalMetadataProjection = true
+        bool allowUnconditionalMetadataProjection = true,
+        bool allowInheritedMetadata = true
     )
     {
         var reference = new PackageReference(
@@ -437,22 +439,26 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         // inventing a floating effective version for the branch. Resolve it only after checking
         // for a same-scope amendment so a newer conditional override is never overwritten by an
         // older unconditional one.
-        var inheritedVersion = FindInheritedVersion(
-            references,
-            isUpdate,
-            isConditional,
-            hasVersionMetadata,
-            packageName,
-            conditionalScope
-        );
-        var inheritedVersionOverride = FindInheritedVersionOverride(
-            references,
-            isUpdate,
-            isConditional,
-            versionOverride,
-            packageName,
-            conditionalScope
-        );
+        var inheritedVersion = allowInheritedMetadata
+            ? FindInheritedVersion(
+                references,
+                isUpdate,
+                isConditional,
+                hasVersionMetadata,
+                packageName,
+                conditionalScope
+            )
+            : null;
+        var inheritedVersionOverride = allowInheritedMetadata
+            ? FindInheritedVersionOverride(
+                references,
+                isUpdate,
+                isConditional,
+                versionOverride,
+                packageName,
+                conditionalScope
+            )
+            : null;
 
         var effectiveReference = reference with
         {
@@ -751,7 +757,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     {
         var leftCondition = NormalizeConditionSyntax(left.Condition);
         var rightCondition = NormalizeConditionSyntax(right.Condition);
-        return string.Equals(leftCondition, rightCondition, StringComparison.Ordinal)
+        var conditionsMatch = string.Equals(leftCondition, rightCondition, StringComparison.Ordinal)
+            || (
+                left.BranchPath is null
+                && right.BranchPath is null
+                && ConditionCovers(leftCondition, rightCondition)
+            );
+        return conditionsMatch
             && (
                 allowExternalBranchMatch
                     ? left.BranchPath is null
@@ -769,6 +781,30 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             right.BranchPath
                         )
             );
+    }
+
+    private static bool ConditionCovers(string widerCondition, string narrowerCondition)
+    {
+        var wider = widerCondition.Trim();
+        while (HasEnclosingParentheses(wider))
+        {
+            wider = wider[1..^1].Trim();
+        }
+
+        return SplitTopLevelCondition(wider, "Or").Any(disjunct =>
+        {
+            var normalizedDisjunct = NormalizeConditionSyntax(disjunct.Trim());
+            while (HasEnclosingParentheses(normalizedDisjunct))
+            {
+                normalizedDisjunct = normalizedDisjunct[1..^1].Trim();
+            }
+
+            return string.Equals(
+                normalizedDisjunct,
+                narrowerCondition,
+                StringComparison.Ordinal
+            );
+        });
     }
 
     private static string NormalizeConditionSyntax(string condition)
