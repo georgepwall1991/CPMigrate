@@ -256,11 +256,12 @@ public class CentralPinDiscoveryTests : IDisposable
     }
 
     [Fact]
-    public void ReadEffectiveCentralVersions_DoesNotReadPinsFromAConditionalImport()
+    public void ReadEffectiveCentralVersions_PreservesPinsFromAConditionalImportForFloatingAnalysis()
     {
         // The imported file exists, but whether it applies depends on a property this reader cannot
-        // evaluate. Treating it as effective would let a configuration-specific pin suppress a
-        // MissingPackageVersion finding in configurations where the import does not run.
+        // evaluate. Preserve its declarations for FloatingVersion, while the drift rules keep them
+        // out of the universal set so they cannot suppress a MissingPackageVersion finding in a
+        // configuration where the import does not run.
         Write(
             "Release.Packages.props",
             """
@@ -288,14 +289,15 @@ public class CentralPinDiscoveryTests : IDisposable
 
         var pins = CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root);
         pins.Should().Contain(pin => pin.Package == "Always.In.Root");
-        pins.Should().NotContain(pin => pin.Package == "Only.In.Release");
+        pins.Should().Contain(pin => pin.Package == "Only.In.Release");
     }
 
     [Fact]
-    public void ReadEffectiveCentralVersions_DoesNotReadPinsFromAnImportInsideAConditionalGroup()
+    public void ReadEffectiveCentralVersions_PreservesPinsFromAnImportInsideAConditionalGroupForFloatingAnalysis()
     {
         // A condition on an ImportGroup has the same meaning as a condition on the Import itself.
-        // Descendant traversal must not bypass that boundary and read an inactive pin set.
+        // Descendant traversal must retain the declaration for FloatingVersion, but must not merge
+        // the inactive pin set into the universal drift evidence.
         Write(
             "Release.Packages.props",
             """
@@ -325,7 +327,7 @@ public class CentralPinDiscoveryTests : IDisposable
 
         var pins = CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root);
         pins.Should().Contain(pin => pin.Package == "Always.In.Root");
-        pins.Should().NotContain(pin => pin.Package == "Only.In.Release");
+        pins.Should().Contain(pin => pin.Package == "Only.In.Release");
     }
 
     [Fact]

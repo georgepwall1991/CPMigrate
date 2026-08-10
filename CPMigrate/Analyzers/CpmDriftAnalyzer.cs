@@ -844,7 +844,8 @@ public class CpmDriftAnalyzer : IAnalyzer
         Dictionary<string, CentralEntry> versions,
         List<ConditionalCentralEntry> conditional,
         HashSet<string> visited,
-        StringComparer pathComparer
+        StringComparer pathComparer,
+        bool inheritedConditional = false
     )
     {
         if (!visited.Add(Path.GetFullPath(documentPath)))
@@ -869,11 +870,20 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             if (element.Name.LocalName.Equals("Import", StringComparison.OrdinalIgnoreCase))
             {
+                var conditionalImport = inheritedConditional || HasCondition(element);
+                if (conditionalImport)
+                {
+                    // The file can still be inspected for declaration-level rules, but its pins
+                    // cannot be universal evidence when the import may not apply.
+                    allResolved = false;
+                }
+
                 allResolved &= FollowImport(
                     element,
                     documentPath,
                     versions,
                     conditional,
+                    conditionalImport,
                     visited,
                     pathComparer
                 );
@@ -888,7 +898,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             var packageName =
                 element.Attribute("Include")?.Value ?? element.Attribute("Update")?.Value;
 
-            if (HasCondition(element))
+            if (inheritedConditional || HasCondition(element))
             {
                 // A conditional pin may not exist in every evaluated configuration. Keep it in a
                 // separate stream for rules such as FloatingVersion that can still inspect its
@@ -929,12 +939,21 @@ public class CpmDriftAnalyzer : IAnalyzer
         string documentPath,
         Dictionary<string, CentralEntry> versions,
         List<ConditionalCentralEntry> conditional,
+        bool importIsConditional,
         HashSet<string> visited,
         StringComparer pathComparer
     )
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(documentPath));
-        if (directory is null || !TryResolveImportPath(import, directory, out var importedPath))
+        if (
+            directory is null
+            || !TryResolveImportPath(
+                import,
+                directory,
+                out var importedPath,
+                allowConditional: true
+            )
+        )
         {
             return false;
         }
@@ -952,7 +971,8 @@ public class CpmDriftAnalyzer : IAnalyzer
             versions,
             conditional,
             visited,
-            pathComparer
+            pathComparer,
+            inheritedConditional: importIsConditional
         );
     }
 
@@ -1462,21 +1482,23 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// </para>
     ///
     /// <para>
-    /// A condition on the import <em>or on any element enclosing it</em> makes it unresolved. An
-    /// <c>Import</c> inside a conditioned <c>ImportGroup</c> is as conditional as one carrying the
-    /// attribute itself, and acting on a group that may not apply would swap in a pin set MSBuild
-    /// never uses.
+    /// A condition on the import <em>or on any element enclosing it</em> makes it unresolved for
+    /// property readers. Central discovery may still ask for the statically resolvable path so it
+    /// can retain declarations for <c>FloatingVersion</c>, while keeping them out of universal drift
+    /// evidence. An <c>Import</c> inside a conditioned <c>ImportGroup</c> is as conditional as one
+    /// carrying the attribute itself.
     /// </para>
     /// </summary>
     private static bool TryResolveImportPath(
         XElement element,
         string directory,
-        out string resolved
+        out string resolved,
+        bool allowConditional = false
     )
     {
         resolved = string.Empty;
 
-        if (HasCondition(element))
+        if (!allowConditional && HasCondition(element))
         {
             return false;
         }
