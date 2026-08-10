@@ -1495,6 +1495,32 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_AmendsAcrossMutuallyExclusivePropertyAssignment()
+    {
+        var path = WriteProject(
+            """
+              <PropertyGroup>
+                <Mode>A</Mode>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="5.*" Condition="'$(Mode)' == 'A'" />
+              </ItemGroup>
+              <PropertyGroup Condition="'$(Mode)' == 'B'">
+                <Mode>B</Mode>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="6.0.0" Condition="'$(Mode)' == 'A'" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle(reference => reference.Version == "6.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_DoesNotAmendAcrossAnInterveningImport()
     {
         File.WriteAllText(
@@ -1527,6 +1553,29 @@ public class DeclaredUpdateItemTests : IDisposable
         success.Should().BeTrue();
         references.Should().Contain(reference => reference.Version == "5.*");
         references.Should().Contain(reference => reference.Version == "6.0.0");
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_WiderDisjunctionAmendsEachNarrowerDisjunct()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Update="Serilog">
+                  <VersionOverride Condition="('$(TargetFramework)' == 'net8.0' And '$(Configuration)' == 'Debug') Or ('$(TargetFramework)' == 'net9.0' And '$(Configuration)' == 'Release')">5.*</VersionOverride>
+                </PackageReference>
+                <PackageReference Update="Serilog">
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0' Or '$(TargetFramework)' == 'net9.0'">6.0.0</VersionOverride>
+                </PackageReference>
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().NotContain(reference => reference.VersionOverride == "5.*");
+        references.Should().Contain(reference => reference.VersionOverride == "6.0.0");
     }
 
     [Fact]

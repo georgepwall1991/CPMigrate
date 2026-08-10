@@ -179,8 +179,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         return string.Join('.', path);
     }
 
+    private sealed record PropertyMutation(
+        string PropertyName,
+        string? ConditionalScope
+    );
+
     private sealed record PropertyMutationState(
-        IReadOnlyDictionary<string, int> PropertyVersions,
+        IReadOnlyList<PropertyMutation> Mutations,
         int ImportVersion
     );
 
@@ -189,15 +194,15 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     )
     {
         Dictionary<string, PropertyMutationState> states = new(StringComparer.Ordinal);
-        Dictionary<string, int> propertyVersions = new(StringComparer.OrdinalIgnoreCase);
+        List<PropertyMutation> propertyMutations = [];
         var importVersion = 0;
-        VisitProjectElements(projectRoot, propertyVersions, ref importVersion, states);
+        VisitProjectElements(projectRoot, propertyMutations, ref importVersion, states);
         return states;
     }
 
     private static void VisitProjectElements(
         ProjectElementContainer parent,
-        Dictionary<string, int> propertyVersions,
+        List<PropertyMutation> propertyMutations,
         ref int importVersion,
         Dictionary<string, PropertyMutationState> propertyMutationStates
     )
@@ -206,7 +211,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         {
             if (child is ProjectPropertyElement property)
             {
-                propertyVersions[property.Name] = propertyVersions.GetValueOrDefault(property.Name) + 1;
+                propertyMutations.Add(new PropertyMutation(property.Name, GetConditionalScope(property)));
             }
 
             if (child is ProjectImportElement)
@@ -222,14 +227,14 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             if (child is ProjectItemElement item)
             {
                 propertyMutationStates[GetElementPath(item)] = new PropertyMutationState(
-                    new Dictionary<string, int>(propertyVersions, StringComparer.OrdinalIgnoreCase),
+                    propertyMutations.ToArray(),
                     importVersion
                 );
             }
 
             if (child is ProjectElementContainer container)
             {
-                VisitProjectElements(container, propertyVersions, ref importVersion, propertyMutationStates);
+                VisitProjectElements(container, propertyMutations, ref importVersion, propertyMutationStates);
             }
         }
     }
@@ -298,10 +303,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
                     var propertyMutationState = propertyMutationStatesByPath.GetValueOrDefault(
                         GetElementPath(item)
-                    ) ?? new PropertyMutationState(
-                        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
-                        0
-                    );
+                    ) ?? new PropertyMutationState([], 0);
 
                     var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
                     var version = versionMetadata?.Value ?? string.Empty;
@@ -876,9 +878,40 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
         var propertyNames = GetConditionPropertyNames(currentScope);
         propertyNames.UnionWith(GetConditionPropertyNames(existingScope));
-        return propertyNames.All(propertyName =>
-            current.PropertyVersions.GetValueOrDefault(propertyName)
-                == existing.PropertyVersions.GetValueOrDefault(propertyName)
+        if (current.Mutations.Count < existing.Mutations.Count)
+        {
+            return false;
+        }
+
+        for (var index = existing.Mutations.Count; index < current.Mutations.Count; index++)
+        {
+            var mutation = current.Mutations[index];
+            if (
+                propertyNames.Contains(mutation.PropertyName)
+                && ConditionalScopesMayOverlap(mutation.ConditionalScope, currentScope)
+                && ConditionalScopesMayOverlap(mutation.ConditionalScope, existingScope)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ConditionalScopesMayOverlap(string? leftScope, string? rightScope)
+    {
+        if (leftScope is null || rightScope is null)
+        {
+            return true;
+        }
+
+        var leftConditions = leftScope.Split(" -> ", StringSplitOptions.None);
+        var rightConditions = rightScope.Split(" -> ", StringSplitOptions.None);
+        return !leftConditions.Any(leftCondition =>
+            rightConditions.Any(rightCondition =>
+                AreMutuallyExclusiveMetadataConditions(leftCondition, rightCondition)
+            )
         );
     }
 
@@ -969,30 +1002,36 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
         var widerDisjuncts = SplitTopLevelCondition(wider, "Or")
             .Select(NormalizeConditionDisjunct)
-            .ToHashSet(StringComparer.Ordinal);
+            .ToArray();
         var narrowerDisjuncts = SplitTopLevelCondition(narrower, "Or")
             .Select(NormalizeConditionDisjunct)
-            .ToHashSet(StringComparer.Ordinal);
-        if (widerDisjuncts.SetEquals(narrowerDisjuncts))
+            .ToArray();
+        if (
+            widerDisjuncts
+                .ToHashSet(StringComparer.Ordinal)
+                .SetEquals(narrowerDisjuncts)
+        )
         {
             return true;
         }
 
-        return widerDisjuncts.Any(normalizedDisjunct =>
-        {
-            if (string.Equals(
-                normalizedDisjunct,
-                narrower,
-                StringComparison.Ordinal
-            ))
-            {
-                return true;
-            }
+        return narrowerDisjuncts.All(narrowerDisjunct =>
+            widerDisjuncts.Any(widerDisjunct =>
+                ConditionDisjunctCovers(widerDisjunct, narrowerDisjunct)
+            )
+        );
+    }
 
-            return TryGetConditionConjuncts(normalizedDisjunct, out var widerConjuncts)
-                && TryGetConditionConjuncts(narrower, out var narrowerConjuncts)
-                && narrowerConjuncts.IsSupersetOf(widerConjuncts);
-        });
+    private static bool ConditionDisjunctCovers(string widerDisjunct, string narrowerDisjunct)
+    {
+        if (string.Equals(widerDisjunct, narrowerDisjunct, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return TryGetConditionConjuncts(widerDisjunct, out var widerConjuncts)
+            && TryGetConditionConjuncts(narrowerDisjunct, out var narrowerConjuncts)
+            && narrowerConjuncts.IsSupersetOf(widerConjuncts);
     }
 
     private static string NormalizeConditionDisjunct(string disjunct)
