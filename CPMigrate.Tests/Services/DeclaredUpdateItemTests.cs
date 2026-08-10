@@ -93,6 +93,29 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ExpandableVersionUpdateIsNotAFictitiousPackage()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Foo" Version="1.0.0" />
+                <PackageReference Update="$(PackageId)" Version="2.0.0" />
+                <PackageReference Update="@(PackageIds)" VersionOverride="3.0.0" />
+                <PackageReference Update="%(Identity)" Version="4.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle();
+        references.Should().ContainSingle(reference =>
+            reference.PackageName == "Foo" && reference.Version == "1.0.0"
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalUpdateAmendingInclude_RemainsSeparate()
     {
         var path = WriteProject(

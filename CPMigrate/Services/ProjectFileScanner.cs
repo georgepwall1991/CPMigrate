@@ -351,13 +351,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     if (
                         isUpdate
                         && hasVersionMetadata
-                        && IsGlobbedPackageSpecification(packageName)
+                        && IsUnevaluablePackageSpecification(packageName)
                     )
                     {
-                        // A globbed Update applies to items selected by MSBuild, not to a package whose
-                        // literal ID is the glob. Without evaluating the full item graph, treating it as a
-                        // package declaration creates fictitious findings; retain the known declarations
-                        // and fail closed for this version-bearing Update.
+                        // A pattern- or expression-based Update applies to items selected by MSBuild, not
+                        // to a package whose literal ID is the expression. Without evaluating the full
+                        // item graph, treating it as a package declaration creates fictitious findings;
+                        // retain the known declarations and fail closed for this version-bearing Update.
                         continue;
                     }
 
@@ -475,9 +475,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         return packageName.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
-    private static bool IsGlobbedPackageSpecification(string packageName)
+    private static bool IsUnevaluablePackageSpecification(string packageName)
     {
-        return packageName.Contains('*') || packageName.Contains('?');
+        return packageName.Contains('*')
+            || packageName.Contains('?')
+            || packageName.Contains("$(", StringComparison.Ordinal)
+            || packageName.Contains("@(", StringComparison.Ordinal)
+            || packageName.Contains("%(", StringComparison.Ordinal);
     }
 
     private static void AddDeclaredPackageReference(
