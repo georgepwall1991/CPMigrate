@@ -15,7 +15,8 @@ public class DuplicatePackageAnalyzer : IAnalyzer
         var issues = new List<AnalysisIssue>();
 
         // Group by lowercase name to find different casing variations
-        var casingGroups = packageInfo.References
+        var casingGroups = packageInfo.GetDeclaredReferences()
+            .Where(r => !r.IsTransitive)
             .GroupBy(r => r.PackageName.ToLowerInvariant())
             .Where(g => g.Select(r => r.PackageName).Distinct(StringComparer.Ordinal).Count() > 1);
 

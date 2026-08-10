@@ -59,6 +59,87 @@ public class DuplicatePackageAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_OnlyTransitiveCasingVariations_ReturnsEmptyIssues()
+    {
+        // Resolved transitive packages are not declarations a project can edit. When declared
+        // references were read successfully, casing analysis must not turn those graph entries
+        // into a fixable project-file finding.
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1.csproj", IsTransitive: true),
+                new("newtonsoft.json", "13.0.1", "P2.csproj", "P2.csproj", IsTransitive: true)
+            },
+            DeclaredReferences: Array.Empty<PackageReference>());
+
+        // Act
+        var result = _analyzer.Analyze(packageInfo);
+
+        // Assert
+        result.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_UsesDeclaredReferences_WhenResolvedGraphDiffers()
+    {
+        // Arrange
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1.csproj", IsTransitive: true),
+                new("Newtonsoft.Json", "13.0.1", "P2.csproj", "P2.csproj", IsTransitive: true)
+            },
+            DeclaredReferences: new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1.csproj"),
+                new("newtonsoft.json", "13.0.1", "P2.csproj", "P2.csproj")
+            });
+
+        // Act
+        var result = _analyzer.Analyze(packageInfo);
+
+        // Assert
+        result.Issues.Should().ContainSingle();
+        result.Issues[0].Description.Should().Contain("2 casing variations");
+    }
+
+    [Fact]
+    public void Analyze_MixedDeclaredAndTransitiveCasing_ReturnsEmptyIssues()
+    {
+        // Arrange
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1.csproj"),
+                new("newtonsoft.json", "13.0.1", "P2.csproj", "P2.csproj", IsTransitive: true)
+            });
+
+        // Act
+        var result = _analyzer.Analyze(packageInfo);
+
+        // Assert
+        result.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_TransitiveFallbackCasing_ReturnsEmptyIssues()
+    {
+        // Arrange
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "13.0.1", "P1.csproj", "P1.csproj", IsTransitive: true),
+                new("newtonsoft.json", "13.0.1", "P2.csproj", "P2.csproj", IsTransitive: true)
+            });
+
+        // Act
+        var result = _analyzer.Analyze(packageInfo);
+
+        // Assert
+        result.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Analyze_MultipleCasingVariations_ReturnsIssue()
     {
         // Arrange
