@@ -437,14 +437,14 @@ public class VersionInconsistencyFixer : IFixer
         var itemStates = new List<(
             XElement? Reference,
             int StartIndex,
-            bool OverrideIsActive,
+            IReadOnlyList<string?> OverrideScopes,
             bool ConditionalOverrideClearIsActive
         )>
         {
             // An Update-only history may target an item imported from Directory.Build.props or an SDK.
             // Its inherited VersionOverride is not visible in this local XML, so begin conservatively as
             // potentially overridden until a local declaration proves otherwise.
-            (null, 0, true, false),
+            (null, 0, new string?[] { null }, false),
         };
         for (var index = 0; index < packageReferences.Count; index++)
         {
@@ -460,58 +460,73 @@ public class VersionInconsistencyFixer : IFixer
                 // A local Include establishes the visible item history. Do not let the speculative
                 // Update-only sentinel continue protecting it after this point.
                 itemStates.RemoveAll(state => state.Reference is null);
+                var includeOverride = GetLastMetadataValueAndScope(element, "VersionOverride");
                 itemStates.Add(
                     (
                         element,
                         index,
-                        !string.IsNullOrWhiteSpace(
-                            GetMetadataValues(element, "VersionOverride").LastOrDefault()
-                        ),
+                        string.IsNullOrWhiteSpace(includeOverride.Value)
+                            ? Array.Empty<string?>()
+                            : new[] { includeOverride.Scope },
                         false
                     )
                 );
                 continue;
             }
 
-            var overrideValue = GetMetadataValues(element, "VersionOverride").LastOrDefault();
+            var overrideMetadata = GetLastMetadataValueAndScope(element, "VersionOverride");
+            var overrideValue = overrideMetadata.Value;
+            if (overrideValue is null)
+            {
+                continue;
+            }
+
             if (!IsConditional(element))
             {
-                if (overrideValue is not null)
+                var overrideScopes = string.IsNullOrWhiteSpace(overrideValue)
+                    ? Array.Empty<string?>()
+                    : new[] { overrideMetadata.Scope };
+                for (var stateIndex = 0; stateIndex < itemStates.Count; stateIndex++)
                 {
-                    var overrideIsActive = !string.IsNullOrWhiteSpace(overrideValue);
-                    for (var stateIndex = 0; stateIndex < itemStates.Count; stateIndex++)
-                    {
-                        var state = itemStates[stateIndex];
-                        itemStates[stateIndex] = (
-                            state.Reference,
-                            state.StartIndex,
-                            overrideIsActive,
-                            false
-                        );
-                    }
+                    var state = itemStates[stateIndex];
+                    itemStates[stateIndex] = (
+                        state.Reference,
+                        state.StartIndex,
+                        overrideScopes,
+                        false
+                    );
                 }
 
                 continue;
             }
 
-            if (
-                isUpdate
-                && overrideValue is not null
-                && string.IsNullOrWhiteSpace(overrideValue)
-            )
+            for (var stateIndex = 0; stateIndex < itemStates.Count; stateIndex++)
             {
-                for (var stateIndex = 0; stateIndex < itemStates.Count; stateIndex++)
+                var state = itemStates[stateIndex];
+                if (!string.IsNullOrWhiteSpace(overrideValue))
                 {
-                    var state = itemStates[stateIndex];
-                    if (state.OverrideIsActive)
-                    {
-                        itemStates[stateIndex] = (
-                            state.Reference,
-                            state.StartIndex,
-                            state.OverrideIsActive,
-                            true
-                        );
-                    }
+                    itemStates[stateIndex] = (
+                        state.Reference,
+                        state.StartIndex,
+                        state.OverrideScopes
+                            .Concat(new[] { overrideMetadata.Scope })
+                            .Distinct()
+                            .ToArray(),
+                        state.ConditionalOverrideClearIsActive
+                    );
+                }
+                else if (
+                    state.OverrideScopes.Any(scope =>
+                        ConditionalScopesMayOverlap(scope, overrideMetadata.Scope)
+                    )
+                )
+                {
+                    itemStates[stateIndex] = (
+                        state.Reference,
+                        state.StartIndex,
+                        state.OverrideScopes,
+                        true
+                    );
                 }
             }
         }
@@ -524,6 +539,140 @@ public class VersionInconsistencyFixer : IFixer
                 ReferenceEquals(state.Reference, currentReference)
                 && state.ConditionalOverrideClearIsActive
             );
+    }
+
+    private static (string? Value, string? Scope) GetLastMetadataValueAndScope(
+        XElement packageReference,
+        string metadataName
+    )
+    {
+        var value = packageReference.Attribute(metadataName)?.Value;
+        var scope = value is null ? null : GetConditionalScope(packageReference);
+        var metadataElement = packageReference.Element(metadataName);
+        if (metadataElement is not null)
+        {
+            value = metadataElement.Value;
+            scope = GetConditionalScope(metadataElement);
+        }
+
+        return (value, scope);
+    }
+
+    private static string? GetConditionalScope(XElement element)
+    {
+        List<string> scopes = [];
+        for (var current = element; current is not null; current = current.Parent)
+        {
+            var condition = current.Attribute("Condition")?.Value;
+            if (!string.IsNullOrWhiteSpace(condition))
+            {
+                scopes.Add(condition.Trim());
+            }
+
+            if (current.Name.LocalName == "Otherwise")
+            {
+                scopes.Add("<Otherwise>");
+            }
+        }
+
+        return scopes.Count == 0 ? null : string.Join(" -> ", scopes);
+    }
+
+    private static bool ConditionalScopesMayOverlap(string? leftScope, string? rightScope)
+    {
+        if (leftScope is null || rightScope is null)
+        {
+            return true;
+        }
+
+        var leftConditions = leftScope.Split(" -> ", StringSplitOptions.None);
+        var rightConditions = rightScope.Split(" -> ", StringSplitOptions.None);
+        return !leftConditions.Any(leftCondition =>
+            rightConditions.Any(rightCondition =>
+                AreMutuallyExclusiveConditions(leftCondition, rightCondition)
+            )
+        );
+    }
+
+    private static bool AreMutuallyExclusiveConditions(string left, string right)
+    {
+        if (
+            !TryGetSimpleEqualityCondition(left, out var leftProperty, out var leftValue)
+            || !TryGetSimpleEqualityCondition(right, out var rightProperty, out var rightValue)
+        )
+        {
+            return false;
+        }
+
+        return string.Equals(leftProperty, rightProperty, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(leftValue, rightValue, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetSimpleEqualityCondition(
+        string condition,
+        out string property,
+        out string value
+    )
+    {
+        property = string.Empty;
+        value = string.Empty;
+        var equalsIndex = condition.IndexOf("==", StringComparison.Ordinal);
+        if (
+            equalsIndex < 0
+            || condition.IndexOf("==", equalsIndex + 2, StringComparison.Ordinal) >= 0
+            || condition.Contains(" And ", StringComparison.OrdinalIgnoreCase)
+            || condition.Contains(" Or ", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return false;
+        }
+
+        var left = TrimConditionOperand(condition[..equalsIndex]);
+        var right = TrimConditionOperand(condition[(equalsIndex + 2)..]);
+        if (IsSimplePropertyReference(left))
+        {
+            property = left[2..^1];
+            value = right;
+            return true;
+        }
+
+        if (IsSimplePropertyReference(right))
+        {
+            property = right[2..^1];
+            value = left;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string TrimConditionOperand(string operand)
+    {
+        var trimmed = operand.Trim();
+        while (
+            trimmed.Length >= 2
+            && (
+                (trimmed[0] == '\'' && trimmed[^1] == '\'')
+                || (trimmed[0] == '"' && trimmed[^1] == '"')
+            )
+        )
+        {
+            trimmed = trimmed[1..^1].Trim();
+        }
+
+        while (trimmed.Length >= 2 && trimmed[0] == '(' && trimmed[^1] == ')')
+        {
+            trimmed = trimmed[1..^1].Trim();
+        }
+
+        return trimmed;
+    }
+
+    private static bool IsSimplePropertyReference(string value)
+    {
+        return value.StartsWith("$(", StringComparison.Ordinal)
+            && value.EndsWith(')')
+            && value.IndexOf("$(", 2, StringComparison.Ordinal) < 0;
     }
 
     private static bool IsMatchingUpdate(XElement packageReference, string packageName)
@@ -620,33 +769,56 @@ public class VersionInconsistencyFixer : IFixer
                 .Descendants("PackageReference")
                 .Where(reference => IsMatchingDeclaration(reference, packageName))
                 .ToList();
-            var hasInlineVersion = !matchingReferences.Any(reference =>
-                !IsMatchingUpdate(reference, packageName)
-            );
-            var hasActiveClear = false;
-
-            foreach (var reference in matchingReferences)
-            {
-                foreach (var version in GetUnconditionalMetadataValues(reference, "Version"))
-                {
-                    if (string.IsNullOrWhiteSpace(version))
-                    {
-                        hasActiveClear = hasInlineVersion;
-                    }
-                    else
-                    {
-                        hasInlineVersion = true;
-                        hasActiveClear = false;
-                    }
-                }
-            }
-
-            return hasActiveClear;
+            return HasActiveUnconditionalMetadataClear(
+                    matchingReferences,
+                    packageName,
+                    "Version"
+                )
+                || HasActiveUnconditionalMetadataClear(
+                    matchingReferences,
+                    packageName,
+                    "VersionOverride"
+                );
         }
         catch
         {
             return false;
         }
+    }
+
+    private static bool HasActiveUnconditionalMetadataClear(
+        IReadOnlyList<XElement> matchingReferences,
+        string packageName,
+        string metadataName
+    )
+    {
+        // An Update-only history may clear metadata inherited from an import, so start conservatively
+        // even though the supplying declaration is not visible in this project file.
+        var hasInlineMetadata = !matchingReferences.Any(reference =>
+            !IsMatchingUpdate(reference, packageName)
+        );
+        var hasActiveClear = false;
+
+        foreach (var reference in matchingReferences)
+        {
+            foreach (var value in GetUnconditionalMetadataValues(reference, metadataName))
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    hasActiveClear = hasInlineMetadata;
+                }
+                else
+                {
+                    // An expandable value is superseded by the clear without exposing a concrete
+                    // version this fixer could accidentally leave behind. Literal metadata, or the
+                    // inherited Update-only sentinel, must remain protected.
+                    hasInlineMetadata = !IsExpandableMetadata(value);
+                    hasActiveClear = false;
+                }
+            }
+        }
+
+        return hasActiveClear;
     }
 
     private static IEnumerable<string> GetPackageNames(string? specification)

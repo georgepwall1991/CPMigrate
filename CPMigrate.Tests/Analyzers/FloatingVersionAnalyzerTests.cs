@@ -433,6 +433,43 @@ public class FloatingVersionAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_NestedPropertyFunctionMutationDoesNotFoldIdenticalGuards()
+    {
+        var projectPath = Path.Combine(_testDirectory, "NestedPropertyFunctionMutation.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <PropertyGroup>
+                <Mode>A</Mode>
+              </PropertyGroup>
+              <ItemGroup Condition="$([System.String]::Equals('$(Mode)', 'A'))">
+                <PackageReference Include="Serilog" Version="4.*" />
+              </ItemGroup>
+              <PropertyGroup>
+                <Mode>B</Mode>
+              </PropertyGroup>
+              <ItemGroup Condition="$([System.String]::Equals('$(Mode)', 'A'))">
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().ContainSingle();
+    }
+
+    [Fact]
     public void Analyze_ConditionalVersionUpdateWithInheritedVersionOverride_DoesNotReportSupersededFloat()
     {
         var projectPath = Path.Combine(_testDirectory, "App.csproj");

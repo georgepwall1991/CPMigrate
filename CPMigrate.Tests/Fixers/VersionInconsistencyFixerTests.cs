@@ -997,6 +997,89 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_UnconditionalEmptyVersionOverrideClearDeclinesRewrite()
+    {
+        var projectPath = Path.Combine(_testDirectory, "UnconditionalEmptyVersionOverrideClear.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Foo" VersionOverride="1.0.0" />
+                <PackageReference Update="Foo" VersionOverride="" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherUnconditionalEmptyVersionOverrideClear.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "2.0.0 (UnconditionalEmptyVersionOverrideClear.csproj), 3.0.0 (OtherUnconditionalEmptyVersionOverrideClear.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "2.0.0", projectPath, "UnconditionalEmptyVersionOverrideClear.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherUnconditionalEmptyVersionOverrideClear.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeFalse();
+        result.Changes.Should().BeEmpty();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("Include=\"Foo\" VersionOverride=\"1.0.0\"");
+        content.Should().Contain("Update=\"Foo\" VersionOverride=\"\"");
+    }
+
+    [Fact]
+    public void Fix_ConditionedOverrideClearInSeparateBranchDoesNotProtectOrdinaryVersion()
+    {
+        var projectPath = Path.Combine(_testDirectory, "ConditionedOverrideClearSeparateBranch.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Foo" Version="1.0.0">
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">2.0.0</VersionOverride>
+                </PackageReference>
+                <PackageReference Update="Foo" VersionOverride="" Condition="'$(TargetFramework)' == 'net9.0'" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherConditionedOverrideClearSeparateBranch.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "1.0.0 (ConditionedOverrideClearSeparateBranch.csproj), 3.0.0 (OtherConditionedOverrideClearSeparateBranch.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "1.0.0", projectPath, "ConditionedOverrideClearSeparateBranch.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherConditionedOverrideClearSeparateBranch.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        File.ReadAllText(projectPath).Should().Contain("Version=\"3.0.0\"");
+    }
+
+    [Fact]
     public void Fix_LocalIncludeRetiresInheritedOverrideSentinel()
     {
         var projectPath = Path.Combine(_testDirectory, "LocalIncludeRetiresSentinel.csproj");

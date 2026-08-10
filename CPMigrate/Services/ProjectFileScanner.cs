@@ -256,7 +256,27 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 continue;
             }
 
-            var closingIndex = conditionalScope.IndexOf(')', index + 2);
+            var depth = 1;
+            var closingIndex = -1;
+            for (var candidate = index + 2; candidate < conditionalScope.Length; candidate++)
+            {
+                if (
+                    conditionalScope[candidate] == '$'
+                    && candidate + 1 < conditionalScope.Length
+                    && conditionalScope[candidate + 1] == '('
+                )
+                {
+                    depth++;
+                    continue;
+                }
+
+                if (conditionalScope[candidate] == ')' && --depth == 0)
+                {
+                    closingIndex = candidate;
+                    break;
+                }
+            }
+
             if (closingIndex <= index + 2)
             {
                 index++;
@@ -269,7 +289,9 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 propertyNames.Add(propertyName);
             }
 
-            index = closingIndex + 1;
+            // Keep scanning inside an MSBuild function so nested references such as $(Mode) are
+            // discovered even when the outer expression is not itself a simple property name.
+            index++;
         }
 
         return propertyNames;
