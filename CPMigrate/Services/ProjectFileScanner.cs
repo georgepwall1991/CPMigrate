@@ -370,16 +370,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         // Presence matters here: VersionOverride="" explicitly clears inherited
                         // metadata even though its normalized value is empty.
                         || versionOverride is not null;
-                    if (
-                        isUpdate
-                        && hasVersionMetadata
-                        && IsUnevaluablePackageSpecification(packageName)
-                    )
+                    if (hasVersionMetadata && IsUnevaluablePackageSpecification(packageName))
                     {
-                        // A pattern- or expression-based Update applies to items selected by MSBuild, not
-                        // to a package whose literal ID is the expression. Without evaluating the full
-                        // item graph, treating it as a package declaration creates fictitious findings;
-                        // fail the declaration scan so callers cannot analyze or rewrite a partial project.
+                        // A pattern- or expression-based Include/Update applies to items selected by
+                        // MSBuild, not to a package whose literal ID is the expression. Without evaluating
+                        // the full item graph, treating it as a package declaration creates fictitious
+                        // findings; fail the declaration scan so callers cannot analyze or rewrite a
+                        // partial project.
                         return ([], false);
                     }
 
@@ -438,25 +435,12 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     }
 
                     // Metadata-only Updates change how an existing item is consumed, not which version
-                    // it declares. Do not add one alongside an Include it amends, because declaration-based
-                    // duplicate rules would call that a duplicate; retain a standalone one so casing and
-                    // other declaration-based rules can still see the package name. Version rules filter
-                    // its empty effective version from their comparisons.
+                    // it declares. Keep the declaration even when it follows an Include: casing rules
+                    // need to see its spelling, while RedundantReferenceAnalyzer filters this marker out
+                    // of duplicate evidence. Version rules filter its empty effective version from their
+                    // comparisons.
                     foreach (var expandedPackageName in ExpandPackageNames(packageName))
                     {
-                        var hasPriorReference = isUpdate
-                            && references.Any(existing =>
-                                string.Equals(
-                                    existing.PackageName,
-                                    expandedPackageName,
-                                    StringComparison.OrdinalIgnoreCase
-                                )
-                            );
-                        if (isUpdate && !hasVersionMetadata && hasPriorReference)
-                        {
-                            continue;
-                        }
-
                         AddDeclaredPackageReference(
                             references,
                             expandedPackageName,
@@ -557,6 +541,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             };
         }
 
+        if (isUpdate && !hasVersionMetadata && !hasVersionOverrideMetadata)
+        {
+            propertyMutationStates.Add(propertyMutationState);
+            references.Add(reference);
+            return;
+        }
+
         // An unconditional, version-bearing Update amends every item already declared rather
         // than adding another one, so recording it separately would have RedundantReference
         // report a duplicate that does not exist, and would leave the superseded version in
@@ -564,8 +555,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         // unconditional Update applies to a conditional item when that item exists, but it
         // does not make a later conditional Include inert. A conditional Update stays separate
         // from other conditional branches, while sequential Updates in the same branch fold.
-        // Metadata-only Updates were ignored above because they do not declare a version for
-        // these rules to compare.
+        // Metadata-only Updates are retained above for declaration rules but do not participate
+        // in version amendments.
         var amendedIndices = FindAmendmentIndices(
             references,
             isUpdate,

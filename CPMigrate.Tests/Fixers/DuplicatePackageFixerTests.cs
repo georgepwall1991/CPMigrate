@@ -288,6 +288,50 @@ public class DuplicatePackageFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_ListValuedInclude_RewritesOnlyTheNonStandardPackageEntry()
+    {
+        var projectPath = Path.Combine(_testDirectory, "ListValuedInclude.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="foo;Bar" Version="1.0.0" />
+                <PackageReference Include="Foo" Version="1.0.0" />
+                <PackageReference Include="Foo" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var issue = new AnalysisIssue(
+            "foo",
+            "Found casing variations: foo, Foo",
+            new[] { projectPath },
+            AnalysisIssueCode.DuplicatePackageCasing
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("foo", "1.0.0", projectPath, "ListValuedInclude.csproj"),
+                new("Foo", "1.0.0", projectPath, "ListValuedInclude.csproj"),
+                new("Foo", "1.0.0", projectPath, "ListValuedInclude.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        result.Changes.Should().ContainSingle();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("Include=\"Foo;Bar\"");
+        content.Should().NotContain("Include=\"foo;Bar\"");
+    }
+
+    [Fact]
     public void Fix_NoCasingVariations_ReturnsNoFixNeeded()
     {
         // Arrange

@@ -89,8 +89,8 @@ public class DuplicatePackageFixer : IFixer
                     ? e.Attribute("Update")
                     : e.Attribute("Include"))
                 .OfType<XAttribute>()
-                .Where(attribute => attribute.Value
-                    .Equals(packageNameInsensitive, StringComparison.OrdinalIgnoreCase))
+                .Where(attribute => GetPackageNames(attribute.Value)
+                    .Any(name => name.Equals(packageNameInsensitive, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
 
             var modified = false;
@@ -98,10 +98,21 @@ public class DuplicatePackageFixer : IFixer
 
             foreach (var packageRef in packageRefs)
             {
-                if (packageRef.Value != standardCasing)
+                var packageNames = GetPackageNames(packageRef.Value).ToList();
+                var updatedNames = packageNames
+                    .Select(name => name.Equals(packageNameInsensitive, StringComparison.OrdinalIgnoreCase)
+                        ? standardCasing
+                        : name)
+                    .ToList();
+                if (!packageNames.SequenceEqual(updatedNames, StringComparer.Ordinal))
                 {
-                    oldCasings.Add(packageRef.Value);
-                    packageRef.Value = standardCasing;
+                    oldCasings.AddRange(
+                        packageNames
+                            .Zip(updatedNames)
+                            .Where(pair => !string.Equals(pair.First, pair.Second, StringComparison.Ordinal))
+                            .Select(pair => pair.First)
+                    );
+                    packageRef.Value = string.Join(';', updatedNames);
                     modified = true;
                 }
             }
@@ -131,5 +142,13 @@ public class DuplicatePackageFixer : IFixer
             // Returns null to skip this file; callers handle the absence gracefully.
             return null;
         }
+    }
+
+    private static IEnumerable<string> GetPackageNames(string specification)
+    {
+        return specification.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        );
     }
 }

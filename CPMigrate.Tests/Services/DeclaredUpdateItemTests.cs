@@ -111,6 +111,23 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ExpandableVersionIncludeIsNotAFictitiousPackage()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="$(PackageId)" Version="1.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeFalse();
+        references.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalUpdateAmendingInclude_RemainsSeparate()
     {
         var path = WriteProject(
@@ -2301,9 +2318,37 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = Scan(path);
 
         success.Should().BeTrue();
-        var reference = references.Should().ContainSingle().Subject;
-        reference.Version.Should().Be("4.0.0");
-        reference.IsConditional.Should().BeFalse();
+        references.Should().HaveCount(2);
+        references.Should().ContainSingle(reference =>
+            reference.Version == "4.0.0" && !reference.IsConditional
+        );
+        references.Should().ContainSingle(reference =>
+            reference.IsMetadataOnlyUpdate && reference.IsConditional
+        );
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_MetadataOnlyUpdateAfterIncludeIsRetainedForCasingRules()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Foo" />
+                <PackageReference Update="foo" PrivateAssets="all" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().ContainSingle(reference =>
+            reference.PackageName == "Foo" && !reference.IsMetadataOnlyUpdate
+        );
+        references.Should().ContainSingle(reference =>
+            reference.PackageName == "foo" && reference.IsMetadataOnlyUpdate
+        );
     }
 
     [Fact]
