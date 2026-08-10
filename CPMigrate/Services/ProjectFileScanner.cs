@@ -783,28 +783,21 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             ConditionalUpdateMetadataSurvives(references[index], versionOverride)
             && IsExplicitVersionOverrideClear(references[index])
         );
-        var unconditionalRecordTemplate =
-            !isConditional
-                && !hasUnconditionalReference
-                && hasConditionalReference
-                && !hasSurvivingConditionalClear
-                && (
-                    !string.IsNullOrWhiteSpace(version)
-                    || !string.IsNullOrWhiteSpace(versionOverride)
+        var unconditionalRecordTemplate = CanCreateUnconditionalRecordTemplate(
+            isConditional,
+            hasUnconditionalReference,
+            hasConditionalReference,
+            hasSurvivingConditionalClear,
+            version,
+            versionOverride,
+            hasVersionOverrideMetadata
+        )
+            ? amendedIndices
+                .Select(index => references[index])
+                .FirstOrDefault(existing =>
+                    IsUnconditionalRecordTemplate(existing, versionOverride, hasVersionOverrideMetadata)
                 )
-                ? amendedIndices
-                    .Select(index => references[index])
-                    .FirstOrDefault(existing =>
-                        existing.IsConditional
-                        && existing.IsConditionalUpdate
-                        && !IsExplicitVersionOverrideClear(existing)
-                        && ConditionalUpdateMetadataSurvives(existing, versionOverride)
-                        && (
-                            !string.IsNullOrWhiteSpace(existing.VersionOverride)
-                            || !string.IsNullOrWhiteSpace(versionOverride)
-                        )
-                    )
-                : null;
+            : null;
         var foldedIndices = FindFoldedConditionalUpdateIndices(
             references,
             amendedIndices,
@@ -879,6 +872,44 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
         return existing.HasConditionalUpdateVersionMetadata
             || (isConditional && hasVersionMetadata && existing.IsConditionalUpdate);
+    }
+
+    private static bool CanCreateUnconditionalRecordTemplate(
+        bool isConditional,
+        bool hasUnconditionalReference,
+        bool hasConditionalReference,
+        bool hasSurvivingConditionalClear,
+        string version,
+        string? versionOverride,
+        bool hasVersionOverrideMetadata
+    )
+    {
+        return !isConditional
+            && !hasUnconditionalReference
+            && hasConditionalReference
+            && !hasSurvivingConditionalClear
+            && (
+                !string.IsNullOrWhiteSpace(version)
+                || !string.IsNullOrWhiteSpace(versionOverride)
+                || (hasVersionOverrideMetadata && versionOverride is not null)
+            );
+    }
+
+    private static bool IsUnconditionalRecordTemplate(
+        PackageReference existing,
+        string? versionOverride,
+        bool hasVersionOverrideMetadata
+    )
+    {
+        return existing.IsConditional
+            && existing.IsConditionalUpdate
+            && !IsExplicitVersionOverrideClear(existing)
+            && ConditionalUpdateMetadataSurvives(existing, versionOverride)
+            && (
+                !string.IsNullOrWhiteSpace(existing.VersionOverride)
+                || !string.IsNullOrWhiteSpace(versionOverride)
+                || (hasVersionOverrideMetadata && versionOverride is not null)
+            );
     }
 
     private static string? GetAmendedVersionOverride(
