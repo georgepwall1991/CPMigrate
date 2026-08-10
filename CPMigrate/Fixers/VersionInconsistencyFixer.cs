@@ -367,7 +367,10 @@ public class VersionInconsistencyFixer : IFixer
             bool ConditionalOverrideClearIsActive
         )>
         {
-            (null, 0, false, false),
+            // An Update-only history may target an item imported from Directory.Build.props or an SDK.
+            // Its inherited VersionOverride is not visible in this local XML, so begin conservatively as
+            // potentially overridden until a local declaration proves otherwise.
+            (null, 0, true, false),
         };
         for (var index = 0; index < packageReferences.Count; index++)
         {

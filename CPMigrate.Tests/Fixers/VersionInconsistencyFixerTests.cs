@@ -433,6 +433,48 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_ImportedOverrideClearPreservesUnconditionalVersion()
+    {
+        var projectPath = Path.Combine(_testDirectory, "ImportedOverride.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Update="Newtonsoft.Json" Version="3.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Newtonsoft.Json" VersionOverride="" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherImportedOverride.csproj", "Newtonsoft.Json", "4.0.0");
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "3.0.0 (ImportedOverride.csproj), 4.0.0 (OtherImportedOverride.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "3.0.0", projectPath, "ImportedOverride.csproj"),
+                new("Newtonsoft.Json", "4.0.0", otherPath, "OtherImportedOverride.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        result.Changes.Should().BeEmpty();
+        File.ReadAllText(projectPath).Should().Contain("Version=\"3.0.0\"");
+    }
+
+    [Fact]
     public void Fix_UpdateOnlyVersionOverride_UpdatesVersionOverrideAttribute()
     {
         // Arrange: VersionOverride is the effective project-level pin under central package management,

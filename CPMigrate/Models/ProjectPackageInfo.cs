@@ -283,6 +283,7 @@ public record ProjectPackageInfo(
         return TryGetSimpleEquality(leftPart.Condition, out var leftProperty, out var leftValue)
             && TryGetSimpleEquality(rightPart.Condition, out var rightProperty, out var rightValue)
             && string.Equals(leftProperty, rightProperty, StringComparison.OrdinalIgnoreCase)
+            && IsKnownImmutableConditionProperty(leftProperty)
             && !string.Equals(leftValue, rightValue, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -388,6 +389,15 @@ public record ProjectPackageInfo(
             && !operand.Contains("$(", StringComparison.Ordinal)
             && !operand.Contains("@(", StringComparison.Ordinal)
             && !operand.Contains("%(", StringComparison.Ordinal);
+    }
+
+    private static bool IsKnownImmutableConditionProperty(string property)
+    {
+        return property.Equals("$(TargetFramework)", StringComparison.OrdinalIgnoreCase)
+            || property.Equals("$(TargetFrameworkIdentifier)", StringComparison.OrdinalIgnoreCase)
+            || property.Equals("$(TargetFrameworkVersion)", StringComparison.OrdinalIgnoreCase)
+            || property.Equals("$(Configuration)", StringComparison.OrdinalIgnoreCase)
+            || property.Equals("$(Platform)", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
