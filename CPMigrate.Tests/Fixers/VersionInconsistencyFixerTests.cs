@@ -475,7 +475,7 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
-    public void Fix_MultiItemUpdateUpdatesMatchingPackage()
+    public void Fix_MultiItemUpdateDeclinesUnrelatedPackageChange()
     {
         var projectPath = Path.Combine(_testDirectory, "MultiItemUpdate.csproj");
         File.WriteAllText(
@@ -508,8 +508,11 @@ public class VersionInconsistencyFixerTests : IDisposable
             new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
         );
 
-        result.Success.Should().BeTrue();
-        File.ReadAllText(projectPath).Should().Contain("Update=\"Foo;Bar\" Version=\"3.0.0\"");
+        result.Success.Should().BeFalse();
+        result.Changes.Should().BeEmpty();
+        result.Description.Should().Contain("multiple packages");
+        File.ReadAllText(projectPath).Should().Contain("Update=\"Foo;Bar\" Version=\"2.0.0\"");
+        File.ReadAllText(otherPath).Should().Contain("Version=\"3.0.0\"");
     }
 
     [Fact]

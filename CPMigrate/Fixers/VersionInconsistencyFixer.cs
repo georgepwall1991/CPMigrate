@@ -65,6 +65,16 @@ public class VersionInconsistencyFixer : IFixer
             .Where(r => r.Version != targetVersion)
             .GroupBy(r => r.ProjectPath);
 
+        var sharedPackageGroup = projectGroups.FirstOrDefault(group =>
+            HasMultiplePackageDeclaration(group.Key, issue.PackageName)
+        );
+        if (sharedPackageGroup is not null)
+        {
+            return FixResult.Failed(
+                $"Cannot standardize {issue.PackageName}: a PackageReference declaration targets multiple packages; split it before fixing"
+            );
+        }
+
         foreach (var group in projectGroups)
         {
             try
@@ -465,10 +475,41 @@ public class VersionInconsistencyFixer : IFixer
 
     private static bool ContainsPackageName(string? specification, string packageName)
     {
+        return GetPackageNames(specification)
+            .Any(name => string.Equals(name, packageName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool HasMultiplePackageDeclaration(string projectPath, string packageName)
+    {
+        if (!File.Exists(projectPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var document = XDocument.Parse(File.ReadAllText(projectPath));
+            return document
+                .Descendants("PackageReference")
+                .Where(reference => IsMatchingDeclaration(reference, packageName))
+                .Any(reference => GetPackageNames(
+                    string.IsNullOrWhiteSpace(reference.Attribute("Include")?.Value)
+                        ? reference.Attribute("Update")?.Value
+                        : reference.Attribute("Include")?.Value
+                ).Skip(1).Any());
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static IEnumerable<string> GetPackageNames(string? specification)
+    {
         return specification?.Split(
             ';',
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-        ).Any(name => string.Equals(name, packageName, StringComparison.OrdinalIgnoreCase)) == true;
+        ) ?? [];
     }
 
     private static IEnumerable<string> GetMetadataValues(
