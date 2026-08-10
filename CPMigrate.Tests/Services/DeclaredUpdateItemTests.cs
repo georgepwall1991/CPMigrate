@@ -497,7 +497,7 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
-    public void ScanProjectPackages_UpdateBeforeInclude_IsIgnoredAsInert()
+    public void ScanProjectPackages_UpdateBeforeInclude_RetainsPotentialInheritedUpdate()
     {
         var path = WriteProject(
             """
@@ -512,7 +512,9 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = scanner.ScanProjectPackages(path);
 
         success.Should().BeTrue();
-        references.Should().ContainSingle().Which.Version.Should().Be("1.0.0");
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference => reference.Version == "2.0.0");
+        references.Should().Contain(reference => reference.Version == "1.0.0");
     }
 
     [Fact]
@@ -539,7 +541,7 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
-    public void ScanDeclaredPackages_UpdateBeforeInclude_IsIgnoredAsInert()
+    public void ScanDeclaredPackages_UpdateBeforeInclude_RetainsPotentialInheritedUpdate()
     {
         var path = WriteProject(
             """
@@ -553,7 +555,9 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = Scan(path);
 
         success.Should().BeTrue();
-        references.Should().ContainSingle().Which.Version.Should().Be("1.0.0");
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference => reference.Version == "2.0.0");
+        references.Should().Contain(reference => reference.Version == "1.0.0");
     }
 
     [Fact]

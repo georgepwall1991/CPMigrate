@@ -231,15 +231,6 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         packageName
                     );
 
-                    if (
-                        isUpdate
-                        && !hasPriorReference
-                        && HasLaterInclude(items, itemIndex, packageName)
-                    )
-                    {
-                        continue;
-                    }
-
                     if (amendedIndices.Count > 0)
                     {
                         ApplyAmendments(
@@ -305,14 +296,6 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         continue;
                     }
 
-                    var hasPriorReference = isUpdate
-                        && references.Any(existing =>
-                            string.Equals(
-                                existing.PackageName,
-                                packageName,
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                        );
                     var isConditional = HasConditionalAncestor(item);
                     var amendedIndices = FindAmendmentIndices(
                         references,
@@ -320,15 +303,6 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         isConditional,
                         packageName
                     );
-
-                    if (
-                        isUpdate
-                        && !hasPriorReference
-                        && HasLaterInclude(items, itemIndex, packageName)
-                    )
-                    {
-                        continue;
-                    }
 
                     if (versionMetadata.Value.Contains("$("))
                     {
@@ -383,28 +357,6 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             _consoleService.Warning($"Could not scan {projectName}: {ex.Message}");
             return (references, false);
         }
-    }
-
-    private static bool HasLaterInclude(
-        IReadOnlyList<ProjectItemElement> items,
-        int currentIndex,
-        string packageName
-    )
-    {
-        for (var index = currentIndex + 1; index < items.Count; index++)
-        {
-            var item = items[index];
-            if (
-                item.ItemType == "PackageReference"
-                && !HasConditionalAncestor(item)
-                && string.Equals(item.Include, packageName, StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static List<int> FindAmendmentIndices(

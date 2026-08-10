@@ -165,12 +165,11 @@ public class VersionInconsistencyFixer : IFixer
             var originalContent = File.ReadAllText(projectPath);
             var doc = XDocument.Parse(originalContent);
 
-            var allPackageRefs = doc.Descendants("PackageReference").ToList();
-            var packageRefs = allPackageRefs
+            var packageRefs = doc.Descendants("PackageReference")
                 // Keep the attribute selection aligned with ProjectFileScanner: an empty Include means
                 // this is an Update item, so matching Include alone would report a successful no-op for a
                 // declared reference the analyzer just proved has a conflicting version.
-                .Where((e, index) =>
+                .Where(e =>
                     string.Equals(
                         string.IsNullOrWhiteSpace(e.Attribute("Include")?.Value)
                             ? e.Attribute("Update")?.Value
@@ -178,7 +177,6 @@ public class VersionInconsistencyFixer : IFixer
                         packageName,
                         StringComparison.OrdinalIgnoreCase
                     )
-                    && !IsInertUpdateBeforeInclude(allPackageRefs, index)
                 )
                 // A conditional declaration is deliberate: a multi-targeted project pinning a different
                 // version per framework is the ordinary way to express "the newer one does not support
@@ -279,47 +277,4 @@ public class VersionInconsistencyFixer : IFixer
         return (true, false);
     }
 
-    private static bool IsInertUpdateBeforeInclude(
-        IReadOnlyList<XElement> packageReferences,
-        int currentIndex
-    )
-    {
-        var current = packageReferences[currentIndex];
-        if (!string.IsNullOrWhiteSpace(current.Attribute("Include")?.Value))
-        {
-            return false;
-        }
-
-        var packageName = current.Attribute("Update")?.Value;
-        if (string.IsNullOrWhiteSpace(packageName))
-        {
-            return false;
-        }
-
-        var hasEarlierInclude = packageReferences
-            .Take(currentIndex)
-            .Any(reference =>
-                string.Equals(
-                    reference.Attribute("Include")?.Value,
-                    packageName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            );
-        if (hasEarlierInclude)
-        {
-            return false;
-        }
-
-        return packageReferences
-            .Skip(currentIndex + 1)
-            .Any(reference =>
-                !IsConditional(reference)
-                &&
-                string.Equals(
-                    reference.Attribute("Include")?.Value,
-                    packageName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            );
-    }
 }

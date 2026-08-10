@@ -349,7 +349,7 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
-    public void Fix_UpdateBeforeInclude_LeavesInertUpdateUntouched()
+    public void Fix_UpdateBeforeInclude_UpdatesPotentialInheritedUpdate()
     {
         var projectPath = Path.Combine(_testDirectory, "Project1.csproj");
         File.WriteAllText(
@@ -385,7 +385,7 @@ public class VersionInconsistencyFixerTests : IDisposable
 
         result.Success.Should().BeTrue();
         var content = File.ReadAllText(projectPath);
-        content.Should().Contain("Update=\"Newtonsoft.Json\" Version=\"12.0.1\"");
+        content.Should().Contain("Update=\"Newtonsoft.Json\" Version=\"2.0.0\"");
         content.Should().Contain("Include=\"Newtonsoft.Json\" Version=\"2.0.0\"");
     }
 
