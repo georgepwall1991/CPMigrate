@@ -160,9 +160,19 @@ public record ProjectPackageInfo(
             return false;
         }
 
+        var matching = declarations
+            .Where(reference =>
+                string.Equals(
+                    reference.VersionOverride ?? reference.Version,
+                    version,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .ToList();
+
         // An explicit conditional Version="" clears the inline value and exposes the central pin only
         // in that branch. The resolved graph carries that concrete central version, so preserve the
-        // conditional protection even when another declaration names the same resolved value.
+        // conditional protection when no unconditional declaration names the requested version.
         var hasConditionalVersionClear = declarations
             .Select((reference, index) => (reference, index))
             .Any(item =>
@@ -181,7 +191,7 @@ public record ProjectPackageInfo(
                         )
                     )
             );
-        if (hasConditionalVersionClear)
+        if (hasConditionalVersionClear && !matching.Any(reference => !reference.IsConditional))
         {
             return true;
         }
@@ -205,16 +215,6 @@ public record ProjectPackageInfo(
         // Highest strategy would pick the override and rewrite everyone else to a version meant for one
         // framework. VersionOverride is the effective version when present, even though Version stays empty
         // because the project is centrally managed.
-        var matching = declarations
-            .Where(reference =>
-                string.Equals(
-                    reference.VersionOverride ?? reference.Version,
-                    version,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            .ToList();
-
         // An unconditional declaration that names the resolved version is authoritative even when another
         // conditional declaration is versionless or non-literal. The conditional form cannot make the
         // concrete unconditional pin disappear from a version comparison.
@@ -232,11 +232,32 @@ public record ProjectPackageInfo(
 
     private static bool IsNonLiteralVersion(string version)
     {
-        return !string.IsNullOrWhiteSpace(version)
-            && (
-                version.Contains("$(", StringComparison.Ordinal)
-                || !NuGetVersion.TryParse(version, out _)
-            );
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return false;
+        }
+
+        if (version.Contains("$(", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return !NuGetVersion.TryParse(version, out _)
+            && !IsExactVersionRange(version);
+    }
+
+    private static bool IsExactVersionRange(string version)
+    {
+        if (!VersionRange.TryParse(version, out var range) || range is null)
+        {
+            return false;
+        }
+
+        return range.MinVersion is not null
+            && range.MaxVersion is not null
+            && range.IsMinInclusive
+            && range.IsMaxInclusive
+            && range.MinVersion.Equals(range.MaxVersion);
     }
 
     private static bool ConditionalScopesMayOverlap(string? leftScope, string? rightScope)

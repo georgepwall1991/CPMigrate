@@ -997,6 +997,53 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_LocalIncludeRetiresInheritedOverrideSentinel()
+    {
+        var projectPath = Path.Combine(_testDirectory, "LocalIncludeRetiresSentinel.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Foo" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Foo" VersionOverride="" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Foo" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherLocalIncludeRetiresSentinel.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "1.0.0 (LocalIncludeRetiresSentinel.csproj), 3.0.0 (OtherLocalIncludeRetiresSentinel.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "1.0.0", projectPath, "LocalIncludeRetiresSentinel.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherLocalIncludeRetiresSentinel.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("Include=\"Foo\" Version=\"3.0.0\"");
+        content.Should().Contain("Update=\"Foo\" Version=\"3.0.0\"");
+        content.Should().Contain("VersionOverride=\"\"");
+    }
+
+    [Fact]
     public void Fix_LiteralUpdateSupersedesEarlierPropertyVersion()
     {
         var projectPath = Path.Combine(_testDirectory, "SupersededPropertyVersion.csproj");

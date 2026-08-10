@@ -210,6 +210,89 @@ public class VersionInconsistencyAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_ConditionalVersionClearDoesNotHideUnconditionalDrift()
+    {
+        const string projectPath = "ConditionalClear.csproj";
+        var unconditional = new PackageReference("Pkg", "1.0.0", projectPath, projectPath)
+        {
+            HasVersionMetadata = true,
+        };
+        var conditionalClear = new PackageReference(
+            "Pkg",
+            string.Empty,
+            projectPath,
+            projectPath,
+            IsConditional: true
+        )
+        {
+            IsConditionalUpdate = true,
+            HasVersionMetadata = true,
+            ConditionalScope = "'$(TargetFramework)' == 'net8.0'",
+        };
+        var other = new PackageReference("Pkg", "3.0.0", "Other.csproj", "Other.csproj");
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                unconditional,
+                other,
+            },
+            DeclaredReferences: new List<PackageReference>
+            {
+                unconditional,
+                conditionalClear,
+                other,
+            }
+        );
+
+        var result = _analyzer.Analyze(packageInfo);
+
+        result.Issues.Should().ContainSingle();
+        result.Issues[0].Description.Should().Contain("1.0.0");
+        result.Issues[0].Description.Should().Contain("3.0.0");
+    }
+
+    [Fact]
+    public void Analyze_ConditionalExactVersionRangeDoesNotHideUnconditionalDrift()
+    {
+        const string projectPath = "ConditionalRange.csproj";
+        var unconditional = new PackageReference("Pkg", "1.0.0", projectPath, projectPath)
+        {
+            HasVersionMetadata = true,
+        };
+        var conditionalExactRange = new PackageReference(
+            "Pkg",
+            "[1.0.0]",
+            projectPath,
+            projectPath,
+            IsConditional: true
+        )
+        {
+            HasVersionMetadata = true,
+            ConditionalScope = "'$(TargetFramework)' == 'net8.0'",
+        };
+        var other = new PackageReference("Pkg", "3.0.0", "Other.csproj", "Other.csproj");
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                unconditional,
+                other,
+            },
+            DeclaredReferences: new List<PackageReference>
+            {
+                unconditional,
+                conditionalExactRange,
+                other,
+            }
+        );
+
+        var result = _analyzer.Analyze(packageInfo);
+
+        result.Issues.Should().ContainSingle();
+        result.Issues[0].Description.Should().Contain("1.0.0");
+        result.Issues[0].Description.Should().Contain("3.0.0");
+    }
+
+    [Fact]
     public void Analyze_ConditionallyDeclaredOverrideClearPreservesInheritedVersion()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateOverrideClearAnalyzer_{Guid.NewGuid():N}");

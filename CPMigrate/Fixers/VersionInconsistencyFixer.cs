@@ -457,6 +457,9 @@ public class VersionInconsistencyFixer : IFixer
             var isUpdate = IsMatchingUpdate(element, packageName);
             if (!isUpdate)
             {
+                // A local Include establishes the visible item history. Do not let the speculative
+                // Update-only sentinel continue protecting it after this point.
+                itemStates.RemoveAll(state => state.Reference is null);
                 itemStates.Add(
                     (
                         element,
