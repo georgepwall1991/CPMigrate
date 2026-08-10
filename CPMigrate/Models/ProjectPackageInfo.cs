@@ -395,9 +395,7 @@ public record ProjectPackageInfo(
     {
         return property.Equals("$(TargetFramework)", StringComparison.OrdinalIgnoreCase)
             || property.Equals("$(TargetFrameworkIdentifier)", StringComparison.OrdinalIgnoreCase)
-            || property.Equals("$(TargetFrameworkVersion)", StringComparison.OrdinalIgnoreCase)
-            || property.Equals("$(Configuration)", StringComparison.OrdinalIgnoreCase)
-            || property.Equals("$(Platform)", StringComparison.OrdinalIgnoreCase);
+            || property.Equals("$(TargetFrameworkVersion)", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

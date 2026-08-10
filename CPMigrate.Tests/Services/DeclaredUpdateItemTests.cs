@@ -800,6 +800,38 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ReassignedConfigurationRemainsPotentiallyOverlapping()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+                <PackageReference Update="Serilog" Version="1.0.0" />
+              </ItemGroup>
+              <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <Configuration>Release</Configuration>
+              </PropertyGroup>
+              <ItemGroup Condition="'$(Configuration)' == 'Release'">
+                <PackageReference Update="Serilog" Version="" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Serilog", "2.0.0", path, "App.csproj") },
+            DeclaredReferences: declaredReferences
+        );
+
+        packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeTrue();
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_EquivalentOtherwiseBranchesInIndependentChooseElementsAmend()
     {
         var path = WriteProject(
