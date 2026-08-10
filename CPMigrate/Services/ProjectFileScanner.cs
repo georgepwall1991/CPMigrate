@@ -796,6 +796,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     .Select(index => references[index])
                     .FirstOrDefault(existing =>
                         existing.IsConditional
+                        && existing.IsConditionalUpdate
                         && !IsExplicitVersionOverrideClear(existing)
                         && (
                             !existing.IsConditionalUpdate

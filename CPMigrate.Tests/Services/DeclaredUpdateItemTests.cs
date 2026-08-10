@@ -226,7 +226,7 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
-    public void ScanDeclaredPackages_UnconditionalVersionOverrideAfterConditionalIncludeRetainsPotentialInheritedReference()
+    public void ScanDeclaredPackages_UnconditionalVersionOverrideAfterConditionalIncludeRemainsConditional()
     {
         var path = WriteProject(
             """
@@ -242,12 +242,8 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = Scan(path);
 
         success.Should().BeTrue();
-        references.Should().HaveCount(2);
-        references.Should().Contain(reference =>
+        references.Should().ContainSingle(reference =>
             reference.IsConditional && reference.VersionOverride == "5.0.0"
-        );
-        references.Should().Contain(reference =>
-            !reference.IsConditional && reference.VersionOverride == "5.0.0"
         );
     }
 
@@ -698,6 +694,7 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = Scan(path);
 
         success.Should().BeTrue();
+        references.Should().ContainSingle();
         references.Should().ContainSingle(reference =>
             !reference.IsConditional
             && reference.Version == "3.0.0"
@@ -732,6 +729,30 @@ public class DeclaredUpdateItemTests : IDisposable
             !reference.IsConditional
             && reference.Version == "3.0.0"
             && reference.VersionOverride == null
+        );
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_ConditionalIncludeDoesNotCreateUnconditionalProjection()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+                <PackageReference Include="Serilog" Version="4.*" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle();
+        references.Should().ContainSingle(reference =>
+            reference.IsConditional
+            && reference.Version == "4.0.0"
         );
     }
 
@@ -993,7 +1014,7 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
-    public void ScanDeclaredPackages_UnconditionalUpdateAfterConditionalIncludeRetainsPotentialInheritedReference()
+    public void ScanDeclaredPackages_UnconditionalUpdateAfterConditionalIncludeRemainsConditional()
     {
         var path = WriteProject(
             """
@@ -1009,9 +1030,9 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = Scan(path);
 
         success.Should().BeTrue();
-        references.Should().HaveCount(2);
-        references.Should().Contain(reference => reference.IsConditional && reference.Version == "5.0.0");
-        references.Should().Contain(reference => !reference.IsConditional && reference.Version == "5.0.0");
+        references.Should().ContainSingle(reference =>
+            reference.IsConditional && reference.Version == "5.0.0"
+        );
     }
 
     [Fact]
@@ -1436,7 +1457,7 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
-    public void ScanDeclaredPackages_UnconditionalUpdateAfterConditionalInclude_AmendsEarlierConditionalReference()
+    public void ScanDeclaredPackages_UnconditionalUpdateAfterConditionalInclude_RemainsConditional()
     {
         var path = WriteProject(
             """
@@ -1452,12 +1473,8 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = Scan(path);
 
         success.Should().BeTrue();
-        references.Should().HaveCount(2);
-        references.Should().Contain(reference =>
+        references.Should().ContainSingle(reference =>
             reference.Version == "5.0.0" && reference.IsConditional
-        );
-        references.Should().Contain(reference =>
-            reference.Version == "5.0.0" && !reference.IsConditional
         );
     }
 
