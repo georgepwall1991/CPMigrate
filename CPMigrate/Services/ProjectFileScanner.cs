@@ -484,26 +484,25 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             .ToList();
     }
 
-    private static bool IsWiderConditionalScope(string? existingScope, string? currentScope)
+    private static bool IsWiderConditionalScope(string? widerScope, string? narrowerScope)
     {
-        if (existingScope is null || currentScope is null)
+        if (widerScope is null || narrowerScope is null)
         {
             return false;
         }
 
-        var existingConditions = existingScope.Split(" -> ", StringSplitOptions.None);
-        var currentConditions = currentScope.Split(" -> ", StringSplitOptions.None);
-        if (existingConditions.Length > currentConditions.Length)
+        var widerConditions = widerScope.Split(" -> ", StringSplitOptions.None);
+        var narrowerConditions = narrowerScope.Split(" -> ", StringSplitOptions.None);
+        if (widerConditions.Length > narrowerConditions.Length)
         {
             return false;
         }
 
-        var offset = currentConditions.Length - existingConditions.Length;
-        return existingConditions
-            .Select((condition, index) =>
-                string.Equals(condition, currentConditions[offset + index], StringComparison.Ordinal)
-            )
-            .All(matches => matches);
+        // Conditions from independent ancestor branches may not form an ordered suffix, but a wider
+        // conjunction still applies to a narrower one when every wider condition is present in it.
+        return widerConditions.All(condition =>
+            narrowerConditions.Contains(condition, StringComparer.Ordinal)
+        );
     }
 
     private static string? FindInheritedVersion(
@@ -605,21 +604,30 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     {
         var foldsConditionalUpdates =
             isConditional && amendedIndices.All(index => references[index].IsConditionalUpdate);
-        var hasItemDeclaration = amendedIndices.Any(index => !references[index].IsConditionalUpdate);
+        var hasUnconditionalReference = amendedIndices.Any(index => !references[index].IsConditional);
+        var hasConditionalReference = amendedIndices.Any(index => references[index].IsConditional);
         var hasSurvivingConditionalClear = amendedIndices.Any(index =>
             ConditionalUpdateMetadataSurvives(references[index], versionOverride)
             && IsExplicitVersionOverrideClear(references[index])
         );
         var unconditionalRecordTemplate =
             !isConditional
-                && !hasItemDeclaration
+                && !hasUnconditionalReference
+                && hasConditionalReference
                 && !hasSurvivingConditionalClear
                 && !string.IsNullOrWhiteSpace(version)
                 ? amendedIndices
                     .Select(index => references[index])
                     .FirstOrDefault(existing =>
-                        ConditionalUpdateMetadataSurvives(existing, versionOverride)
-                        && !string.IsNullOrWhiteSpace(existing.VersionOverride)
+                        existing.IsConditional
+                        && !IsExplicitVersionOverrideClear(existing)
+                        && (
+                            !existing.IsConditionalUpdate
+                            || (
+                                ConditionalUpdateMetadataSurvives(existing, versionOverride)
+                                && !string.IsNullOrWhiteSpace(existing.VersionOverride)
+                            )
+                        )
                     )
                 : null;
         var foldedIndices = FindFoldedConditionalUpdateIndices(
@@ -654,10 +662,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             references.RemoveAt(foldedIndices[foldedPosition]);
         }
 
-        // A conditional VersionOverride can amend an inherited item without creating a local Include.
+        // A conditional declaration can amend an inherited item without creating an unconditional Include.
         // When a later unconditional Update supplies the ordinary version, retain both facts: the
-        // conditional override for its target and an unconditional record for the base Update. Collapsing
-        // them into the conditional record hides the base version from cross-project drift analysis.
+        // conditional declaration for its target and an unconditional record for the base Update. Collapsing
+        // them into the conditional record hides a possible inherited base version from cross-project drift
+        // analysis.
         if (unconditionalRecordTemplate is not null)
         {
             references.Add(

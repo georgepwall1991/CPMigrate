@@ -203,6 +203,29 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_WiderConditionAmendsItemWithAdditionalAncestorCondition()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference
+                    Include="Serilog"
+                    Condition="'$(Configuration)' == 'Debug'"
+                    Version="4.*" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+                <PackageReference Update="Serilog" Version="4.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalVersionOnlyUpdateKeepsLatestSameScopeVersionOverride()
     {
         var path = WriteProject(
@@ -457,6 +480,28 @@ public class DeclaredUpdateItemTests : IDisposable
         );
 
         packageInfo.IsConditionallyDeclared(path, "Serilog", "2.0.0").Should().BeTrue();
+    }
+
+    [Fact]
+    public void ScanDeclaredPackages_UnconditionalUpdateAfterConditionalIncludeRetainsPotentialInheritedReference()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Serilog" Version="4.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="5.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference => reference.IsConditional && reference.Version == "5.0.0");
+        references.Should().Contain(reference => !reference.IsConditional && reference.Version == "5.0.0");
     }
 
     [Fact]
@@ -897,9 +942,13 @@ public class DeclaredUpdateItemTests : IDisposable
         var (references, success) = Scan(path);
 
         success.Should().BeTrue();
-        var reference = references.Should().ContainSingle().Subject;
-        reference.Version.Should().Be("5.0.0");
-        reference.IsConditional.Should().BeTrue();
+        references.Should().HaveCount(2);
+        references.Should().Contain(reference =>
+            reference.Version == "5.0.0" && reference.IsConditional
+        );
+        references.Should().Contain(reference =>
+            reference.Version == "5.0.0" && !reference.IsConditional
+        );
     }
 
     [Fact]
