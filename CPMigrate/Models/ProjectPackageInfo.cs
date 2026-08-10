@@ -192,6 +192,10 @@ public record ProjectPackageInfo(
                     .Any(previous =>
                         previous.HasVersionMetadata
                         && !string.IsNullOrWhiteSpace(previous.Version)
+                        && ConditionalScopesMayOverlap(
+                            previous.ConditionalScope,
+                            item.reference.ConditionalScope
+                        )
                     )
             );
         if (hasConditionalVersionClear)
@@ -227,6 +231,130 @@ public record ProjectPackageInfo(
                 version.Contains("$(", StringComparison.Ordinal)
                 || !NuGetVersion.TryParse(version, out _)
             );
+    }
+
+    private static bool ConditionalScopesMayOverlap(string? leftScope, string? rightScope)
+    {
+        if (leftScope is null || rightScope is null)
+        {
+            return true;
+        }
+
+        var leftConditions = leftScope.Split(" -> ", StringSplitOptions.None);
+        var rightConditions = rightScope.Split(" -> ", StringSplitOptions.None);
+        return !leftConditions.Any(leftCondition =>
+            rightConditions.Any(rightCondition =>
+                AreMutuallyExclusiveConditions(leftCondition, rightCondition)
+            )
+        );
+    }
+
+    private static bool AreMutuallyExclusiveConditions(string left, string right)
+    {
+        var leftPart = SplitConditionalScopePart(left);
+        var rightPart = SplitConditionalScopePart(right);
+
+        if (
+            leftPart.BranchPath is not null
+            && rightPart.BranchPath is not null
+            && string.Equals(leftPart.Condition, "<Otherwise>", StringComparison.Ordinal)
+                != string.Equals(rightPart.Condition, "<Otherwise>", StringComparison.Ordinal)
+        )
+        {
+            return SameChoose(leftPart.BranchPath, rightPart.BranchPath);
+        }
+
+        if (
+            leftPart.BranchPath is not null
+            && rightPart.BranchPath is not null
+            && SameChoose(leftPart.BranchPath, rightPart.BranchPath)
+        )
+        {
+            return !SameChooseBranch(leftPart.BranchPath, rightPart.BranchPath);
+        }
+
+        return TryGetSimpleEquality(leftPart.Condition, out var leftProperty, out var leftValue)
+            && TryGetSimpleEquality(rightPart.Condition, out var rightProperty, out var rightValue)
+            && string.Equals(leftProperty, rightProperty, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(leftValue, rightValue, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static (string Condition, string? BranchPath) SplitConditionalScopePart(string part)
+    {
+        var separator = part.LastIndexOf('@');
+        if (separator < 0 || separator == part.Length - 1)
+        {
+            return (part, null);
+        }
+
+        var branchPath = part[(separator + 1)..];
+        var pathSeparator = branchPath.IndexOf('|');
+        var choosePath = pathSeparator < 0 ? branchPath : branchPath[..pathSeparator];
+        return choosePath.Length > 0
+            && choosePath.All(character => char.IsDigit(character) || character == '.')
+            ? (part[..separator], branchPath)
+            : (part, null);
+    }
+
+    private static bool SameChoose(string leftBranchPath, string rightBranchPath)
+    {
+        var leftPath = BranchLocation(leftBranchPath);
+        var rightPath = BranchLocation(rightBranchPath);
+        var leftSeparator = leftPath.LastIndexOf('.');
+        var rightSeparator = rightPath.LastIndexOf('.');
+        return leftSeparator >= 0
+            && rightSeparator >= 0
+            && string.Equals(
+                leftPath[..leftSeparator],
+                rightPath[..rightSeparator],
+                StringComparison.Ordinal
+            );
+    }
+
+    private static bool SameChooseBranch(string leftBranchPath, string rightBranchPath)
+    {
+        return string.Equals(
+            BranchLocation(leftBranchPath),
+            BranchLocation(rightBranchPath),
+            StringComparison.Ordinal
+        );
+    }
+
+    private static string BranchLocation(string branchPath)
+    {
+        var guardSeparator = branchPath.IndexOf('|');
+        return guardSeparator < 0 ? branchPath : branchPath[..guardSeparator];
+    }
+
+    private static bool TryGetSimpleEquality(
+        string condition,
+        out string property,
+        out string value
+    )
+    {
+        property = string.Empty;
+        value = string.Empty;
+        if (
+            condition.Contains("&&", StringComparison.Ordinal)
+            || condition.Contains("||", StringComparison.Ordinal)
+            || condition.Contains(" and ", StringComparison.OrdinalIgnoreCase)
+            || condition.Contains(" or ", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return false;
+        }
+
+        var equality = condition.IndexOf("==", StringComparison.Ordinal);
+        if (equality < 0)
+        {
+            return false;
+        }
+
+        property = condition[..equality].Trim().Trim('"', '\'');
+        value = condition[(equality + 2)..].Trim().Trim('"', '\'');
+        return property.StartsWith("$(", StringComparison.Ordinal)
+            && property.EndsWith(")", StringComparison.Ordinal)
+            && value.Length > 0;
     }
 
     /// <summary>

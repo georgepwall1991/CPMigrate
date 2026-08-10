@@ -627,7 +627,9 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
         return precedingWhenConditions.Count == 0
             ? branchPath
-            : $"{branchPath}|{string.Join(" && ", precedingWhenConditions.Order(StringComparer.Ordinal))}";
+            : $"{branchPath}|guards={string.Join("|", precedingWhenConditions
+                .Order(StringComparer.Ordinal)
+                .Select(condition => $"{condition.Length}:{condition}"))}";
     }
 
     private static string? FindInheritedVersion(
