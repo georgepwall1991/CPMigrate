@@ -555,7 +555,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     {
         if (string.Equals(condition, "<Otherwise>", StringComparison.Ordinal))
         {
-            return string.Equals(left, right, StringComparison.Ordinal);
+            return ConditionalOtherwisePathsMatch(left, right);
         }
 
         var leftGuardSeparator = left.IndexOf('|');
@@ -584,6 +584,40 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 rightPath[(rightSeparator + 1)..],
                 StringComparison.Ordinal
             );
+    }
+
+    private static bool ConditionalOtherwisePathsMatch(string left, string right)
+    {
+        var leftPath = BranchLocation(left);
+        var rightPath = BranchLocation(right);
+        var leftSeparator = leftPath.LastIndexOf('.');
+        var rightSeparator = rightPath.LastIndexOf('.');
+        if (
+            leftSeparator >= 0
+            && rightSeparator >= 0
+            && string.Equals(
+                leftPath[..leftSeparator],
+                rightPath[..rightSeparator],
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return string.Equals(left, right, StringComparison.Ordinal);
+        }
+
+        return string.Equals(BranchGuardSignature(left), BranchGuardSignature(right), StringComparison.Ordinal);
+    }
+
+    private static string BranchLocation(string branchPath)
+    {
+        var guardSeparator = branchPath.IndexOf('|');
+        return guardSeparator < 0 ? branchPath : branchPath[..guardSeparator];
+    }
+
+    private static string? BranchGuardSignature(string branchPath)
+    {
+        var guardSeparator = branchPath.IndexOf('|');
+        return guardSeparator < 0 ? null : branchPath[guardSeparator..];
     }
 
     private static (string Condition, string? BranchPath) SplitConditionalScopePart(string part)

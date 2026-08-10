@@ -276,7 +276,7 @@ public class VersionInconsistencyFixer : IFixer
     )
     {
         var currentMetadataValues = GetMetadataValues(packageReferences[currentIndex], metadataName);
-        if (!currentMetadataValues.Any(IsPropertyMetadata))
+        if (!currentMetadataValues.Any(IsExpandableMetadata))
         {
             return false;
         }
@@ -435,7 +435,10 @@ public class VersionInconsistencyFixer : IFixer
         }
     }
 
-    private static bool IsPropertyMetadata(string value) => value.Contains("$(", StringComparison.Ordinal);
+    private static bool IsExpandableMetadata(string value) =>
+        value.Contains("$(", StringComparison.Ordinal)
+        || value.Contains("@(", StringComparison.Ordinal)
+        || value.Contains("%(", StringComparison.Ordinal);
 
     private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
         XAttribute? metadata,
@@ -449,7 +452,7 @@ public class VersionInconsistencyFixer : IFixer
             return (false, false);
         }
 
-        if (IsPropertyMetadata(metadata.Value))
+        if (IsExpandableMetadata(metadata.Value))
         {
             return ignoreSupersededPropertyMetadata ? (false, false) : (false, true);
         }
@@ -470,7 +473,7 @@ public class VersionInconsistencyFixer : IFixer
             return (false, false);
         }
 
-        if (IsPropertyMetadata(metadata.Value))
+        if (IsExpandableMetadata(metadata.Value))
         {
             return ignoreSupersededPropertyMetadata ? (false, false) : (false, true);
         }

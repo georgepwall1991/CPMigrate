@@ -521,6 +521,48 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_ItemVersionExpression_IsNotOverwritten()
+    {
+        var expressionPath = Path.Combine(_testDirectory, "ItemVersionExpression.csproj");
+        File.WriteAllText(
+            expressionPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="@(SelectedVersion)" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherItemVersionExpression.csproj", "Newtonsoft.Json", "13.0.1");
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "12.0.1 (ItemVersionExpression.csproj), 13.0.1 (OtherItemVersionExpression.csproj)",
+            new[] { expressionPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "12.0.1", expressionPath, "ItemVersionExpression.csproj"),
+                new("Newtonsoft.Json", "13.0.1", otherPath, "OtherItemVersionExpression.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeFalse();
+        File.ReadAllText(expressionPath).Should().Contain("Version=\"@(SelectedVersion)\"");
+        File.ReadAllText(expressionPath).Should().NotContain("Version=\"13.0.1\"");
+    }
+
+    [Fact]
     public void Fix_LiteralUpdateSupersedesEarlierPropertyVersion()
     {
         var projectPath = Path.Combine(_testDirectory, "SupersededPropertyVersion.csproj");

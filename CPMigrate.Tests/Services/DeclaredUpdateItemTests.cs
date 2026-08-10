@@ -573,6 +573,40 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_EquivalentOtherwiseBranchesInIndependentChooseElementsAmend()
+    {
+        var path = WriteProject(
+            """
+              <Choose>
+                <When Condition="'$(Configuration)' == 'Release'">
+                  <ItemGroup />
+                </When>
+                <Otherwise>
+                  <ItemGroup>
+                    <PackageReference Include="Serilog" Version="4.*" />
+                  </ItemGroup>
+                </Otherwise>
+              </Choose>
+              <Choose>
+                <When Condition="'$(Configuration)' == 'Release'">
+                  <ItemGroup />
+                </When>
+                <Otherwise>
+                  <ItemGroup>
+                    <PackageReference Update="Serilog" Version="4.0.0" />
+                  </ItemGroup>
+                </Otherwise>
+              </Choose>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().ContainSingle().Which.Version.Should().Be("4.0.0");
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ConditionalVersionOnlyUpdateKeepsLatestSameScopeVersionOverride()
     {
         var path = WriteProject(
