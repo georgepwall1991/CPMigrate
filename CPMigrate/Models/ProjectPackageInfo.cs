@@ -169,28 +169,26 @@ public record ProjectPackageInfo(
             )
             .ToList();
 
-        // An explicit conditional Version="" clears the inline value and exposes the central pin only
-        // in that branch. The resolved graph carries that concrete central version, so preserve the
-        // conditional protection when no unconditional declaration names the requested version.
-        var hasConditionalVersionClear = declarations
-            .Select((reference, index) => (reference, index))
-            .Any(item =>
-                item.reference.IsConditionalUpdate
-                && item.reference.HasVersionMetadata
-                && string.IsNullOrWhiteSpace(item.reference.Version)
-                && item.reference.VersionOverride is null
-                && declarations
-                    .Take(item.index)
-                    .Any(previous =>
-                        previous.HasVersionMetadata
-                        && !string.IsNullOrWhiteSpace(previous.Version)
-                        && ConditionalScopesMayOverlap(
-                            previous.ConditionalScope,
-                            item.reference.ConditionalScope
-                        )
-                    )
-            );
-        if (hasConditionalVersionClear && !matching.Any(reference => !reference.IsConditional))
+        // An explicit conditional Version="" or VersionOverride="" clears the local value and exposes
+        // the central pin only in that branch. The resolved graph carries that concrete central version,
+        // so preserve the conditional protection when no unconditional declaration names the requested
+        // version.
+        var hasConditionalVersionClear = HasConditionalMetadataClear(
+            declarations,
+            reference => reference.HasVersionMetadata,
+            reference => reference.Version,
+            reference => reference.VersionOverride is null
+        );
+        var hasConditionalVersionOverrideClear = HasConditionalMetadataClear(
+            declarations,
+            reference => reference.HasVersionOverrideMetadata,
+            reference => reference.VersionOverride,
+            reference => string.IsNullOrWhiteSpace(reference.Version)
+        );
+        if (
+            (hasConditionalVersionClear || hasConditionalVersionOverrideClear)
+            && !matching.Any(reference => !reference.IsConditional)
+        )
         {
             return true;
         }
@@ -227,6 +225,32 @@ public record ProjectPackageInfo(
         return matching.Count > 0
             ? matching.TrueForAll(reference => reference.IsConditional)
             : declarations.TrueForAll(reference => reference.IsConditional);
+    }
+
+    private static bool HasConditionalMetadataClear(
+        IReadOnlyList<PackageReference> declarations,
+        Func<PackageReference, bool> hasMetadata,
+        Func<PackageReference, string?> getValue,
+        Func<PackageReference, bool> isClear
+    )
+    {
+        return declarations
+            .Select((reference, index) => (reference, index))
+            .Any(item =>
+                item.reference.IsConditionalUpdate
+                && hasMetadata(item.reference)
+                && isClear(item.reference)
+                && declarations
+                    .Take(item.index)
+                    .Any(previous =>
+                        hasMetadata(previous)
+                        && !string.IsNullOrWhiteSpace(getValue(previous))
+                        && ConditionalScopesMayOverlap(
+                            previous.ConditionalScope,
+                            item.reference.ConditionalScope
+                        )
+                    )
+            );
     }
 
     private static bool IsNonLiteralVersion(string version)

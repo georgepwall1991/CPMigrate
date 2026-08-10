@@ -252,6 +252,53 @@ public class VersionInconsistencyAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_ConditionalVersionOverrideClearPreservesCentralVersion()
+    {
+        const string projectPath = "ConditionalOverrideClear.csproj";
+        var unconditionalOverride = new PackageReference(
+            "Pkg",
+            string.Empty,
+            projectPath,
+            projectPath,
+            VersionOverride: "2.0.0"
+        )
+        {
+            HasVersionOverrideMetadata = true,
+        };
+        var conditionalClear = new PackageReference(
+            "Pkg",
+            string.Empty,
+            projectPath,
+            projectPath,
+            IsConditional: true
+        )
+        {
+            IsConditionalUpdate = true,
+            HasVersionOverrideMetadata = true,
+            ConditionalScope = "'$(TargetFramework)' == 'net8.0'",
+        };
+        var conditionalResolved = new PackageReference("Pkg", "1.0.0", projectPath, projectPath);
+        var other = new PackageReference("Pkg", "3.0.0", "Other.csproj", "Other.csproj");
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                conditionalResolved,
+                other,
+            },
+            DeclaredReferences: new List<PackageReference>
+            {
+                unconditionalOverride,
+                conditionalClear,
+                other,
+            }
+        );
+
+        var result = _analyzer.Analyze(packageInfo);
+
+        result.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Analyze_ConditionalExactVersionRangeDoesNotHideUnconditionalDrift()
     {
         const string projectPath = "ConditionalRange.csproj";
