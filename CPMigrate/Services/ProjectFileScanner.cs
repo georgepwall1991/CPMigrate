@@ -880,7 +880,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     )
     {
         return existing.IsConditionalUpdate
-            && versionOverride is null
-            && existing.HasVersionOverrideMetadata;
+            && (
+                (versionOverride is null && existing.HasVersionOverrideMetadata)
+                || (
+                    versionOverride is not null
+                    && string.IsNullOrWhiteSpace(versionOverride)
+                    && existing.HasVersionMetadata
+                )
+            );
     }
 }
