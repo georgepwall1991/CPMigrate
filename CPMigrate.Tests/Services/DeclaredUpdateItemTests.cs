@@ -376,6 +376,31 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_InheritedConditionalOverrideClearDoesNotCreateUnconditionalProjection()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="3.0.0" />
+              </ItemGroup>
+            """
+        );
+
+        var (references, success) = Scan(path);
+
+        success.Should().BeTrue();
+        references.Should().HaveCount(1);
+        references.Should().ContainSingle(reference =>
+            reference.IsConditional
+            && reference.Version == "3.0.0"
+            && reference.VersionOverride == null
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_ExplicitEmptyVersionClearsPriorVersion()
     {
         var path = WriteProject(

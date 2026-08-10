@@ -611,6 +611,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     .Select(index => references[index])
                     .FirstOrDefault(existing =>
                         ConditionalUpdateMetadataSurvives(existing, versionOverride)
+                        && !string.IsNullOrWhiteSpace(existing.VersionOverride)
                     )
                 : null;
         var foldedIndices = FindFoldedConditionalUpdateIndices(
