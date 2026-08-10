@@ -209,6 +209,173 @@ public class TransitiveConflictFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_PackageExistsWithChildVersion_UpdatesVersion()
+    {
+        // MSBuild accepts Version metadata as a child element, and this repository uses that form
+        // for several central pins. Leaving it unchanged makes a successful-looking fix leave the
+        // transitive conflict in place.
+        CreatePropsFile(@"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""Newtonsoft.Json"">
+      <Version>12.0.1</Version>
+    </PackageVersion>
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "12.0.1", "Project1.csproj", "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Description.Should().Contain("Pinned Newtonsoft.Json to version 13.0.1");
+
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        var content = File.ReadAllText(propsPath);
+        content.Should().Contain("<Version>13.0.1</Version>");
+        content.Should().NotContain("<Version>12.0.1</Version>");
+    }
+
+    [Fact]
+    public void Fix_AttributeVersionTarget_DoesNotRewriteChildVersionNeighbor()
+    {
+        // A mixed-style props file is valid MSBuild. The child-version matcher must stay within
+        // the target PackageVersion instead of carrying the target package into a later entry.
+        CreatePropsFile(@"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""Newtonsoft.Json"" Version=""12.0.1"" />
+    <PackageVersion Include=""Serilog"">
+      <Version>3.0.0</Version>
+    </PackageVersion>
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "12.0.1", "Project1.csproj", "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        content.Should().Contain("<PackageVersion Include=\"Newtonsoft.Json\" Version=\"13.0.1\" />");
+        content.Should().Contain("<Version>3.0.0</Version>");
+        content.Should().NotContain("<Version>13.0.1</Version>");
+    }
+
+    [Fact]
+    public void Fix_ConditionalChildVersion_LeavesPinUnchanged()
+    {
+        // A conditional central pin may be valid for only one framework/configuration. Without
+        // evaluating MSBuild conditions, changing it would make the other configurations unsafe.
+        CreatePropsFile(@"<Project>
+  <ItemGroup Condition=""'$(TargetFramework)' == 'net8.0'"">
+    <PackageVersion Include=""Newtonsoft.Json""><Version>12.0.1</Version></PackageVersion>
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "12.0.1", "Project1.csproj", "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Description.Should().Contain("conditional");
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        content.Should().Contain("<Version>12.0.1</Version>");
+        content.Should().NotContain("<Version>13.0.1</Version>");
+    }
+
+    [Fact]
+    public void Fix_CommentedChildVersion_AddsActivePinWithoutChangingComment()
+    {
+        // Commented examples are not active central pins. They must not satisfy the existing-pin
+        // branch or be rewritten as if they controlled restore.
+        CreatePropsFile(@"<Project>
+  <ItemGroup>
+    <!-- <PackageVersion Include=""Newtonsoft.Json""><Version>12.0.1</Version></PackageVersion> -->
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "12.0.1", "Project1.csproj", "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        content.Should().Contain("<!-- <PackageVersion Include=\"Newtonsoft.Json\"><Version>12.0.1</Version></PackageVersion> -->");
+        content.Should().Contain("<PackageVersion Include=\"Newtonsoft.Json\" Version=\"13.0.1\" />");
+    }
+
+    [Fact]
     public void Fix_PackageExistsWithUpdate_UpdatesVersion()
     {
         // Arrange
