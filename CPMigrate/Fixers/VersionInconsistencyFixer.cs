@@ -360,14 +360,16 @@ public class VersionInconsistencyFixer : IFixer
             return false;
         }
 
-        var (segmentStart, segmentEnd) = GetPackageItemSegment(
-            packageReferences,
-            currentIndex,
-            packageName
-        );
-        var overrideIsActive = false;
-        var conditionalOverrideClearIsActive = false;
-        for (var index = segmentStart; index < segmentEnd; index++)
+        var itemStates = new List<(
+            XElement? Reference,
+            int StartIndex,
+            bool OverrideIsActive,
+            bool ConditionalOverrideClearIsActive
+        )>
+        {
+            (null, 0, false, false),
+        };
+        for (var index = 0; index < packageReferences.Count; index++)
         {
             var element = packageReferences[index];
             if (!IsMatchingDeclaration(element, packageName))
@@ -378,8 +380,17 @@ public class VersionInconsistencyFixer : IFixer
             var isUpdate = IsMatchingUpdate(element, packageName);
             if (!isUpdate)
             {
-                overrideIsActive = false;
-                conditionalOverrideClearIsActive = false;
+                itemStates.Add(
+                    (
+                        element,
+                        index,
+                        !string.IsNullOrWhiteSpace(
+                            GetMetadataValues(element, "VersionOverride").LastOrDefault()
+                        ),
+                        false
+                    )
+                );
+                continue;
             }
 
             var overrideValue = GetMetadataValues(element, "VersionOverride").LastOrDefault();
@@ -387,8 +398,17 @@ public class VersionInconsistencyFixer : IFixer
             {
                 if (overrideValue is not null)
                 {
-                    overrideIsActive = !string.IsNullOrWhiteSpace(overrideValue);
-                    conditionalOverrideClearIsActive = false;
+                    var overrideIsActive = !string.IsNullOrWhiteSpace(overrideValue);
+                    for (var stateIndex = 0; stateIndex < itemStates.Count; stateIndex++)
+                    {
+                        var state = itemStates[stateIndex];
+                        itemStates[stateIndex] = (
+                            state.Reference,
+                            state.StartIndex,
+                            overrideIsActive,
+                            false
+                        );
+                    }
                 }
 
                 continue;
@@ -396,56 +416,34 @@ public class VersionInconsistencyFixer : IFixer
 
             if (
                 isUpdate
-                && overrideIsActive
                 && overrideValue is not null
                 && string.IsNullOrWhiteSpace(overrideValue)
             )
             {
-                conditionalOverrideClearIsActive = true;
+                for (var stateIndex = 0; stateIndex < itemStates.Count; stateIndex++)
+                {
+                    var state = itemStates[stateIndex];
+                    if (state.OverrideIsActive)
+                    {
+                        itemStates[stateIndex] = (
+                            state.Reference,
+                            state.StartIndex,
+                            state.OverrideIsActive,
+                            true
+                        );
+                    }
+                }
             }
         }
 
-        return conditionalOverrideClearIsActive;
-    }
-
-    private static (int Start, int End) GetPackageItemSegment(
-        IReadOnlyList<XElement> packageReferences,
-        int currentIndex,
-        string packageName
-    )
-    {
-        var start = currentIndex;
-        while (start > 0)
-        {
-            var preceding = packageReferences[start - 1];
-            if (
-                IsMatchingDeclaration(preceding, packageName)
-                && !IsMatchingUpdate(preceding, packageName)
+        return IsMatchingUpdate(currentReference, packageName)
+            ? itemStates.Any(state =>
+                state.StartIndex <= currentIndex && state.ConditionalOverrideClearIsActive
             )
-            {
-                start--;
-                break;
-            }
-
-            start--;
-        }
-
-        var end = currentIndex + 1;
-        while (end < packageReferences.Count)
-        {
-            var following = packageReferences[end];
-            if (
-                IsMatchingDeclaration(following, packageName)
-                && !IsMatchingUpdate(following, packageName)
-            )
-            {
-                break;
-            }
-
-            end++;
-        }
-
-        return (start, end);
+            : itemStates.Any(state =>
+                ReferenceEquals(state.Reference, currentReference)
+                && state.ConditionalOverrideClearIsActive
+            );
     }
 
     private static bool IsMatchingUpdate(XElement packageReference, string packageName)
