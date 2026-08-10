@@ -156,6 +156,11 @@ public class VersionInconsistencyFixer : IFixer
             return true;
         }
 
+        return HasConditionalScope(element);
+    }
+
+    private static bool HasConditionalScope(XElement element)
+    {
         for (var current = element; current is not null; current = current.Parent)
         {
             if (!string.IsNullOrEmpty(current.Attribute("Condition")?.Value))
@@ -173,6 +178,38 @@ public class VersionInconsistencyFixer : IFixer
         }
 
         return false;
+    }
+
+    private static bool HasUnconditionalVersionMetadata(XElement packageReference)
+    {
+        if (
+            !HasConditionalScope(packageReference)
+            && (
+                packageReference.Attribute("Version") is not null
+                || packageReference.Attribute("VersionOverride") is not null
+            )
+        )
+        {
+            return true;
+        }
+
+        return packageReference
+            .Elements()
+            .Any(metadata =>
+                (metadata.Name.LocalName == "Version"
+                    || metadata.Name.LocalName == "VersionOverride")
+                && !HasConditionalScope(metadata)
+            );
+    }
+
+    private static XElement? GetUnconditionalMetadataElement(
+        XElement packageReference,
+        string metadataName
+    )
+    {
+        return packageReference
+            .Elements(metadataName)
+            .FirstOrDefault(metadata => !HasConditionalScope(metadata));
     }
 
     private static FileChange? UpdateProjectVersions(string projectPath, string packageName, string targetVersion, bool dryRun)
@@ -198,7 +235,9 @@ public class VersionInconsistencyFixer : IFixer
             // net8.0". Unifying them to the highest version silently breaks the target that needed the
             // older one — and the fix reads as a tidy-up, so nobody looks here when the build goes red.
             // Overlap cannot be evaluated outside a build, so a conditional pin is left alone.
-            var packageRefList = allPackageRefs.Where(e => !IsConditional(e)).ToList();
+            var packageRefList = allPackageRefs
+                .Where(HasUnconditionalVersionMetadata)
+                .ToList();
 
             var modified = false;
             var containsUnresolvedVersion = false;
@@ -237,13 +276,13 @@ public class VersionInconsistencyFixer : IFixer
                         ignoreSupersededPropertyOverride
                     ),
                     UpdateVersionMetadata(
-                        packageRef.Element("Version"),
+                        GetUnconditionalMetadataElement(packageRef, "Version"),
                         targetVersion,
                         ignoreSupersededPropertyVersion,
                         preserveOrdinaryVersion
                     ),
                     UpdateVersionMetadata(
-                        packageRef.Element("VersionOverride"),
+                        GetUnconditionalMetadataElement(packageRef, "VersionOverride"),
                         targetVersion,
                         ignoreSupersededPropertyOverride
                     ),
@@ -542,9 +581,7 @@ public class VersionInconsistencyFixer : IFixer
             var hasConditionedMetadata = matchingReferences.Any(reference =>
                 IsConditional(reference) && HasVersionMetadata(reference)
             );
-            var hasUnconditionalVersion = matchingReferences.Any(reference =>
-                !IsConditional(reference) && HasVersionMetadata(reference)
-            );
+            var hasUnconditionalVersion = matchingReferences.Any(HasUnconditionalVersionMetadata);
             return hasConditionedMetadata && !hasUnconditionalVersion;
         }
         catch

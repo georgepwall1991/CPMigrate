@@ -603,6 +603,50 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_MixedDeclarationUpdatesUnconditionalMetadataOnly()
+    {
+        var projectPath = Path.Combine(_testDirectory, "MixedDeclaration.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Foo" Version="2.0.0">
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">1.0.0</VersionOverride>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherMixedDeclaration.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "2.0.0 (MixedDeclaration.csproj), 3.0.0 (OtherMixedDeclaration.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "2.0.0", projectPath, "MixedDeclaration.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherMixedDeclaration.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        var updatedContent = File.ReadAllText(projectPath);
+        updatedContent.Should().Contain("Include=\"Foo\" Version=\"3.0.0\">");
+        updatedContent.Should().Contain(
+            "<VersionOverride Condition=\"'$(TargetFramework)' == 'net8.0'\">1.0.0</VersionOverride>"
+        );
+    }
+
+    [Fact]
     public void Fix_ConditionedVersionMetadataDeclinesRewrite()
     {
         var projectPath = Path.Combine(_testDirectory, "ConditionedMetadata.csproj");
