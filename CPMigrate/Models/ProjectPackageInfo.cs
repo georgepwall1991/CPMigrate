@@ -354,7 +354,8 @@ public record ProjectPackageInfo(
         value = condition[(equality + 2)..].Trim().Trim('"', '\'');
         return property.StartsWith("$(", StringComparison.Ordinal)
             && property.EndsWith(")", StringComparison.Ordinal)
-            && value.Length > 0;
+            && value.Length > 0
+            && !value.Contains("$(", StringComparison.Ordinal);
     }
 
     /// <summary>
