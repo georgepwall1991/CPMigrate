@@ -1,3 +1,4 @@
+using System.Text;
 using CPMigrate.Models;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
@@ -532,24 +533,76 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         bool allowExternalBranchMatch
     )
     {
-        return string.Equals(left.Condition, right.Condition, StringComparison.Ordinal)
+        var leftCondition = NormalizeConditionSyntax(left.Condition);
+        var rightCondition = NormalizeConditionSyntax(right.Condition);
+        return string.Equals(leftCondition, rightCondition, StringComparison.Ordinal)
             && (
                 allowExternalBranchMatch
                     ? left.BranchPath is null
                         || right.BranchPath is null
                         || ConditionalBranchPathsMatch(
-                            left.Condition,
+                            leftCondition,
                             left.BranchPath,
                             right.BranchPath
                         )
                     : left.BranchPath is not null
                         && right.BranchPath is not null
                         && ConditionalBranchPathsMatch(
-                            left.Condition,
+                            leftCondition,
                             left.BranchPath,
                             right.BranchPath
                         )
             );
+    }
+
+    private static string NormalizeConditionSyntax(string condition)
+    {
+        var normalized = new StringBuilder(condition.Length);
+        var inSingleQuotedLiteral = false;
+        var inDoubleQuotedLiteral = false;
+        for (var index = 0; index < condition.Length; index++)
+        {
+            var character = condition[index];
+            if (character == '\'' && !inDoubleQuotedLiteral)
+            {
+                inSingleQuotedLiteral = !inSingleQuotedLiteral;
+                normalized.Append(character);
+                continue;
+            }
+
+            if (character == '"' && !inSingleQuotedLiteral)
+            {
+                inDoubleQuotedLiteral = !inDoubleQuotedLiteral;
+                normalized.Append(character);
+                continue;
+            }
+
+            if (!char.IsWhiteSpace(character) || inSingleQuotedLiteral || inDoubleQuotedLiteral)
+            {
+                normalized.Append(character);
+                continue;
+            }
+
+            var nextIndex = index + 1;
+            while (nextIndex < condition.Length && char.IsWhiteSpace(condition[nextIndex]))
+            {
+                nextIndex++;
+            }
+
+            var previousCharacter = normalized.Length == 0 ? '\0' : normalized[^1];
+            var nextCharacter = nextIndex < condition.Length ? condition[nextIndex] : '\0';
+            if (previousCharacter == '=' || nextCharacter == '=')
+            {
+                continue;
+            }
+
+            if (normalized.Length > 0 && normalized[^1] != ' ')
+            {
+                normalized.Append(' ');
+            }
+        }
+
+        return normalized.ToString().Trim();
     }
 
     private static bool ConditionalBranchPathsMatch(
@@ -908,6 +961,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 !IsExplicitVersionOverrideClear(existing)
                 || (
                     existing.HasConditionalUpdateVersionMetadata
+                    && !string.IsNullOrWhiteSpace(existing.Version)
                     && hasVersionOverrideMetadata
                     && versionOverride is not null
                 )
