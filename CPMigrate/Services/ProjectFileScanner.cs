@@ -179,39 +179,90 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         return string.Join('.', path);
     }
 
-    private static Dictionary<string, int> GetPropertyMutationVersions(
+    private sealed record PropertyMutationState(
+        IReadOnlyDictionary<string, int> PropertyVersions,
+        int ImportVersion
+    );
+
+    private static Dictionary<string, PropertyMutationState> GetPropertyMutationStates(
         ProjectRootElement projectRoot
     )
     {
-        Dictionary<string, int> versions = new(StringComparer.Ordinal);
-        var mutationVersion = 0;
-        VisitProjectElements(projectRoot, ref mutationVersion, versions);
-        return versions;
+        Dictionary<string, PropertyMutationState> states = new(StringComparer.Ordinal);
+        Dictionary<string, int> propertyVersions = new(StringComparer.OrdinalIgnoreCase);
+        var importVersion = 0;
+        VisitProjectElements(projectRoot, propertyVersions, ref importVersion, states);
+        return states;
     }
 
     private static void VisitProjectElements(
         ProjectElementContainer parent,
-        ref int mutationVersion,
-        Dictionary<string, int> propertyMutationVersions
+        Dictionary<string, int> propertyVersions,
+        ref int importVersion,
+        Dictionary<string, PropertyMutationState> propertyMutationStates
     )
     {
         foreach (var child in parent.Children)
         {
-            if (child is ProjectPropertyElement)
+            if (child is ProjectPropertyElement property)
             {
-                mutationVersion++;
+                propertyVersions[property.Name] = propertyVersions.GetValueOrDefault(property.Name) + 1;
+            }
+
+            if (child is ProjectImportElement)
+            {
+                importVersion++;
             }
 
             if (child is ProjectItemElement item)
             {
-                propertyMutationVersions[GetElementPath(item)] = mutationVersion;
+                propertyMutationStates[GetElementPath(item)] = new PropertyMutationState(
+                    new Dictionary<string, int>(propertyVersions, StringComparer.OrdinalIgnoreCase),
+                    importVersion
+                );
             }
 
             if (child is ProjectElementContainer container)
             {
-                VisitProjectElements(container, ref mutationVersion, propertyMutationVersions);
+                VisitProjectElements(container, propertyVersions, ref importVersion, propertyMutationStates);
             }
         }
+    }
+
+    private static HashSet<string> GetConditionPropertyNames(string? conditionalScope)
+    {
+        HashSet<string> propertyNames = new(StringComparer.OrdinalIgnoreCase);
+        if (conditionalScope is null)
+        {
+            return propertyNames;
+        }
+
+        var index = 0;
+        while (index + 2 < conditionalScope.Length)
+        {
+            if (conditionalScope[index] != '$' || conditionalScope[index + 1] != '(')
+            {
+                index++;
+                continue;
+            }
+
+            var closingIndex = conditionalScope.IndexOf(')', index + 2);
+            if (closingIndex <= index + 2)
+            {
+                index++;
+                continue;
+            }
+
+            var propertyName = conditionalScope[(index + 2)..closingIndex];
+            if (IsSimplePropertyName(propertyName))
+            {
+                propertyNames.Add(propertyName);
+            }
+
+            index = closingIndex + 1;
+        }
+
+        return propertyNames;
     }
 
     /// <inheritdoc />
@@ -226,8 +277,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         {
             using var projectCollection = new ProjectCollection();
             var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
-            var propertyMutationVersionsByPath = GetPropertyMutationVersions(projectRoot);
-            List<int> propertyMutationVersions = [];
+            var propertyMutationStatesByPath = GetPropertyMutationStates(projectRoot);
+            List<PropertyMutationState> propertyMutationStates = [];
 
             try
             {
@@ -240,12 +291,12 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         continue;
                     }
 
-                    var propertyMutationVersion = propertyMutationVersionsByPath.TryGetValue(
-                        GetElementPath(item),
-                        out var mutationVersion
-                    )
-                        ? mutationVersion
-                        : 0;
+                    var propertyMutationState = propertyMutationStatesByPath.GetValueOrDefault(
+                        GetElementPath(item)
+                    ) ?? new PropertyMutationState(
+                        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+                        0
+                    );
 
                     var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
                     var version = versionMetadata?.Value ?? string.Empty;
@@ -307,8 +358,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 itemConditionalScope,
                                 versionMetadataCondition,
                                 null,
-                                propertyMutationVersions,
-                                propertyMutationVersion
+                                propertyMutationStates,
+                                propertyMutationState
                             );
                             AddDeclaredPackageReference(
                                 references,
@@ -328,8 +379,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 itemConditionalScope,
                                 null,
                                 versionOverrideMetadataCondition,
-                                propertyMutationVersions,
-                                propertyMutationVersion,
+                                propertyMutationStates,
+                                propertyMutationState,
                                 false,
                                 string.IsNullOrWhiteSpace(versionOverride),
                                 false
@@ -379,8 +430,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             itemConditionalScope,
                             versionMetadataCondition,
                             versionOverrideMetadataCondition,
-                            propertyMutationVersions,
-                            propertyMutationVersion
+                            propertyMutationStates,
+                            propertyMutationState
                         );
                     }
                 }
@@ -419,8 +470,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         string? itemConditionalScope,
         string? versionMetadataCondition,
         string? versionOverrideMetadataCondition,
-        List<int> propertyMutationVersions,
-        int propertyMutationVersion,
+        List<PropertyMutationState> propertyMutationStates,
+        PropertyMutationState propertyMutationState,
         bool allowUnconditionalMetadataProjection = true,
         bool allowInheritedVersion = true,
         bool allowInheritedVersionOverride = true
@@ -470,8 +521,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             isConditional,
             packageName,
             conditionalScope,
-            propertyMutationVersions,
-            propertyMutationVersion
+            propertyMutationStates,
+            propertyMutationState
         );
 
         if (amendedIndices.Count > 0)
@@ -479,8 +530,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             ApplyAmendments(
                 references,
                 amendedIndices,
-                propertyMutationVersions,
-                propertyMutationVersion,
+                propertyMutationStates,
+                propertyMutationState,
                 version,
                 hasVersionMetadata,
                 versionOverride?.Trim(),
@@ -500,8 +551,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         var inheritedVersion = allowInheritedVersion
             ? FindInheritedVersion(
                 references,
-                propertyMutationVersions,
-                propertyMutationVersion,
+                propertyMutationStates,
+                propertyMutationState,
                 isUpdate,
                 isConditional,
                 hasVersionMetadata,
@@ -512,8 +563,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         var inheritedVersionOverride = allowInheritedVersionOverride
             ? FindInheritedVersionOverride(
                 references,
-                propertyMutationVersions,
-                propertyMutationVersion,
+                propertyMutationStates,
+                propertyMutationState,
                 isUpdate,
                 isConditional,
                 versionOverride,
@@ -537,11 +588,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 itemConditionalScope,
                 versionMetadataCondition,
                 versionOverrideMetadataCondition,
-                propertyMutationVersions,
-                propertyMutationVersion
+                propertyMutationStates,
+                propertyMutationState
             );
         }
-        propertyMutationVersions.Add(propertyMutationVersion);
+        propertyMutationStates.Add(propertyMutationState);
         references.Add(effectiveReference);
     }
 
@@ -551,8 +602,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         string? itemConditionalScope,
         string? versionMetadataCondition,
         string? versionOverrideMetadataCondition,
-        List<int> propertyMutationVersions,
-        int propertyMutationVersion
+        List<PropertyMutationState> propertyMutationStates,
+        PropertyMutationState propertyMutationState
     )
     {
         var hasConditionedVersion = !string.IsNullOrWhiteSpace(versionMetadataCondition);
@@ -604,7 +655,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         ConditionalScope = null,
                     }
                 );
-                propertyMutationVersions.Add(propertyMutationVersion);
+                propertyMutationStates.Add(propertyMutationState);
             }
 
             return;
@@ -626,7 +677,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 ConditionalScope = null,
             }
         );
-        propertyMutationVersions.Add(propertyMutationVersion);
+        propertyMutationStates.Add(propertyMutationState);
     }
 
     public (List<PackageReference> References, bool Success) ScanProjectPackages(
@@ -705,7 +756,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 references,
                                 amendedIndices,
                                 null,
-                                0,
+                                null,
                                 versionMetadata.Value,
                                 true,
                                 null,
@@ -754,8 +805,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         bool isConditional,
         string packageName,
         string? conditionalScope,
-        IReadOnlyList<int>? propertyMutationVersions = null,
-        int propertyMutationVersion = 0
+        IReadOnlyList<PropertyMutationState>? propertyMutationStates = null,
+        PropertyMutationState? propertyMutationState = null
     )
     {
         if (!isUpdate)
@@ -776,11 +827,16 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     || (
                         item.existing.IsConditional
                         && (
-                            (
-                                propertyMutationVersions is null
-                                || propertyMutationVersions[item.index] == propertyMutationVersion
-                            )
-                            && (
+                            propertyMutationStates is null
+                            || propertyMutationState is not null
+                                && PropertyMutationStatesMatch(
+                                    propertyMutationState,
+                                    propertyMutationStates[item.index],
+                                    conditionalScope,
+                                    item.existing.ConditionalScope
+                                )
+                        )
+                        && (
                             string.Equals(
                                 item.existing.ConditionalScope,
                                 conditionalScope,
@@ -793,13 +849,32 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 conditionalScope,
                                 item.existing.ConditionalScope
                             )
-                            )
                         )
                     )
                 )
             )
             .Select(item => item.index)
             .ToList();
+    }
+
+    private static bool PropertyMutationStatesMatch(
+        PropertyMutationState current,
+        PropertyMutationState existing,
+        string? currentScope,
+        string? existingScope
+    )
+    {
+        if (current.ImportVersion != existing.ImportVersion)
+        {
+            return false;
+        }
+
+        var propertyNames = GetConditionPropertyNames(currentScope);
+        propertyNames.UnionWith(GetConditionPropertyNames(existingScope));
+        return propertyNames.All(propertyName =>
+            current.PropertyVersions.GetValueOrDefault(propertyName)
+                == existing.PropertyVersions.GetValueOrDefault(propertyName)
+        );
     }
 
     private static bool IsWiderConditionalScope(string? widerScope, string? narrowerScope)
@@ -1649,8 +1724,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
     private static string? FindInheritedVersion(
         IReadOnlyList<PackageReference> references,
-        IReadOnlyList<int> propertyMutationVersions,
-        int propertyMutationVersion,
+        IReadOnlyList<PropertyMutationState> propertyMutationStates,
+        PropertyMutationState propertyMutationState,
         bool isUpdate,
         bool isConditional,
         bool hasVersionMetadata,
@@ -1668,8 +1743,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             .Where(item =>
                 IsInheritedReference(
                     item.existing,
-                    propertyMutationVersions[item.index],
-                    propertyMutationVersion,
+                    propertyMutationStates[item.index],
+                    propertyMutationState,
                     packageName,
                     conditionalScope
                 )
@@ -1681,8 +1756,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
     private static string? FindInheritedVersionOverride(
         IReadOnlyList<PackageReference> references,
-        IReadOnlyList<int> propertyMutationVersions,
-        int propertyMutationVersion,
+        IReadOnlyList<PropertyMutationState> propertyMutationStates,
+        PropertyMutationState propertyMutationState,
         bool isUpdate,
         bool isConditional,
         string? versionOverride,
@@ -1700,8 +1775,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             .Where(item =>
                 IsInheritedReference(
                     item.existing,
-                    propertyMutationVersions[item.index],
-                    propertyMutationVersion,
+                    propertyMutationStates[item.index],
+                    propertyMutationState,
                     packageName,
                     conditionalScope
                 )
@@ -1713,8 +1788,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
     private static bool IsInheritedReference(
         PackageReference existing,
-        int existingPropertyMutationVersion,
-        int propertyMutationVersion,
+        PropertyMutationState existingPropertyMutationState,
+        PropertyMutationState propertyMutationState,
         string packageName,
         string? conditionalScope
     )
@@ -1722,7 +1797,12 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         return (
             !existing.IsConditional
             || (
-                existingPropertyMutationVersion == propertyMutationVersion
+                PropertyMutationStatesMatch(
+                    propertyMutationState,
+                    existingPropertyMutationState,
+                    conditionalScope,
+                    existing.ConditionalScope
+                )
                 && IsWiderConditionalScope(existing.ConditionalScope, conditionalScope)
             )
         )
@@ -1762,8 +1842,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     private static void ApplyAmendments(
         List<PackageReference> references,
         IReadOnlyList<int> amendedIndices,
-        List<int>? propertyMutationVersions,
-        int propertyMutationVersion,
+        List<PropertyMutationState>? propertyMutationStates,
+        PropertyMutationState? propertyMutationState,
         string version,
         bool hasVersionMetadata,
         string? versionOverride,
@@ -1831,7 +1911,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         {
             var foldedIndex = foldedIndices[foldedPosition];
             references.RemoveAt(foldedIndex);
-            propertyMutationVersions?.RemoveAt(foldedIndex);
+            propertyMutationStates?.RemoveAt(foldedIndex);
         }
 
         // A conditional declaration can amend an inherited item without creating an unconditional Include.
@@ -1855,7 +1935,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     ConditionalScope = null,
                 }
             );
-            propertyMutationVersions?.Add(propertyMutationVersion);
+            if (propertyMutationState is not null)
+            {
+                propertyMutationStates?.Add(propertyMutationState);
+            }
         }
     }
 
