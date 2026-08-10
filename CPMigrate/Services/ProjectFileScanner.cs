@@ -605,7 +605,126 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             }
         }
 
-        return normalized.ToString().Trim();
+        return NormalizeSimpleEqualityLiteralCase(normalized.ToString().Trim());
+    }
+
+    private static string NormalizeSimpleEqualityLiteralCase(string condition)
+    {
+        var normalized = new StringBuilder(condition.Length);
+        var inSingleQuotedLiteral = false;
+        var inDoubleQuotedLiteral = false;
+        var index = 0;
+        while (index < condition.Length)
+        {
+            var character = condition[index];
+            if (character == '\'' && !inDoubleQuotedLiteral)
+            {
+                inSingleQuotedLiteral = !inSingleQuotedLiteral;
+                normalized.Append(character);
+                index++;
+                continue;
+            }
+
+            if (character == '"' && !inSingleQuotedLiteral)
+            {
+                inDoubleQuotedLiteral = !inDoubleQuotedLiteral;
+                normalized.Append(character);
+                index++;
+                continue;
+            }
+
+            if (
+                !inSingleQuotedLiteral
+                && !inDoubleQuotedLiteral
+                && IsEqualityOperatorAt(condition, index)
+            )
+            {
+                normalized.Append(character);
+                normalized.Append('=');
+                index += 2;
+                var literalStart = index;
+                while (
+                    literalStart < condition.Length
+                    && char.IsWhiteSpace(condition[literalStart])
+                )
+                {
+                    normalized.Append(condition[literalStart]);
+                    literalStart++;
+                }
+
+                if (
+                    TryReadSimpleConditionLiteral(
+                        condition,
+                        literalStart,
+                        out var quote,
+                        out var value,
+                        out var literalEnd
+                    )
+                )
+                {
+                    normalized.Append(quote);
+                    normalized.Append(value.ToUpperInvariant());
+                    normalized.Append(quote);
+                    index = literalEnd + 1;
+                    continue;
+                }
+
+                index = literalStart;
+                continue;
+            }
+
+            normalized.Append(character);
+            index++;
+        }
+
+        return normalized.ToString();
+    }
+
+    private static bool IsEqualityOperatorAt(string condition, int index)
+    {
+        return index + 1 < condition.Length
+            && (condition[index] == '=' || condition[index] == '!')
+            && condition[index + 1] == '=';
+    }
+
+    private static bool TryReadSimpleConditionLiteral(
+        string condition,
+        int start,
+        out char quote,
+        out string value,
+        out int end
+    )
+    {
+        quote = '\0';
+        value = string.Empty;
+        end = start;
+        if (start >= condition.Length || (condition[start] != '\'' && condition[start] != '"'))
+        {
+            return false;
+        }
+
+        quote = condition[start];
+        var closingQuote = condition.IndexOf(quote, start + 1);
+        if (closingQuote < 0)
+        {
+            return false;
+        }
+
+        value = condition[(start + 1)..closingQuote];
+        if (
+            string.IsNullOrEmpty(value)
+            || !value.All(character =>
+                char.IsLetterOrDigit(character)
+                || character is '.' or '-' or '_'
+            )
+        )
+        {
+            value = string.Empty;
+            return false;
+        }
+
+        end = closingQuote;
+        return true;
     }
 
     private static bool IsConditionNormalizationBoundary(char character)
