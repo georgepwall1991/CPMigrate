@@ -357,14 +357,37 @@ public record ProjectPackageInfo(
             return false;
         }
 
-        property = condition[..equality].Trim().Trim('"', '\'');
-        value = condition[(equality + 2)..].Trim().Trim('"', '\'');
-        return property.StartsWith("$(", StringComparison.Ordinal)
-            && property.EndsWith(")", StringComparison.Ordinal)
-            && value.Length > 0
-            && !value.Contains("$(", StringComparison.Ordinal)
-            && !value.Contains("@(", StringComparison.Ordinal)
-            && !value.Contains("%(", StringComparison.Ordinal);
+        var leftOperand = condition[..equality].Trim().Trim('"', '\'');
+        var rightOperand = condition[(equality + 2)..].Trim().Trim('"', '\'');
+        if (IsPropertyOperand(leftOperand) && IsLiteralEqualityOperand(rightOperand))
+        {
+            property = leftOperand;
+            value = rightOperand;
+            return true;
+        }
+
+        if (IsPropertyOperand(rightOperand) && IsLiteralEqualityOperand(leftOperand))
+        {
+            property = rightOperand;
+            value = leftOperand;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsPropertyOperand(string operand)
+    {
+        return operand.StartsWith("$(", StringComparison.Ordinal)
+            && operand.EndsWith(")", StringComparison.Ordinal);
+    }
+
+    private static bool IsLiteralEqualityOperand(string operand)
+    {
+        return operand.Length > 0
+            && !operand.Contains("$(", StringComparison.Ordinal)
+            && !operand.Contains("@(", StringComparison.Ordinal)
+            && !operand.Contains("%(", StringComparison.Ordinal);
     }
 
     /// <summary>
