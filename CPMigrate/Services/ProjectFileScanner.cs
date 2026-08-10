@@ -781,6 +781,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         var hasConditionalReference = amendedIndices.Any(index => references[index].IsConditional);
         var hasSurvivingConditionalClear = amendedIndices.Any(index =>
             ConditionalUpdateMetadataSurvives(references[index], versionOverride)
+            && versionOverride is null
             && IsExplicitVersionOverrideClear(references[index])
         );
         var unconditionalRecordTemplate = CanCreateUnconditionalRecordTemplate(
@@ -903,7 +904,14 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     {
         return existing.IsConditional
             && existing.IsConditionalUpdate
-            && !IsExplicitVersionOverrideClear(existing)
+            && (
+                !IsExplicitVersionOverrideClear(existing)
+                || (
+                    existing.HasConditionalUpdateVersionMetadata
+                    && hasVersionOverrideMetadata
+                    && versionOverride is not null
+                )
+            )
             && ConditionalUpdateMetadataSurvives(existing, versionOverride)
             && (
                 !string.IsNullOrWhiteSpace(existing.VersionOverride)

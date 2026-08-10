@@ -849,6 +849,40 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_UnconditionalVersionOverrideClearAfterConditionalVersionAndOverrideClearRetainsBaseProjection()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+                <PackageReference Update="Serilog" Version="3.0.0" VersionOverride="" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().HaveCount(2);
+        declaredReferences.Should().ContainSingle(reference => !reference.IsConditional);
+        declaredReferences.Should().ContainSingle(reference =>
+            reference.IsConditional
+            && reference.Version == "3.0.0"
+            && reference.VersionOverride == null
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            new[] { new PackageReference("Serilog", "1.0.0", path, "App.csproj") },
+            DeclaredReferences: declaredReferences
+        );
+
+        packageInfo.IsConditionallyDeclared(path, "Serilog", "1.0.0").Should().BeFalse();
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_NarrowerConditionalVersionUpdateInheritsWiderScopeVersionOverride()
     {
         var path = WriteProject(
