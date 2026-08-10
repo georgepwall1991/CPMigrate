@@ -401,6 +401,38 @@ public class FloatingVersionAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_CombinedMetadataGuards_DoNotPreserveSupersededFloat()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Update="Serilog">
+                  <Version Condition="'$(Configuration)' == 'Debug' And '$(TargetFramework)' == 'net8.0'">4.*</Version>
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">4.*</VersionOverride>
+                </PackageReference>
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" Condition="'$(TargetFramework)' == 'net8.0'" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Analyze_ConditionalVersionUpdateWithInheritedVersionOverride_DoesNotReportSupersededFloat()
     {
         var projectPath = Path.Combine(_testDirectory, "App.csproj");

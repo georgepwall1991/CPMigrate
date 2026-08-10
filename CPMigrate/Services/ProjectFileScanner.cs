@@ -139,7 +139,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             .GroupBy(NormalizeConditionSyntax, StringComparer.Ordinal)
             .Select(group => group.First())
             .ToArray();
-        return conditions.Length == 0 ? null : string.Join(" || ", conditions);
+        return conditions.Length == 0 ? null : string.Join(" Or ", conditions);
     }
 
     private static string? CombineConditionalScopes(
