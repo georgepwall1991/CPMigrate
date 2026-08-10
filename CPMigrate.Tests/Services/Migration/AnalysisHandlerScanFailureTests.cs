@@ -145,6 +145,10 @@ public class AnalysisHandlerScanFailureTests : IDisposable
         var result = await handler.ExecuteAsync(AuditOptions());
 
         result.ScanFailures.Should().Be(1, "the project's declarations were never read");
+        result.PackageInfo.Should().NotBeNull();
+        result.PackageInfo!.References.Should().BeEmpty(
+            "resolved references from a project with unevaluable declarations must not be analyzed or fixed"
+        );
         result
             .ExitCode.Should()
             .Be(

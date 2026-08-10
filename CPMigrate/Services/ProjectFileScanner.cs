@@ -357,8 +357,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         // A pattern- or expression-based Update applies to items selected by MSBuild, not
                         // to a package whose literal ID is the expression. Without evaluating the full
                         // item graph, treating it as a package declaration creates fictitious findings;
-                        // retain the known declarations and fail closed for this version-bearing Update.
-                        continue;
+                        // fail the declaration scan so callers cannot analyze or rewrite a partial project.
+                        return ([], false);
                     }
 
                     if (ShouldSplitConditionedMetadata(versionMetadataCondition, versionOverrideMetadataCondition))

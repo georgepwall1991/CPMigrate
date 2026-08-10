@@ -500,7 +500,9 @@ internal sealed class AnalysisHandler
             var (fallbackDeclared, fallbackRead) = _projectAnalyzer.ScanDeclaredPackages(
                 projectPath
             );
-            return (references, success, fallbackRead ? fallbackDeclared : null);
+            return fallbackRead
+                ? (references, success, fallbackDeclared)
+                : ([], false, null);
         }
 
         // Read the project file as well. The resolved list cannot answer questions about what the file
@@ -511,7 +513,9 @@ internal sealed class AnalysisHandler
         // tool.
         var (declared, declaredRead) = _projectAnalyzer.ScanDeclaredPackages(projectPath);
 
-        return (references, success, declaredRead ? declared : null);
+        return declaredRead
+            ? (references, success, declared)
+            : ([], false, null);
     }
 
     private void CacheScanResults(string projectPath, List<PackageReference> references)

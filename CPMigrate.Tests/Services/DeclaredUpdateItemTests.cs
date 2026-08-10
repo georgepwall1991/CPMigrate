@@ -86,10 +86,8 @@ public class DeclaredUpdateItemTests : IDisposable
 
         var (references, success) = Scan(path);
 
-        success.Should().BeTrue();
-        references.Should().HaveCount(2);
-        references.Should().NotContain(reference => reference.PackageName == "Microsoft.*");
-        references.Should().OnlyContain(reference => reference.Version == "1.0.0");
+        success.Should().BeFalse();
+        references.Should().BeEmpty();
     }
 
     [Fact]
@@ -108,11 +106,8 @@ public class DeclaredUpdateItemTests : IDisposable
 
         var (references, success) = Scan(path);
 
-        success.Should().BeTrue();
-        references.Should().ContainSingle();
-        references.Should().ContainSingle(reference =>
-            reference.PackageName == "Foo" && reference.Version == "1.0.0"
-        );
+        success.Should().BeFalse();
+        references.Should().BeEmpty();
     }
 
     [Fact]
