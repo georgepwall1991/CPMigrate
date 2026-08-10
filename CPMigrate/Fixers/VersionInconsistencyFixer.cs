@@ -361,6 +361,7 @@ public class VersionInconsistencyFixer : IFixer
         }
 
         var overrideIsActive = false;
+        var conditionalOverrideClearIsActive = false;
         for (var index = 0; index < packageReferences.Count; index++)
         {
             var element = packageReferences[index];
@@ -375,24 +376,24 @@ public class VersionInconsistencyFixer : IFixer
                 if (overrideValue is not null)
                 {
                     overrideIsActive = !string.IsNullOrWhiteSpace(overrideValue);
+                    conditionalOverrideClearIsActive = false;
                 }
 
                 continue;
             }
 
             if (
-                index > currentIndex
-                && IsMatchingUpdate(element, packageName)
+                IsMatchingUpdate(element, packageName)
                 && overrideIsActive
                 && overrideValue is not null
                 && string.IsNullOrWhiteSpace(overrideValue)
             )
             {
-                return true;
+                conditionalOverrideClearIsActive = true;
             }
         }
 
-        return false;
+        return conditionalOverrideClearIsActive;
     }
 
     private static bool IsMatchingUpdate(XElement packageReference, string packageName)

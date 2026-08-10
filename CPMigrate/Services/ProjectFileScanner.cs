@@ -183,9 +183,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // version actually in force, and it can float exactly as a Version can — but a
                     // rule asking "does this project pin inline?" must not read it as one, because
                     // VersionOverride is NuGet's sanctioned way to step outside the central pin.
-                    var versionOverride = item
-                        .Metadata.FirstOrDefault(m => m.Name == "VersionOverride")
-                        ?.Value;
+                    var versionOverrideMetadata = item.Metadata.FirstOrDefault(m => m.Name == "VersionOverride");
+                    var versionOverride = versionOverrideMetadata?.Value;
 
                     // Kept rather than filtered, because "this package is declared twice, both times
                     // conditionally" is a different fact from "this package is declared twice" and only
@@ -240,6 +239,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             : versionOverride.Trim()
                     )
                     {
+                        HasVersionOverrideMetadata = versionOverrideMetadata is not null,
                         ConditionalScope = conditionalScope,
                     };
                     if (isUpdate)
@@ -277,6 +277,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             version,
                             versionMetadata is not null,
                             versionOverride?.Trim(),
+                            versionOverrideMetadata is not null,
                             isConditional
                         );
 
@@ -311,6 +312,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         {
                             Version = inheritedVersion ?? reference.Version,
                             VersionOverride = inheritedVersionOverride ?? reference.VersionOverride,
+                            HasVersionOverrideMetadata = inheritedVersionOverride is not null
+                                || reference.HasVersionOverrideMetadata,
                         }
                     );
                 }
@@ -398,6 +401,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             versionMetadata.Value,
                             true,
                             null,
+                            false,
                             isConditional
                         );
                         continue;
@@ -594,6 +598,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         string version,
         bool hasVersionMetadata,
         string? versionOverride,
+        bool hasVersionOverrideMetadata,
         bool isConditional
     )
     {
@@ -626,6 +631,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 IsConditional = foldsConditionalUpdates
                     || (existing.IsConditional && (!existing.IsConditionalUpdate || conditionalMetadataSurvives)),
                 VersionOverride = GetAmendedVersionOverride(existing, versionOverride),
+                HasVersionOverrideMetadata = hasVersionOverrideMetadata
+                    || existing.HasVersionOverrideMetadata,
                 IsMetadataOnlyUpdate = false,
                 IsConditionalUpdate = foldsConditionalUpdates
                     || (existing.IsConditionalUpdate && conditionalMetadataSurvives),
@@ -649,6 +656,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     Version = version,
                     IsConditional = false,
                     VersionOverride = versionOverride,
+                    HasVersionOverrideMetadata = hasVersionOverrideMetadata,
                     IsMetadataOnlyUpdate = false,
                     IsConditionalUpdate = false,
                     ConditionalScope = null,
@@ -677,6 +685,6 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     {
         return existing.IsConditionalUpdate
             && versionOverride is null
-            && !string.IsNullOrWhiteSpace(existing.VersionOverride);
+            && existing.HasVersionOverrideMetadata;
     }
 }

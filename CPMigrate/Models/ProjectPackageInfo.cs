@@ -48,6 +48,13 @@ public record PackageReference(
     public bool IsConditionalUpdate { get; init; }
 
     /// <summary>
+    /// Whether the declaration explicitly carries <c>VersionOverride</c>, including an empty value.
+    /// An empty conditional assignment clears inherited override metadata and must remain distinguishable
+    /// from an Update that does not mention the metadata at all.
+    /// </summary>
+    public bool HasVersionOverrideMetadata { get; init; }
+
+    /// <summary>
     /// The ordered condition expressions that scope a conditional Update. Used to distinguish sequential
     /// Updates in one conditional branch from Updates in different branches.
     /// </summary>
