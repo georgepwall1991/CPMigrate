@@ -281,7 +281,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 ),
                                 itemConditionalScope,
                                 null,
-                                versionOverrideMetadataCondition
+                                versionOverrideMetadataCondition,
+                                false
                             );
                         }
 
@@ -365,7 +366,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         string? conditionalScope,
         string? itemConditionalScope,
         string? versionMetadataCondition,
-        string? versionOverrideMetadataCondition
+        string? versionOverrideMetadataCondition,
+        bool allowUnconditionalMetadataProjection = true
     )
     {
         var reference = new PackageReference(
@@ -459,13 +461,16 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             HasVersionOverrideMetadata = inheritedVersionOverride is not null
                 || reference.HasVersionOverrideMetadata,
         };
-        AddUnconditionalMetadataProjection(
-            references,
-            effectiveReference,
-            itemConditionalScope,
-            versionMetadataCondition,
-            versionOverrideMetadataCondition
-        );
+        if (allowUnconditionalMetadataProjection)
+        {
+            AddUnconditionalMetadataProjection(
+                references,
+                effectiveReference,
+                itemConditionalScope,
+                versionMetadataCondition,
+                versionOverrideMetadataCondition
+            );
+        }
         references.Add(effectiveReference);
     }
 
@@ -499,19 +504,6 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             if (
                 !conditionalReference.IsConditionalUpdate
                 && itemConditionalScope is null
-                && !references.Any(existing =>
-                    string.Equals(
-                        existing.PackageName,
-                        conditionalReference.PackageName,
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                    && !existing.IsConditional
-                    && !existing.IsMetadataOnlyUpdate
-                    && !existing.HasVersionMetadata
-                    && !existing.HasVersionOverrideMetadata
-                    && string.IsNullOrEmpty(existing.Version)
-                    && existing.VersionOverride is null
-                )
             )
             {
                 references.Add(
@@ -896,9 +888,9 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             || !TryGetConditionConjuncts(normalizedOverrideCondition, out var versionOverrideConjuncts)
         )
         {
-            // Conditions using unsupported boolean forms may overlap; preserve both values on one
-            // conservative projection rather than inventing a disjoint Version-only branch.
-            return false;
+            // Coverage using unsupported boolean forms cannot be proven. Preserve a possible
+            // Version-only branch rather than allowing override precedence to hide it.
+            return true;
         }
 
         // If every guard required by VersionOverride is also required by Version, the override covers
