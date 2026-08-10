@@ -379,7 +379,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         conditionalScope
                     );
 
-                    if (versionMetadata.Value.Contains("$("))
+                    if (IsExpandableVersion(versionMetadata.Value))
                     {
                         _logger.LogDebug(
                             "Skipping MSBuild variable version '{Version}' for package {Package} in {Project}",
@@ -664,6 +664,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             : $"{branchPath}|guards={string.Join("|", precedingWhenConditions
                 .Order(StringComparer.Ordinal)
                 .Select(condition => $"{condition.Length}:{condition}"))}";
+    }
+
+    private static bool IsExpandableVersion(string value)
+    {
+        return value.Contains("$(", StringComparison.Ordinal)
+            || value.Contains("@(", StringComparison.Ordinal)
+            || value.Contains("%(", StringComparison.Ordinal);
     }
 
     private static string? FindInheritedVersion(

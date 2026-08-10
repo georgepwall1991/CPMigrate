@@ -447,7 +447,12 @@ public class VersionInconsistencyFixer : IFixer
         bool skipUpdate = false
     )
     {
-        if (metadata is null || skipUpdate || metadata.Value == targetVersion)
+        if (
+            metadata is null
+            || skipUpdate
+            || string.IsNullOrWhiteSpace(metadata.Value)
+            || metadata.Value == targetVersion
+        )
         {
             return (false, false);
         }
@@ -468,7 +473,12 @@ public class VersionInconsistencyFixer : IFixer
         bool skipUpdate = false
     )
     {
-        if (metadata is null || skipUpdate || metadata.Value == targetVersion)
+        if (
+            metadata is null
+            || skipUpdate
+            || string.IsNullOrWhiteSpace(metadata.Value)
+            || metadata.Value == targetVersion
+        )
         {
             return (false, false);
         }

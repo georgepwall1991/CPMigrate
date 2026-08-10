@@ -563,6 +563,52 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_ExplicitEmptyUpdateMetadata_IsNotOverwritten()
+    {
+        var projectPath = Path.Combine(_testDirectory, "ExplicitEmptyUpdateMetadata.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Update="Newtonsoft.Json" Version="" VersionOverride="" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherExplicitEmptyUpdateMetadata.csproj", "Newtonsoft.Json", "2.0.0");
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "1.0.0 (ExplicitEmptyUpdateMetadata.csproj), 2.0.0 (OtherExplicitEmptyUpdateMetadata.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "1.0.0", projectPath, "ExplicitEmptyUpdateMetadata.csproj"),
+                new("Newtonsoft.Json", "2.0.0", otherPath, "OtherExplicitEmptyUpdateMetadata.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        result.Changes.Should().BeEmpty();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("Version=\"\"");
+        content.Should().Contain("VersionOverride=\"\"");
+        content.Should().NotContain("Version=\"2.0.0\"");
+        content.Should().NotContain("VersionOverride=\"2.0.0\"");
+    }
+
+    [Fact]
     public void Fix_LiteralUpdateSupersedesEarlierPropertyVersion()
     {
         var projectPath = Path.Combine(_testDirectory, "SupersededPropertyVersion.csproj");

@@ -1473,6 +1473,26 @@ public class DeclaredUpdateItemTests : IDisposable
         references.Should().BeEmpty();
     }
 
+    [Fact]
+    public void ScanProjectPackages_ExpandableUpdate_DropsSupersededInclude()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="1.0.0" />
+                <PackageReference Update="Serilog" Version="@(SelectedVersion)" />
+                <PackageReference Update="Serilog" Version="%(Versions.Identity)" />
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanProjectPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().BeEmpty();
+    }
+
     private static (List<PackageReference> References, bool Success) Scan(
         string projectPath
     )
