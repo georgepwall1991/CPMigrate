@@ -471,6 +471,44 @@ public class FloatingVersionAnalyzerTests : IDisposable
         issue.Metadata!["versionSpecification"].Should().Be("2.*");
     }
 
+    [Fact]
+    public void Analyze_NarrowerConditionalVersionUpdateInheritsWiderScopeVersionOverride()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" />
+                <PackageReference
+                    Update="Serilog"
+                    Condition="'$(Configuration)' == 'Debug'"
+                    Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().ContainSingle(reference =>
+            reference.Version == "4.*"
+            && reference.VersionOverride == "4.0.0"
+            && reference.IsConditional
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("not a version")]
     [InlineData("[1.0.0")]

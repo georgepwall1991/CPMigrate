@@ -293,7 +293,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         && string.IsNullOrWhiteSpace(versionOverride)
                             ? references
                                 .LastOrDefault(existing =>
-                                    !existing.IsConditional
+                                    (
+                                        !existing.IsConditional
+                                        || IsWiderConditionalScope(
+                                            existing.ConditionalScope,
+                                            conditionalScope
+                                        )
+                                    )
                                     && string.Equals(
                                         existing.PackageName,
                                         packageName,
@@ -463,6 +469,28 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             )
             .Select(item => item.index)
             .ToList();
+    }
+
+    private static bool IsWiderConditionalScope(string? existingScope, string? currentScope)
+    {
+        if (existingScope is null || currentScope is null)
+        {
+            return false;
+        }
+
+        var existingConditions = existingScope.Split(" -> ", StringSplitOptions.None);
+        var currentConditions = currentScope.Split(" -> ", StringSplitOptions.None);
+        if (existingConditions.Length > currentConditions.Length)
+        {
+            return false;
+        }
+
+        var offset = currentConditions.Length - existingConditions.Length;
+        return existingConditions
+            .Select((condition, index) =>
+                string.Equals(condition, currentConditions[offset + index], StringComparison.Ordinal)
+            )
+            .All(matches => matches);
     }
 
     private static List<int> FindFoldedConditionalUpdateIndices(
