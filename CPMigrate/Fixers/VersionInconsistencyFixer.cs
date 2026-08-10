@@ -370,6 +370,13 @@ public class VersionInconsistencyFixer : IFixer
                 continue;
             }
 
+            var isUpdate = IsMatchingUpdate(element, packageName);
+            if (!isUpdate)
+            {
+                overrideIsActive = false;
+                conditionalOverrideClearIsActive = false;
+            }
+
             var overrideValue = GetMetadataValues(element, "VersionOverride").LastOrDefault();
             if (!IsConditional(element))
             {
@@ -383,7 +390,7 @@ public class VersionInconsistencyFixer : IFixer
             }
 
             if (
-                IsMatchingUpdate(element, packageName)
+                isUpdate
                 && overrideIsActive
                 && overrideValue is not null
                 && string.IsNullOrWhiteSpace(overrideValue)
