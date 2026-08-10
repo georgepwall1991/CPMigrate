@@ -591,7 +591,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
             var previousCharacter = normalized.Length == 0 ? '\0' : normalized[^1];
             var nextCharacter = nextIndex < condition.Length ? condition[nextIndex] : '\0';
-            if (previousCharacter == '=' || nextCharacter == '=')
+            if (
+                IsComparisonOperatorCharacter(previousCharacter)
+                || IsComparisonOperatorCharacter(nextCharacter)
+            )
             {
                 continue;
             }
@@ -603,6 +606,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
 
         return normalized.ToString().Trim();
+    }
+
+    private static bool IsComparisonOperatorCharacter(char character)
+    {
+        return character is '=' or '!' or '>' or '<';
     }
 
     private static bool ConditionalBranchPathsMatch(
