@@ -227,6 +227,27 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         continue;
                     }
 
+                    // A conditional Update can target an inherited item represented by an earlier
+                    // unconditional VersionOverride record. MSBuild retains that override when the Update
+                    // changes only Version, so carry it onto the conditional projection instead of
+                    // inventing a floating effective version for the branch.
+                    var inheritedVersionOverride =
+                        isUpdate
+                        && isConditional
+                        && string.IsNullOrWhiteSpace(versionOverride)
+                            ? references
+                                .LastOrDefault(existing =>
+                                    !existing.IsConditional
+                                    && string.Equals(
+                                        existing.PackageName,
+                                        packageName,
+                                        StringComparison.OrdinalIgnoreCase
+                                    )
+                                    && !string.IsNullOrWhiteSpace(existing.VersionOverride)
+                                )
+                                ?.VersionOverride
+                            : null;
+
                     var reference = new PackageReference(
                         packageName,
                         version,
@@ -235,7 +256,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                         IsTransitive: false,
                         IsConditional: isConditional,
                         VersionOverride: string.IsNullOrWhiteSpace(versionOverride)
-                            ? null
+                            ? inheritedVersionOverride
                             : versionOverride.Trim()
                     )
                     {

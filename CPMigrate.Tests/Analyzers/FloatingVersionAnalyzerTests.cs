@@ -400,6 +400,40 @@ public class FloatingVersionAnalyzerTests : IDisposable
         new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Analyze_ConditionalVersionUpdateWithInheritedVersionOverride_DoesNotReportSupersededFloat()
+    {
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Update="Serilog" VersionOverride="4.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Update="Serilog" Version="4.*" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (declaredReferences, success) = scanner.ScanDeclaredPackages(projectPath);
+
+        success.Should().BeTrue();
+        declaredReferences.Should().HaveCount(2);
+        declaredReferences.Should().OnlyContain(reference => reference.VersionOverride == "4.0.0");
+
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            DeclaredReferences: declaredReferences
+        );
+
+        new FloatingVersionAnalyzer().Analyze(packageInfo).Issues.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("not a version")]
     [InlineData("[1.0.0")]
