@@ -503,7 +503,10 @@ public class VersionInconsistencyFixer : IFixer
             var document = XDocument.Parse(File.ReadAllText(projectPath));
             return document
                 .Descendants("PackageReference")
-                .Where(reference => IsMatchingDeclaration(reference, packageName))
+                .Where(reference =>
+                    IsMatchingDeclaration(reference, packageName)
+                    && HasVersionMetadata(reference)
+                )
                 .Any(reference => GetPackageNames(
                     string.IsNullOrWhiteSpace(reference.Attribute("Include")?.Value)
                         ? reference.Attribute("Update")?.Value
@@ -516,6 +519,12 @@ public class VersionInconsistencyFixer : IFixer
         }
     }
 
+    private static bool HasVersionMetadata(XElement packageReference)
+    {
+        return GetMetadataValues(packageReference, "Version").Any()
+            || GetMetadataValues(packageReference, "VersionOverride").Any();
+    }
+
     private static bool HasConditionedPackageMetadata(string projectPath, string packageName)
     {
         if (!File.Exists(projectPath))
@@ -525,15 +534,18 @@ public class VersionInconsistencyFixer : IFixer
 
         try
         {
-            var document = XDocument.Parse(File.ReadAllText(projectPath));
-            return document
+            var matchingReferences = XDocument
+                .Parse(File.ReadAllText(projectPath))
                 .Descendants("PackageReference")
                 .Where(reference => IsMatchingDeclaration(reference, packageName))
-                .Any(reference => reference.Elements().Any(metadata =>
-                    (metadata.Name.LocalName == "Version"
-                        || metadata.Name.LocalName == "VersionOverride")
-                    && !string.IsNullOrWhiteSpace(metadata.Attribute("Condition")?.Value)
-                ));
+                .ToList();
+            var hasConditionedMetadata = matchingReferences.Any(reference =>
+                IsConditional(reference) && HasVersionMetadata(reference)
+            );
+            var hasUnconditionalVersion = matchingReferences.Any(reference =>
+                !IsConditional(reference) && HasVersionMetadata(reference)
+            );
+            return hasConditionedMetadata && !hasUnconditionalVersion;
         }
         catch
         {

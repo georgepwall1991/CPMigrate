@@ -516,6 +516,93 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_MetadataOnlySharedUpdateDoesNotBlockVersionChange()
+    {
+        var projectPath = Path.Combine(_testDirectory, "MetadataOnlySharedUpdate.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Update="Foo;Bar" PrivateAssets="all" />
+                <PackageReference Include="Foo" Version="2.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherMetadataOnlySharedUpdate.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "2.0.0 (MetadataOnlySharedUpdate.csproj), 3.0.0 (OtherMetadataOnlySharedUpdate.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "2.0.0", projectPath, "MetadataOnlySharedUpdate.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherMetadataOnlySharedUpdate.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        File.ReadAllText(projectPath).Should().Contain("Update=\"Foo;Bar\" PrivateAssets=\"all\"");
+        File.ReadAllText(projectPath).Should().Contain("Version=\"3.0.0\"");
+    }
+
+    [Fact]
+    public void Fix_UnconditionalVersionCanChangeBesideConditionalMetadata()
+    {
+        var projectPath = Path.Combine(_testDirectory, "UnconditionalBesideConditionalMetadata.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Foo" Version="2.0.0" />
+              </ItemGroup>
+              <ItemGroup>
+                <PackageReference Update="Foo">
+                  <Version Condition="'$(TargetFramework)' == 'net8.0'">1.0.0</Version>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var otherPath = CreateTestProject("OtherUnconditionalBesideConditionalMetadata.csproj", "Foo", "3.0.0");
+        var issue = new AnalysisIssue(
+            "Foo",
+            "2.0.0 (UnconditionalBesideConditionalMetadata.csproj), 3.0.0 (OtherUnconditionalBesideConditionalMetadata.csproj)",
+            new[] { projectPath, otherPath }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "2.0.0", projectPath, "UnconditionalBesideConditionalMetadata.csproj"),
+                new("Foo", "3.0.0", otherPath, "OtherUnconditionalBesideConditionalMetadata.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new FixRequest(string.Empty, ConflictStrategy.Highest, DryRun: false)
+        );
+
+        result.Success.Should().BeTrue();
+        var updatedContent = File.ReadAllText(projectPath);
+        updatedContent.Should().Contain("Include=\"Foo\" Version=\"3.0.0\"");
+        updatedContent.Should().Contain(
+            "<Version Condition=\"'$(TargetFramework)' == 'net8.0'\">1.0.0</Version>"
+        );
+    }
+
+    [Fact]
     public void Fix_ConditionedVersionMetadataDeclinesRewrite()
     {
         var projectPath = Path.Combine(_testDirectory, "ConditionedMetadata.csproj");
