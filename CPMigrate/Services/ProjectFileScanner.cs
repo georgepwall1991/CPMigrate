@@ -201,7 +201,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     // Kept rather than filtered, because "this package is declared twice, both times
                     // conditionally" is a different fact from "this package is declared twice" and only
                     // the caller knows which one it needs.
-                    var conditionalScope = GetConditionalScope(item);
+                    var itemConditionalScope = GetConditionalScope(item);
+                    var conditionalScope = itemConditionalScope;
                     var metadataConditionalScope = GetConditionalMetadataScope(
                         versionMetadata,
                         versionOverrideMetadata
@@ -262,7 +263,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             versionOverrideMetadata is not null,
                             isUpdate,
                             isConditional,
-                            conditionalScope
+                            conditionalScope,
+                            itemConditionalScope,
+                            versionMetadata?.Condition,
+                            versionOverrideMetadata?.Condition
                         );
                     }
                 }
@@ -297,7 +301,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         bool hasVersionOverrideMetadata,
         bool isUpdate,
         bool isConditional,
-        string? conditionalScope
+        string? conditionalScope,
+        string? itemConditionalScope,
+        string? versionMetadataCondition,
+        string? versionOverrideMetadataCondition
     )
     {
         var reference = new PackageReference(
@@ -384,13 +391,67 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             conditionalScope
         );
 
+        var effectiveReference = reference with
+        {
+            Version = inheritedVersion ?? reference.Version,
+            VersionOverride = inheritedVersionOverride ?? reference.VersionOverride,
+            HasVersionOverrideMetadata = inheritedVersionOverride is not null
+                || reference.HasVersionOverrideMetadata,
+        };
+        AddUnconditionalMetadataProjection(
+            references,
+            effectiveReference,
+            itemConditionalScope,
+            versionMetadataCondition,
+            versionOverrideMetadataCondition
+        );
+        references.Add(effectiveReference);
+    }
+
+    private static void AddUnconditionalMetadataProjection(
+        List<PackageReference> references,
+        PackageReference conditionalReference,
+        string? itemConditionalScope,
+        string? versionMetadataCondition,
+        string? versionOverrideMetadataCondition
+    )
+    {
+        var hasConditionedVersion = !string.IsNullOrWhiteSpace(versionMetadataCondition);
+        var hasConditionedOverride = !string.IsNullOrWhiteSpace(versionOverrideMetadataCondition);
+        if (
+            itemConditionalScope is not null
+            || (!hasConditionedVersion && !hasConditionedOverride)
+            || (
+                !conditionalReference.HasVersionMetadata
+                && !conditionalReference.HasVersionOverrideMetadata
+            )
+        )
+        {
+            return;
+        }
+
+        var hasUnconditionalVersion = conditionalReference.HasVersionMetadata && !hasConditionedVersion;
+        var hasUnconditionalOverride = conditionalReference.HasVersionOverrideMetadata
+            && !hasConditionedOverride;
+        if (!hasUnconditionalVersion && !hasUnconditionalOverride)
+        {
+            return;
+        }
+
         references.Add(
-            reference with
+            conditionalReference with
             {
-                Version = inheritedVersion ?? reference.Version,
-                VersionOverride = inheritedVersionOverride ?? reference.VersionOverride,
-                HasVersionOverrideMetadata = inheritedVersionOverride is not null
-                    || reference.HasVersionOverrideMetadata,
+                Version = hasUnconditionalVersion ? conditionalReference.Version : string.Empty,
+                HasVersionMetadata = hasUnconditionalVersion,
+                VersionOverride = hasUnconditionalOverride
+                    ? conditionalReference.VersionOverride
+                    : null,
+                HasVersionOverrideMetadata = hasUnconditionalOverride,
+                HasConditionalUpdateVersionMetadata = false,
+                IsConditional = false,
+                IsConditionalUpdate = false,
+                IsMetadataOnlyUpdate = false,
+                ConditionalScope = null,
             }
         );
     }

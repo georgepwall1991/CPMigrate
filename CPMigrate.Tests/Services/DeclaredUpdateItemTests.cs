@@ -948,6 +948,37 @@ public class DeclaredUpdateItemTests : IDisposable
     }
 
     [Fact]
+    public void ScanDeclaredPackages_ConditionedOverridePreservesUnconditionalVersionProjection()
+    {
+        var path = WriteProject(
+            """
+              <ItemGroup>
+                <PackageReference Update="Serilog" Version="1.0.0">
+                  <VersionOverride Condition="'$(TargetFramework)' == 'net8.0'">2.0.0</VersionOverride>
+                </PackageReference>
+              </ItemGroup>
+            """
+        );
+
+        var scanner = new ProjectFileScanner(SilentConsoleService.Instance);
+        var (references, success) = scanner.ScanDeclaredPackages(path);
+
+        success.Should().BeTrue();
+        references.Should().Contain(reference =>
+            !reference.IsConditional
+            && reference.PackageName == "Serilog"
+            && reference.Version == "1.0.0"
+            && reference.VersionOverride == null
+        );
+        references.Should().Contain(reference =>
+            reference.IsConditional
+            && reference.PackageName == "Serilog"
+            && reference.Version == "1.0.0"
+            && reference.VersionOverride == "2.0.0"
+        );
+    }
+
+    [Fact]
     public void ScanDeclaredPackages_EquivalentOtherwiseBranchesInIndependentChooseElementsAmend()
     {
         var path = WriteProject(
