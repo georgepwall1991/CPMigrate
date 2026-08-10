@@ -345,12 +345,6 @@ public class VersionInconsistencyFixer : IFixer
         string packageName
     )
     {
-        var currentOverride = GetMetadataValues(currentReference, "VersionOverride").LastOrDefault();
-        if (currentOverride is null || string.IsNullOrWhiteSpace(currentOverride))
-        {
-            return false;
-        }
-
         var currentIndex = -1;
         for (var index = 0; index < packageReferences.Count; index++)
         {
@@ -361,14 +355,44 @@ public class VersionInconsistencyFixer : IFixer
             }
         }
 
-        return currentIndex >= 0
-            && packageReferences
-                .Skip(currentIndex + 1)
-                .Where(element => IsConditional(element) && IsMatchingUpdate(element, packageName))
-                .Any(element =>
-                    GetMetadataValues(element, "VersionOverride")
-                        .Any(value => string.IsNullOrWhiteSpace(value))
-                );
+        if (currentIndex < 0)
+        {
+            return false;
+        }
+
+        var overrideIsActive = false;
+        for (var index = 0; index < packageReferences.Count; index++)
+        {
+            var element = packageReferences[index];
+            if (!IsMatchingDeclaration(element, packageName))
+            {
+                continue;
+            }
+
+            var overrideValue = GetMetadataValues(element, "VersionOverride").LastOrDefault();
+            if (!IsConditional(element))
+            {
+                if (overrideValue is not null)
+                {
+                    overrideIsActive = !string.IsNullOrWhiteSpace(overrideValue);
+                }
+
+                continue;
+            }
+
+            if (
+                index > currentIndex
+                && IsMatchingUpdate(element, packageName)
+                && overrideIsActive
+                && overrideValue is not null
+                && string.IsNullOrWhiteSpace(overrideValue)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsMatchingUpdate(XElement packageReference, string packageName)
