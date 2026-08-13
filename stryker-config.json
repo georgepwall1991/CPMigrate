@@ -4,6 +4,7 @@
     "test-projects": [
       "CPMigrate.Tests/CPMigrate.Tests.csproj"
     ],
+    "test-case-filter": "FullyQualifiedName~CPMigrate.Tests.Licensing|FullyQualifiedName~LicenseAnalyzerTests|FullyQualifiedName~LicenseRisk|FullyQualifiedName~LicensesRequested|FullyQualifiedName~LicensesNotRequested|FullyQualifiedName~LicensesWithoutAnalyze",
     "mutate": [
       "**/Licensing/**/*.cs",
       "**/Analyzers/LicenseAnalyzer.cs"
@@ -13,7 +14,7 @@
       "low": 90,
       "break": 90
     },
-    "concurrency": 4,
+    "concurrency": 2,
     "reporters": [
       "html",
       "json",

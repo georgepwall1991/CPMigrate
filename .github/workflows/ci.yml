@@ -109,6 +109,7 @@ jobs:
   license-mutation:
     name: LicenseRisk mutation tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -122,6 +123,13 @@ jobs:
 
       - name: Mutate the licensing surface
         run: dotnet stryker --config-file stryker-config.json
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: license-mutation-report
+          path: StrykerOutput/**/reports/
 
   pack:
     runs-on: ubuntu-latest
