@@ -145,6 +145,7 @@ public static class LicenseExpressionParser
         {
             // Stryker disable once statement : identifier reads already skip trailing whitespace
             SkipWhitespace();
+            // Stryker disable once equality : an operator exactly at end-of-input is malformed either way
             if (_index + op.Length > _text.Length)
             {
                 return false;

@@ -134,9 +134,9 @@ public static class LicenseRiskClassifier
 
     public static LicenseClassification ClassifyExpression(string text)
     {
+        // Stryker disable once block : Classify(null) also returns Unknown via the discard arm
         if (!LicenseExpressionParser.TryParse(text, out var expression))
         {
-            // Stryker disable once block : Classify(null) also returns Unknown via the discard arm
             return LicenseClassification.Unknown;
         }
 

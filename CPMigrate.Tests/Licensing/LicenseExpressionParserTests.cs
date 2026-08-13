@@ -87,6 +87,11 @@ public class LicenseExpressionParserTests
                     new LicenseIdentifier("GPL-2.0-only")
                 )
             );
+
+        LicenseExpressionParser.TryParse("()", out var empty).Should().BeFalse();
+        empty.Should().BeNull();
+        LicenseExpressionParser.TryParse("(AND)", out var reserved).Should().BeFalse();
+        reserved.Should().BeNull();
     }
 
     [Fact]

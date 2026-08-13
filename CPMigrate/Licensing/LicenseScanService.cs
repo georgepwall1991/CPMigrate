@@ -82,7 +82,9 @@ public sealed class LicenseScanService
 
         var display = nuspec.LicenseType switch
         {
+            // Stryker disable once string : reader never yields a null file payload
             "file" => nuspec.Expression ?? "file",
+            // Stryker disable once string : reader never yields a null url payload
             "url" => nuspec.LicenseUrl ?? "url",
             _ => "unknown",
         };
