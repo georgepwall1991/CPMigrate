@@ -1,3 +1,4 @@
+using CPMigrate.Licensing;
 using CPMigrate.Models;
 using CPMigrate.Services;
 using CPMigrate.Services.Migration;
@@ -118,6 +119,87 @@ public class AnalysisHandlerScanFailureTests : IDisposable
         result.DeepScanFailures.Should().Be(0, "an audit that was never asked for cannot fail");
     }
 
+    [Fact]
+    public async Task ExecuteAsync_LicensesRequestedAndNuspecMissing_ExitsIncompleteAnalysis()
+    {
+        var packages = Path.Combine(_root, "packages");
+        Directory.CreateDirectory(packages);
+        var handler = CreateHandler(
+            auditSucceeds: true,
+            referenceScanSucceeds: true,
+            licenseScanService: new LicenseScanService(() => packages)
+        );
+
+        var result = await handler.ExecuteAsync(LicenseOptions());
+
+        result.DeepScanFailures.Should().BeGreaterThan(0);
+        result.ExitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+        result
+            .AnalysisReport!.Results.SelectMany(r => r.Issues)
+            .Should()
+            .NotContain(issue => issue.IssueCode == AnalysisIssueCode.LicenseRisk);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LicensesNotRequested_DoesNotCountMissingNuspecs()
+    {
+        var packages = Path.Combine(_root, "packages");
+        Directory.CreateDirectory(packages);
+        var handler = CreateHandler(
+            auditSucceeds: true,
+            referenceScanSucceeds: true,
+            licenseScanService: new LicenseScanService(() => packages)
+        );
+
+        var result = await handler.ExecuteAsync(
+            new Options
+            {
+                Analyze = true,
+                Quiet = true,
+                SolutionFileDir = _root,
+            }
+        );
+
+        result.DeepScanFailures.Should().Be(0);
+        result.ExitCode.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LicensesRequestedWithACopyleftNuspec_ReportsLicenseRisk()
+    {
+        var packages = Path.Combine(_root, "packages");
+        var nuspecDirectory = Path.Combine(packages, "newtonsoft.json", "13.0.1");
+        Directory.CreateDirectory(nuspecDirectory);
+        File.WriteAllText(
+            Path.Combine(nuspecDirectory, "newtonsoft.json.nuspec"),
+            """<package><metadata><license type="expression">GPL-2.0-only</license></metadata></package>"""
+        );
+        var handler = CreateHandler(
+            auditSucceeds: true,
+            referenceScanSucceeds: true,
+            licenseScanService: new LicenseScanService(() => packages)
+        );
+
+        var result = await handler.ExecuteAsync(LicenseOptions());
+
+        result.DeepScanFailures.Should().Be(0);
+        result
+            .AnalysisReport!.Results.SelectMany(r => r.Issues)
+            .Should()
+            .Contain(issue => issue.IssueCode == AnalysisIssueCode.LicenseRisk);
+    }
+
+    private Options LicenseOptions()
+    {
+        return new Options
+        {
+            Analyze = true,
+            AnalyzeLicenses = true,
+            Quiet = true,
+            SolutionFileDir = _root,
+        };
+    }
+
     private Options AuditOptions()
     {
         return new Options
@@ -160,7 +242,8 @@ public class AnalysisHandlerScanFailureTests : IDisposable
     private AnalysisHandler CreateHandler(
         bool auditSucceeds,
         bool referenceScanSucceeds,
-        bool declarationScanSucceeds = true
+        bool declarationScanSucceeds = true,
+        LicenseScanService? licenseScanService = null
     )
     {
         var projectAnalyzer = new Mock<IProjectAnalyzer>();
@@ -200,7 +283,8 @@ public class AnalysisHandlerScanFailureTests : IDisposable
             new FixService(SilentConsoleService.Instance),
             SilentConsoleService.Instance,
             quietMode: true,
-            _ => Task.FromResult((_root, new List<string> { _projectPath }))
+            _ => Task.FromResult((_root, new List<string> { _projectPath })),
+            licenseScanService
         );
     }
 }

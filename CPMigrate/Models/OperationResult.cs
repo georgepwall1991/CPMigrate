@@ -329,7 +329,7 @@ public class OperationSummary
     public int? ScanFailures { get; init; }
 
     /// <summary>
-    /// Opt-in package queries (<c>--audit</c>/<c>--outdated</c>/<c>--deprecated</c>) that failed.
+    /// Opt-in package queries (<c>--audit</c>/<c>--outdated</c>/<c>--deprecated</c>/<c>--licenses</c>) that failed.
     /// </summary>
     [JsonPropertyName("deepScanFailures")]
     public int? DeepScanFailures { get; init; }

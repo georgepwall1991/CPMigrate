@@ -25,15 +25,19 @@ namespace CPMigrate.Tests;
 public class EveryRuleCanFireTests : IDisposable
 {
     private readonly string _root;
+    private readonly string? _previousNugetPackages;
 
     public EveryRuleCanFireTests()
     {
         _root = Path.Combine(Path.GetTempPath(), $"CPMigrateRuleFire_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_root);
+        _previousNugetPackages = Environment.GetEnvironmentVariable("NUGET_PACKAGES");
     }
 
     public void Dispose()
     {
+        Environment.SetEnvironmentVariable("NUGET_PACKAGES", _previousNugetPackages);
+
         if (Directory.Exists(_root))
         {
             Directory.Delete(_root, recursive: true);
@@ -268,12 +272,24 @@ public class EveryRuleCanFireTests : IDisposable
     [Fact]
     public async Task LicenseRisk_Fires()
     {
-        // MySql.Data ships under GPL-2.0 — the built-in license table flags copyleft packages
-        // from the project file alone, no feed involved.
+        // MySql.Data ships under GPL-2.0. The scan reads that from the nuspec restore already
+        // fetched — not from a hardcoded package-name table — so the fixture is a real nuspec
+        // layout under NUGET_PACKAGES.
         WriteProject("src/Api/Api.csproj", ("MySql.Data", "8.0.33"));
         WriteSolution("src/Api/Api.csproj");
+        SeedNuspec("mysql.data", "8.0.33", "GPL-2.0-only");
 
-        (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.LicenseRisk));
+        (await Analyze("--licenses")).Should().Contain(nameof(AnalysisIssueCode.LicenseRisk));
+    }
+
+    [Fact]
+    public async Task LicenseRisk_DoesNotFireWithoutTheFlag()
+    {
+        WriteProject("src/Api/Api.csproj", ("MySql.Data", "8.0.33"));
+        WriteSolution("src/Api/Api.csproj");
+        SeedNuspec("mysql.data", "8.0.33", "GPL-2.0-only");
+
+        (await Analyze()).Should().NotContain(nameof(AnalysisIssueCode.LicenseRisk));
     }
 
     [Fact]
@@ -681,14 +697,23 @@ public class EveryRuleCanFireTests : IDisposable
     /// Runs the CLI as a user would and returns the issue codes it reported, read out of the JSON payload
     /// rather than from any internal collection — so this covers the path from disk to output.
     /// </summary>
-    private async Task<List<string>> Analyze()
+    private async Task<List<string>> Analyze(params string[] extraArgs)
     {
         var outputPath = Path.Combine(_root, "report.json");
+        var args = new List<string>
+        {
+            "--analyze",
+            "--quiet",
+            "--output",
+            "Json",
+            "--output-file",
+            outputPath,
+            "-s",
+            _root,
+        };
+        args.AddRange(extraArgs);
 
-        await ProgramRunner.RunAsync(
-            ["--analyze", "--quiet", "--output", "Json", "--output-file", outputPath, "-s", _root],
-            new FakeConsoleService()
-        );
+        await ProgramRunner.RunAsync(args.ToArray(), new FakeConsoleService());
 
         File.Exists(outputPath).Should().BeTrue("the run must have produced a report");
 
@@ -704,6 +729,18 @@ public class EveryRuleCanFireTests : IDisposable
             .Select(issue => issue.GetProperty("issueCode").GetString() ?? "")
             .Distinct(StringComparer.Ordinal)
             .ToList();
+    }
+
+    private void SeedNuspec(string packageIdLower, string version, string expression)
+    {
+        var packages = Path.Combine(_root, "packages");
+        var directory = Path.Combine(packages, packageIdLower, version);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(
+            Path.Combine(directory, $"{packageIdLower}.nuspec"),
+            $"""<package><metadata><license type="expression">{expression}</license></metadata></package>"""
+        );
+        Environment.SetEnvironmentVariable("NUGET_PACKAGES", packages);
     }
 
     private void WriteProject(

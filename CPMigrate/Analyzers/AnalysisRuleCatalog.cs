@@ -152,7 +152,7 @@ public static class AnalysisRuleCatalog
                 "A package carries a copyleft, proprietary, or unverified license.",
                 "Copyleft licenses (GPL, AGPL) require derivative works to use the same license, which may "
                     + "conflict with proprietary distribution. Proprietary licenses may restrict redistribution. "
-                    + "Review the license terms before shipping.",
+                    + "Unknown or file-only licenses are unverified. Review the license terms before shipping.",
                 new[] { "dependencies", "legal", "supply-chain" }
             ),
             new(

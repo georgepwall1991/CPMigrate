@@ -1132,7 +1132,7 @@ internal static class CommandRouter
         {
             return SarifRunOutcome.Failed(
                 $"{result.DeepScanFailures} package quer(ies) failed "
-                    + "(--audit/--outdated/--deprecated); those findings are missing, not absent."
+                    + "(--audit/--outdated/--deprecated/--licenses); those findings are missing, not absent."
             );
         }
 

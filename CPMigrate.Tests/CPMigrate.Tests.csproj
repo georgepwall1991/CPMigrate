@@ -28,6 +28,9 @@
     <ProjectReference Include="..\CPMigrate\CPMigrate.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Fixtures\nuspecs\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="Fixtures\nuspecs" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 </Project>

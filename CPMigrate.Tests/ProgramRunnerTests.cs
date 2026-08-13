@@ -54,6 +54,7 @@ public class ProgramRunnerTests
     [Theory]
     [InlineData("analyze")]
     [InlineData("audit")]
+    [InlineData("licenses")]
     [InlineData("update")]
     public async Task RunAsync_LeadingVerb_IsRejectedInsteadOfRunningAMigration(string verb)
     {

@@ -113,6 +113,11 @@ public record DeprecatedPackageInfo(
 /// that identity is unambiguous (two projects can share a file name) and portable (a machine-specific
 /// absolute path would make a committed baseline useless on any other machine).
 /// </param>
+/// <param name="DeclaredReferences">Package references as declared in project files, including duplicates.</param>
+/// <param name="Licenses">
+/// Optional license metadata from <c>--licenses</c>. Null means the scan was not requested;
+/// an empty list means it ran and found nothing classified as risky to report.
+/// </param>
 public record ProjectPackageInfo(
     IReadOnlyList<PackageReference> References,
     IReadOnlyList<VulnerabilityInfo>? Vulnerabilities = null,
@@ -120,7 +125,8 @@ public record ProjectPackageInfo(
     IReadOnlyList<DeprecatedPackageInfo>? DeprecatedPackages = null,
     string? BasePath = null,
     IReadOnlyList<string>? ScannedProjects = null,
-    IReadOnlyList<PackageReference>? DeclaredReferences = null
+    IReadOnlyList<PackageReference>? DeclaredReferences = null,
+    IReadOnlyList<LicenseInfo>? Licenses = null
 )
 {
     /// <summary>

@@ -223,6 +223,7 @@ public class InteractivePromptRoutingTests : IDisposable
             "No",
             "No",
             "No",
+            "No",
             "No - just report",
         ]);
         console.ConfirmationResponse = true;

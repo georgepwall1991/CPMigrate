@@ -170,4 +170,24 @@ public class NuspecLicenseReaderTests
         NuspecLicenseReader.TryReadFile("/no/such/package.nuspec", out var license).Should().BeFalse();
         license.Should().BeNull();
     }
+
+    [Theory]
+    [InlineData("newtonsoft.json.expression.nuspec", "MIT", "expression")]
+    [InlineData("itext7.agpl.nuspec", "AGPL-3.0-or-later", "expression")]
+    [InlineData("microsoft.extensions.logging.file.nuspec", "LICENSE.txt", "file")]
+    [InlineData("oldpackage.licenseurl.nuspec", null, "url")]
+    [InlineData("unlicensed.missing.nuspec", null, "missing")]
+    [InlineData("dual.gpl-or-mit.nuspec", "GPL-2.0-only OR MIT", "expression")]
+    public void TryReadFile_RecordedNuspecs_MatchTheCapturedShape(
+        string fileName,
+        string? expression,
+        string licenseType
+    )
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "nuspecs", fileName);
+
+        NuspecLicenseReader.TryReadFile(path, out var license).Should().BeTrue();
+        license!.Expression.Should().Be(expression);
+        license.LicenseType.Should().Be(licenseType);
+    }
 }

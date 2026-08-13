@@ -183,13 +183,27 @@ public class OptionsValidationTests
     }
 
     [Fact]
-    public void Validate_AnalyzeWithOutdatedAndDeprecated_DoesNotThrow()
+    public void Validate_LicensesWithoutAnalyze_ThrowsArgumentException()
+    {
+        var options = new CPMigrate.Options
+        {
+            AnalyzeLicenses = true
+        };
+
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--licenses requires --analyze*");
+    }
+
+    [Fact]
+    public void Validate_AnalyzeWithOutdatedDeprecatedAndLicenses_DoesNotThrow()
     {
         var options = new CPMigrate.Options
         {
             Analyze = true,
             AnalyzeOutdated = true,
-            AnalyzeDeprecated = true
+            AnalyzeDeprecated = true,
+            AnalyzeLicenses = true
         };
 
         var action = () => options.Validate();

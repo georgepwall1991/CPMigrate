@@ -1,0 +1,27 @@
+{
+  "stryker-config": {
+    "project": "CPMigrate/CPMigrate.csproj",
+    "test-projects": [
+      "CPMigrate.Tests/CPMigrate.Tests.csproj"
+    ],
+    "mutate": [
+      "**/Licensing/**/*.cs",
+      "**/Analyzers/LicenseAnalyzer.cs"
+    ],
+    "thresholds": {
+      "high": 90,
+      "low": 90,
+      "break": 90
+    },
+    "concurrency": 4,
+    "reporters": [
+      "html",
+      "json",
+      "cleartext"
+    ],
+    "ignore-methods": [
+      "*ToString",
+      "*ConfigureAwait"
+    ]
+  }
+}

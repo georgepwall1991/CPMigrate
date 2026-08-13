@@ -207,7 +207,7 @@ cpmigrate -s ./MySolution.sln --verify --output Markdown # the receipt, for the 
 <summary><b>🔬 Analysis &amp; auto-fix</b> — find the rot, then fix it</summary>
 
 ```bash
-cpmigrate --analyze --audit --outdated --deprecated --licenses
+cpmigrate --analyze --audit --outdated --deprecated --licenses --transitive
 cpmigrate --analyze --fix                       # apply every auto-fixable finding
 cpmigrate --analyze --fix-dry-run               # preview the fixes
 cpmigrate --analyze --fail-on High              # gate CI without failing on old debt
@@ -276,7 +276,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--audit` | | `false` | Security vulnerability scanning |
 | `--outdated` | | `false` | Outdated package checks |
 | `--deprecated` | | `false` | Deprecated package checks |
-| `--licenses` | | `false` | Flag copyleft / proprietary / unknown licenses |
+| `--licenses` | | `false` | Flag copyleft / proprietary / unknown licenses from restored nuspecs |
 | `--fix` | | `false` | Apply auto-fixes (with `--analyze`) |
 | `--fix-dry-run` | | `false` | Preview auto-fixes |
 | `--fail-on` | | `Info` | Lowest severity that fails: `Info`·`Low`·`Moderate`·`High`·`Critical`·`Never` |
