@@ -6,6 +6,25 @@ namespace CPMigrate.Tests.Licensing;
 public class GlobalPackagesFolderTests
 {
     [Fact]
+    public void Resolve_ExplicitEnvironmentValueWinsOverTheProcessVariable()
+    {
+        var previous = Environment.GetEnvironmentVariable(GlobalPackagesFolder.EnvironmentVariableName);
+        try
+        {
+            Environment.SetEnvironmentVariable(GlobalPackagesFolder.EnvironmentVariableName, "/from-process");
+
+            GlobalPackagesFolder
+                .Resolve(environmentValue: "/from-argument", userProfile: "/home/dev")
+                .Should()
+                .Be(Path.GetFullPath("/from-argument"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(GlobalPackagesFolder.EnvironmentVariableName, previous);
+        }
+    }
+
+    [Fact]
     public void Resolve_PrefersTheNuGetPackagesEnvironmentVariable()
     {
         GlobalPackagesFolder

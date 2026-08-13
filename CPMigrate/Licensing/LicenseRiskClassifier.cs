@@ -91,6 +91,7 @@ public static class LicenseRiskClassifier
 
     public static LicenseClassification ClassifyIdentifier(string spdxId)
     {
+        // Stryker disable once block : empty/null ids miss every table and fall through to Unknown anyway
         if (string.IsNullOrEmpty(spdxId))
         {
             return LicenseClassification.Unknown;
@@ -133,21 +134,24 @@ public static class LicenseRiskClassifier
 
     public static LicenseClassification ClassifyExpression(string text)
     {
-        if (!LicenseExpressionParser.TryParse(text, out var expression) || expression is null)
+        if (!LicenseExpressionParser.TryParse(text, out var expression))
         {
+            // Stryker disable once block : Classify(null) also returns Unknown via the discard arm
             return LicenseClassification.Unknown;
         }
 
-        return Classify(expression);
+        return Classify(expression!);
     }
 
     private static LicenseClassification Min(LicenseClassification left, LicenseClassification right)
     {
+        // Stryker disable once equality : equal classifications return the same value either way
         return left <= right ? left : right;
     }
 
     private static LicenseClassification Max(LicenseClassification left, LicenseClassification right)
     {
+        // Stryker disable once equality : equal classifications return the same value either way
         return left >= right ? left : right;
     }
 }

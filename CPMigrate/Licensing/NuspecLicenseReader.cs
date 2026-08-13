@@ -20,10 +20,6 @@ public static class NuspecLicenseReader
         {
             var document = XDocument.Parse(xml);
             var metadata = Find(document.Root, "metadata") ?? document.Root;
-            if (metadata is null)
-            {
-                return false;
-            }
 
             var licenseElement = Find(metadata, "license");
             if (licenseElement is not null)

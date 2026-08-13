@@ -32,6 +32,7 @@ public static class LicenseExpressionParser
         public Parser(string text)
         {
             _text = text;
+            // Stryker disable once statement : TryParsePrimary / TryRead* also skip leading whitespace
             SkipWhitespace();
         }
 
@@ -44,20 +45,20 @@ public static class LicenseExpressionParser
 
         private bool TryParseOr(out LicenseExpression? expression)
         {
-            if (!TryParseAnd(out expression) || expression is null)
+            if (!TryParseAnd(out expression))
             {
                 return false;
             }
 
             while (TryReadOperator("OR"))
             {
-                if (!TryParseAnd(out var right) || right is null)
+                if (!TryParseAnd(out var right))
                 {
                     expression = null;
                     return false;
                 }
 
-                expression = new LicenseOr(expression, right);
+                expression = new LicenseOr(expression!, right!);
             }
 
             return true;
@@ -65,20 +66,20 @@ public static class LicenseExpressionParser
 
         private bool TryParseAnd(out LicenseExpression? expression)
         {
-            if (!TryParseWith(out expression) || expression is null)
+            if (!TryParseWith(out expression))
             {
                 return false;
             }
 
             while (TryReadOperator("AND"))
             {
-                if (!TryParseWith(out var right) || right is null)
+                if (!TryParseWith(out var right))
                 {
                     expression = null;
                     return false;
                 }
 
-                expression = new LicenseAnd(expression, right);
+                expression = new LicenseAnd(expression!, right!);
             }
 
             return true;
@@ -86,20 +87,20 @@ public static class LicenseExpressionParser
 
         private bool TryParseWith(out LicenseExpression? expression)
         {
-            if (!TryParsePrimary(out expression) || expression is null)
+            if (!TryParsePrimary(out expression))
             {
                 return false;
             }
 
             if (TryReadOperator("WITH"))
             {
-                if (!TryReadIdentifier(out var exception) || exception is null)
+                if (!TryReadIdentifier(out var exception))
                 {
                     expression = null;
                     return false;
                 }
 
-                expression = new LicenseWith(expression, exception);
+                expression = new LicenseWith(expression!, exception!);
             }
 
             return true;
@@ -108,15 +109,17 @@ public static class LicenseExpressionParser
         private bool TryParsePrimary(out LicenseExpression? expression)
         {
             expression = null;
+            // Stryker disable once statement : TryReadChar / TryReadIdentifier skip whitespace themselves
             SkipWhitespace();
 
             if (TryReadChar('('))
             {
-                if (!TryParseExpression(out expression) || expression is null)
+                if (!TryParseExpression(out expression))
                 {
                     return false;
                 }
 
+                // Stryker disable once statement : TryReadChar skips whitespace before matching ')'
                 SkipWhitespace();
                 if (!TryReadChar(')'))
                 {
@@ -124,21 +127,23 @@ public static class LicenseExpressionParser
                     return false;
                 }
 
+                // Stryker disable once statement : the next token reader skips trailing whitespace
                 SkipWhitespace();
                 return true;
             }
 
-            if (!TryReadIdentifier(out var id) || id is null)
+            if (!TryReadIdentifier(out var id))
             {
                 return false;
             }
 
-            expression = new LicenseIdentifier(id);
+            expression = new LicenseIdentifier(id!);
             return true;
         }
 
         private bool TryReadOperator(string op)
         {
+            // Stryker disable once statement : identifier reads already skip trailing whitespace
             SkipWhitespace();
             if (_index + op.Length > _text.Length)
             {
@@ -157,18 +162,15 @@ public static class LicenseExpressionParser
                 return false;
             }
 
-            // An operator cannot be an identifier used as a license id on its own unless it is
-            // actually followed by more expression. TryReadOperator is only called when an operator
-            // is expected between terms, so matching the word is enough — but "AND" as a whole
-            // expression is rejected because TryParsePrimary would then consume it as an identifier.
-            // Operators are reserved words and must not be parsed as identifiers.
             _index = after;
+            // Stryker disable once statement : the next term's reader skips whitespace
             SkipWhitespace();
             return true;
         }
 
         private bool TryReadIdentifier(out string? id)
         {
+            // Stryker disable once statement : callers skip whitespace before asking for an identifier
             SkipWhitespace();
             var start = _index;
             while (_index < _text.Length && IsIdentifierChar(_text[_index]))
@@ -190,6 +192,7 @@ public static class LicenseExpressionParser
                 return false;
             }
 
+            // Stryker disable once statement : the next token reader skips whitespace
             SkipWhitespace();
             return true;
         }

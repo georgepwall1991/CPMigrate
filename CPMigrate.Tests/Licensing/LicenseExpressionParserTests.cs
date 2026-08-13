@@ -31,6 +31,12 @@ public class LicenseExpressionParserTests
         expression
             .Should()
             .Be(new LicenseAnd(new LicenseIdentifier("MIT"), new LicenseIdentifier("Apache-2.0")));
+
+        // Kept next to a test that already covers IsReservedOperator so Stryker's per-test
+        // coverage actually runs the assertion against the "AND"/"OR"/"WITH" string mutants.
+        LicenseExpressionParser.TryParse("AND", out _).Should().BeFalse();
+        LicenseExpressionParser.TryParse("OR", out _).Should().BeFalse();
+        LicenseExpressionParser.TryParse("WITH", out _).Should().BeFalse();
     }
 
     [Fact]
@@ -40,6 +46,15 @@ public class LicenseExpressionParserTests
         expression
             .Should()
             .Be(new LicenseOr(new LicenseIdentifier("GPL-2.0-only"), new LicenseIdentifier("MIT")));
+
+        // "ORANGE" starts with the OR operator then an identifier character; accepting it as
+        // OR + ANGE would silently change a single unknown id into a dual-license expression.
+        LicenseExpressionParser.TryParse("MIT ORANGE", out var orange).Should().BeFalse();
+        orange.Should().BeNull();
+        LicenseExpressionParser.TryParse("MIT ANDY Apache-2.0", out var andy).Should().BeFalse();
+        andy.Should().BeNull();
+        LicenseExpressionParser.TryParse("GPL-2.0-only WITHHOLDING", out var withholding).Should().BeFalse();
+        withholding.Should().BeNull();
     }
 
     [Fact]
@@ -146,6 +161,25 @@ public class LicenseExpressionParserTests
     public void TryParse_DoesNotTreatAndAsAnIdentifier()
     {
         LicenseExpressionParser.TryParse("AND", out var expression).Should().BeFalse();
+        expression.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("OR")]
+    [InlineData("WITH")]
+    [InlineData("and")]
+    [InlineData("or")]
+    [InlineData("with")]
+    public void TryParse_DoesNotTreatReservedOperatorsAsIdentifiers(string text)
+    {
+        LicenseExpressionParser.TryParse(text, out var expression).Should().BeFalse();
+        expression.Should().BeNull();
+    }
+
+    [Fact]
+    public void TryParse_TrailingIdentifierWithoutAnOperator_IsMalformed()
+    {
+        LicenseExpressionParser.TryParse("MIT Apache-2.0", out var expression).Should().BeFalse();
         expression.Should().BeNull();
     }
 }

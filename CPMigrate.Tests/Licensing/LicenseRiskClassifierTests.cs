@@ -127,6 +127,14 @@ public class LicenseRiskClassifierTests
     }
 
     [Fact]
+    public void Classify_AndPrefersTheLeftSideWhenItIsMoreRestrictive()
+    {
+        var expression = new LicenseAnd(new LicenseIdentifier("GPL-2.0-only"), new LicenseIdentifier("MIT"));
+
+        LicenseRiskClassifier.Classify(expression).Should().Be(LicenseClassification.StrongCopyleft);
+    }
+
+    [Fact]
     public void Classify_UnknownAndPermissive_IsUnknown()
     {
         var expression = new LicenseAnd(new LicenseIdentifier("MIT"), new LicenseIdentifier("LicenseRef-Acme"));

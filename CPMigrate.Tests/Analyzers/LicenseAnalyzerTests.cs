@@ -45,6 +45,12 @@ public class LicenseAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_NameIdentifiesTheAnalyzer()
+    {
+        _analyzer.Name.Should().Be("Package Licenses");
+    }
+
+    [Fact]
     public void Analyze_StrongCopyleft_IsHigh()
     {
         var packageInfo = WithLicense(
@@ -78,6 +84,8 @@ public class LicenseAnalyzerTests
 
         issue.Severity.Should().Be(AnalysisSeverity.Moderate);
         issue.Metadata!["risk"].Should().Be("copyleft");
+        issue.Description.Should().Contain("LGPL-2.1-only");
+        issue.Description.Should().Contain("weak copyleft");
     }
 
     [Fact]
@@ -106,6 +114,8 @@ public class LicenseAnalyzerTests
         issue.Severity.Should().Be(AnalysisSeverity.Low);
         issue.Metadata!["risk"].Should().Be("unknown");
         issue.Metadata["licenseType"].Should().Be("file");
+        issue.Description.Should().Contain("LICENSE.txt");
+        issue.Description.Should().Contain("unverified");
     }
 
     [Fact]

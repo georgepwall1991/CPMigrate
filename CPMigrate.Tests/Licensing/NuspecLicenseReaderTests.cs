@@ -165,6 +165,48 @@ public class NuspecLicenseReaderTests
     }
 
     [Fact]
+    public void TryRead_LicenseOnThePackageRoot_IsStillRead()
+    {
+        const string xml = """
+            <package>
+              <license type="expression">MIT</license>
+            </package>
+            """;
+
+        NuspecLicenseReader.TryRead(xml, out var license).Should().BeTrue();
+        license.Should().BeEquivalentTo(new NuspecLicense("MIT", "expression", LicenseUrl: null));
+    }
+
+    [Fact]
+    public void TryReadFile_UnreadableFile_ReturnsFalse()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"cpmigrate-nuspec-{Guid.NewGuid():N}.nuspec");
+        File.WriteAllText(path, """<package><metadata><license type="expression">MIT</license></metadata></package>""");
+
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            File.SetUnixFileMode(path, UnixFileMode.None);
+
+            NuspecLicenseReader.TryReadFile(path, out var license).Should().BeFalse();
+            license.Should().BeNull();
+        }
+        finally
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void TryReadFile_MissingPath_ReturnsFalse()
     {
         NuspecLicenseReader.TryReadFile("/no/such/package.nuspec", out var license).Should().BeFalse();

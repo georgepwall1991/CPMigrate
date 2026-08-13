@@ -139,6 +139,120 @@ public class LicenseScanServiceTests : IDisposable
         result.Licenses.Should().ContainSingle();
         result.Licenses[0].Classification.Should().Be(LicenseClassification.Unknown);
         result.Licenses[0].LicenseType.Should().Be("file");
+        result.Licenses[0].License.Should().Be("LICENSE.txt");
+    }
+
+    [Fact]
+    public void Scan_FileLicenseNamedLikeAnSpdxId_StaysUnknown()
+    {
+        SeedNuspec(
+            "named.mit",
+            "1.0.0",
+            """<package><metadata><license type="file">MIT</license></metadata></package>"""
+        );
+        var service = CreateService();
+
+        var result = service.Scan(
+            [Reference("Named.MIT", "1.0.0", "/repo/src/Api/Api.csproj")],
+            includeTransitive: false
+        );
+
+        result.Failures.Should().Be(0);
+        result.Licenses.Should().ContainSingle();
+        result.Licenses[0].Classification.Should().Be(LicenseClassification.Unknown);
+        result.Licenses[0].LicenseType.Should().Be("file");
+        result.Licenses[0].License.Should().Be("MIT");
+    }
+
+    [Fact]
+    public void Scan_EmptyExpression_IsUnknownNotAParsedLicense()
+    {
+        SeedNuspec(
+            "empty.expr",
+            "1.0.0",
+            """<package><metadata><license type="expression">   </license></metadata></package>"""
+        );
+        var service = CreateService();
+
+        var result = service.Scan(
+            [Reference("Empty.Expr", "1.0.0", "/repo/src/Api/Api.csproj")],
+            includeTransitive: false
+        );
+
+        result.Failures.Should().Be(0);
+        result.Licenses[0].Classification.Should().Be(LicenseClassification.Unknown);
+        result.Licenses[0].License.Should().Be("unknown");
+    }
+
+    [Fact]
+    public void Scan_LicenseUrlOnly_RecordsTheUrlAsUnknown()
+    {
+        SeedNuspec(
+            "legacy.url",
+            "1.0.0",
+            """<package><metadata><licenseUrl>https://licenses.nuget.org/MIT</licenseUrl></metadata></package>"""
+        );
+        var service = CreateService();
+
+        var result = service.Scan(
+            [Reference("Legacy.Url", "1.0.0", "/repo/src/Api/Api.csproj")],
+            includeTransitive: false
+        );
+
+        result.Failures.Should().Be(0);
+        result.Licenses[0].LicenseType.Should().Be("url");
+        result.Licenses[0].License.Should().Be("https://licenses.nuget.org/MIT");
+        result.Licenses[0].Classification.Should().Be(LicenseClassification.Unknown);
+    }
+
+    [Fact]
+    public void Scan_MissingLicenseElement_IsUnknown()
+    {
+        SeedNuspec(
+            "no.license",
+            "1.0.0",
+            """<package><metadata><id>No.License</id></metadata></package>"""
+        );
+        var service = CreateService();
+
+        var result = service.Scan(
+            [Reference("No.License", "1.0.0", "/repo/src/Api/Api.csproj")],
+            includeTransitive: false
+        );
+
+        result.Failures.Should().Be(0);
+        result.Licenses[0].LicenseType.Should().Be("missing");
+        result.Licenses[0].License.Should().Be("unknown");
+        result.Licenses[0].Classification.Should().Be(LicenseClassification.Unknown);
+    }
+
+    [Fact]
+    public void Scan_CacheKeyIncludesASeparatorSoIdsDoNotCollide()
+    {
+        SeedNuspec(
+            "a",
+            "10.0",
+            """<package><metadata><license type="expression">GPL-2.0-only</license></metadata></package>"""
+        );
+        SeedNuspec(
+            "a1",
+            "0.0",
+            """<package><metadata><license type="expression">MIT</license></metadata></package>"""
+        );
+        var service = CreateService();
+
+        var result = service.Scan(
+            [
+                Reference("a", "10.0", "/repo/src/Api/Api.csproj"),
+                Reference("a1", "0.0", "/repo/src/Api/Api.csproj"),
+            ],
+            includeTransitive: false
+        );
+
+        result.Failures.Should().Be(0);
+        result.Licenses.Should().HaveCount(2);
+        result.Licenses.Should().Contain(info => info.PackageName == "a" && info.Classification == LicenseClassification.StrongCopyleft);
+        result.Licenses.Should().Contain(info => info.PackageName == "a1" && info.Classification == LicenseClassification.Permissive);
     }
 
     [Fact]

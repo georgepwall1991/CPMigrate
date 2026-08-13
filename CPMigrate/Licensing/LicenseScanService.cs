@@ -64,13 +64,13 @@ public sealed class LicenseScanService
     private CachedNuspec Read(string packageId, string version)
     {
         var path = GlobalPackagesFolder.NuspecPath(_packagesFolder(), packageId, version);
-        if (!NuspecLicenseReader.TryReadFile(path, out var nuspec) || nuspec is null)
+        if (!NuspecLicenseReader.TryReadFile(path, out var nuspec))
         {
             return CachedNuspec.Failed;
         }
 
-        var (license, classification) = Classify(nuspec);
-        return new CachedNuspec(true, license, classification, nuspec.LicenseType);
+        var (license, classification) = Classify(nuspec!);
+        return new CachedNuspec(true, license, classification, nuspec!.LicenseType);
     }
 
     private static (string License, LicenseClassification Classification) Classify(NuspecLicense nuspec)
@@ -114,6 +114,7 @@ public sealed class LicenseScanService
         string LicenseType
     )
     {
+        // Stryker disable once all : dummy fields are never read on the failure path
         public static CachedNuspec Failed { get; } = new(false, "", LicenseClassification.Unknown, "missing");
     }
 }
