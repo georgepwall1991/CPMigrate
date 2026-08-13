@@ -40,6 +40,7 @@ public static class TelemetryService
                     options.AuditSecurity,
                     options.AnalyzeOutdated,
                     options.AnalyzeDeprecated,
+                    options.AnalyzeLicenses,
                     options.Fix,
                     options.FixDryRun,
                     options.IncludeTransitive,

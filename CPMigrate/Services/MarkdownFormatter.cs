@@ -231,7 +231,7 @@ public static class MarkdownFormatter
         {
             markdown.AppendLine(
                 CultureInfo.InvariantCulture,
-                $"> {context.DeepScanFailures} package quer(ies) failed (`--audit`/`--outdated`/`--deprecated`)."
+                $"> {context.DeepScanFailures} package quer(ies) failed (`--audit`/`--outdated`/`--deprecated`/`--licenses`)."
             );
         }
 

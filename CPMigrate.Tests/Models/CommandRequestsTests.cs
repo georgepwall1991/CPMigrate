@@ -32,6 +32,7 @@ public class CommandRequestsTests
             AuditSecurity = true,
             AnalyzeOutdated = true,
             AnalyzeDeprecated = true,
+            AnalyzeLicenses = true,
             IncludePrerelease = true,
             Fix = true,
             BatchDir = "batch-root",
@@ -76,6 +77,7 @@ public class CommandRequestsTests
             AuditSecurity: true,
             AnalyzeOutdated: true,
             AnalyzeDeprecated: true,
+            AnalyzeLicenses: true,
             IncludePrerelease: true,
             Fix: fix,
             Output: output));

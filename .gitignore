@@ -60,3 +60,6 @@ node_modules/
 # Scratch from review/QA browser tooling (codex + playwright MCP) run at repo root
 .playwright-mcp/
 cpmigrate-home-*.png
+
+# Stryker mutation reports
+StrykerOutput/

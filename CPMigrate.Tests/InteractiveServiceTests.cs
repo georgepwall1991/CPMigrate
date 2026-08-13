@@ -105,6 +105,7 @@ public class InteractiveServiceTests : IDisposable
             "No",                                     // vulnerability audit
             "No",                                     // outdated
             "No",                                     // deprecated
+            "No",                                     // licenses
             "No - just report"                        // fix mode
         });
         fakeConsole.ConfirmationResponse = true;
@@ -120,6 +121,7 @@ public class InteractiveServiceTests : IDisposable
         options.AuditSecurity.Should().BeFalse();
         options.AnalyzeOutdated.Should().BeFalse();
         options.AnalyzeDeprecated.Should().BeFalse();
+        options.AnalyzeLicenses.Should().BeFalse();
         options.Fix.Should().BeFalse();
         options.FixDryRun.Should().BeFalse();
     }

@@ -444,6 +444,12 @@ public class InteractiveService : IInteractiveService
             "Yes - detect deprecated packages and alternatives"
         );
 
+        options.AnalyzeLicenses = AskYesNo(
+            "Include package license checks?",
+            "No",
+            "Yes - flag copyleft, proprietary, or unknown licenses"
+        );
+
         var fixMode = AskChoice(
             "Would you like to automatically fix issues?",
             ("No - just report", FixMode.Report),
@@ -791,6 +797,7 @@ public class InteractiveService : IInteractiveService
             "[white]Deprecated[/]",
             $"[cyan1]{(options.AnalyzeDeprecated ? "Yes" : "No")}[/]"
         );
+        grid.AddRow("[white]Licenses[/]", $"[cyan1]{(options.AnalyzeLicenses ? "Yes" : "No")}[/]");
         var autoFixStatus = GetAutoFixStatus(options);
         grid.AddRow("[white]Auto-Fix[/]", $"[cyan1]{autoFixStatus}[/]");
     }

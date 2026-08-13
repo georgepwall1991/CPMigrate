@@ -1,5 +1,6 @@
 using System.Globalization;
 using CPMigrate.Fixers;
+using CPMigrate.Licensing;
 using CPMigrate.Models;
 using Spectre.Console;
 
@@ -17,6 +18,7 @@ internal sealed class AnalysisHandler
         Options,
         Task<(string BasePath, List<string> ProjectPaths)>
     > _discoverProjects;
+    private readonly LicenseScanService _licenseScanService;
 
     private Dictionary<string, List<PackageReference>>? _cachedProjectScans;
 
@@ -26,7 +28,8 @@ internal sealed class AnalysisHandler
         IFixService fixService,
         IConsoleService consoleService,
         bool quietMode,
-        Func<Options, Task<(string BasePath, List<string> ProjectPaths)>> discoverProjects
+        Func<Options, Task<(string BasePath, List<string> ProjectPaths)>> discoverProjects,
+        LicenseScanService? licenseScanService = null
     )
     {
         _projectAnalyzer = projectAnalyzer;
@@ -35,6 +38,7 @@ internal sealed class AnalysisHandler
         _consoleService = consoleService;
         _quietMode = quietMode;
         _discoverProjects = discoverProjects;
+        _licenseScanService = licenseScanService ?? new LicenseScanService();
     }
 
     public async Task<MigrationResult> ExecuteAsync(Options options)
@@ -196,7 +200,8 @@ internal sealed class AnalysisHandler
                 });
         }
 
-        return (
+        var (packageInfo, deepScanFailures) = AttachLicenseScan(
+            options,
             new ProjectPackageInfo(
                 results.SelectMany(r => r.References).ToList(),
                 results.SelectMany(r => r.Vulnerabilities).ToList(),
@@ -206,13 +211,37 @@ internal sealed class AnalysisHandler
                 projectPaths,
                 CollectDeclaredReferences(results)
             ),
-            // A project whose declarations could not be read was not fully examined — RedundantReference
-            // could not run against it. Counting only resolved-scan failures let that pass as a clean,
-            // complete report with a success exit code, which is the failure mode this release is about.
-            // Counted once per project, not twice, when both reads failed.
-            results.Count(r => !r.ReferencesScanned || r.DeclaredReferences is null),
             results.Sum(r => r.DeepScanFailures)
         );
+
+        // A project whose declarations could not be read was not fully examined — RedundantReference
+        // could not run against it. Counting only resolved-scan failures let that pass as a clean,
+        // complete report with a success exit code, which is the failure mode this release is about.
+        // Counted once per project, not twice, when both reads failed.
+        return (
+            packageInfo,
+            results.Count(r => !r.ReferencesScanned || r.DeclaredReferences is null),
+            deepScanFailures
+        );
+    }
+
+    /// <summary>
+    /// <c>--licenses</c> reads nuspecs once for the whole scan. Missing files are deep-scan
+    /// failures, the same contract as a failed <c>--audit</c> query: unknown is not clean.
+    /// </summary>
+    private (ProjectPackageInfo PackageInfo, int DeepScanFailures) AttachLicenseScan(
+        Options options,
+        ProjectPackageInfo packageInfo,
+        int deepScanFailures
+    )
+    {
+        if (!options.AnalyzeLicenses)
+        {
+            return (packageInfo, deepScanFailures);
+        }
+
+        var licenseScan = _licenseScanService.Scan(packageInfo.References, options.IncludeTransitive);
+        return (packageInfo with { Licenses = licenseScan.Licenses }, deepScanFailures + licenseScan.Failures);
     }
 
     /// <summary>
@@ -636,7 +665,7 @@ internal sealed class AnalysisHandler
             // Previously silent: a failed audit or inventory query simply contributed no findings,
             // which reads identically to a clean result.
             _consoleService.Warning(
-                $"{deepScanFailures} package quer(ies) failed (--audit/--outdated/--deprecated); "
+                $"{deepScanFailures} package quer(ies) failed (--audit/--outdated/--deprecated/--licenses); "
                     + "those findings are missing, not absent."
             );
         }

@@ -21,6 +21,7 @@ internal static class CliVerbGuard
         ["analyze"] = ["--analyze"],
         ["analyse"] = ["--analyze"],
         ["audit"] = ["--audit"],
+        ["licenses"] = ["--licenses"],
         ["fix"] = ["--fix"],
         ["update"] = ["--update-packages", "--update"],
         ["upgrade"] = ["--update-packages", "--update"],

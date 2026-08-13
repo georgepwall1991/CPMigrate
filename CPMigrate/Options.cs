@@ -1336,6 +1336,11 @@ public class Options
             throw new ArgumentException("--deprecated requires --analyze.");
         }
 
+        if (AnalyzeLicenses && !Analyze)
+        {
+            throw new ArgumentException("--licenses requires --analyze.");
+        }
+
         if (!Analyze)
         {
             return false;

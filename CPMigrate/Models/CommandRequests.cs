@@ -68,6 +68,7 @@ public sealed record AnalysisRequest(
     bool AuditSecurity,
     bool AnalyzeOutdated,
     bool AnalyzeDeprecated,
+    bool AnalyzeLicenses,
     bool IncludePrerelease,
     FixRequest? Fix,
     CommandOutput Output)
@@ -82,6 +83,7 @@ public sealed record AnalysisRequest(
             AuditSecurity: options.AuditSecurity,
             AnalyzeOutdated: options.AnalyzeOutdated,
             AnalyzeDeprecated: options.AnalyzeDeprecated,
+            AnalyzeLicenses: options.AnalyzeLicenses,
             IncludePrerelease: options.IncludePrerelease,
             Fix: options.Fix || options.FixDryRun ? FixRequest.FromOptions(options) : null,
             Output: CommandOutput.FromOptions(options));

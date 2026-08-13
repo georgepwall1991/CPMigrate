@@ -72,6 +72,7 @@ public class BatchOptionPropagationTests
             AnalyzeOutdated = true,
             AnalyzeDeprecated = true,
             IncludeTransitive = true,
+            AnalyzeLicenses = true,
             FailOn = FailOnSeverity.High,
         };
 
@@ -80,6 +81,7 @@ public class BatchOptionPropagationTests
         clone.AuditSecurity.Should().BeTrue();
         clone.AnalyzeOutdated.Should().BeTrue();
         clone.AnalyzeDeprecated.Should().BeTrue();
+        clone.AnalyzeLicenses.Should().BeTrue();
         clone.IncludeTransitive.Should().BeTrue();
         clone.FailOn.Should().Be(FailOnSeverity.High);
     }
@@ -144,6 +146,7 @@ public class BatchOptionPropagationTests
             AuditSecurity = true,
             AnalyzeOutdated = true,
             AnalyzeDeprecated = true,
+            AnalyzeLicenses = true,
             FailOn = FailOnSeverity.Critical,
             Interactive = true,
             Output = OutputFormat.Json,

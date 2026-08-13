@@ -1,97 +1,90 @@
+using CPMigrate.Licensing;
 using CPMigrate.Models;
 
 namespace CPMigrate.Analyzers;
 
 /// <summary>
-/// Checks package references against a built-in license classification table
-/// and flags packages with copyleft or unknown licenses that may need legal review.
+/// Reports copyleft, proprietary, and unknown licenses from <see cref="ProjectPackageInfo.Licenses"/>.
+/// Absent scan data (no <c>--licenses</c>) is silence, not a hardcoded package-name guess.
 /// </summary>
 internal sealed class LicenseAnalyzer : IAnalyzer
 {
     public string Name => "Package Licenses";
 
-    private static readonly Dictionary<string, (string License, LicenseRisk Risk)> KnownLicenses = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Newtonsoft.Json"] = ("MIT", LicenseRisk.Permissive),
-        ["Serilog"] = ("Apache-2.0", LicenseRisk.Permissive),
-        ["AutoMapper"] = ("MIT", LicenseRisk.Permissive),
-        ["FluentValidation"] = ("Apache-2.0", LicenseRisk.Permissive),
-        ["MediatR"] = ("Apache-2.0", LicenseRisk.Permissive),
-        ["Polly"] = ("BSD-3-Clause", LicenseRisk.Permissive),
-        ["Dapper"] = ("Apache-2.0", LicenseRisk.Permissive),
-        ["Moq"] = ("BSD-3-Clause", LicenseRisk.Permissive),
-        ["xunit"] = ("Apache-2.0", LicenseRisk.Permissive),
-        ["NUnit"] = ("MIT", LicenseRisk.Permissive),
-        ["Spectre.Console"] = ("MIT", LicenseRisk.Permissive),
-        ["CommandLineParser"] = ("MIT", LicenseRisk.Permissive),
-        ["Microsoft.Extensions.Logging"] = ("MIT", LicenseRisk.Permissive),
-        ["Microsoft.Extensions.DependencyInjection"] = ("MIT", LicenseRisk.Permissive),
-        ["Microsoft.EntityFrameworkCore"] = ("MIT", LicenseRisk.Permissive),
-        ["Swashbuckle.AspNetCore"] = ("MIT", LicenseRisk.Permissive),
-        ["RestSharp"] = ("Apache-2.0", LicenseRisk.Permissive),
-        ["NLog"] = ("BSD-3-Clause", LicenseRisk.Permissive),
-        ["log4net"] = ("Apache-2.0", LicenseRisk.Permissive),
-        ["MySql.Data"] = ("GPL-2.0", LicenseRisk.Copyleft),
-        ["MySqlConnector"] = ("MIT", LicenseRisk.Permissive),
-        ["Oracle.ManagedDataAccess"] = ("Oracle", LicenseRisk.Proprietary),
-        ["System.Data.SqlClient"] = ("MIT", LicenseRisk.Permissive),
-        ["iTextSharp"] = ("AGPL-3.0", LicenseRisk.Copyleft),
-        ["iText7"] = ("AGPL-3.0", LicenseRisk.Copyleft),
-        ["Ghostscript.NET"] = ("AGPL-3.0", LicenseRisk.Copyleft),
-        ["MongoDB.Driver"] = ("Apache-2.0", LicenseRisk.Permissive),
-        ["StackExchange.Redis"] = ("MIT", LicenseRisk.Permissive),
-        ["RabbitMQ.Client"] = ("Apache-2.0", LicenseRisk.Permissive),
-        ["Confluent.Kafka"] = ("Apache-2.0", LicenseRisk.Permissive),
-    };
-
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
     {
-        var issues = new List<AnalysisIssue>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var reference in packageInfo.References)
+        if (packageInfo.Licenses is null || packageInfo.Licenses.Count == 0)
         {
-            if (!seen.Add(reference.PackageName))
-            {
-                continue;
-            }
-
-            var projectId = packageInfo.ProjectId(reference.ProjectPath);
-
-            if (KnownLicenses.TryGetValue(reference.PackageName, out var info))
-            {
-                if (info.Risk == LicenseRisk.Copyleft)
-                {
-                    issues.Add(new AnalysisIssue(
-                        reference.PackageName,
-                        $"{info.License} license — copyleft; derivative works must use the same license",
-                        new[] { projectId },
-                        AnalysisIssueCode.LicenseRisk,
-                        AnalysisSeverity.High,
-                        false,
-                        new Dictionary<string, string> { ["license"] = info.License, ["risk"] = "copyleft" }));
-                }
-                else if (info.Risk == LicenseRisk.Proprietary)
-                {
-                    issues.Add(new AnalysisIssue(
-                        reference.PackageName,
-                        $"{info.License} license — proprietary; review terms before distribution",
-                        new[] { projectId },
-                        AnalysisIssueCode.LicenseRisk,
-                        AnalysisSeverity.Moderate,
-                        false,
-                        new Dictionary<string, string> { ["license"] = info.License, ["risk"] = "proprietary" }));
-                }
-            }
+            return new AnalyzerResult(Name, []);
         }
+
+        var issues = packageInfo
+            .Licenses.GroupBy(license => license.PackageName, StringComparer.OrdinalIgnoreCase)
+            .Select(group => ToIssue(group, packageInfo))
+            .Where(issue => issue is not null)
+            .Select(issue => issue!)
+            .ToList();
 
         return new AnalyzerResult(Name, issues);
     }
-}
 
-internal enum LicenseRisk
-{
-    Permissive,
-    Copyleft,
-    Proprietary,
+    private static AnalysisIssue? ToIssue(
+        IGrouping<string, LicenseInfo> group,
+        ProjectPackageInfo packageInfo
+    )
+    {
+        var worst = group.MaxBy(license => license.Classification);
+        if (worst is null || worst.Classification == LicenseClassification.Permissive)
+        {
+            return null;
+        }
+
+        var (severity, risk, description) = Describe(worst);
+        var projects = group
+            .Select(license => packageInfo.ProjectId(license.ProjectPath))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new AnalysisIssue(
+            worst.PackageName,
+            description,
+            projects,
+            AnalysisIssueCode.LicenseRisk,
+            severity,
+            Fixable: false,
+            Metadata: new Dictionary<string, string>
+            {
+                ["license"] = worst.License,
+                ["risk"] = risk,
+                ["licenseType"] = worst.LicenseType,
+            }
+        );
+    }
+
+    private static (AnalysisSeverity Severity, string Risk, string Description) Describe(LicenseInfo license)
+    {
+        return license.Classification switch
+        {
+            LicenseClassification.StrongCopyleft => (
+                AnalysisSeverity.High,
+                "copyleft",
+                $"{license.License} license — copyleft; derivative works must use the same license"
+            ),
+            LicenseClassification.WeakCopyleft => (
+                AnalysisSeverity.Moderate,
+                "copyleft",
+                $"{license.License} license — weak copyleft; review linking and distribution terms"
+            ),
+            LicenseClassification.Proprietary => (
+                AnalysisSeverity.Moderate,
+                "proprietary",
+                $"{license.License} license — proprietary; review terms before distribution"
+            ),
+            _ => (
+                AnalysisSeverity.Low,
+                "unknown",
+                $"{license.License} license — unverified; review the package license before shipping"
+            ),
+        };
+    }
 }

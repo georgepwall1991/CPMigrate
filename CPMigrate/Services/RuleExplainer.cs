@@ -106,7 +106,7 @@ public static class RuleExplainer
         AnalysisIssueCode.CpmNotEnabled => "Run 'cpmigrate -s ./MySolution.sln' to generate Directory.Packages.props with ManagePackageVersionsCentrally enabled.",
         AnalysisIssueCode.InlineVersionUnderCpm => "Remove the Version attribute from the PackageReference — the version should come from Directory.Packages.props.",
         AnalysisIssueCode.OrphanedPackageVersion => "Remove the unused PackageVersion entry from Directory.Packages.props.",
-        AnalysisIssueCode.LicenseRisk => "Review the package license on its NuGet page. For copyleft licenses, consider a permissive alternative.",
+        AnalysisIssueCode.LicenseRisk => "Review the package license. For copyleft licenses, consider a permissive alternative. For unverified (file or URL) licenses, read the terms on the package's NuGet page.",
         _ => null,
     };
 

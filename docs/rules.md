@@ -241,11 +241,22 @@ pinning is on reports no orphans, since a pin nothing references directly is the
 **A package carries a copyleft, proprietary, or unverified license.**
 
 Copyleft licenses (GPL, AGPL) require derivative works to use the same license, which may conflict
-with proprietary distribution. Proprietary licenses may restrict redistribution. Review the license
-terms before shipping.
+with proprietary distribution. Proprietary licenses may restrict redistribution. Unknown or
+file-only licenses are unverified: the package shipped a LICENSE.txt or a URL rather than an SPDX
+expression, and this pass does not fetch either.
+
+Read from the `.nuspec` restore already placed in the NuGet global packages folder
+(`NUGET_PACKAGES`, else `~/.nuget/packages`). That is the license of the package that will actually
+build, including private feeds, rather than a hardcoded list of popular package names. A missing or
+unreadable nuspec is an incomplete scan (exit `8`), not a clean LicenseRisk pass.
+
+SPDX expressions use standard SPDX combinators: `OR` is as permissive as the option you can choose
+(`GPL-2.0-only OR MIT` is usable as MIT), `AND` is as restrictive as both sides (`MIT AND GPL-2.0-only`
+is copyleft). Direct references are scanned by default; pass `--transitive` as well for a legal
+audit of the graph you ship.
 
 - Reported when `--licenses` is passed with `--analyze`
-- Default severity: `High` (copyleft), `Moderate` (proprietary), `Low` (unknown)
+- Default severity: `High` (strong copyleft), `Moderate` (weak copyleft and proprietary), `Low` (unknown)
 - Fixable: no — review the license on the package's NuGet page
 
 ## FloatingVersion

@@ -80,7 +80,7 @@ public class MigrationResult
     public int ScanFailures { get; init; }
 
     /// <summary>
-    /// Opt-in package queries (<c>--audit</c>, <c>--outdated</c>, <c>--deprecated</c>) that failed
+    /// Opt-in package queries (<c>--audit</c>, <c>--outdated</c>, <c>--deprecated</c>, <c>--licenses</c>) that failed
     /// to return. Tracked apart from <see cref="ScanFailures"/> because the project's references
     /// were still read: the gap is in the extra findings, not in the inventory.
     /// </summary>
