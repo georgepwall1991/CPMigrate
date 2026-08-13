@@ -27,7 +27,7 @@ public class LicenseExpressionParserTests
     [Fact]
     public void TryParse_AndIsLeftAssociative()
     {
-        LicenseExpressionParser.TryParse("MIT AND Apache-2.0", out var expression).Should().BeTrue();
+        LicenseExpressionParser.TryParse("MIT AND Apache-2.0  ", out var expression).Should().BeTrue();
         expression
             .Should()
             .Be(new LicenseAnd(new LicenseIdentifier("MIT"), new LicenseIdentifier("Apache-2.0")));
@@ -87,6 +87,11 @@ public class LicenseExpressionParserTests
                     new LicenseIdentifier("GPL-2.0-only")
                 )
             );
+
+        LicenseExpressionParser.TryParse("( MIT )", out var padded).Should().BeTrue();
+        padded.Should().Be(new LicenseIdentifier("MIT"));
+        LicenseExpressionParser.TryParse("(MIT) ", out var trailing).Should().BeTrue();
+        trailing.Should().Be(new LicenseIdentifier("MIT"));
 
         LicenseExpressionParser.TryParse("()", out var empty).Should().BeFalse();
         empty.Should().BeNull();
