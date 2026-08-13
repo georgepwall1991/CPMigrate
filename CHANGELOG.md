@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.62.0] - 2026-08-13
+
 ### Changed
 - **`LicenseRisk` now reads licenses from restored nuspecs, and only when `--licenses` is passed.** The rule was documented as an opt-in scan of copyleft, proprietary, and unknown licenses, but the flag was never read and the analyzer keyed off a ~30-name table. Packages outside that table were silently treated as clean. `--licenses` now classifies SPDX expressions from `{global-packages}/{id}/{version}/{id}.nuspec` (honouring `NUGET_PACKAGES` and private feeds), reports unknown/file/url licenses as Low, and treats a missing nuspec as an incomplete scan (exit `8`) rather than a pass. Dual-licensed `GPL OR MIT` is usable as MIT; `MIT AND GPL` is copyleft. Direct references by default; `--licenses --transitive` covers the graph you ship. Passing `--licenses` without `--analyze` is rejected.
 
