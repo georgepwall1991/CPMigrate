@@ -90,6 +90,8 @@ public class LicenseExpressionParserTests
 
         LicenseExpressionParser.TryParse("()", out var empty).Should().BeFalse();
         empty.Should().BeNull();
+        LicenseExpressionParser.TryParse("(", out var unclosed).Should().BeFalse();
+        unclosed.Should().BeNull();
         LicenseExpressionParser.TryParse("(AND)", out var reserved).Should().BeFalse();
         reserved.Should().BeNull();
     }
@@ -156,6 +158,7 @@ public class LicenseExpressionParserTests
     [InlineData("MIT)")]
     [InlineData("MIT WITH")]
     [InlineData("()")]
+    [InlineData("(")]
     public void TryParse_MalformedExpression_ReturnsFalse(string text)
     {
         LicenseExpressionParser.TryParse(text, out var expression).Should().BeFalse();
