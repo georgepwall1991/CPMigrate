@@ -121,6 +121,27 @@ public class LicenseScanServiceTests : IDisposable
     }
 
     [Fact]
+    public void Scan_FindsANuspecWhenTheDeclaredVersionDiffersOnlyByNormalization()
+    {
+        SeedNuspec(
+            "prerelease.pkg",
+            "1.0.0-beta",
+            """<package><metadata><license type="expression">GPL-2.0-only</license></metadata></package>"""
+        );
+        var service = CreateService();
+
+        var result = service.Scan(
+            [Reference("Prerelease.Pkg", "1.0.0-Beta+build.1", "/repo/src/Api/Api.csproj")],
+            includeTransitive: false
+        );
+
+        result.Failures.Should().Be(0);
+        result.Licenses.Should().ContainSingle();
+        result.Licenses[0].Classification.Should().Be(LicenseClassification.StrongCopyleft);
+        result.Licenses[0].Version.Should().Be("1.0.0-beta");
+    }
+
+    [Fact]
     public void Scan_FileLicense_IsUnknown()
     {
         SeedNuspec(
@@ -231,12 +252,12 @@ public class LicenseScanServiceTests : IDisposable
     {
         SeedNuspec(
             "a",
-            "10.0",
+            "10.0.0",
             """<package><metadata><license type="expression">GPL-2.0-only</license></metadata></package>"""
         );
         SeedNuspec(
             "a1",
-            "0.0",
+            "0.0.0",
             """<package><metadata><license type="expression">MIT</license></metadata></package>"""
         );
         var service = CreateService();

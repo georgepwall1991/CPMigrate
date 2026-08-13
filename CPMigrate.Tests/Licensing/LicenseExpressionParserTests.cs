@@ -142,6 +142,16 @@ public class LicenseExpressionParserTests
     }
 
     [Fact]
+    public void TryParse_AllowsWhitespaceInsideParentheses()
+    {
+        LicenseExpressionParser.TryParse("( MIT )", out var inner).Should().BeTrue();
+        inner.Should().Be(new LicenseIdentifier("MIT"));
+
+        LicenseExpressionParser.TryParse("(MIT) ", out var trailing).Should().BeTrue();
+        trailing.Should().Be(new LicenseIdentifier("MIT"));
+    }
+
+    [Fact]
     public void TryParse_PlusSuffixIsPartOfTheIdentifier()
     {
         LicenseExpressionParser.TryParse("GPL-2.0+", out var expression).Should().BeTrue();

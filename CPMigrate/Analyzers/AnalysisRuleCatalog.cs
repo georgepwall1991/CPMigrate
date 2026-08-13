@@ -150,8 +150,9 @@ public static class AnalysisRuleCatalog
             new(
                 AnalysisIssueCode.LicenseRisk,
                 "A package carries a copyleft, proprietary, or unverified license.",
-                "Copyleft licenses (GPL, AGPL) require derivative works to use the same license, which may "
-                    + "conflict with proprietary distribution. Proprietary licenses may restrict redistribution. "
+                "Copyleft licenses (GPL, AGPL, LGPL, MPL) and proprietary licenses are read from the "
+                    + "restored nuspec SPDX expression when --licenses is passed. Dual-license OR is as "
+                    + "permissive as the option you can choose; AND is as restrictive as the strictest term. "
                     + "Unknown or file-only licenses are unverified. Review the license terms before shipping.",
                 new[] { "dependencies", "legal", "supply-chain" }
             ),

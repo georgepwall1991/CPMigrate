@@ -67,4 +67,26 @@ public class GlobalPackagesFolderTests
                 )
             );
     }
+
+    [Fact]
+    public void NuspecPath_NormalizesAndLowercasesTheVersionFolderTheWayNuGetDoes()
+    {
+        var path = GlobalPackagesFolder.NuspecPath("/packages", "Foo.Bar", "1.0.0-Beta+build.1");
+
+        path.Should()
+            .Be(
+                Path.GetFullPath(
+                    Path.Combine("/packages", "foo.bar", "1.0.0-beta", "foo.bar.nuspec")
+                )
+            );
+    }
+
+    [Fact]
+    public void NuspecPath_ExpandsATwoPartVersionToThreeDigits()
+    {
+        var path = GlobalPackagesFolder.NuspecPath("/packages", "Foo", "1.0");
+
+        path.Should()
+            .Be(Path.GetFullPath(Path.Combine("/packages", "foo", "1.0.0", "foo.nuspec")));
+    }
 }

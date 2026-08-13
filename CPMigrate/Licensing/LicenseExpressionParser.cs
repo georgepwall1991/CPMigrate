@@ -109,7 +109,6 @@ public static class LicenseExpressionParser
         private bool TryParsePrimary(out LicenseExpression? expression)
         {
             expression = null;
-            // Stryker disable once statement : TryReadChar / TryReadIdentifier skip whitespace themselves
             SkipWhitespace();
 
             if (TryReadChar('('))
@@ -119,7 +118,6 @@ public static class LicenseExpressionParser
                     return false;
                 }
 
-                // Stryker disable once statement : TryReadChar skips whitespace before matching ')'
                 SkipWhitespace();
                 if (!TryReadChar(')'))
                 {
@@ -127,7 +125,6 @@ public static class LicenseExpressionParser
                     return false;
                 }
 
-                // Stryker disable once statement : the next token reader skips trailing whitespace
                 SkipWhitespace();
                 return true;
             }
@@ -193,7 +190,6 @@ public static class LicenseExpressionParser
                 return false;
             }
 
-            // Stryker disable once statement : the next token reader skips whitespace
             SkipWhitespace();
             return true;
         }

@@ -1,3 +1,5 @@
+using NuGet.Versioning;
+
 namespace CPMigrate.Licensing;
 
 /// <summary>
@@ -23,6 +25,18 @@ public static class GlobalPackagesFolder
     public static string NuspecPath(string globalPackagesFolder, string packageId, string version)
     {
         var id = packageId.ToLowerInvariant();
-        return Path.GetFullPath(Path.Combine(globalPackagesFolder, id, version, id + ".nuspec"));
+        var versionFolder = VersionFolder(version);
+        return Path.GetFullPath(Path.Combine(globalPackagesFolder, id, versionFolder, id + ".nuspec"));
+    }
+
+    /// <summary>
+    /// NuGet writes version folders as <c>ToNormalizedString().ToLowerInvariant()</c>: three-digit,
+    /// lowercase prerelease labels, no build metadata.
+    /// </summary>
+    public static string VersionFolder(string version)
+    {
+        return NuGetVersion.TryParse(version, out var parsed)
+            ? parsed.ToNormalizedString().ToLowerInvariant()
+            : version;
     }
 }

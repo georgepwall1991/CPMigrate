@@ -116,7 +116,7 @@ public record DeprecatedPackageInfo(
 /// <param name="DeclaredReferences">Package references as declared in project files, including duplicates.</param>
 /// <param name="Licenses">
 /// Optional license metadata from <c>--licenses</c>. Null means the scan was not requested;
-/// an empty list means it ran and found nothing classified as risky to report.
+/// an empty list means it ran and produced no license records.
 /// </param>
 public record ProjectPackageInfo(
     IReadOnlyList<PackageReference> References,

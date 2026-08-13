@@ -30,8 +30,8 @@ public sealed class LicenseScanService
                 continue;
             }
 
-            var version = EffectiveVersion(reference);
-            if (!IsExactVersion(version))
+            var version = NormalizeExactVersion(EffectiveVersion(reference));
+            if (version is null)
             {
                 failures++;
                 continue;
@@ -99,9 +99,11 @@ public sealed class LicenseScanService
             : reference.VersionOverride;
     }
 
-    private static bool IsExactVersion(string version)
+    private static string? NormalizeExactVersion(string version)
     {
-        return NuGetVersion.TryParse(version, out _);
+        return NuGetVersion.TryParse(version, out var parsed)
+            ? parsed.ToNormalizedString().ToLowerInvariant()
+            : null;
     }
 
     private static string CacheKey(string packageId, string version)
