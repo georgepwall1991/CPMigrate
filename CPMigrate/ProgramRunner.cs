@@ -224,11 +224,42 @@ public static class ProgramRunner
     /// <summary>
     /// Traces one package through the workspace: who declares it, who only sees it transitively,
     /// and whether the versions agree. Mirrors <see cref="RunTreeModeAsync"/>: a diagnostic mode
-    /// that scans every project itself, renders to the terminal, and reports an incomplete scan
-    /// rather than dressing partial data up as a complete answer.
+    /// that scans every project itself and reports an incomplete scan rather than dressing partial
+    /// data up as a complete answer.
+    ///
+    /// <para>
+    /// With <c>--output Json</c> the answer is one JSON document on stdout instead of console
+    /// rendering; <c>--output Sarif</c> is rejected outright. Both share analysis and exit codes
+    /// with the terminal path.
+    /// </para>
     /// </summary>
     private static async Task<int> RunWhyModeAsync(Options options, ApplicationServices services)
     {
+        // SARIF carries analyzer findings, and --why produces none — running the scan anyway would
+        // emit a terminal tree after a caller explicitly asked for a SARIF document. Rejected here
+        // rather than left to Options.Validate, which this mode returns before ever reaching.
+        if (options.Output == OutputFormat.Sarif)
+        {
+            services.ConsoleService.Error(
+                "--output Sarif cannot be combined with --why; SARIF reports analyzer findings "
+                    + "only."
+            );
+            return ExitCodes.ValidationError;
+        }
+
+        var executionConsole =
+            options.Output == OutputFormat.Json
+                ? SilentConsoleService.Instance
+                : services.ConsoleService;
+
+        // Under --output Json the stdout contract is one parseable document, so discovery notices
+        // ("Found project: …") must not leak into it — same swap CommandRouter makes for its own
+        // machine-readable modes.
+        if (!ReferenceEquals(executionConsole, services.ConsoleService))
+        {
+            services = services.WithConsole(executionConsole);
+        }
+
         try
         {
             var projectAnalyzer = services.ProjectAnalyzer;
@@ -240,7 +271,7 @@ public static class ProgramRunner
             var allReferences = new List<Models.PackageReference>();
             var declaredReferences = new List<Models.PackageReference>();
             var resolvedGraphs = new List<Models.ProjectResolvedGraph>();
-            var graphService = new DependencyGraphService(services.ConsoleService);
+            var graphService = new DependencyGraphService(executionConsole);
             var failedScans = 0;
             var scanOutcomes = new List<PackageOriginProjectScan>();
             foreach (var projectPath in projectPaths)
@@ -286,20 +317,33 @@ public static class ProgramRunner
                 BasePath: basePath,
                 DeclaredReferences: declaredReferences
             );
-            var whyService = new PackageOriginService(services.ConsoleService);
-            return await whyService.RunAsync(
-                new PackageOriginRequest(
-                    options.Why!,
-                    packageInfo,
-                    resolvedGraphs,
-                    projectPaths.Count,
-                    failedScans,
-                    // Every discovered project, including ones whose scans produced no rows —
-                    // "this project does not have the package" is part of the answer.
-                    projectPaths,
-                    scanOutcomes
-                )
+            var whyService = new PackageOriginService(executionConsole);
+            var request = new PackageOriginRequest(
+                options.Why!,
+                packageInfo,
+                resolvedGraphs,
+                projectPaths.Count,
+                failedScans,
+                // Every discovered project, including ones whose scans produced no rows —
+                // "this project does not have the package" is part of the answer.
+                projectPaths,
+                scanOutcomes
             );
+
+            // Machine-readable mode answers in one JSON document instead of console rendering.
+            // Analysis and exit codes are shared with the console path; only the rendering differs.
+            if (options.Output == OutputFormat.Json)
+            {
+                var (report, exitCode) = PackageOriginService.AnalyzeQuietly(request);
+                await JsonOutputWriter.EmitAsync(
+                    PackageOriginJsonWriter.Serialize(request, report, exitCode),
+                    options,
+                    services.ConsoleService
+                );
+                return exitCode;
+            }
+
+            return await whyService.RunAsync(request);
         }
         catch (Exception ex)
         {

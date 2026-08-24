@@ -93,6 +93,23 @@ public class ProgramRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_WhyWithSarifOutput_IsRejectedInsteadOfTracing()
+    {
+        // SARIF carries analyzer findings, and --why produces none. The diagnostic modes return
+        // before CommandRouter validates, so the rejection must happen in this file — otherwise the
+        // scan would run and a terminal tree would follow a caller's explicit request for SARIF.
+        var fakeConsole = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--why", "Newtonsoft.Json", "--output", "Sarif", "-s", "." },
+            fakeConsole
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        fakeConsole.ErrorMessages.Should().Contain(m => m.Contains("--output Sarif"));
+    }
+
+    [Fact]
     public async Task RunAsync_AmbiguousVerb_SuggestsBothCandidates()
     {
         // "update" could mean --update (update CPMigrate itself) or --update-packages (update the

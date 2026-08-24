@@ -173,6 +173,7 @@ internal sealed class PackageOriginService
         _console.WriteLine();
 
         var report = Analyze(request);
+        var exitCode = MapExitCode(request, report);
 
         if (!report.Found)
         {
@@ -195,9 +196,7 @@ internal sealed class PackageOriginService
                 _console.Dim("Run --tree --transitive to list every package in the workspace.");
             }
 
-            return Task.FromResult(
-                someUnread ? ExitCodes.IncompleteAnalysis : ExitCodes.ValidationError
-            );
+            return Task.FromResult(exitCode);
         }
 
         if (request.FailedScanCount > 0)
@@ -211,9 +210,41 @@ internal sealed class PackageOriginService
 
         Render(request, report);
 
-        return Task.FromResult(
-            request.FailedScanCount > 0 ? ExitCodes.IncompleteAnalysis : ExitCodes.Success
-        );
+        return Task.FromResult(exitCode);
+    }
+
+    /// <summary>
+    /// Analyzes without touching the console and settles the exit code — the machine-readable
+    /// counterpart of <see cref="RunAsync"/>, which serializes the report instead of rendering it.
+    ///
+    /// The code comes from <see cref="MapExitCode"/>, the same method the console path uses, so the
+    /// two output modes cannot disagree about what a run concluded.
+    /// </summary>
+    public static (PackageOriginReport Report, int ExitCode) AnalyzeQuietly(
+        PackageOriginRequest request
+    )
+    {
+        var report = Analyze(request);
+        return (report, MapExitCode(request, report));
+    }
+
+    /// <summary>
+    /// Maps the outcome onto exit codes once, shared by both rendering paths so they cannot drift:
+    /// success when answered, incomplete analysis when part of the workspace went unexamined —
+    /// whether or not the package was found, because absence proven only over half the workspace is
+    /// not absence — and a validation error only when every project was read and the package is
+    /// genuinely not there.
+    /// </summary>
+    internal static int MapExitCode(PackageOriginRequest request, PackageOriginReport report)
+    {
+        if (!report.Found)
+        {
+            return request.FailedScanCount > 0
+                ? ExitCodes.IncompleteAnalysis
+                : ExitCodes.ValidationError;
+        }
+
+        return request.FailedScanCount > 0 ? ExitCodes.IncompleteAnalysis : ExitCodes.Success;
     }
 
     /// <summary>
