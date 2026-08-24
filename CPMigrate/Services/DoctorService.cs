@@ -294,21 +294,34 @@ internal sealed class DoctorService
             Path.IsPathRooted(backupDir) ? backupDir : Path.Combine(workspace, backupDir)
         );
 
-        // Case sensitivity is a property of the directory an entry lives in, so identity of
-        // .../App vs .../app is decided by their parent, not by the workspace. Probe the parent —
-        // the same create-and-stat probe the drift analyzer uses — and let a missing or
-        // unprobeable parent fall back to Ordinal: treating the paths as different only means the
-        // backup probe runs, which is always safe.
-        var parent = Path.GetDirectoryName(resolved);
-        var pathComparer = !string.IsNullOrEmpty(parent) && Directory.Exists(parent)
-            ? CpmDriftAnalyzer.PathComparerFor(parent)
-            : StringComparer.Ordinal;
-        if (
-            pathComparer.Equals(
-                resolved.TrimEnd(Path.DirectorySeparatorChar),
-                workspace.TrimEnd(Path.DirectorySeparatorChar)
-            )
-        )
+        // The paths are the same directory only when their ancestry matches exactly and their
+        // final component differs by case the parent's filesystem folds. Case sensitivity is a
+        // property of the directory an entry lives in, so that last decision belongs to the
+        // parent — probed with the same create-and-stat probe the drift analyzer uses. Anything
+        // else treats the paths as different, which only means the backup probe runs: always
+        // safe, never a skipped check.
+        var resolvedTrimmed = resolved.TrimEnd(Path.DirectorySeparatorChar);
+        var workspaceTrimmed = workspace.TrimEnd(Path.DirectorySeparatorChar);
+
+        if (string.Equals(resolvedTrimmed, workspaceTrimmed, StringComparison.Ordinal))
+        {
+            return new DoctorCheck("Backup", DoctorStatus.Info,
+                "Backups go to the workspace directory (covered by the Write check)");
+        }
+
+        var parent = Path.GetDirectoryName(resolvedTrimmed);
+        var sameAncestry = string.Equals(
+            parent,
+            Path.GetDirectoryName(workspaceTrimmed),
+            StringComparison.Ordinal
+        );
+        var foldsCase =
+            sameAncestry
+            && !string.IsNullOrEmpty(parent)
+            && Directory.Exists(parent)
+            && CpmDriftAnalyzer.PathComparerFor(parent) == StringComparer.OrdinalIgnoreCase;
+
+        if (foldsCase)
         {
             // Already covered by the workspace write probe; a second identical line says nothing.
             return new DoctorCheck("Backup", DoctorStatus.Info,
