@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using CPMigrate.Analyzers;
 using CPMigrate.Models;
 namespace CPMigrate.Services;
 
@@ -97,10 +98,14 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         string? isolatedIntermediateDirectory,
         bool includeTransitive)
     {
-        // Paths are kept verbatim under ordinal comparison: on a case-sensitive filesystem
-        // /repo/tools/App.csproj and /repo/Tools/App.csproj are different projects, and folding
-        // case could serve one project's packages under the other's name.
-        var key = (projectFilePath, isolatedIntermediateDirectory ?? string.Empty);
+        // Path identity follows the filesystem: case-folded where the volume folds names
+        // (default Windows/macOS, so Api.csproj and API.csproj share one payload) and verbatim
+        // where it does not (/repo/tools/App.csproj and /repo/Tools/App.csproj stay distinct).
+        var comparer = CpmDriftAnalyzer.PathComparerFor(Path.GetDirectoryName(projectFilePath));
+        var pathKey = comparer == StringComparer.OrdinalIgnoreCase
+            ? projectFilePath.ToUpperInvariant()
+            : projectFilePath;
+        var key = (pathKey, isolatedIntermediateDirectory ?? string.Empty);
 
         while (true)
         {
