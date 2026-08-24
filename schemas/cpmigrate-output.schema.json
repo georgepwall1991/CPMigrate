@@ -2,13 +2,16 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Two payload shapes exist: a single operation, and the aggregate --batch writes. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Three payload shapes exist: a single operation, the aggregate --batch writes, and the --why package-origin report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
     },
     {
       "$ref": "#/definitions/batchOperation"
+    },
+    {
+      "$ref": "#/definitions/whyReport"
     }
   ],
   "definitions": {
@@ -43,6 +46,7 @@
             "interactive",
             "list-backups",
             "prune-backups",
+            "why",
             "batch-analyze",
             "batch-migrate"
           ],
@@ -634,6 +638,177 @@
         },
         "conflictsResolved": {
           "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "whyReport": {
+      "type": "object",
+      "description": "The answer `--why <PACKAGE_ID> --output Json` prints instead of the console tree: where one package comes from across the workspace. Exit codes match the terminal mode exactly, and exitCode mirrors them so parsing stdout alone gives the same verdict as reading $?.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "packageId",
+        "status",
+        "exitCode",
+        "projects",
+        "summary",
+        "versionsInUse",
+        "suggestions"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["why"],
+          "description": "Always 'why'; distinguishes this shape from singleOperation and batchOperation"
+        },
+        "packageId": {
+          "type": "string",
+          "description": "The package asked about, as it was passed"
+        },
+        "status": {
+          "enum": ["found", "not-found"],
+          "description": "'found' when any project declares or sees the package"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run: 0 found with a complete scan, 1 not found with every project read, 8 part of the workspace could not be scanned"
+        },
+        "projects": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/whyProject" }
+        },
+        "summary": { "$ref": "#/definitions/whySummary" },
+        "versionsInUse": {
+          "type": "array",
+          "description": "Every distinct resolved version and its projects; more than one entry is version drift",
+          "items": { "$ref": "#/definitions/whyVersionUsage" }
+        },
+        "suggestions": {
+          "type": "array",
+          "description": "Near-miss package names present in the workspace, for a misspelled ID",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "whyProject": {
+      "type": "object",
+      "required": ["projectPath", "relativePath", "kind"],
+      "properties": {
+        "projectPath": {
+          "type": "string",
+          "description": "Full path to the project file, as scanned"
+        },
+        "relativePath": {
+          "type": "string",
+          "description": "Path relative to the scan root, forward-slashed; a bare file name when no scan root is known"
+        },
+        "kind": {
+          "enum": [
+            "centralPin",
+            "inlineVersion",
+            "inherited",
+            "updateOnly",
+            "transitiveOnly",
+            "notPresent",
+            "unreadable"
+          ],
+          "description": "The project's strongest relationship to the package"
+        },
+        "inlineVersion": {
+          "type": "string",
+          "description": "Present only when kind is inlineVersion"
+        },
+        "resolvedVersions": {
+          "type": "array",
+          "description": "Distinct normalized versions NuGet resolved here; absent when the project could not be read",
+          "items": { "type": "string" }
+        },
+        "versionsByTargetFramework": {
+          "type": "array",
+          "description": "One resolved version per target framework, from this run's readable resolved graph; absent when no graph was available or the project's scans did not succeed",
+          "items": { "$ref": "#/definitions/whyFrameworkVersion" }
+        },
+        "transitiveIntroducers": {
+          "type": "array",
+          "description": "Direct packages that pull the target in; present only when kind is transitiveOnly, empty when no graph could name one",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "whyFrameworkVersion": {
+      "type": "object",
+      "required": ["targetFramework", "version"],
+      "properties": {
+        "targetFramework": {
+          "type": "string",
+          "description": "Short framework name, as the assets file keys it"
+        },
+        "version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "whyVersionUsage": {
+      "type": "object",
+      "required": ["version", "projects"],
+      "properties": {
+        "version": { "type": "string" },
+        "projects": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "whySummary": {
+      "type": "object",
+      "description": "Workspace counts for the run",
+      "required": [
+        "projectCount",
+        "direct",
+        "updateOnly",
+        "transitive",
+        "inherited",
+        "notPresent",
+        "unreadable",
+        "failedScans"
+      ],
+      "properties": {
+        "projectCount": {
+          "type": "integer",
+          "description": "Projects workspace discovery found"
+        },
+        "direct": {
+          "type": "integer",
+          "description": "Projects declaring the package directly (inline or central pin)"
+        },
+        "updateOnly": {
+          "type": "integer",
+          "description": "Projects amending an inherited reference via PackageReference Update"
+        },
+        "transitive": {
+          "type": "integer",
+          "description": "Projects seeing the package only through another package's closure"
+        },
+        "inherited": {
+          "type": "integer",
+          "description": "Projects resolving top-level while declaring the package outside the project file"
+        },
+        "notPresent": {
+          "type": "integer",
+          "description": "Projects that neither declare nor see the package"
+        },
+        "unreadable": {
+          "type": "integer",
+          "description": "Projects that could not be examined"
+        },
+        "failedScans": {
+          "type": "integer",
+          "description": "How many scans failed — the number behind exit code 8"
         }
       },
       "additionalProperties": false

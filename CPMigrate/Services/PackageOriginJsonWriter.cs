@@ -59,7 +59,9 @@ public sealed record PackageOriginPayload(
 /// </param>
 /// <param name="VersionsByTargetFramework">
 /// The resolved version per target framework, where a readable resolved graph could say; more than
-/// one entry is ordinary for a multi-targeted project. Absent when no graph was available.
+/// one entry is ordinary for a multi-targeted project. Absent when no graph was available or the
+/// project's own scans did not succeed — a graph left on disk by an older restore must not publish
+/// version claims about a project this run could not read.
 /// </param>
 /// <param name="TransitiveIntroducers">
 /// Direct packages that pull the target in, when <paramref name="Kind"/> is <c>transitiveOnly</c>.
@@ -127,7 +129,7 @@ public sealed record PackageOriginSummaryPayload(
 /// </summary>
 internal static class PackageOriginJsonWriter
 {
-    private static readonly JsonSerializerOptions Options = new()
+    private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -148,6 +150,13 @@ internal static class PackageOriginJsonWriter
             .GroupBy(g => g.ProjectPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
+        // A graph on disk may predate a run that could not read the project. Per-framework version
+        // claims are published only for projects whose scans actually succeeded this run — the same
+        // rule ClassifyProject applies to every other assertion the report makes.
+        var scansByProject = (request.ScanOutcomes ?? [])
+            .GroupBy(s => s.ProjectPath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
         var payload = new PackageOriginPayload(
             OutputMetadata.SchemaVersion,
             OutputMetadata.CurrentVersion,
@@ -159,7 +168,8 @@ internal static class PackageOriginJsonWriter
                 .. report.Projects.Select(p => ToProjectPayload(
                     p,
                     request.PackageId,
-                    graphsByProject.GetValueOrDefault(p.ProjectPath)
+                    graphsByProject.GetValueOrDefault(p.ProjectPath),
+                    scansByProject.GetValueOrDefault(p.ProjectPath)
                 )),
             ],
             new PackageOriginSummaryPayload(
@@ -183,19 +193,22 @@ internal static class PackageOriginJsonWriter
             report.Suggestions
         );
 
-        return JsonSerializer.Serialize(payload, Options);
+        return JsonSerializer.Serialize(payload, SerializerOptions);
     }
 
     private static PackageOriginProjectPayload ToProjectPayload(
         PackageOriginProjectReport project,
         string packageId,
-        ProjectResolvedGraph? graph
+        ProjectResolvedGraph? graph,
+        PackageOriginProjectScan? scan
     )
     {
-        // One version per framework, straight from the graph's own rows — the same place the console
-        // tree reads introducers from. A framework restore never described contributes nothing.
+        // One version per framework, straight from the graph's own rows. But only when this run's
+        // own scans read the project: a graph left in obj/ by an earlier restore says nothing about
+        // a project whose resolved scan just failed, and repeating it would dress stale data up as
+        // a current answer.
         List<PackageOriginFrameworkVersionPayload>? perFramework = null;
-        if (graph is not null)
+        if (graph is not null && scan is { ResolvedRead: true, DeclarationsRead: true })
         {
             perFramework =
             [

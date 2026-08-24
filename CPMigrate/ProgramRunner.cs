@@ -247,6 +247,7 @@ public static class ProgramRunner
             return ExitCodes.ValidationError;
         }
 
+        var userConsole = services.ConsoleService;
         var executionConsole =
             options.Output == OutputFormat.Json
                 ? SilentConsoleService.Instance
@@ -267,6 +268,20 @@ public static class ProgramRunner
             var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(
                 targetPath
             );
+
+            // Discovery found nothing — no solution where one was asked for, or one it could not
+            // read. The terminal path has already said so in prose; the JSON path must not dress
+            // that up as a not-found verdict about the package, so it emits the router's standard
+            // failure payload instead.
+            if (projectPaths.Count == 0 && options.Output == OutputFormat.Json)
+            {
+                return await EmitWhyFailureAsync(
+                    options,
+                    ExitCodes.NoProjectsFound,
+                    $"No projects discovered at '{targetPath}'; nothing was scanned.",
+                    userConsole
+                );
+            }
 
             var allReferences = new List<Models.PackageReference>();
             var declaredReferences = new List<Models.PackageReference>();
@@ -335,10 +350,12 @@ public static class ProgramRunner
             if (options.Output == OutputFormat.Json)
             {
                 var (report, exitCode) = PackageOriginService.AnalyzeQuietly(request);
-                await JsonOutputWriter.EmitAsync(
+                // EmitFailureAsync rather than EmitAsync: when --output-file cannot be written the
+                // document falls back to stdout instead of dying on an exception whose message the
+                // silent scan console would swallow.
+                await JsonOutputWriter.EmitFailureAsync(
                     PackageOriginJsonWriter.Serialize(request, report, exitCode),
-                    options,
-                    services.ConsoleService
+                    options
                 );
                 return exitCode;
             }
@@ -347,9 +364,45 @@ public static class ProgramRunner
         }
         catch (Exception ex)
         {
-            services.ConsoleService.Error($"Failed to trace package origin: {ex.Message}");
-            return ExitCodes.UnexpectedError;
+            return await EmitWhyFailureAsync(
+                options,
+                ExitCodes.UnexpectedError,
+                $"Failed to trace package origin: {ex.Message}",
+                userConsole
+            );
         }
+    }
+
+    /// <summary>
+    /// Reports a <c>--why</c> run that cannot produce a document and settles its exit code.
+    ///
+    /// <para>
+    /// The prose goes to the caller's own console — under <c>--output Json</c> that is not the
+    /// silent console the scan ran with, through which an error message would simply vanish — and
+    /// the router's standard failure payload goes out through <see cref="JsonOutputWriter.EmitFailureAsync"/>,
+    /// which falls back to stdout when <c>--output-file</c> cannot be written. Either way the
+    /// failure is observable: a non-zero exit with a document that says so.
+    /// </para>
+    /// </summary>
+    private static async Task<int> EmitWhyFailureAsync(
+        Options options,
+        int exitCode,
+        string errorMessage,
+        IConsoleService consoleService
+    )
+    {
+        consoleService.Error(errorMessage);
+
+        var formatter = new JsonFormatter();
+        var operationResult = new OperationResult
+        {
+            Operation = "why",
+            Success = false,
+            ExitCode = exitCode,
+            Errors = [errorMessage],
+        };
+        await JsonOutputWriter.EmitFailureAsync(formatter.Format(operationResult), options);
+        return exitCode;
     }
 
     /// <summary>

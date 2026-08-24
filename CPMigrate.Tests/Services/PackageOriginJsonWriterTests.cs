@@ -173,9 +173,13 @@ public class PackageOriginJsonWriterTests
             ],
             declaredReferences: [Declared("App")],
             graphs: [graph],
-            projectPaths: [ProjectPath("App")]
+            projectPaths: [ProjectPath("App")],
+            // Per-framework versions are only claimed for scans that actually read the project.
+            scanOutcomes:
+            [
+                new(ProjectPath("App"), ResolvedRead: true, DeclarationsRead: true),
+            ]
         )));
-
         var frameworks = Project(root, "src/App/App.csproj")
             .GetProperty("versionsByTargetFramework");
         frameworks.GetArrayLength().Should().Be(2);

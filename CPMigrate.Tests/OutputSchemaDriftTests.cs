@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CPMigrate.Models;
+using CPMigrate.Services;
 using FluentAssertions;
 
 namespace CPMigrate.Tests;
@@ -42,6 +43,13 @@ public class OutputSchemaDriftTests
         (typeof(BatchResult), "batchOperation"),
         (typeof(SolutionResult), "solutionResult"),
         (typeof(BatchTotals), "batchTotals"),
+        // --why serializes its own document, not an OperationResult. Omitting these let the
+        // schema reject a payload the tool legitimately emits.
+        (typeof(PackageOriginPayload), "whyReport"),
+        (typeof(PackageOriginProjectPayload), "whyProject"),
+        (typeof(PackageOriginFrameworkVersionPayload), "whyFrameworkVersion"),
+        (typeof(PackageOriginVersionUsagePayload), "whyVersionUsage"),
+        (typeof(PackageOriginSummaryPayload), "whySummary"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -84,7 +92,13 @@ public class OutputSchemaDriftTests
     [Fact]
     public void Schema_GuardsEveryModelReachableFromPayloadRoots()
     {
-        var reachable = PayloadModelTypes(typeof(OperationResult), typeof(BatchResult));
+        // --why emits its own document root, so its models are reachable from there, just as the
+        // operation and batch models are reachable from OperationResult and BatchResult.
+        var reachable = PayloadModelTypes(
+            typeof(OperationResult),
+            typeof(BatchResult),
+            typeof(PackageOriginPayload)
+        );
 
         ModelDefinitions
             .Select(entry => entry.Model)
@@ -189,6 +203,9 @@ public class OutputSchemaDriftTests
                     // against the schema rejects an otherwise parseable error payload.
                     "update",
                     "interactive",
+                    // The failure payloads --why emits when discovery or the run itself fails use
+                    // the standard operation shape, so "why" belongs in this enum too.
+                    "why",
                     "batch-analyze",
                     "batch-migrate",
                 }
@@ -217,6 +234,53 @@ public class OutputSchemaDriftTests
                     "summary",
                 },
                 "these are set on every payload regardless of command"
+            );
+    }
+
+    [Fact]
+    public void Schema_AcceptsTheWhyDocumentAsATopLevelShape()
+    {
+        // The why report is a third root alongside singleOperation and batchOperation; a consumer
+        // validating against this schema must not have it fall out of the oneOf.
+        var references = Schema()
+            .GetProperty("oneOf")
+            .EnumerateArray()
+            .Select(branch => branch.GetProperty("$ref").GetString())
+            .ToList();
+
+        references
+            .Should()
+            .Contain("#/definitions/whyReport")
+            .And.Contain("#/definitions/singleOperation")
+            .And.Contain("#/definitions/batchOperation");
+    }
+
+    [Fact]
+    public void Schema_RequiresTheFieldsEveryWhyDocumentCarries()
+    {
+        var required = Definition("whyReport")
+            .GetProperty("required")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToList();
+
+        required
+            .Should()
+            .Contain(
+                new[]
+                {
+                    "outputSchemaVersion",
+                    "version",
+                    "operation",
+                    "packageId",
+                    "status",
+                    "exitCode",
+                    "projects",
+                    "summary",
+                    "versionsInUse",
+                    "suggestions",
+                },
+                "these are set on every why document, found or not"
             );
     }
 
