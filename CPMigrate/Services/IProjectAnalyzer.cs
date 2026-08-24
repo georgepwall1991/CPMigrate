@@ -87,4 +87,10 @@ public interface IProjectAnalyzer
         bool includeTransitive,
         bool includePrerelease = false,
         string? isolatedIntermediateDirectory = null);
+
+    /// <summary>
+    /// Drops cached subprocess-level scan results so the next resolved/transitive scan re-queries the
+    /// CLI. Required after fixes rewrite project files mid-run.
+    /// </summary>
+    void ClearPackageQueryCache();
 }

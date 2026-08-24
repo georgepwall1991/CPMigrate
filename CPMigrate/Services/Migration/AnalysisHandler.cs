@@ -1002,8 +1002,9 @@ internal sealed class AnalysisHandler
         var (basePath, discovered) = await _discoverProjects(options);
         var paths = projectPaths ?? discovered;
 
-        // The cache holds pre-fix references; the point of this pass is to read the new files.
+        // The caches hold pre-fix state; the point of this pass is to read the new files.
         _cachedProjectScans = null;
+        _projectAnalyzer.ClearPackageQueryCache();
 
         var (packageInfo, scanFailures, deepScanFailures) = await PerformAnalysisScanAsync(
             options,

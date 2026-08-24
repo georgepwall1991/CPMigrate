@@ -63,6 +63,11 @@ public partial class ProjectAnalyzer
         );
     }
 
+    public void ClearPackageQueryCache()
+    {
+        _packageQueryService.ClearCache();
+    }
+
     internal static List<PackageReference> ParsePackageReferencesFromJson(
         string output,
         string projectFilePath,

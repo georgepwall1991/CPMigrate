@@ -33,5 +33,11 @@ public interface IDotNetPackageQueryService
         bool includeTransitive,
         bool includePrerelease = false,
         string? isolatedIntermediateDirectory = null);
+    /// <summary>
+    /// Drops cached <c>dotnet list package</c> payloads so subsequent scans re-invoke the CLI. Required
+    /// after project files have been rewritten mid-run (the fixer pass), so the next scan does not serve
+    /// pre-fix restore output.
+    /// </summary>
+    void ClearCache();
 }
 

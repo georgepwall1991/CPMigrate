@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using CPMigrate.Models;
 namespace CPMigrate.Services;
@@ -6,6 +7,25 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
 {
     private readonly IConsoleService _consoleService;
     private readonly IDotNetCliService _dotNetCliService;
+
+    /// <summary>
+    /// One <c>dotnet list package</c> invocation per project per run, shared by every caller that asks
+    /// about resolved and/or transitive packages. Each subprocess costs seconds of restore-dependent
+    /// latency, and a single run routinely asks both questions about the same project. The cached payload
+    /// records which shape it answers: a payload fetched without <c>--include-transitive</c> carries no
+    /// Transitive Packages section, so a transitive question triggers one upgrade fetch rather than being
+    /// answered from data that cannot support it. Vulnerable/outdated/deprecated queries are different
+    /// CLI commands with feed-dependent output and are never served from this cache.
+    /// </summary>
+    private readonly ConcurrentDictionary<(string ProjectPath, string IsolatedDirectory), Lazy<Task<PlainListPayload>>> _plainListCache = new();
+
+    private sealed record PlainListPayload(bool Success, string Output, bool IncludesTransitive);
+
+    /// <summary>
+    /// Drops every cached list payload. Called when files have been rewritten mid-run (the fixer pass),
+    /// so the next scan reads reality rather than the pre-fix restore output.
+    /// </summary>
+    public void ClearCache() => _plainListCache.Clear();
 
     public DotNetPackageQueryService(
         IConsoleService consoleService,
@@ -24,14 +44,9 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
 
         try
         {
-            var options = new DotNetPackageListOptions
-            {
-                IncludeTransitive = includeTransitive,
-                IsolatedIntermediateDirectory = isolatedIntermediateDirectory,
-            };
-            var (output, success) = await _dotNetCliService.RunPackageListJsonAsync(projectFilePath, options);
+            var payload = await GetOrRunPlainListAsync(projectFilePath, isolatedIntermediateDirectory, includeTransitive);
 
-            if (!success)
+            if (!payload.Success)
             {
                 return ([], false);
             }
@@ -45,7 +60,7 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
             // `scanFailures: 0` and no warning. That is how 3.26.0 silently lost three of Serilog's six
             // projects for a whole release: the breakage was visible in the output all along, and nothing
             // was looking at it.
-            if (!DescribesAnyFramework(output))
+            if (!DescribesAnyFramework(payload.Output))
             {
                 _consoleService.Warning(
                     $"Could not scan packages for {projectName}: the project reported no frameworks, "
@@ -55,7 +70,7 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
                 return ([], false);
             }
 
-            return (ParsePackageReferencesFromJson(output, projectFilePath, projectName, includeTransitive), true);
+            return (ParsePackageReferencesFromJson(payload.Output, projectFilePath, projectName, includeTransitive), true);
         }
         catch (Exception ex)
         {
@@ -68,6 +83,80 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
     {
         var (references, success) = await ScanResolvedPackagesAsync(projectFilePath, includeTransitive: true);
         return (references.Where(r => r.IsTransitive).ToList(), success);
+    }
+
+    /// <summary>
+    /// Returns the cached <c>dotnet list package</c> payload for the project, invoking the CLI only when
+    /// no cached payload exists or the cached one cannot answer a transitive question (it was fetched
+    /// without <c>--include-transitive</c>, so it has no Transitive Packages section to parse).
+    /// Failures and exceptions are never cached: restore and feed state can change between attempts
+    /// within a run, so every caller retries exactly as it did before this cache existed.
+    /// </summary>
+    private async Task<PlainListPayload> GetOrRunPlainListAsync(
+        string projectFilePath,
+        string? isolatedIntermediateDirectory,
+        bool includeTransitive)
+    {
+        var key = (projectFilePath.ToUpperInvariant(), isolatedIntermediateDirectory ?? string.Empty);
+
+        while (true)
+        {
+            var lazy = _plainListCache.GetOrAdd(
+                key,
+                _ => new Lazy<Task<PlainListPayload>>(
+                    () => RunPlainListCoreAsync(projectFilePath, isolatedIntermediateDirectory, includeTransitive)));
+
+            PlainListPayload payload;
+            try
+            {
+                payload = await lazy.Value;
+            }
+            catch
+            {
+                // A faulted invocation must not serve later callers; they re-run the query and emit
+                // their own warning, exactly as they did before the cache existed.
+                RemoveIfCurrent(key, lazy);
+                throw;
+            }
+
+            if (!payload.Success)
+            {
+                RemoveIfCurrent(key, lazy);
+                return payload;
+            }
+
+            if (!includeTransitive || payload.IncludesTransitive)
+            {
+                return payload;
+            }
+
+            // The cached output came from a plain `dotnet list package` run and carries no Transitive
+            // Packages section, so a transitive answer needs its own invocation.
+            RemoveIfCurrent(key, lazy);
+        }
+    }
+
+    private async Task<PlainListPayload> RunPlainListCoreAsync(
+        string projectFilePath,
+        string? isolatedIntermediateDirectory,
+        bool includeTransitive)
+    {
+        var options = new DotNetPackageListOptions
+        {
+            IncludeTransitive = includeTransitive,
+            IsolatedIntermediateDirectory = isolatedIntermediateDirectory,
+        };
+
+        var (output, success) = await _dotNetCliService.RunPackageListJsonAsync(projectFilePath, options);
+        return new PlainListPayload(success, output, includeTransitive);
+    }
+
+    private void RemoveIfCurrent(
+        (string ProjectPath, string IsolatedDirectory) key,
+        Lazy<Task<PlainListPayload>> lazy)
+    {
+        ((ICollection<KeyValuePair<(string ProjectPath, string IsolatedDirectory), Lazy<Task<PlainListPayload>>>>)_plainListCache)
+            .Remove(KeyValuePair.Create(key, lazy));
     }
 
     public async Task<(List<VulnerabilityInfo> Vulnerabilities, bool Success)> ScanVulnerabilitiesAsync(
