@@ -199,19 +199,25 @@ public static class ProgramRunner
 
             // The restores run concurrently, scheduled by the shared scan pattern (see
             // ScanResolvedPackagesConcurrentlyAsync below); the merge afterwards walks discovery
-            // order, so the tree cannot depend on completion order.
+            // order — replaying each project's warnings where the sequential loop would have
+            // printed them — so the tree cannot depend on completion order.
             var resolved = await ScanResolvedPackagesConcurrentlyAsync(
                 options,
-                projectAnalyzer,
+                services,
                 projectPaths,
                 includeTransitive: options.IncludeTransitive
             );
             var allReferences = new List<Models.PackageReference>();
-            foreach (var (references, success) in resolved)
+            foreach (var result in resolved)
             {
-                if (success)
+                foreach (var warning in result.Warnings)
                 {
-                    allReferences.AddRange(references);
+                    services.ConsoleService.Warning(warning);
+                }
+
+                if (result.Success)
+                {
+                    allReferences.AddRange(result.References);
                 }
             }
 
@@ -292,20 +298,25 @@ public static class ProgramRunner
             // Phase one: the restore-backed resolved scans run concurrently, scheduled exactly as
             // the migration analysis schedules its own resolved pass — directory groups, the
             // process-wide redirect lock, the global concurrency gate (see
-            // ScanResolvedPackagesConcurrentlyAsync below).
+            // ScanResolvedPackagesConcurrentlyAsync below). The resolved graph is captured inside
+            // that same locked window: projects sharing a directory overwrite each other's
+            // obj/project.assets.json at every restore, so reading it afterwards would show only
+            // the last project's edges.
             var resolved = await ScanResolvedPackagesConcurrentlyAsync(
                 options,
-                projectAnalyzer,
+                services,
                 projectPaths,
-                includeTransitive: true
+                includeTransitive: true,
+                graphService
             );
 
             // Phase two stays serial, and deliberately. ScanDeclaredPackages reads through MSBuild's
             // object model, whose static caches are not thread-safe — concurrent reads have produced
             // projects reporting each other's package versions, which is why the analysis pass keeps
-            // this half serial too. Everything here aggregates in project order, so failed-scan
-            // counts, ScanOutcomes alignment and every list are identical to what the sequential
-            // loop produced, whatever order the restores finished in.
+            // this half serial too. Everything here aggregates in project order — replaying each
+            // project's buffered scan warnings where the sequential loop would have printed them —
+            // so failed-scan counts, ScanOutcomes alignment and every list are identical to what
+            // the sequential loop produced, whatever order the restores finished in.
             var allReferences = new List<Models.PackageReference>();
             var declaredReferences = new List<Models.PackageReference>();
             var resolvedGraphs = new List<Models.ProjectResolvedGraph>();
@@ -314,7 +325,12 @@ public static class ProgramRunner
             for (var index = 0; index < projectPaths.Count; index++)
             {
                 var projectPath = projectPaths[index];
-                var (references, success) = resolved[index];
+                foreach (var warning in resolved[index].Warnings)
+                {
+                    executionConsole.Warning(warning);
+                }
+
+                var (references, success) = (resolved[index].References, resolved[index].Success);
                 var (declarations, declarationsRead) = projectAnalyzer.ScanDeclaredPackages(
                     projectPath
                 );
@@ -338,9 +354,9 @@ public static class ProgramRunner
                     declaredReferences.AddRange(declarations);
                 }
 
-                // The resolved graph carries the edges a flat package list lacks: without it a
-                // transitive sighting cannot name the direct package that pulled it in.
-                var graph = graphService.TryReadResolvedGraph(projectPath);
+                // Captured during phase one while this project's restore was the freshest thing
+                // in its obj directory — see the comment above.
+                var graph = resolved[index].Graph;
                 if (graph is not null)
                 {
                     resolvedGraphs.Add(graph);
@@ -406,20 +422,26 @@ public static class ProgramRunner
     /// and the global gate keeps every scan in the process inside the advertised concurrency cap.
     /// See <see cref="ProjectDirectoryScanLock"/> and AnalysisHandler for the full history.
     /// </para>
+    /// <para>
+    /// Each project's warnings are captured against a scoped analyzer and returned alongside its
+    /// result: workers must not write to the shared terminal, whose lines would follow completion
+    /// order rather than discovery order on a console with no thread-safety contract. When
+    /// <paramref name="graphService"/> is given, the resolved graph is also read while the
+    /// project's directory lock is still held — projects sharing a directory overwrite each
+    /// other's obj/project.assets.json at every restore, so a graph read after all restores
+    /// finish would show only the last project's edges.
+    /// </para>
     /// </summary>
-    private static async Task<
-        (List<Models.PackageReference> References, bool Success)[]
-    > ScanResolvedPackagesConcurrentlyAsync(
+    private static async Task<ConcurrentScanResult[]> ScanResolvedPackagesConcurrentlyAsync(
         Options options,
-        IProjectAnalyzer projectAnalyzer,
+        ApplicationServices services,
         IReadOnlyList<string> projectPaths,
-        bool includeTransitive
+        bool includeTransitive,
+        DependencyGraphService? graphService = null
     )
     {
         var maxConcurrency = options.ResolveScanParallelism();
-        var resolved = new (List<Models.PackageReference> References, bool Success)[
-            projectPaths.Count
-        ];
+        var results = new ConcurrentScanResult[projectPaths.Count];
 
         var groups = Enumerable
             .Range(0, projectPaths.Count)
@@ -446,16 +468,36 @@ public static class ProgramRunner
                         projectPaths[index]
                     );
 
-                    resolved[index] = await projectAnalyzer.ScanResolvedPackagesAsync(
-                        projectPaths[index],
-                        includeTransitive
+                    var console = new BufferingConsoleService();
+                    var (references, success) = await services
+                        .WithConsole(console)
+                        .ProjectAnalyzer.ScanResolvedPackagesAsync(
+                            projectPaths[index],
+                            includeTransitive
+                        );
+                    var graph = success && graphService is not null
+                        ? graphService.TryReadResolvedGraph(projectPaths[index])
+                        : null;
+                    results[index] = new ConcurrentScanResult(
+                        references,
+                        success,
+                        graph,
+                        console.Warnings
                     );
                 }
             }
         );
 
-        return resolved;
+        return results;
     }
+
+    /// <summary>One project's concurrent-scan outcome, plus what it tried to report.</summary>
+    private sealed record ConcurrentScanResult(
+        List<Models.PackageReference> References,
+        bool Success,
+        Models.ProjectResolvedGraph? Graph,
+        IReadOnlyList<string> Warnings
+    );
 
     /// <summary>
     /// Reports a <c>--why</c> run that cannot produce a document and settles its exit code.
