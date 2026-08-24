@@ -45,8 +45,14 @@ public static class OutputMetadata
     /// distinguishable from one that verified and found nothing — the same distinction
     /// <c>summary.disabledRules</c> draws for rule policy.
     /// </para>
+    /// <para>
+    /// 1.6.0 additively introduced the third top-level shape: the document
+    /// <c>--why --output Json</c> prints, distinguished by <c>operation: "why"</c>. Consumers that
+    /// select a schema by <c>outputSchemaVersion</c> must resolve 1.6.0 to validate such a payload;
+    /// against 1.5.0 it is correctly rejected, which is why the version moved.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.5.0";
+    public const string SchemaVersion = "1.6.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

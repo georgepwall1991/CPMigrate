@@ -377,11 +377,12 @@ public static class ProgramRunner
     /// Reports a <c>--why</c> run that cannot produce a document and settles its exit code.
     ///
     /// <para>
-    /// The prose goes to the caller's own console — under <c>--output Json</c> that is not the
-    /// silent console the scan ran with, through which an error message would simply vanish — and
-    /// the router's standard failure payload goes out through <see cref="JsonOutputWriter.EmitFailureAsync"/>,
-    /// which falls back to stdout when <c>--output-file</c> cannot be written. Either way the
-    /// failure is observable: a non-zero exit with a document that says so.
+    /// Under <c>--output Json</c> the prose goes to the caller's own console — not the silent
+    /// console the scan ran with, through which an error message would simply vanish — and the
+    /// router's standard failure payload goes out through
+    /// <see cref="JsonOutputWriter.EmitFailureAsync"/>, which falls back to stdout when
+    /// <c>--output-file</c> cannot be written. Other output modes keep their prose-only failure
+    /// path: a JSON document interleaved with terminal rendering is its own kind of silence.
     /// </para>
     /// </summary>
     private static async Task<int> EmitWhyFailureAsync(
@@ -393,15 +394,19 @@ public static class ProgramRunner
     {
         consoleService.Error(errorMessage);
 
-        var formatter = new JsonFormatter();
-        var operationResult = new OperationResult
+        if (options.Output == OutputFormat.Json)
         {
-            Operation = "why",
-            Success = false,
-            ExitCode = exitCode,
-            Errors = [errorMessage],
-        };
-        await JsonOutputWriter.EmitFailureAsync(formatter.Format(operationResult), options);
+            var formatter = new JsonFormatter();
+            var operationResult = new OperationResult
+            {
+                Operation = "why",
+                Success = false,
+                ExitCode = exitCode,
+                Errors = [errorMessage],
+            };
+            await JsonOutputWriter.EmitFailureAsync(formatter.Format(operationResult), options);
+        }
+
         return exitCode;
     }
 
