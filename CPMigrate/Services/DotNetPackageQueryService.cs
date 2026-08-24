@@ -97,7 +97,10 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         string? isolatedIntermediateDirectory,
         bool includeTransitive)
     {
-        var key = (projectFilePath.ToUpperInvariant(), isolatedIntermediateDirectory ?? string.Empty);
+        // Paths are kept verbatim under ordinal comparison: on a case-sensitive filesystem
+        // /repo/tools/App.csproj and /repo/Tools/App.csproj are different projects, and folding
+        // case could serve one project's packages under the other's name.
+        var key = (projectFilePath, isolatedIntermediateDirectory ?? string.Empty);
 
         while (true)
         {
@@ -119,12 +122,13 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
                 throw;
             }
 
-            if (!payload.Success)
+            if (!payload.Success || !DescribesAnyFramework(payload.Output))
             {
+                // A CLI failure or an output with no frameworks is not a usable answer: restore
+                // can recover between attempts within a run, so the next caller re-runs the query.
                 RemoveIfCurrent(key, lazy);
                 return payload;
             }
-
             if (!includeTransitive || payload.IncludesTransitive)
             {
                 return payload;
