@@ -136,6 +136,29 @@ public class EolTargetFrameworkAnalyzerTests
         result.Issues[0].Description.Should().Contain("net6.0");
     }
 
+    [Fact]
+    public void Analyze_ConditionalOrChooseScopedTfm_IsNotJudged()
+    {
+        // Whether these assignments apply depends on evaluation the static read does not
+        // perform, so an EOL target under a false Condition or an unselected Choose branch
+        // must stay unexamined rather than become a finding.
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(
+            projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">"
+                + "<PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>"
+                + "<PropertyGroup Condition=\"'$(Configuration)' == 'Debug'\"><TargetFramework>net6.0</TargetFramework></PropertyGroup>"
+                + "<Choose><When Condition=\"false()\"><PropertyGroup><TargetFramework>net7.0</TargetFramework></PropertyGroup></When></Choose>"
+                + "</Project>"
+        );
+
+        var result = _analyzer.Analyze(PackageInfo(projectPath));
+
+        result.Issues.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("NETCOREAPP3.1")]
     [InlineData("Net6.0")]

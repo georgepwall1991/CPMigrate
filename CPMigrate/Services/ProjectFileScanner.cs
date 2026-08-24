@@ -50,14 +50,17 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     }
 
     /// <summary>
-    /// Every literal target framework the file declares, in document order, across all
-    /// <c>TargetFramework</c> and <c>TargetFrameworks</c> assignments.
+    /// Every literal, unconditionally-applied target framework the file declares, in document
+    /// order, across all <c>TargetFramework</c> and <c>TargetFrameworks</c> assignments.
     ///
     /// Unlike <see cref="GetTargetFramework"/>, which silently reports whichever assignment comes
     /// first and therefore depends on document order when a project assigns the property more than
-    /// once, this returns every literal value so a caller can judge each declaration. MSBuild
-    /// expressions are skipped rather than guessed at; a project whose only TFM declarations are
-    /// expressions yields an empty list, which callers must treat as unexamined.
+    /// once, this returns every literal value so a caller can judge each declaration. Assignments
+    /// under a <c>Condition</c> or inside a <c>Choose</c> branch are excluded: whether they apply
+    /// depends on evaluation this static read does not perform, so judging them would report
+    /// runtimes the project may never target. MSBuild expressions are skipped rather than guessed
+    /// at; a project whose only TFM declarations are conditional or expressions yields an empty
+    /// list, which callers must treat as unexamined.
     /// </summary>
     public IReadOnlyList<string> GetDeclaredTargetFrameworks(string projectFilePath)
     {
@@ -70,7 +73,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
             [
                 .. projectRoot
                     .Properties.Where(p =>
-                        p.Name == "TargetFramework" || p.Name == "TargetFrameworks"
+                        (p.Name == "TargetFramework" || p.Name == "TargetFrameworks")
+                        && !ConditionallyScoped(p)
                     )
                     .SelectMany(p => p.Value.Split(
                         ';',
@@ -92,6 +96,24 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         {
             return [];
         }
+    }
+
+    private static bool ConditionallyScoped(Microsoft.Build.Construction.ProjectPropertyElement property)
+    {
+        // The Condition usually lives on the enclosing PropertyGroup rather than on the
+        // property itself, so the whole ancestor chain is inspected.
+        for (var parent = property.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (
+                parent is Microsoft.Build.Construction.ProjectChooseElement
+                || !string.IsNullOrWhiteSpace(parent.Condition)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public string ProcessProject(

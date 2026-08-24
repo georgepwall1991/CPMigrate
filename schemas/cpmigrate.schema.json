@@ -86,7 +86,8 @@
         "MissingPackageVersion": { "$ref": "#/definitions/rulePolicyValue" },
         "OrphanedPackageVersion": { "$ref": "#/definitions/rulePolicyValue" },
         "LicenseRisk": { "$ref": "#/definitions/rulePolicyValue" },
-        "FloatingVersion": { "$ref": "#/definitions/rulePolicyValue" }
+        "FloatingVersion": { "$ref": "#/definitions/rulePolicyValue" },
+        "EolTargetFramework": { "$ref": "#/definitions/rulePolicyValue" }
       },
       "additionalProperties": { "$ref": "#/definitions/rulePolicyValue" }
     },
