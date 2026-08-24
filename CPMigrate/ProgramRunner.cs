@@ -469,14 +469,20 @@ public static class ProgramRunner
                     );
 
                     var console = new BufferingConsoleService();
+                    // The graph reader reports malformed or unreadable assets files through the
+                    // same buffered console, so nothing inside the parallel window touches the
+                    // shared terminal.
+                    var scopedGraphService = graphService is null
+                        ? null
+                        : new DependencyGraphService(console);
                     var (references, success) = await services
                         .WithConsole(console)
                         .ProjectAnalyzer.ScanResolvedPackagesAsync(
                             projectPaths[index],
                             includeTransitive
                         );
-                    var graph = success && graphService is not null
-                        ? graphService.TryReadResolvedGraph(projectPaths[index])
+                    var graph = success && scopedGraphService is not null
+                        ? scopedGraphService.TryReadResolvedGraph(projectPaths[index])
                         : null;
                     results[index] = new ConcurrentScanResult(
                         references,
