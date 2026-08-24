@@ -197,13 +197,18 @@ public static class ProgramRunner
                 targetPath
             );
 
+            // The restores run concurrently, scheduled by the shared scan pattern (see
+            // ScanResolvedPackagesConcurrentlyAsync below); the merge afterwards walks discovery
+            // order, so the tree cannot depend on completion order.
+            var resolved = await ScanResolvedPackagesConcurrentlyAsync(
+                options,
+                projectAnalyzer,
+                projectPaths,
+                includeTransitive: options.IncludeTransitive
+            );
             var allReferences = new List<Models.PackageReference>();
-            foreach (var projectPath in projectPaths)
+            foreach (var (references, success) in resolved)
             {
-                var (references, success) = await projectAnalyzer.ScanResolvedPackagesAsync(
-                    projectPath,
-                    options.IncludeTransitive
-                );
                 if (success)
                 {
                     allReferences.AddRange(references);
@@ -283,18 +288,33 @@ public static class ProgramRunner
                 );
             }
 
+            var graphService = new DependencyGraphService(executionConsole);
+            // Phase one: the restore-backed resolved scans run concurrently, scheduled exactly as
+            // the migration analysis schedules its own resolved pass — directory groups, the
+            // process-wide redirect lock, the global concurrency gate (see
+            // ScanResolvedPackagesConcurrentlyAsync below).
+            var resolved = await ScanResolvedPackagesConcurrentlyAsync(
+                options,
+                projectAnalyzer,
+                projectPaths,
+                includeTransitive: true
+            );
+
+            // Phase two stays serial, and deliberately. ScanDeclaredPackages reads through MSBuild's
+            // object model, whose static caches are not thread-safe — concurrent reads have produced
+            // projects reporting each other's package versions, which is why the analysis pass keeps
+            // this half serial too. Everything here aggregates in project order, so failed-scan
+            // counts, ScanOutcomes alignment and every list are identical to what the sequential
+            // loop produced, whatever order the restores finished in.
             var allReferences = new List<Models.PackageReference>();
             var declaredReferences = new List<Models.PackageReference>();
             var resolvedGraphs = new List<Models.ProjectResolvedGraph>();
-            var graphService = new DependencyGraphService(executionConsole);
             var failedScans = 0;
             var scanOutcomes = new List<PackageOriginProjectScan>();
-            foreach (var projectPath in projectPaths)
+            for (var index = 0; index < projectPaths.Count; index++)
             {
-                var (references, success) = await projectAnalyzer.ScanResolvedPackagesAsync(
-                    projectPath,
-                    includeTransitive: true
-                );
+                var projectPath = projectPaths[index];
+                var (references, success) = resolved[index];
                 var (declarations, declarationsRead) = projectAnalyzer.ScanDeclaredPackages(
                     projectPath
                 );
@@ -326,7 +346,6 @@ public static class ProgramRunner
                     resolvedGraphs.Add(graph);
                 }
             }
-
             var packageInfo = new Models.ProjectPackageInfo(
                 allReferences,
                 BasePath: basePath,
@@ -371,6 +390,71 @@ public static class ProgramRunner
                 userConsole
             );
         }
+    }
+
+    /// <summary>
+    /// Runs the restore-backed resolved-package scan for every discovered project concurrently,
+    /// returning the results indexed by position in <paramref name="projectPaths"/> so callers can
+    /// merge in discovery order regardless of completion order.
+    ///
+    /// <para>
+    /// Scheduled exactly as the migration analysis schedules its own resolved pass, because these
+    /// are the same subprocesses with the same hazards: two projects sharing a directory share one
+    /// <c>obj/project.assets.json</c> and corrupt each other's query, so they are grouped by
+    /// directory and run in sequence within their group; a solution that redirects its intermediate
+    /// output somewhere the paths cannot see runs serially under the process-wide redirect lock;
+    /// and the global gate keeps every scan in the process inside the advertised concurrency cap.
+    /// See <see cref="ProjectDirectoryScanLock"/> and AnalysisHandler for the full history.
+    /// </para>
+    /// </summary>
+    private static async Task<
+        (List<Models.PackageReference> References, bool Success)[]
+    > ScanResolvedPackagesConcurrentlyAsync(
+        Options options,
+        IProjectAnalyzer projectAnalyzer,
+        IReadOnlyList<string> projectPaths,
+        bool includeTransitive
+    )
+    {
+        var maxConcurrency = options.ResolveScanParallelism();
+        var resolved = new (List<Models.PackageReference> References, bool Success)[
+            projectPaths.Count
+        ];
+
+        var groups = Enumerable
+            .Range(0, projectPaths.Count)
+            .GroupBy(
+                index => ProjectDirectoryScanLock.DirectoryKeyFor(projectPaths[index]),
+                StringComparer.OrdinalIgnoreCase
+            )
+            .ToList();
+
+        var mightRedirect = ProjectDirectoryScanLock.MightRedirectIntermediateOutput(projectPaths);
+        using var redirectLock = mightRedirect
+            ? await ProjectDirectoryScanLock.AcquireRedirectingAsync()
+            : await ProjectDirectoryScanLock.AcquireOrdinaryAsync();
+
+        await Parallel.ForEachAsync(
+            groups,
+            new ParallelOptions { MaxDegreeOfParallelism = mightRedirect ? 1 : maxConcurrency },
+            async (group, _) =>
+            {
+                foreach (var index in group)
+                {
+                    using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
+                    using var directorySlot = await ProjectDirectoryScanLock.AcquireDirectoryAsync(
+                        projectPaths[index]
+                    );
+
+                    resolved[index] = await projectAnalyzer.ScanResolvedPackagesAsync(
+                        projectPaths[index],
+                        includeTransitive
+                    );
+                }
+            }
+        );
+
+        return resolved;
     }
 
     /// <summary>
