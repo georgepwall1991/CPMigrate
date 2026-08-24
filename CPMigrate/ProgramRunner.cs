@@ -242,6 +242,7 @@ public static class ProgramRunner
             var resolvedGraphs = new List<Models.ProjectResolvedGraph>();
             var graphService = new DependencyGraphService(services.ConsoleService);
             var failedScans = 0;
+            var scanOutcomes = new List<PackageOriginProjectScan>();
             foreach (var projectPath in projectPaths)
             {
                 var (references, success) = await projectAnalyzer.ScanResolvedPackagesAsync(
@@ -255,6 +256,13 @@ public static class ProgramRunner
                 {
                     failedScans++;
                 }
+                scanOutcomes.Add(
+                    new PackageOriginProjectScan(
+                        projectPath,
+                        ResolvedRead: success,
+                        DeclarationsRead: declarationsRead
+                    )
+                );
                 if (success)
                 {
                     allReferences.AddRange(references);
@@ -288,7 +296,8 @@ public static class ProgramRunner
                     failedScans,
                     // Every discovered project, including ones whose scans produced no rows —
                     // "this project does not have the package" is part of the answer.
-                    projectPaths
+                    projectPaths,
+                    scanOutcomes
                 )
             );
         }

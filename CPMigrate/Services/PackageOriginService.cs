@@ -27,13 +27,29 @@ namespace CPMigrate.Services;
 /// Every discovered project path, including ones whose scans produced no package records. Without
 /// this a project that references nothing would silently vanish from the report.
 /// </param>
+/// <param name="ScanOutcomes">
+/// Per-project scan status. A project whose resolved scan or declaration scan failed cannot prove
+/// anything about the package, so it must be reported as unexamined rather than asserted into an
+/// origin it was never read well enough to earn.
+/// </param>
 public sealed record PackageOriginRequest(
     string PackageId,
     ProjectPackageInfo Packages,
     IReadOnlyList<ProjectResolvedGraph> ResolvedGraphs,
     int ProjectCount,
     int FailedScanCount,
-    IReadOnlyList<string>? ProjectPaths = null
+    IReadOnlyList<string>? ProjectPaths = null,
+    IReadOnlyList<PackageOriginProjectScan>? ScanOutcomes = null
+);
+
+/// <summary>Whether each scan leg could read one project.</summary>
+/// <param name="ProjectPath">Full path to the project file.</param>
+/// <param name="ResolvedRead">Whether the resolved-package scan (dotnet list package) succeeded.</param>
+/// <param name="DeclarationsRead">Whether the declared-reference XML scan succeeded.</param>
+public sealed record PackageOriginProjectScan(
+    string ProjectPath,
+    bool ResolvedRead,
+    bool DeclarationsRead
 );
 
 /// <summary>
@@ -44,6 +60,12 @@ public enum PackageOriginKind
 {
     /// <summary>The project does not reference or see the package at all.</summary>
     NotPresent,
+
+    /// <summary>
+    /// The project could not be scanned, so no origin can be proven. Reported rather than guessed:
+    /// silence here would read as "checked, absent" about a project nobody managed to open.
+    /// </summary>
+    Unreadable,
 
     /// <summary>The package appears only in the resolved graph — some direct dependency pulls it in.</summary>
     TransitiveOnly,
@@ -186,6 +208,7 @@ internal sealed class PackageOriginService
             );
         }
 
+
         Render(request, report);
 
         return Task.FromResult(
@@ -207,6 +230,10 @@ internal sealed class PackageOriginService
             .GroupBy(g => g.ProjectPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
+        var scanByProject = (request.ScanOutcomes ?? [])
+            .GroupBy(s => s.ProjectPath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
         var knownProjectPaths = request.ProjectPaths ?? [];
         List<PackageOriginProjectReport> projects = [];
         foreach (
@@ -218,7 +245,7 @@ internal sealed class PackageOriginService
                 .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
         )
         {
-            projects.Add(ClassifyProject(request, projectPath, graphsByProject));
+            projects.Add(ClassifyProject(request, projectPath, graphsByProject, scanByProject));
         }
 
         var versionsInUse = projects
@@ -245,7 +272,14 @@ internal sealed class PackageOriginService
 
         return new PackageOriginReport(
             request.PackageId,
-            Found: projects.Any(p => p.Kind != PackageOriginKind.NotPresent),
+            Found: projects.Any(p =>
+                p.Kind
+                    is PackageOriginKind.TransitiveOnly
+                        or PackageOriginKind.Inherited
+                        or PackageOriginKind.UpdateOnly
+                        or PackageOriginKind.CentralPin
+                        or PackageOriginKind.InlineVersion
+            ),
             projects,
             versionsInUse,
             SuggestSimilar(request.PackageId, knownNames)
@@ -255,9 +289,25 @@ internal sealed class PackageOriginService
     private static PackageOriginProjectReport ClassifyProject(
         PackageOriginRequest request,
         string projectPath,
-        Dictionary<string, ProjectResolvedGraph> graphsByProject
+        Dictionary<string, ProjectResolvedGraph> graphsByProject,
+        Dictionary<string, PackageOriginProjectScan> scanByProject
     )
     {
+        if (
+            scanByProject.TryGetValue(projectPath, out var scan)
+            && (!scan.ResolvedRead || !scan.DeclarationsRead)
+        )
+        {
+            // One leg failed: whatever this project thinks about the package cannot be proven, and
+            // a half-read answer (declarations without resolution, or the reverse) would present a
+            // guess as a finding. Unexamined is the only honest label.
+            return new PackageOriginProjectReport(
+                projectPath,
+                DisplayPath(projectPath, request.Packages.BasePath),
+                PackageOriginKind.Unreadable
+            );
+        }
+
         var declarations = request
             .Packages.GetDeclaredReferences()
             .Where(r =>
@@ -514,10 +564,14 @@ internal sealed class PackageOriginService
         var inheritedCount = report.Projects.Count(p => p.Kind == PackageOriginKind.Inherited);
         var updateOnlyCount = report.Projects.Count(p => p.Kind == PackageOriginKind.UpdateOnly);
         var transitiveCount = report.Projects.Count(p => p.Kind == PackageOriginKind.TransitiveOnly);
+        var notPresentCount = report.Projects.Count(p => p.Kind == PackageOriginKind.NotPresent);
+        var unreadableCount = report.Projects.Count(p => p.Kind == PackageOriginKind.Unreadable);
         _console.Dim(
             $"  {report.Projects.Count} project(s): {directCount} direct, {updateOnlyCount} "
                 + $"update-only, {transitiveCount} transitive"
                 + (inheritedCount > 0 ? $", {inheritedCount} inherited" : "")
+                + (notPresentCount > 0 ? $", {notPresentCount} not present" : "")
+                + (unreadableCount > 0 ? $", {unreadableCount} unreadable" : "")
                 + "."
         );
 
@@ -552,6 +606,7 @@ internal sealed class PackageOriginService
                 SpectrePalette.Ink.Secondary
             ),
             PackageOriginKind.TransitiveOnly => ("seen transitively", SpectrePalette.Ink.Muted),
+            PackageOriginKind.Unreadable => ("could not be read", SpectrePalette.Ink.Warning),
             _ => ("not present", SpectrePalette.Ink.Dim),
         };
 
@@ -567,6 +622,7 @@ internal sealed class PackageOriginService
             PackageOriginKind.Inherited => SpectrePalette.Ink.Accent,
             PackageOriginKind.UpdateOnly => SpectrePalette.Ink.Secondary,
             PackageOriginKind.TransitiveOnly => SpectrePalette.Ink.Muted,
+            PackageOriginKind.Unreadable => SpectrePalette.Ink.Warning,
             _ => SpectrePalette.Ink.Dim,
         };
 

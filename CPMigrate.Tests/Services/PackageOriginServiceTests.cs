@@ -365,13 +365,73 @@ public class PackageOriginServiceTests
         );
     }
 
+    [Fact]
+    public void Analyze_ProjectWithFailedScans_IsUnreadableRatherThanNotPresent()
+    {
+        var request = BuildRequest(
+            references: [],
+            declaredReferences: [],
+            projectPaths: ["/ws/src/App/App.csproj", "/ws/src/Worker/Worker.csproj"],
+            scanOutcomes:
+            [
+                new("/ws/src/App/App.csproj", ResolvedRead: false, DeclarationsRead: false),
+                new("/ws/src/Worker/Worker.csproj", ResolvedRead: true, DeclarationsRead: true),
+            ]
+        );
+
+        var report = PackageOriginService.Analyze(request);
+
+        var app = report.Projects.Single(p => p.DisplayPath == "src/App/App.csproj");
+        // A project nobody could read has not been checked, so "not present" would be an
+        // assertion about data the scan never saw.
+        app.Kind.Should().Be(PackageOriginKind.Unreadable);
+        app.ResolvedVersions.Should().BeNull();
+    }
+
+    [Fact]
+    public void Analyze_PartialLegFailure_IsAlsoUnreadable()
+    {
+        var request = BuildRequest(
+            references: [],
+            declaredReferences: [],
+            projectPaths: ["/ws/src/App/App.csproj"],
+            scanOutcomes:
+            [
+                new("/ws/src/App/App.csproj", ResolvedRead: true, DeclarationsRead: false),
+            ]
+        );
+
+        var report = PackageOriginService.Analyze(request);
+
+        report.Projects.Single().Kind.Should().Be(PackageOriginKind.Unreadable);
+    }
+
+    [Fact]
+    public void Analyze_OnlyUnreadableProjects_AreNotReportedAsFound()
+    {
+        var request = BuildRequest(
+            references: [],
+            declaredReferences: [],
+            projectPaths: ["/ws/src/App/App.csproj"],
+            scanOutcomes:
+            [
+                new("/ws/src/App/App.csproj", ResolvedRead: false, DeclarationsRead: false),
+            ]
+        );
+
+        var report = PackageOriginService.Analyze(request);
+
+        report.Found.Should().BeFalse();
+    }
+
     private static PackageOriginRequest BuildRequest(
         IReadOnlyList<PackageReference> references,
         IReadOnlyList<PackageReference> declaredReferences,
         IReadOnlyList<ProjectResolvedGraph>? graphs = null,
         IReadOnlyList<string>? projectPaths = null,
         int failedScanCount = 0,
-        int projectCount = 0
+        int projectCount = 0,
+        IReadOnlyList<PackageOriginProjectScan>? scanOutcomes = null
     ) =>
         new(
             PackageId,
@@ -379,6 +439,7 @@ public class PackageOriginServiceTests
             graphs ?? [],
             projectCount,
             failedScanCount,
-            projectPaths
+            projectPaths,
+            scanOutcomes
         );
 }
