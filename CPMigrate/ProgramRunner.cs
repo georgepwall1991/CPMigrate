@@ -470,14 +470,12 @@ public static class ProgramRunner
         var startDir = options.GetConfigSearchStartDirectory();
         var (config, configPath, errorMessage) = configService.LoadConfigDetailed(startDir);
 
-        if (!string.IsNullOrWhiteSpace(errorMessage))
+        // An ErrorMessage here may be a fatal load failure (config == null) or a
+        // warning-only lint finding (config loaded). Only a fatal failure skips merging;
+        // valid settings in the file must stay active either way.
+        if (!string.IsNullOrWhiteSpace(errorMessage) && !options.Output.IsMachineReadable())
         {
-            if (!options.Output.IsMachineReadable())
-            {
-                consoleService.Warning(errorMessage);
-            }
-
-            return;
+            consoleService.Warning(errorMessage);
         }
 
         if (config == null)
