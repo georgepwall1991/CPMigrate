@@ -316,7 +316,8 @@ internal sealed class DoctorService
             StringComparison.Ordinal
         );
         var finalNameFolds =
-            string.Equals(
+            sameAncestry
+            && string.Equals(
                 Path.GetFileName(resolvedTrimmed),
                 Path.GetFileName(workspaceTrimmed),
                 StringComparison.OrdinalIgnoreCase
