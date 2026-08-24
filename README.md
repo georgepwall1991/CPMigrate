@@ -150,7 +150,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | 🏢 **Batch / monorepo** | Sequential or parallel multi-solution runs |
 | 💾 **Backup & rollback** | Timestamped on-disk backups for every destructive path |
 | 📄 **`.sln` + `.slnx`** | Classic solutions and Visual Studio 17.10+ `.slnx` |
-| 🩺 **`--doctor`** | Environment diagnostics: SDK, NuGet, workspace, config, git |
+| 🩺 **`--doctor`** | Environment diagnostics: SDK, NuGet, disk space, write access, workspace, config, git |
 |  **`--init`** | Scaffold `.cpmigrate.json` with team defaults |
 | 📟 **`--status`** | One-shot workspace health dashboard |
 | 🌳 **`--tree`** | ASCII dependency tree, direct + transitive |
@@ -185,7 +185,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 <summary><b>🩺 Diagnostics &amp; workspace</b> — know your state before you change it</summary>
 
 ```bash
-cpmigrate --doctor                 # SDK, NuGet reachability, workspace, git — one table
+cpmigrate --doctor                 # SDK, NuGet reachability, disk, write access, workspace, git — one table
 cpmigrate --status                 # repo-context dashboard, no wizard
 cpmigrate --tree --transitive      # ASCII dependency tree per project
 cpmigrate --why Newtonsoft.Json    # who declares it, who inherits it, do versions drift
@@ -243,7 +243,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 
 | Option | Default | Description |
 |--------|:-------:|-------------|
-| `--doctor` | `false` | Diagnose the environment: SDK, NuGet, workspace, config, git |
+| `--doctor` | `false` | Diagnose the environment: SDK, NuGet, disk space, workspace writability, config, git |
 | `--init` | `false` | Scaffold a `.cpmigrate.json` (interactive, or CI-safe defaults) |
 | `--status` | `false` | One-shot workspace health dashboard |
 | `--tree` | `false` | ASCII dependency tree per project (add `--transitive` for the full graph) |

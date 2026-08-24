@@ -71,7 +71,8 @@ public sealed class BufferingConsoleService : IConsoleService
         Dictionary<string, HashSet<string>> packageVersions,
         List<string> conflicts,
         ConflictStrategy strategy
-    ) { }
+    )
+    { }
 
     public void WriteSummaryTable(
         int projectCount,
@@ -80,7 +81,8 @@ public sealed class BufferingConsoleService : IConsoleService
         string propsFilePath,
         string? backupPath,
         bool wasDryRun
-    ) { }
+    )
+    { }
 
     public void WriteProjectTree(List<string> projectPaths, string basePath) { }
 
@@ -93,7 +95,8 @@ public sealed class BufferingConsoleService : IConsoleService
         string detail,
         string? suggestion = null,
         string? docsUrl = null
-    ) { }
+    )
+    { }
 
     public void WriteMarkup(string message) { }
 
@@ -106,7 +109,8 @@ public sealed class BufferingConsoleService : IConsoleService
         bool isGitRepo,
         bool hasUnstaged,
         Dictionary<string, int> targetFrameworks
-    ) { }
+    )
+    { }
 
     public void WriteMissionStatus(int step) { }
 

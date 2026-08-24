@@ -30,6 +30,8 @@ internal sealed class DoctorService
         checks.Add(CheckRuntime());
         checks.Add(await CheckNuGetConnectivityAsync());
         checks.AddRange(CheckWorkspace(searchPath));
+        checks.Add(CheckDiskSpace(searchPath));
+        checks.Add(CheckWriteAccess(searchPath));
         checks.Add(CheckConfigFile(searchPath));
         checks.Add(CheckGitStatus(searchPath));
 
@@ -165,6 +167,104 @@ internal sealed class DoctorService
         }
 
         return checks;
+    }
+
+    internal static DoctorCheck CheckDiskSpace(string searchPath)
+    {
+        var dir = Directory.Exists(searchPath) ? searchPath : Path.GetDirectoryName(Path.GetFullPath(searchPath)) ?? ".";
+
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(dir));
+            var freeBytes = new DriveInfo(root!).AvailableFreeSpace;
+            return ClassifyDiskSpace(freeBytes);
+        }
+        catch (Exception ex)
+        {
+            // Exotic filesystems and unready volumes can throw — degrade to Info rather than crash doctor.
+            return new DoctorCheck("Disk", DoctorStatus.Info, $"Could not determine free disk space: {ex.Message}");
+        }
+    }
+
+    internal static DoctorCheck ClassifyDiskSpace(long freeBytes)
+    {
+        const long ErrorThresholdBytes = 200L * 1024 * 1024;      // ~200 MB
+        const long WarningThresholdBytes = 2L * 1024 * 1024 * 1024; // ~2 GB
+
+        if (freeBytes < ErrorThresholdBytes)
+        {
+            return new DoctorCheck("Disk", DoctorStatus.Error,
+                $"Only {FormatSize(freeBytes)} free on the workspace volume",
+                "Backups (.cpmigrate_backup/) plus restore artifacts consume space during migration. Free up space first.");
+        }
+
+        if (freeBytes < WarningThresholdBytes)
+        {
+            return new DoctorCheck("Disk", DoctorStatus.Warning,
+                $"{FormatSize(freeBytes)} free on the workspace volume",
+                "Backups plus restore artifacts consume space during migration.");
+        }
+
+        return new DoctorCheck("Disk", DoctorStatus.Ok,
+            $"{FormatSize(freeBytes)} free on the workspace volume");
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        const long KB = 1024;
+        const long MB = KB * 1024;
+        const long GB = MB * 1024;
+
+        return bytes switch
+        {
+            >= GB => $"{bytes / (double)GB:F2} GB",
+            >= MB => $"{bytes / (double)MB:F2} MB",
+            >= KB => $"{bytes / (double)KB:F2} KB",
+            _ => $"{bytes} bytes",
+        };
+    }
+
+    internal static DoctorCheck CheckWriteAccess(string searchPath)
+    {
+        var dir = Directory.Exists(searchPath) ? searchPath : Path.GetDirectoryName(Path.GetFullPath(searchPath)) ?? ".";
+        return ProbeWriteAccess(dir);
+    }
+
+    internal static DoctorCheck ProbeWriteAccess(string dir)
+    {
+        if (!Directory.Exists(dir))
+        {
+            return new DoctorCheck("Write", DoctorStatus.Info,
+                $"Cannot probe '{dir}' — directory does not exist");
+        }
+
+        try
+        {
+            var probePath = Path.Combine(dir, $".cpmigrate-write-probe-{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(probePath, string.Empty);
+
+            try
+            {
+                File.Delete(probePath);
+            }
+            catch (Exception)
+            {
+                // Writability is already proven; a leftover probe file must not fail the check.
+            }
+
+            return new DoctorCheck("Write", DoctorStatus.Ok, "Workspace directory is writable");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new DoctorCheck("Write", DoctorStatus.Error,
+                "Workspace directory is not writable",
+                "CPMigrate rewrites project files and writes backups during migration — it cannot run against a read-only workspace.");
+        }
+        catch (Exception ex)
+        {
+            return new DoctorCheck("Write", DoctorStatus.Info,
+                $"Could not verify write access: {ex.Message}");
+        }
     }
 
     private static DoctorCheck CheckConfigFile(string searchPath)
