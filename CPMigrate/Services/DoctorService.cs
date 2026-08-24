@@ -293,16 +293,14 @@ internal sealed class DoctorService
             Path.IsPathRooted(backupDir) ? backupDir : Path.Combine(workspace, backupDir)
         );
 
-        // Case-sensitive where the filesystem is: /repo/App and /repo/app are different
-        // directories on Linux, and only the real one is covered by the workspace probe.
-        var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
+        // Case-sensitive where the filesystem actually is — a case-sensitive APFS volume or a
+        // case-sensitive NTFS directory makes /repo/App and /repo/app different directories, and
+        // only the real one is covered by the workspace probe. Same probe the drift analyzer uses.
+        var pathComparer = CpmDriftAnalyzer.PathComparerFor(workspace);
         if (
-            string.Equals(
+            pathComparer.Equals(
                 resolved.TrimEnd(Path.DirectorySeparatorChar),
-                workspace.TrimEnd(Path.DirectorySeparatorChar),
-                comparison
+                workspace.TrimEnd(Path.DirectorySeparatorChar)
             )
         )
         {
