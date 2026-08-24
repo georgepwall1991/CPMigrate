@@ -486,8 +486,9 @@ internal sealed class PackageOriginService
                 .Where(item =>
                     // The query itself is never a suggestion: with a partial scan the name can
                     // reach here from a leg that did read, and suggesting it right after saying
-                    // "not found" would contradict the verdict above.
-                    !item.Name.Equals(query.Trim(), StringComparison.OrdinalIgnoreCase)
+                    // "not found" would contradict the verdict above. Compare the raw value —
+                    // a trimmed match is exactly the correction a stray space needs.
+                    !item.Name.Equals(query, StringComparison.OrdinalIgnoreCase)
                     && (
                         item.Distance <= 3
                         || item.Name.ToLowerInvariant().Contains(needle, StringComparison.Ordinal)
