@@ -80,6 +80,19 @@ public class ProgramRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_ValuelessWhy_IsRejectedInsteadOfRunningAMigration()
+    {
+        // A valueless --why parses as "flag not set", and an unset --why means the default action —
+        // a real, file-rewriting migration. A read-only intent must never silently become a write.
+        var fakeConsole = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(["--why"], fakeConsole);
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        fakeConsole.ErrorMessages.Should().Contain(m => m.Contains("--why"));
+    }
+
+    [Fact]
     public async Task RunAsync_AmbiguousVerb_SuggestsBothCandidates()
     {
         // "update" could mean --update (update CPMigrate itself) or --update-packages (update the

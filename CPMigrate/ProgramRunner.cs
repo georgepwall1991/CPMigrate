@@ -62,6 +62,11 @@ public static class ProgramRunner
                         return found ? ExitCodes.Success : ExitCodes.ValidationError;
                     }
 
+                    if (RejectsValuelessWhy(options, args, services.ConsoleService))
+                    {
+                        return ExitCodes.ValidationError;
+                    }
+
                     // Ahead of the modes below, which return before CommandRouter ever validates.
                     // `--init --rules NoSuchRule=none` otherwise wrote a config file and exited
                     // successfully, so the promised strict rejection depended on which command the
@@ -124,6 +129,11 @@ public static class ProgramRunner
                     if (options.Tree)
                     {
                         return await RunTreeModeAsync(options, services);
+                    }
+
+                    if (options.Why is not null)
+                    {
+                        return await RunWhyModeAsync(options, services);
                     }
 
                     // Unconditionally, and not inside the merge: that returns early when no config
@@ -212,6 +222,106 @@ public static class ProgramRunner
     }
 
     /// <summary>
+    /// Traces one package through the workspace: who declares it, who only sees it transitively,
+    /// and whether the versions agree. Mirrors <see cref="RunTreeModeAsync"/>: a diagnostic mode
+    /// that scans every project itself, renders to the terminal, and reports an incomplete scan
+    /// rather than dressing partial data up as a complete answer.
+    /// </summary>
+    private static async Task<int> RunWhyModeAsync(Options options, ApplicationServices services)
+    {
+        try
+        {
+            var projectAnalyzer = services.ProjectAnalyzer;
+            var targetPath = options.GetDiscoveryTargetPath();
+            var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(
+                targetPath
+            );
+
+            var allReferences = new List<Models.PackageReference>();
+            var declaredReferences = new List<Models.PackageReference>();
+            var resolvedGraphs = new List<Models.ProjectResolvedGraph>();
+            var graphService = new DependencyGraphService(services.ConsoleService);
+            var failedScans = 0;
+            foreach (var projectPath in projectPaths)
+            {
+                var (references, success) = await projectAnalyzer.ScanResolvedPackagesAsync(
+                    projectPath,
+                    includeTransitive: true
+                );
+                var (declarations, declarationsRead) = projectAnalyzer.ScanDeclaredPackages(
+                    projectPath
+                );
+                if (!success || !declarationsRead)
+                {
+                    failedScans++;
+                }
+                if (success)
+                {
+                    allReferences.AddRange(references);
+                }
+                if (declarationsRead)
+                {
+                    declaredReferences.AddRange(declarations);
+                }
+
+                // The resolved graph carries the edges a flat package list lacks: without it a
+                // transitive sighting cannot name the direct package that pulled it in.
+                var graph = graphService.TryReadResolvedGraph(projectPath);
+                if (graph is not null)
+                {
+                    resolvedGraphs.Add(graph);
+                }
+            }
+
+            var packageInfo = new Models.ProjectPackageInfo(
+                allReferences,
+                BasePath: basePath,
+                DeclaredReferences: declaredReferences
+            );
+            var whyService = new PackageOriginService(services.ConsoleService);
+            return await whyService.RunAsync(
+                new PackageOriginRequest(
+                    options.Why!,
+                    packageInfo,
+                    resolvedGraphs,
+                    projectPaths.Count,
+                    failedScans
+                )
+            );
+        }
+        catch (Exception ex)
+        {
+            services.ConsoleService.Error($"Failed to trace package origin: {ex.Message}");
+            return ExitCodes.UnexpectedError;
+        }
+    }
+
+    /// <summary>
+    /// Reports a valueless <c>--why</c> and says the run should stop.
+    ///
+    /// A valueless <c>--why</c> parses as "flag not set", and an unset <c>--why</c> means the
+    /// default action — a real, file-rewriting migration. Someone who typed <c>cpmigrate --why</c>
+    /// must be told the package ID is missing, never migrated.
+    /// </summary>
+    private static bool RejectsValuelessWhy(
+        Options options,
+        string[] args,
+        IConsoleService consoleService
+    )
+    {
+        if (
+            !CliArgumentParser.GetExplicitArguments(args).Contains("why")
+            || !string.IsNullOrWhiteSpace(options.Why)
+        )
+        {
+            return false;
+        }
+
+        consoleService.Error("--why requires a package ID, e.g. --why Newtonsoft.Json.");
+        return true;
+    }
+
+    /// <summary>
     /// Warns when a flag that only shapes analysis output was passed on the command line for a
     /// command it cannot affect. Without <c>--analyze</c> the default action — a real,
     /// file-rewriting migration — runs while the flag does nothing.
@@ -275,7 +385,7 @@ public static class ProgramRunner
     /// </summary>
     private static bool IsDiagnosticMode(Options options)
     {
-        return options.Doctor || options.Init || options.Status || options.Tree;
+        return options.Doctor || options.Init || options.Status || options.Tree || options.Why is not null;
     }
 
     /// <summary>

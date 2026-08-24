@@ -106,6 +106,23 @@ public class VerifyContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Rejects_WhyMode_BeforeItRuns()
+    {
+        // --why is dispatched from ProgramRunner like the other diagnostic modes, so the same
+        // pre-dispatch rejection applies: `--verify --why X` must not trace packages instead of
+        // verifying a migration, and must not verify instead of tracing.
+        var console = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            ["--verify", "--why", "Newtonsoft.Json", "--force", "-s", _testDirectory],
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(m => m.Contains("--why"));
+    }
+
+    [Fact]
     public void Rejects_VerifyWithBatch()
     {
         // Each solution would capture and compare its own graph, but the batch payload has no shape

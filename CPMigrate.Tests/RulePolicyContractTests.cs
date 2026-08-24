@@ -431,6 +431,33 @@ public class RulePolicyContractTests : IDisposable
     }
 
     [Fact]
+    public async Task WhyMode_WithAnUnusablePolicy_IsRejectedRatherThanRunning()
+    {
+        // --why joins the diagnostic modes that return before CommandRouter validates, so it needs
+        // the same pre-dispatch policy check: `--why X --rules NoSuchRule=none` must be rejected,
+        // not trace packages with the configured gate silently moved.
+        CreateInconsistentFixture();
+        var console = new TestDoubles.FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[]
+            {
+                "--why",
+                "Newtonsoft.Json",
+                "--rules",
+                "NoSuchRule=none",
+                "--quiet",
+                "-s",
+                _testDirectory,
+            },
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().Contain(message => message.Contains("NoSuchRule"));
+    }
+
+    [Fact]
     public async Task UnknownRuleId_UnderJson_NamesTheModeThatWinsDispatch()
     {
         // --update runs instead of the analysis, so labelling the payload "analyze" would name a

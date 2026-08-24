@@ -31,6 +31,7 @@ internal static class CliVerbGuard
         ["doctor"] = ["--doctor"],
         ["init"] = ["--init"],
         ["status"] = ["--status"],
+        ["why"] = ["--why"],
     };
 
     /// <summary>

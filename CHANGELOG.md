@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Added
+- **`--why <PACKAGE_ID>`: trace where a package comes from.** A dependency list tells you a package is there; it never tells you *why*. `--why` scans every project in the workspace and answers the question per project — declared directly with an inline version, declared directly against the central pin, amended by `PackageReference Update` only, or seen purely transitively, with the direct package that pulls it in named from the resolved graph's own edges (`obj/project.assets.json`) rather than guessed from proximity. It settles a drift verdict over normalized versions, so two spellings of one release are not reported as disagreement while a real 13.0.3-vs-13.0.1 split names every project on each side. A misspelled ID is not a dead end: near-miss package names present in the workspace (case-insensitive edit distance or containment) are suggested. Partial scans are reported as such and exit `8` rather than dressing incomplete data up as an answer; an unknown ID exits `1`. Like `--tree`, it renders to the terminal and joins the diagnostic modes that return before the router — so `--verify --why X` is now rejected up front instead of silently dropping verification — and because a valueless `--why` would otherwise parse as "flag not set" and fall through to a real migration, it is rejected up front too (`cpmigrate why` gets the same suggestion treatment as the other bare-word verbs).
+
 ## [3.62.0] - 2026-08-13
 
 ### Changed

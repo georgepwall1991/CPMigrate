@@ -454,6 +454,13 @@ public class Options
     )]
     public bool Tree { get; set; }
 
+    [Option(
+        "why",
+        HelpText = "Explain where a package comes from: which projects declare it directly, which "
+            + "see it only transitively through what, and whether versions drift across projects."
+    )]
+    public string? Why { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Analysis & Auto-Fix
     // ═══════════════════════════════════════════════════════════════════════
@@ -643,6 +650,10 @@ public class Options
             new("Create a .cpmigrate.json config", new Options { Init = true }),
             new("Show workspace health dashboard", new Options { Status = true }),
             new("Render dependency tree", new Options { Tree = true, IncludeTransitive = true }),
+            new(
+                "Trace where a package comes from",
+                new Options { Why = "Newtonsoft.Json" }
+            ),
             new("Preview migration as a unified diff", new Options { DryRun = true, Diff = true }),
             new(
                 "Update packages, keep the largest green subset on failure",
@@ -1162,7 +1173,7 @@ public class Options
     /// </remarks>
     private string? FindModeInsteadOfMigration()
     {
-        // The four diagnostic modes return from ProgramRunner without ever reaching the router, so a
+        // The five diagnostic modes return from ProgramRunner without ever reaching the router, so a
         // combination rejected only downstream would let `--verify --init` write a config file and
         // exit 0 with the verification silently dropped. Cross-review caught it: whether the flag was
         // honoured depended on which command it was passed alongside.
@@ -1184,6 +1195,11 @@ public class Options
         if (Tree)
         {
             return "--tree";
+        }
+
+        if (Why is not null)
+        {
+            return "--why";
         }
 
         if (Update)
