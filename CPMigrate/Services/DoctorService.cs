@@ -293,11 +293,16 @@ internal sealed class DoctorService
             Path.IsPathRooted(backupDir) ? backupDir : Path.Combine(workspace, backupDir)
         );
 
+        // Case-sensitive where the filesystem is: /repo/App and /repo/app are different
+        // directories on Linux, and only the real one is covered by the workspace probe.
+        var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
         if (
             string.Equals(
                 resolved.TrimEnd(Path.DirectorySeparatorChar),
                 workspace.TrimEnd(Path.DirectorySeparatorChar),
-                StringComparison.OrdinalIgnoreCase
+                comparison
             )
         )
         {
