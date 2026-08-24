@@ -166,6 +166,17 @@ public static class AnalysisRuleCatalog
                 new[] { "dependencies", "reproducibility" }
             ),
             new(
+                AnalysisIssueCode.EolTargetFramework,
+                "A project targets an end-of-life .NET version.",
+                "A runtime past end of life stops receiving security updates, so every package the "
+                    + "solution resolves for it ships into a target nobody patches. netcoreapp, "
+                    + "net5.0, net6.0, and net7.0 are all past end of life; .NET Framework and "
+                    + "netstandard are not judged here — the former is still supported, the latter "
+                    + "is a compile-time surface rather than a runtime. Retarget to a supported "
+                    + "release such as net8.0 or later.",
+                new[] { "dependencies", "security" }
+            ),
+            new(
                 AnalysisIssueCode.Unknown,
                 "An analyzer reported a finding without a specific rule code.",
                 "This is a fallback used when an analyzer does not classify its finding. Treat the message text as "

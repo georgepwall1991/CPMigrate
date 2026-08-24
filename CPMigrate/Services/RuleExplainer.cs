@@ -91,6 +91,7 @@ public static class RuleExplainer
         AnalysisIssueCode.CpmNotEnabled => "cpmigrate -s ./MySolution.sln",
         AnalysisIssueCode.InlineVersionUnderCpm => "cpmigrate --analyze -s ./MySolution.sln",
         AnalysisIssueCode.OrphanedPackageVersion => "cpmigrate --analyze -s ./MySolution.sln",
+        AnalysisIssueCode.EolTargetFramework => "cpmigrate --analyze -s ./MySolution.sln",
         _ => null,
     };
 
@@ -107,6 +108,7 @@ public static class RuleExplainer
         AnalysisIssueCode.InlineVersionUnderCpm => "Remove the Version attribute from the PackageReference — the version should come from Directory.Packages.props.",
         AnalysisIssueCode.OrphanedPackageVersion => "Remove the unused PackageVersion entry from Directory.Packages.props.",
         AnalysisIssueCode.LicenseRisk => "Review the package license. For copyleft licenses, consider a permissive alternative. For unverified (file or URL) licenses, read the terms on the package's NuGet page.",
+        AnalysisIssueCode.EolTargetFramework => "Retarget the project to a supported release (net8.0 or later) in its TargetFramework or TargetFrameworks property, then update any packages that do not support the new target.",
         _ => null,
     };
 

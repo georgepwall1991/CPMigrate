@@ -284,6 +284,24 @@ version actually in force for that project.
 - Fixable: no — choosing the release a float should become needs the feed, which this pass does not
   query
 
+## EolTargetFramework
+
+**A project targets an end-of-life .NET version.**
+
+A runtime past end of life stops receiving security updates, so every package the solution resolves
+for it ships into a target nobody patches. `netcoreapp`, `net5.0`, `net6.0`, and `net7.0` are all
+past end of life; matching is case-insensitive, and a multi-target project is flagged when *any* of
+its targets has lapsed, with each one named.
+
+The rule reads only literal `TargetFramework` / `TargetFrameworks` values from the project file —
+the same mechanism as `FrameworkAlignment`. A target defined behind an MSBuild condition is not seen
+and not judged. `.NET Framework` (`net48`) is still supported and not reported; `netstandard` is a
+compile-time surface rather than a runtime and follows its own lifecycle.
+
+- Default severity: `Moderate`
+- Fixable: no — retargeting changes what restores; update packages that do not support the new
+  target yourself, then confirm with `cpmigrate -s ./Solution.sln --verify`
+
 ## Unknown
 
 **An analyzer reported a finding without a specific rule code.**

@@ -33,6 +33,9 @@ public enum AnalysisIssueCode
 
     /// <summary>A version is a wildcard or an open range, so restore can resolve it differently.</summary>
     FloatingVersion,
+
+    /// <summary>A project targets an end-of-life .NET runtime.</summary>
+    EolTargetFramework,
 }
 
 /// <summary>

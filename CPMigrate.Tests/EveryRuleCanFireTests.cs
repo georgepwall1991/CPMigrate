@@ -107,6 +107,21 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     [Fact]
+    public async Task EolTargetFramework_Fires()
+    {
+        // Read straight from the project file like FrameworkAlignment — no feed and no restore
+        // output involved.
+        WriteProject(
+            "src/Legacy/Legacy.csproj",
+            framework: "netcoreapp3.1",
+            packages: ("Serilog", "4.3.0")
+        );
+        WriteSolution("src/Legacy/Legacy.csproj");
+
+        (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.EolTargetFramework));
+    }
+
+    [Fact]
     public async Task RedundantDirectReference_Fires()
     {
         // The rule 3.20.0 fixed, and the reason this file exists. The assets file is written by hand rather

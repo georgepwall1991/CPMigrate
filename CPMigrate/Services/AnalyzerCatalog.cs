@@ -27,6 +27,9 @@ internal static class AnalyzerCatalog
             new DeprecatedPackageAnalyzer(),
             new LiftingAnalyzer(dependencyGraphService),
             new FrameworkAlignmentAnalyzer(projectFileScanner),
+            // Reads literal TargetFramework/TargetFrameworks values only: a TFM defined behind an
+            // MSBuild condition is not seen and not judged.
+            new EolTargetFrameworkAnalyzer(projectFileScanner),
             // Gated on data, not a flag, like the other analyzers: it reports nothing unless the
             // solution actually has a Directory.Packages.props to drift from.
             new CpmDriftAnalyzer(),
