@@ -105,7 +105,10 @@ public static class ProgramRunner
                             services.ConsoleService,
                             new SolutionDiscovery(services.ConsoleService)
                         );
-                        return await doctorService.RunAsync(options.GetDiscoveryTargetPath());
+                        return await doctorService.RunAsync(
+                            options.GetDiscoveryTargetPath(),
+                            options.BackupDir
+                        );
                     }
 
                     if (options.Init)

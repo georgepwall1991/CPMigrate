@@ -20,7 +20,7 @@ internal sealed class DoctorService
         _solutionDiscovery = solutionDiscovery;
     }
 
-    public async Task<int> RunAsync(string searchPath)
+    public async Task<int> RunAsync(string searchPath, string? backupDir = null)
     {
         var theme = SpectreTheme.For(AnsiConsole.Console);
         var checks = new List<DoctorCheck>();
@@ -32,6 +32,7 @@ internal sealed class DoctorService
         checks.AddRange(CheckWorkspace(searchPath));
         checks.Add(CheckDiskSpace(searchPath));
         checks.Add(CheckWriteAccess(searchPath));
+        checks.Add(CheckBackupDirAccess(searchPath, backupDir));
         checks.Add(CheckConfigFile(searchPath));
         checks.Add(CheckGitStatus(searchPath));
 
@@ -249,7 +250,13 @@ internal sealed class DoctorService
             }
             catch (Exception)
             {
-                // Writability is already proven; a leftover probe file must not fail the check.
+                // Creating files but being denied Delete/DeleteChild is real: the atomic writer
+                // replaces existing files, which needs deletion rights, so a migration would die
+                // mid-run. A leftover probe is evidence of exactly that.
+                return new DoctorCheck("Write", DoctorStatus.Warning,
+                    $"Workspace accepts new files but the probe could not be deleted: {probePath}",
+                    "Deletion rights are required — CPMigrate replaces files in place during "
+                        + "migration. Delete the probe file and check directory ACLs.");
             }
 
             return new DoctorCheck("Write", DoctorStatus.Ok, "Workspace directory is writable");
@@ -265,6 +272,44 @@ internal sealed class DoctorService
             return new DoctorCheck("Write", DoctorStatus.Info,
                 $"Could not verify write access: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Probes the configured backup directory when it is somewhere other than the workspace
+    /// itself — a separate volume or a nested path can pass the workspace probe and still be
+    /// unwritable, and backups failing mid-migration is exactly what doctor exists to prevent.
+    /// </summary>
+    internal static DoctorCheck CheckBackupDirAccess(string searchPath, string? backupDir)
+    {
+        if (string.IsNullOrWhiteSpace(backupDir))
+        {
+            return new DoctorCheck("Backup", DoctorStatus.Info, "No backup directory configured");
+        }
+
+        var workspace = Directory.Exists(searchPath)
+            ? Path.GetFullPath(searchPath)
+            : Path.GetDirectoryName(Path.GetFullPath(searchPath)) ?? ".";
+        var resolved = Path.GetFullPath(
+            Path.IsPathRooted(backupDir) ? backupDir : Path.Combine(workspace, backupDir)
+        );
+
+        if (
+            string.Equals(
+                resolved.TrimEnd(Path.DirectorySeparatorChar),
+                workspace.TrimEnd(Path.DirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            // Already covered by the workspace write probe; a second identical line says nothing.
+            return new DoctorCheck("Backup", DoctorStatus.Info,
+                "Backups go to the workspace directory (covered by the Write check)");
+        }
+
+        var check = ProbeWriteAccess(resolved);
+        return check.Status == DoctorStatus.Ok
+            ? new DoctorCheck("Backup", DoctorStatus.Ok, $"Backup directory '{resolved}' is writable")
+            : new DoctorCheck("Backup", check.Status, check.Details, check.Hint);
     }
 
     private static DoctorCheck CheckConfigFile(string searchPath)
