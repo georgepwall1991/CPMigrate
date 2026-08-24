@@ -42,7 +42,7 @@ public class ConfigEnumParsingTests : IDisposable
             """
         );
 
-        var (config, _, error) = new ConfigService(
+        var (config, _, error, _) = new ConfigService(
             SilentConsoleService.Instance
         ).LoadConfigDetailed(_root);
 
@@ -58,7 +58,7 @@ public class ConfigEnumParsingTests : IDisposable
     {
         WriteConfig("""{ "outputFormat": "Sarif" }""");
 
-        var (config, _, error) = new ConfigService(
+        var (config, _, error, _) = new ConfigService(
             SilentConsoleService.Instance
         ).LoadConfigDetailed(_root);
 
@@ -77,7 +77,7 @@ public class ConfigEnumParsingTests : IDisposable
         // config — so even in-range numbers are refused, to keep one accepted spelling.
         WriteConfig(json);
 
-        var (config, _, error) = new ConfigService(
+        var (config, _, error, _) = new ConfigService(
             SilentConsoleService.Instance
         ).LoadConfigDetailed(_root);
 
@@ -92,7 +92,7 @@ public class ConfigEnumParsingTests : IDisposable
         // when it is not.
         WriteConfig("""{ "failOn": "Hgih" }""");
 
-        var (config, _, error) = new ConfigService(
+        var (config, _, error, _) = new ConfigService(
             SilentConsoleService.Instance
         ).LoadConfigDetailed(_root);
 
@@ -115,7 +115,7 @@ public class ConfigEnumParsingTests : IDisposable
             .Should()
             .Contain("\"conflictStrategy\": \"Highest\"", "the schema permits only names");
 
-        var (config, _, error) = service.LoadConfigDetailed(_root);
+        var (config, _, error, _) = service.LoadConfigDetailed(_root);
         error.Should().BeNull();
         config!.ConflictStrategy.Should().Be(ConflictStrategy.Highest);
     }
@@ -126,9 +126,7 @@ public class ConfigEnumParsingTests : IDisposable
         WriteConfig("""{ "failOn": "Critical" }""");
         var options = new Options { Analyze = true };
 
-        var (config, _, _) = new ConfigService(SilentConsoleService.Instance).LoadConfigDetailed(
-            _root
-        );
+        var (config, _, _, _) = new ConfigService(SilentConsoleService.Instance).LoadConfigDetailed(_root);
         ConfigService.MergeConfig(options, config!, new HashSet<string>());
 
         options.FailOn.Should().Be(FailOnSeverity.Critical);
@@ -140,9 +138,7 @@ public class ConfigEnumParsingTests : IDisposable
         WriteConfig("""{ "failOn": "Critical" }""");
         var options = new Options { Analyze = true, FailOn = FailOnSeverity.Low };
 
-        var (config, _, _) = new ConfigService(SilentConsoleService.Instance).LoadConfigDetailed(
-            _root
-        );
+        var (config, _, _, _) = new ConfigService(SilentConsoleService.Instance).LoadConfigDetailed(_root);
         ConfigService.MergeConfig(options, config!, new HashSet<string> { "fail-on" });
 
         options.FailOn.Should().Be(FailOnSeverity.Low);

@@ -468,21 +468,35 @@ public static class ProgramRunner
     )
     {
         var startDir = options.GetConfigSearchStartDirectory();
-        var (config, configPath, errorMessage) = configService.LoadConfigDetailed(startDir);
+        var (config, configPath, errorMessage, warnings) = configService.LoadConfigDetailed(
+            startDir
+        );
 
-        // An ErrorMessage here may be a fatal load failure (config == null) or a
-        // warning-only lint finding (config loaded). Only a fatal failure skips merging;
-        // valid settings in the file must stay active either way.
-        if (!string.IsNullOrWhiteSpace(errorMessage) && !options.Output.IsMachineReadable())
+        // ErrorMessage is a fatal load failure (config == null). Warning-only findings —
+        // contradictory settings, unknown keys — ride the warnings list; they never disable
+        // merging, because valid settings in the file must stay active either way.
+        if (!options.Output.IsMachineReadable())
         {
-            consoleService.Warning(errorMessage);
+            foreach (var warning in warnings)
+            {
+                consoleService.Warning(warning);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            if (!options.Output.IsMachineReadable())
+            {
+                consoleService.Warning(errorMessage);
+            }
+
+            return;
         }
 
         if (config == null)
         {
             return;
         }
-
         var cliArgsProvided = CliArgumentParser.GetExplicitArguments(args);
         ConfigService.MergeConfig(options, config, cliArgsProvided);
 

@@ -77,7 +77,7 @@ public class ConfigServiceTests : IDisposable
         File.WriteAllText(configPath, "{ invalid json without closing brace");
 
         // Act
-        var (result, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+        var (result, _, errorMessage, _) = _configService.LoadConfigDetailed(_testDirectory);
 
         // Assert - malformed JSON still errors exactly as before; unknown-key linting adds nothing.
         result.Should().BeNull();
@@ -227,14 +227,15 @@ public class ConfigServiceTests : IDisposable
         File.WriteAllText(configPath, @"{ ""fialOn"": ""Never"" }");
 
         // Act
-        var (config, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+        var (config, _, errorMessage, warnings) = _configService.LoadConfigDetailed(_testDirectory);
 
         // Assert - the typo is reported with its nearest real key, but never fails the run.
         config.Should().NotBeNull();
-        errorMessage.Should().NotBeNull();
-        errorMessage.Should().Contain(configPath);
-        errorMessage.Should().Contain("'fialOn'");
-        errorMessage.Should().Contain("did you mean 'failOn'?");
+        errorMessage.Should().BeNull();
+        warnings.Should().HaveCount(1);
+        warnings[0].Should().Contain(configPath);
+        warnings[0].Should().Contain("'fialOn'");
+        warnings[0].Should().Contain("did you mean 'failOn'?");
     }
 
     [Fact]
@@ -248,14 +249,15 @@ public class ConfigServiceTests : IDisposable
         );
 
         // Act
-        var (config, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+        var (config, _, errorMessage, warnings) = _configService.LoadConfigDetailed(_testDirectory);
 
         // Assert
         config.Should().NotBeNull();
-        errorMessage.Should().Contain("'fialOn'");
-        errorMessage.Should().Contain("did you mean 'failOn'?");
-        errorMessage.Should().Contain("'verifyStrickt'");
-        errorMessage.Should().Contain("did you mean 'verifyStrict'?");
+        errorMessage.Should().BeNull();
+        string.Join(" ", warnings).Should().Contain("'fialOn'");
+        string.Join(" ", warnings).Should().Contain("did you mean 'failOn'?");
+        string.Join(" ", warnings).Should().Contain("'verifyStrickt'");
+        string.Join(" ", warnings).Should().Contain("did you mean 'verifyStrict'?");
     }
 
     [Fact]
@@ -266,11 +268,11 @@ public class ConfigServiceTests : IDisposable
         File.WriteAllText(configPath, @"{ ""retention"": { ""maxBackupsx"": 5 } }");
 
         // Act
-        var (_, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+        var (_, _, errorMessage, warnings) = _configService.LoadConfigDetailed(_testDirectory);
 
         // Assert
-        errorMessage.Should().Contain("'retention.maxBackupsx'");
-        errorMessage.Should().Contain("did you mean 'retention.maxBackups'?");
+        string.Join(" ", warnings).Should().Contain("'retention.maxBackupsx'");
+        string.Join(" ", warnings).Should().Contain("did you mean 'retention.maxBackups'?");
     }
 
     [Fact]
@@ -281,12 +283,13 @@ public class ConfigServiceTests : IDisposable
         File.WriteAllText(configPath, @"{ ""Failon"": ""Never"" }");
 
         // Act
-        var (config, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+        var (config, _, errorMessage, warnings) = _configService.LoadConfigDetailed(_testDirectory);
 
         // Assert
         config.Should().NotBeNull();
         config!.FailOn.Should().Be(FailOnSeverity.Never);
         errorMessage.Should().BeNull();
+        warnings.Should().BeEmpty();
     }
 
     [Fact]
@@ -315,12 +318,13 @@ public class ConfigServiceTests : IDisposable
         File.WriteAllText(configPath, configContent);
 
         // Act
-        var (config, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+        var (config, _, errorMessage, warnings) = _configService.LoadConfigDetailed(_testDirectory);
 
         // Assert
         config.Should().NotBeNull();
         config!.VerifyStrict.Should().BeFalse();
         errorMessage.Should().BeNull();
+        warnings.Should().BeEmpty();
     }
 
     [Fact]

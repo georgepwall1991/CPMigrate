@@ -30,7 +30,12 @@ public class ConfigService
     /// <returns>The loaded config, or null if no config file found.</returns>
     public ConfigModel? LoadConfig(string startDirectory)
     {
-        var (config, _, errorMessage) = LoadConfigDetailed(startDirectory);
+        var (config, _, errorMessage, warnings) = LoadConfigDetailed(startDirectory);
+        foreach (var warning in warnings)
+        {
+            _consoleService?.Warning(warning);
+        }
+
         if (!string.IsNullOrWhiteSpace(errorMessage))
         {
             _consoleService?.Warning(errorMessage);
@@ -39,14 +44,17 @@ public class ConfigService
         return config;
     }
 
-    public (ConfigModel? Config, string? ConfigPath, string? ErrorMessage) LoadConfigDetailed(
-        string startDirectory
-    )
+    public (
+        ConfigModel? Config,
+        string? ConfigPath,
+        string? ErrorMessage,
+        IReadOnlyList<string> Warnings
+    ) LoadConfigDetailed(string startDirectory)
     {
         var configPath = DiscoverConfig(startDirectory);
         if (configPath == null)
         {
-            return (null, null, null);
+            return (null, null, null, []);
         }
 
         return ParseConfigDetailed(configPath);
@@ -89,7 +97,12 @@ public class ConfigService
     /// <returns>The parsed config, or null if parsing failed.</returns>
     public ConfigModel? ParseConfig(string configPath)
     {
-        var (config, _, errorMessage) = ParseConfigDetailed(configPath);
+        var (config, _, errorMessage, warnings) = ParseConfigDetailed(configPath);
+        foreach (var warning in warnings)
+        {
+            _consoleService?.Warning(warning);
+        }
+
         if (!string.IsNullOrWhiteSpace(errorMessage))
         {
             _consoleService?.Warning(errorMessage);
@@ -129,10 +142,17 @@ public class ConfigService
         Converters = { EnumConverter },
     };
 
-    private (ConfigModel? Config, string? ConfigPath, string? ErrorMessage) ParseConfigDetailed(
-        string configPath
-    )
+    private (
+        ConfigModel? Config,
+        string? ConfigPath,
+        string? ErrorMessage,
+        IReadOnlyList<string> Warnings
+    ) ParseConfigDetailed(string configPath)
     {
+        // ErrorMessage is reserved for fatal load failures — a non-null Config is always usable
+        // and must never be discarded because of a warning. ValidateConfig findings (contradictory
+        // settings) and unknown-key lint findings ride Warnings instead, so callers can surface
+        // them without treating them as failures.
         try
         {
             var json = File.ReadAllText(configPath);
@@ -143,7 +163,8 @@ public class ConfigService
                 return (
                     null,
                     configPath,
-                    $"Config file {configPath} deserialized to null — check the JSON structure."
+                    $"Config file {configPath} deserialized to null — check the JSON structure.",
+                    []
                 );
             }
 
@@ -151,18 +172,28 @@ public class ConfigService
                 .Where(warning => warning is not null)
                 .Select(warning => warning!)
                 .ToList();
-            return (config, configPath, warnings.Count > 0 ? string.Join(" ", warnings) : null);
+            return (config, configPath, null, warnings);
         }
         catch (JsonException ex)
         {
             var hint = ex.LineNumber.HasValue
                 ? $" (line {ex.LineNumber + 1}, position {ex.BytePositionInLine + 1})"
                 : string.Empty;
-            return (null, configPath, $"Invalid JSON in {configPath}{hint}: {ex.Message}");
+            return (
+                null,
+                configPath,
+                $"Invalid JSON in {configPath}{hint}: {ex.Message}",
+                []
+            );
         }
         catch (IOException ex)
         {
-            return (null, configPath, $"Failed to read config file {configPath}: {ex.Message}");
+            return (
+                null,
+                configPath,
+                $"Failed to read config file {configPath}: {ex.Message}",
+                []
+            );
         }
     }
 
