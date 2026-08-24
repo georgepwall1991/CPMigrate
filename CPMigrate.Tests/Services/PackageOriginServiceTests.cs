@@ -7,9 +7,10 @@ namespace CPMigrate.Tests.Services;
 /// <summary>
 /// <c>--why</c> answers "where does this package come from?" — and a diagnostic that answers the
 /// wrong project, misses drift, or shrugs at a typo is worse than no answer. These tests pin the
-/// classification (direct vs update-only vs transitive), the introducers read from the resolved
-/// graph's own edges, the drift verdict over normalized versions, and the near-miss suggestions
-/// that turn an unknown ID into something actionable.
+/// classification (direct vs inherited vs update-only vs transitive), the introducers read from
+/// the resolved graph's own edges, the drift verdict over normalized versions — including within a
+/// single multi-targeted project — the visibility of projects that do not have the package at all,
+/// and the near-miss suggestions that turn an unknown ID into something actionable.
 /// </summary>
 public class PackageOriginServiceTests
 {
@@ -24,17 +25,19 @@ public class PackageOriginServiceTests
                 Resolved("App", isTransitive: false),
                 Resolved("Worker", isTransitive: true),
             ],
-            declaredReferences: [Declared(projectName: "App")],
+            declaredReferences: [Declared("App")],
             graphs: [GraphWithIntroducer("Worker")]
         );
 
         var report = PackageOriginService.Analyze(request);
+
         report.Found.Should().BeTrue();
         report.Projects.Should().Contain(p =>
-            p.ProjectName == "App.csproj" && p.Kind == PackageOriginKind.CentralPin
+            p.DisplayPath == "src/App/App.csproj" && p.Kind == PackageOriginKind.CentralPin
         );
         var worker = report.Projects.Should().Contain(p =>
-            p.ProjectName == "Worker.csproj" && p.Kind == PackageOriginKind.TransitiveOnly
+            p.DisplayPath == "src/Worker/Worker.csproj"
+            && p.Kind == PackageOriginKind.TransitiveOnly
         ).Subject;
         worker.TransitiveIntroducers.Should().Equal("Newtonsoft.Json");
     }
@@ -44,25 +47,17 @@ public class PackageOriginServiceTests
     {
         var request = BuildRequest(
             references: [Resolved("App", version: "4.0.2", isTransitive: false)],
-            declaredReferences:
-            [
-                new(
-                    PackageId,
-                    Version: "",
-                    "/ws/src/App/App.csproj",
-                    "App.csproj"
-                ),
-            ]
+            declaredReferences: [Declared("App")]
         );
 
         var report = PackageOriginService.Analyze(request);
 
-        var app = report.Projects.Single(p => p.ProjectName == "App.csproj");
+        var app = report.Projects.Single(p => p.DisplayPath == "src/App/App.csproj");
         app.Kind.Should().Be(PackageOriginKind.CentralPin);
         app.InlineVersion.Should().BeNull();
         // The central pin's value comes from restore, so the report carries it even though the
         // project file itself declares no version.
-        app.ResolvedVersion.Should().Be("4.0.2");
+        app.ResolvedVersions.Should().Equal(["4.0.2"]);
     }
 
     [Fact]
@@ -72,18 +67,13 @@ public class PackageOriginServiceTests
             references: [Resolved("App", version: "3.1.0", isTransitive: false)],
             declaredReferences:
             [
-                new(
-                    PackageId,
-                    Version: "3.1.0",
-                    "/ws/src/App/App.csproj",
-                    "App.csproj"
-                ),
+                new(PackageId, Version: "3.1.0", "/ws/src/App/App.csproj", "App"),
             ]
         );
 
         var report = PackageOriginService.Analyze(request);
 
-        var app = report.Projects.Single(p => p.ProjectName == "App.csproj");
+        var app = report.Projects.Single(p => p.DisplayPath == "src/App/App.csproj");
         app.Kind.Should().Be(PackageOriginKind.InlineVersion);
         app.InlineVersion.Should().Be("3.1.0");
     }
@@ -96,7 +86,7 @@ public class PackageOriginServiceTests
             references: [],
             declaredReferences:
             [
-                new(PackageId, Version: "", "/ws/src/App/App.csproj", "App.csproj")
+                new(PackageId, Version: "", "/ws/src/App/App.csproj", "App")
                 {
                     IsMetadataOnlyUpdate = true,
                 },
@@ -105,9 +95,56 @@ public class PackageOriginServiceTests
 
         var report = PackageOriginService.Analyze(request);
 
-        report.Projects.Single(p => p.ProjectName == "App.csproj")
+        report.Projects.Single(p => p.DisplayPath == "src/App/App.csproj")
             .Kind.Should()
             .Be(PackageOriginKind.UpdateOnly);
+    }
+
+    [Fact]
+    public void Analyze_ResolvableTopLevelButNeverDeclared_IsInheritedRatherThanTransitive()
+    {
+        // A resolved row marked non-transitive with no local declaration comes from an import —
+        // Directory.Build.props, an SDK, a targets file. Calling it transitive would send someone
+        // hunting for a referencing package that does not exist.
+        var request = BuildRequest(
+            references: [Resolved("App", version: "8.0.0", isTransitive: false)],
+            declaredReferences: []
+        );
+
+        var report = PackageOriginService.Analyze(request);
+
+        var app = report.Projects.Single(p => p.DisplayPath == "src/App/App.csproj");
+        app.Kind.Should().Be(PackageOriginKind.Inherited);
+        app.TransitiveIntroducers.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_MultiTargetedProjectWithDifferentVersions_RetainsEveryVersion()
+    {
+        // Two frameworks resolving to different versions of one package is real intra-project
+        // drift; keeping only the first row would make the verdict depend on scan order.
+        var request = BuildRequest(
+            references:
+            [
+                Resolved("App", version: "3.1.1", isTransitive: false),
+                Resolved("App", version: "4.0.2", isTransitive: false),
+            ],
+            declaredReferences: [Declared("App")]
+        );
+
+        var report = PackageOriginService.Analyze(request);
+
+        var app = report.Projects.Single(p => p.DisplayPath == "src/App/App.csproj");
+        app.ResolvedVersions.Should().BeEquivalentTo(["3.1.1", "4.0.2"]);
+
+        // Both versions are reported, and the one project appears under each.
+        report.VersionsInUse.Should().HaveCount(2);
+        report.VersionsInUse.Should().Contain(v =>
+            v.Version == "3.1.1" && v.Projects.Single() == "src/App/App.csproj"
+        );
+        report.VersionsInUse.Should().Contain(v =>
+            v.Version == "4.0.2" && v.Projects.Single() == "src/App/App.csproj"
+        );
     }
 
     [Fact]
@@ -127,11 +164,90 @@ public class PackageOriginServiceTests
 
         report.VersionsInUse.Should().HaveCount(2);
         report.VersionsInUse.Should().Contain(v =>
-            v.Version == "4.0.2" && v.ProjectNames.Count == 2
+            v.Version == "4.0.2" && v.Projects.Count == 2
         );
         report.VersionsInUse.Should().Contain(v =>
-            v.Version == "3.1.0" && v.ProjectNames.Single() == "Worker.csproj"
+            v.Version == "3.1.0" && v.Projects.Single() == "src/Worker/Worker.csproj"
         );
+    }
+
+    [Fact]
+    public void Analyze_ProjectWithoutThePackage_IsStillReportedAsNotPresent()
+    {
+        // A project that declares and resolves nothing for this package is not allowed to vanish:
+        // "which projects don't have it" is half of where-does-it-come-from.
+        var request = BuildRequest(
+            references: [Resolved("App", isTransitive: false)],
+            declaredReferences: [Declared("App")],
+            projectPaths:
+            [
+                "/ws/src/App/App.csproj",
+                "/ws/src/Empty/Empty.csproj",
+            ]
+        );
+
+        var report = PackageOriginService.Analyze(request);
+
+        report.Projects.Select(p => p.DisplayPath)
+            .Should()
+            .Contain("src/Empty/Empty.csproj");
+        report.Projects.Single(p => p.DisplayPath == "src/Empty/Empty.csproj")
+            .Kind.Should()
+            .Be(PackageOriginKind.NotPresent);
+    }
+
+    [Fact]
+    public void Analyze_DuplicateProjectFileNames_AreDisambiguatedByRelativePath()
+    {
+        var request = BuildRequest(
+            references:
+            [
+                Resolved("App", version: "4.0.2", isTransitive: false),
+                new(
+                    PackageId,
+                    "3.1.1",
+                    "/ws/tests/App/App.csproj",
+                    "App",
+                    IsTransitive: true
+                ),
+            ],
+            declaredReferences: [Declared("App")],
+            projectPaths:
+            [
+                "/ws/src/App/App.csproj",
+                "/ws/tests/App/App.csproj",
+            ]
+        );
+
+        var report = PackageOriginService.Analyze(request);
+
+        // Two App.csproj files must remain distinguishable everywhere they appear.
+        report.VersionsInUse.Should().Contain(v =>
+            v.Version == "4.0.2" && v.Projects.Single() == "src/App/App.csproj"
+        );
+        report.VersionsInUse.Should().Contain(v =>
+            v.Version == "3.1.1" && v.Projects.Single() == "tests/App/App.csproj"
+        );
+    }
+
+    [Fact]
+    public async Task RunAsync_PackageAbsentButScansFailed_ReturnsIncompleteRatherThanNotFound()
+    {
+        // Absence proven only over the projects that happened to scan is not absence: the package
+        // may live in an unread project. Exit 1 would tell a script to stop looking.
+        var request = BuildRequest(
+            references: [],
+            declaredReferences: [],
+            failedScanCount: 1,
+            projectCount: 2
+        );
+        var console = new CPMigrate.Tests.TestDoubles.FakeConsoleService();
+        var service = new PackageOriginService(console);
+
+        var exitCode = await service.RunAsync(request);
+
+        exitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+        console.ErrorMessages.Should().Contain(m => m.Contains("could not be read"));
     }
 
     [Fact]
@@ -210,7 +326,9 @@ public class PackageOriginServiceTests
     // Builders
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static string ProjectPath(string projectName) => $"/ws/src/{projectName}/{projectName}.csproj";
+    private static string ProjectPath(string projectName) =>
+        $"/ws/src/{projectName}/{projectName}.csproj";
+
 
     private static PackageReference Resolved(
         string projectName,
@@ -250,13 +368,17 @@ public class PackageOriginServiceTests
     private static PackageOriginRequest BuildRequest(
         IReadOnlyList<PackageReference> references,
         IReadOnlyList<PackageReference> declaredReferences,
-        IReadOnlyList<ProjectResolvedGraph>? graphs = null
+        IReadOnlyList<ProjectResolvedGraph>? graphs = null,
+        IReadOnlyList<string>? projectPaths = null,
+        int failedScanCount = 0,
+        int projectCount = 0
     ) =>
         new(
             PackageId,
-            new ProjectPackageInfo(references, DeclaredReferences: declaredReferences),
+            new ProjectPackageInfo(references, BasePath: "/ws", DeclaredReferences: declaredReferences),
             graphs ?? [],
-            ProjectCount: 0,
-            FailedScanCount: 0
+            projectCount,
+            failedScanCount,
+            projectPaths
         );
 }

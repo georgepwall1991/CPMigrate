@@ -285,7 +285,10 @@ public static class ProgramRunner
                     packageInfo,
                     resolvedGraphs,
                     projectPaths.Count,
-                    failedScans
+                    failedScans,
+                    // Every discovered project, including ones whose scans produced no rows —
+                    // "this project does not have the package" is part of the answer.
+                    projectPaths
                 )
             );
         }

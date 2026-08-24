@@ -23,17 +23,22 @@ namespace CPMigrate.Services;
 /// </param>
 /// <param name="ProjectCount">How many projects the workspace discovery found.</param>
 /// <param name="FailedScanCount">How many of those could not be scanned at all.</param>
+/// <param name="ProjectPaths">
+/// Every discovered project path, including ones whose scans produced no package records. Without
+/// this a project that references nothing would silently vanish from the report.
+/// </param>
 public sealed record PackageOriginRequest(
     string PackageId,
     ProjectPackageInfo Packages,
     IReadOnlyList<ProjectResolvedGraph> ResolvedGraphs,
     int ProjectCount,
-    int FailedScanCount
+    int FailedScanCount,
+    IReadOnlyList<string>? ProjectPaths = null
 );
 
 /// <summary>
 /// How one project relates to the traced package, strongest relationship first: an Include beats an
-/// Update-only amendment, and either beats a transitive sighting.
+/// Update-only amendment, and either beats a sighting without a local declaration.
 /// </summary>
 public enum PackageOriginKind
 {
@@ -42,6 +47,12 @@ public enum PackageOriginKind
 
     /// <summary>The package appears only in the resolved graph — some direct dependency pulls it in.</summary>
     TransitiveOnly,
+
+    /// <summary>
+    /// The resolved graph lists the package as top-level, but no project file declares it: it came
+    /// in through Directory.Build.props, an SDK import, or another imported file.
+    /// </summary>
+    Inherited,
 
     /// <summary>
     /// The project only amends an inherited reference via <c>PackageReference Update</c>; it does not
@@ -58,15 +69,19 @@ public enum PackageOriginKind
 
 /// <summary>One project's relationship to the traced package.</summary>
 /// <param name="ProjectPath">Full path to the project file.</param>
-/// <param name="ProjectName">File name of the project, for display.</param>
+/// <param name="DisplayPath">
+/// Path relative to the scan root when one is known, otherwise the file name — two projects named
+/// App.csproj in different directories must stay distinguishable everywhere they are shown.
+/// </param>
 /// <param name="Kind">The strongest relationship found.</param>
 /// <param name="InlineVersion">
 /// The version the project pins inline when <paramref name="Kind"/> is <see cref="PackageOriginKind.InlineVersion"/>,
 /// preferring <c>VersionOverride</c> — under CPM that is the version actually in force.
 /// </param>
-/// <param name="ResolvedVersion">
-/// The version NuGet resolved for this project, normalized for comparison; null when the package
-/// does not reach this project.
+/// <param name="ResolvedVersions">
+/// Every distinct version NuGet resolved for this project, normalized for comparison. More than one
+/// is ordinary for a multi-targeted project — one version per target framework — and losing all but
+/// the first would hide exactly the intra-project drift the report exists to catch.
 /// </param>
 /// <param name="TransitiveIntroducers">
 /// Direct packages that pull the target in, when <paramref name="Kind"/> is
@@ -74,17 +89,17 @@ public enum PackageOriginKind
 /// </param>
 public sealed record PackageOriginProjectReport(
     string ProjectPath,
-    string ProjectName,
+    string DisplayPath,
     PackageOriginKind Kind,
     string? InlineVersion = null,
-    string? ResolvedVersion = null,
+    IReadOnlyList<string>? ResolvedVersions = null,
     IReadOnlyList<string>? TransitiveIntroducers = null
 );
 
 /// <summary>One distinct version of the traced package, and who resolves to it.</summary>
 public sealed record PackageOriginVersionUsage(
     string Version,
-    IReadOnlyList<string> ProjectNames
+    IReadOnlyList<string> Projects
 );
 
 /// <summary>The answer to a <c>--why</c> question, ready to render.</summary>
@@ -124,9 +139,10 @@ internal sealed class PackageOriginService
     }
 
     /// <summary>
-    /// Analyzes, renders, and maps the outcome onto exit codes: success when answered, a validation
-    /// error when the package is not in the workspace at all, and incomplete-analysis when part of
-    /// the workspace went unexamined — a diagnostic must not read as complete when it is not.
+    /// Analyzes, renders, and maps the outcome onto exit codes: success when answered, incomplete
+    /// analysis when part of the workspace went unexamined — whether or not the package was found,
+    /// because absence proven only over half the workspace is not absence — and a validation error
+    /// only when every project was read and the package is genuinely not there.
     /// </summary>
     public Task<int> RunAsync(PackageOriginRequest request)
     {
@@ -138,8 +154,14 @@ internal sealed class PackageOriginService
 
         if (!report.Found)
         {
+            var someUnread = request.FailedScanCount > 0;
             _console.Error(
-                $"Package '{request.PackageId}' was not declared or resolved by any scanned project."
+                someUnread
+                    ? $"Package '{request.PackageId}' was not found among the projects that could "
+                        + $"be scanned, but {request.FailedScanCount} of {request.ProjectCount} "
+                        + "project(s) could not be read, so it may still live there."
+                    : $"Package '{request.PackageId}' was not declared or resolved by any scanned "
+                        + "project."
             );
             foreach (var suggestion in report.Suggestions)
             {
@@ -151,7 +173,9 @@ internal sealed class PackageOriginService
                 _console.Dim("Run --tree --transitive to list every package in the workspace.");
             }
 
-            return Task.FromResult(ExitCodes.ValidationError);
+            return Task.FromResult(
+                someUnread ? ExitCodes.IncompleteAnalysis : ExitCodes.ValidationError
+            );
         }
 
         if (request.FailedScanCount > 0)
@@ -162,7 +186,7 @@ internal sealed class PackageOriginService
             );
         }
 
-        Render(request.PackageId, report);
+        Render(request, report);
 
         return Task.FromResult(
             request.FailedScanCount > 0 ? ExitCodes.IncompleteAnalysis : ExitCodes.Success
@@ -170,10 +194,12 @@ internal sealed class PackageOriginService
     }
 
     /// <summary>
-    /// Classifies every scanned project against the package and settles the drift verdict.
+    /// Classifies every discovered project against the package and settles the drift verdict.
     ///
     /// Versions are compared normalized ("4.3" and "4.3.0" are the same version), because
-    /// manufacturing drift out of two spellings of one release would teach nobody anything.
+    /// manufacturing drift out of two spellings of one release would teach nobody anything. Project
+    /// identity comes from the discovered paths, so a project that declares nothing still appears —
+    /// "this project does not have it" is part of the answer.
     /// </summary>
     internal static PackageOriginReport Analyze(PackageOriginRequest request)
     {
@@ -181,11 +207,13 @@ internal sealed class PackageOriginService
             .GroupBy(g => g.ProjectPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
+        var knownProjectPaths = request.ProjectPaths ?? [];
         List<PackageOriginProjectReport> projects = [];
         foreach (
-            var projectPath in request
-                .Packages.References.Select(r => r.ProjectPath)
+            var projectPath in knownProjectPaths
+                .Concat(request.Packages.References.Select(r => r.ProjectPath))
                 .Concat(request.Packages.GetDeclaredReferences().Select(r => r.ProjectPath))
+                .Concat(graphsByProject.Keys)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
         )
@@ -194,11 +222,19 @@ internal sealed class PackageOriginService
         }
 
         var versionsInUse = projects
-            .Where(p => p.ResolvedVersion is not null)
-            .GroupBy(p => VersionText.Normalize(p.ResolvedVersion!), StringComparer.OrdinalIgnoreCase)
+            .Where(p => p.ResolvedVersions is { Count: > 0 })
+            .SelectMany(
+                p => p.ResolvedVersions!,
+                (project, version) => (Project: project, Version: version)
+            )
+            .GroupBy(item => item.Version, StringComparer.OrdinalIgnoreCase)
             .Select(g => new PackageOriginVersionUsage(
                 g.Key,
-                [.. g.Select(p => p.ProjectName).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)]
+                [
+                    .. g.Select(item => item.Project.DisplayPath)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(n => n, StringComparer.OrdinalIgnoreCase),
+                ]
             ))
             .ToList();
 
@@ -226,10 +262,7 @@ internal sealed class PackageOriginService
             .Packages.GetDeclaredReferences()
             .Where(r =>
                 string.Equals(r.ProjectPath, projectPath, StringComparison.OrdinalIgnoreCase)
-                && r.PackageName.Equals(
-                    request.PackageId,
-                    StringComparison.OrdinalIgnoreCase
-                )
+                && r.PackageName.Equals(request.PackageId, StringComparison.OrdinalIgnoreCase)
             )
             .ToList();
 
@@ -246,9 +279,16 @@ internal sealed class PackageOriginService
                 && r.PackageName.Equals(request.PackageId, StringComparison.OrdinalIgnoreCase)
             )
             .ToList();
-        var resolvedVersion = resolved
-            .Select(r => r.Version)
-            .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
+        // A multi-targeted project legitimately resolves to one version per framework. Keeping only
+        // the first row would make the report depend on enumeration order and hide intra-project
+        // drift, so every distinct spelling is retained.
+        var resolvedVersions = resolved
+            .Where(r => !string.IsNullOrWhiteSpace(r.Version))
+            .Select(r => VersionText.Normalize(r.Version))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v, StringComparer.Ordinal)
+            .ToList();
 
         PackageOriginKind kind;
         if (includes.Count > 0)
@@ -261,6 +301,13 @@ internal sealed class PackageOriginService
         {
             kind = PackageOriginKind.UpdateOnly;
         }
+        else if (resolved.Any(r => !r.IsTransitive))
+        {
+            // Top-level in the resolved graph yet absent from the project file: the declaration
+            // lives somewhere imported — Directory.Build.props, an SDK, a targets file. Calling
+            // this transitive would send someone hunting for a referencing package that is not.
+            kind = PackageOriginKind.Inherited;
+        }
         else
         {
             kind = resolved.Count > 0
@@ -269,19 +316,37 @@ internal sealed class PackageOriginService
         }
 
         IReadOnlyList<string>? introducers = null;
-        if (kind == PackageOriginKind.TransitiveOnly && graphsByProject.TryGetValue(projectPath, out var graph))
+        if (
+            kind == PackageOriginKind.TransitiveOnly
+            && graphsByProject.TryGetValue(projectPath, out var graph)
+        )
         {
             introducers = FindIntroducers(graph, request.PackageId);
         }
 
         return new PackageOriginProjectReport(
             projectPath,
-            Path.GetFileName(projectPath),
+            DisplayPath(projectPath, request.Packages.BasePath),
             kind,
             inlineVersion,
-            resolvedVersion is null ? null : VersionText.Normalize(resolvedVersion),
+            resolvedVersions,
             introducers ?? []
         );
+    }
+
+    /// <summary>
+    /// Names projects by their path relative to the scan root, forward-slashed, matching the
+    /// reporting identity used elsewhere; two projects sharing a file name must remain
+    /// distinguishable, so a bare file name is used only when no root is known.
+    /// </summary>
+    private static string DisplayPath(string projectPath, string? basePath)
+    {
+        if (string.IsNullOrWhiteSpace(basePath))
+        {
+            return Path.GetFileName(projectPath);
+        }
+
+        return Path.GetRelativePath(basePath, projectPath).Replace('\\', '/');
     }
 
     /// <summary>
@@ -298,6 +363,8 @@ internal sealed class PackageOriginService
                 .GroupBy(p => p.PackageId, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
+            // A package the graph itself flags as direct was declared somewhere this scan did not
+            // read; there is no introducer to name, and guessing one would be worse than silence.
             if (!byId.TryGetValue(packageId, out var target) || target.IsDirect)
             {
                 continue;
@@ -407,28 +474,30 @@ internal sealed class PackageOriginService
         return previous[right.Length];
     }
 
-    private void Render(string packageId, PackageOriginReport report)
+    private void Render(PackageOriginRequest request, PackageOriginReport report)
     {
         var root = new Tree(
-            $"[bold {SpectrePalette.Ink.Primary}]{Markup.Escape(packageId)}[/]"
+            $"[bold {SpectrePalette.Ink.Primary}]{Markup.Escape(report.PackageId)}[/]"
         )
         {
             Guide = TreeGuide.Line,
         };
 
-        foreach (var group in report.Projects.GroupBy(p => p.Kind))
+        foreach (var kind in Enum.GetValues<PackageOriginKind>())
         {
-            var (label, ink) = group.Key switch
+            var group = report.Projects.Where(p => p.Kind == kind).ToList();
+            if (group.Count == 0)
             {
-                PackageOriginKind.InlineVersion => ("declared directly (inline version)", SpectrePalette.Ink.Warning),
-                PackageOriginKind.CentralPin => ("declared directly (central pin)", SpectrePalette.Ink.Success),
-                PackageOriginKind.UpdateOnly => ("update-only amendment", SpectrePalette.Ink.Secondary),
-                PackageOriginKind.TransitiveOnly => ("seen transitively", SpectrePalette.Ink.Muted),
-                _ => ("not present", SpectrePalette.Ink.Dim),
-            };
+                continue;
+            }
 
-            var node = root.AddNode($"[{ink}]{label} ({group.Count()})[/]");
-            foreach (var project in group.OrderBy(p => p.ProjectPath, StringComparer.OrdinalIgnoreCase))
+            var node = root.AddNode(RenderKindLabel(kind, group.Count));
+            foreach (
+                var project in group.OrderBy(
+                    p => p.ProjectPath,
+                    StringComparer.OrdinalIgnoreCase
+                )
+            )
             {
                 node.AddNode(RenderProject(project));
             }
@@ -442,13 +511,51 @@ internal sealed class PackageOriginService
         var directCount = report.Projects.Count(p =>
             p.Kind is PackageOriginKind.InlineVersion or PackageOriginKind.CentralPin
         );
+        var inheritedCount = report.Projects.Count(p => p.Kind == PackageOriginKind.Inherited);
         var updateOnlyCount = report.Projects.Count(p => p.Kind == PackageOriginKind.UpdateOnly);
         var transitiveCount = report.Projects.Count(p => p.Kind == PackageOriginKind.TransitiveOnly);
         _console.Dim(
-            $"  {report.Projects.Count} project(s): {directCount} direct, {updateOnlyCount} update-only, "
-                + $"{transitiveCount} transitive."
+            $"  {report.Projects.Count} project(s): {directCount} direct, {updateOnlyCount} "
+                + $"update-only, {transitiveCount} transitive"
+                + (inheritedCount > 0 ? $", {inheritedCount} inherited" : "")
+                + "."
         );
+
+        if (request.FailedScanCount > 0)
+        {
+            _console.Dim(
+                $"  {request.FailedScanCount} project(s) could not be read and were not examined."
+            );
+        }
+
         _console.WriteLine();
+    }
+
+    private static string RenderKindLabel(PackageOriginKind kind, int count)
+    {
+        var (label, ink) = kind switch
+        {
+            PackageOriginKind.InlineVersion => (
+                "declared directly (inline version)",
+                SpectrePalette.Ink.Warning
+            ),
+            PackageOriginKind.CentralPin => (
+                "declared directly (central pin)",
+                SpectrePalette.Ink.Success
+            ),
+            PackageOriginKind.Inherited => (
+                "resolved directly, declared outside the project",
+                SpectrePalette.Ink.Accent
+            ),
+            PackageOriginKind.UpdateOnly => (
+                "update-only amendment",
+                SpectrePalette.Ink.Secondary
+            ),
+            PackageOriginKind.TransitiveOnly => ("seen transitively", SpectrePalette.Ink.Muted),
+            _ => ("not present", SpectrePalette.Ink.Dim),
+        };
+
+        return $"[{ink}]{label} ({count})[/]";
     }
 
     private static string RenderProject(PackageOriginProjectReport project)
@@ -457,24 +564,28 @@ internal sealed class PackageOriginService
         {
             PackageOriginKind.InlineVersion => SpectrePalette.Ink.Warning,
             PackageOriginKind.CentralPin => SpectrePalette.Ink.Success,
+            PackageOriginKind.Inherited => SpectrePalette.Ink.Accent,
             PackageOriginKind.UpdateOnly => SpectrePalette.Ink.Secondary,
             PackageOriginKind.TransitiveOnly => SpectrePalette.Ink.Muted,
             _ => SpectrePalette.Ink.Dim,
         };
 
+        var versions = string.Join(", ", project.ResolvedVersions ?? []);
         var detail = project.Kind switch
         {
             PackageOriginKind.InlineVersion =>
                 $" [{SpectrePalette.Ink.Text}]{Markup.Escape(project.InlineVersion!)}[/]",
             PackageOriginKind.CentralPin =>
-                $" [{SpectrePalette.Ink.Dim}]→ {Markup.Escape(project.ResolvedVersion ?? "(unresolved)")}[/]",
+                $" [{SpectrePalette.Ink.Dim}]→ {Markup.Escape(versions.Length > 0 ? versions : "(unresolved)")}[/]",
+            PackageOriginKind.Inherited =>
+                $" [{SpectrePalette.Ink.Dim}]{Markup.Escape(versions)}[/]",
             PackageOriginKind.TransitiveOnly when project.TransitiveIntroducers!.Count > 0 =>
                 $" [{SpectrePalette.Ink.Dim}]via {Markup.Escape(string.Join(", ", project.TransitiveIntroducers))}[/]",
             PackageOriginKind.TransitiveOnly => $" [{SpectrePalette.Ink.Dim}]introducer unknown[/]",
             _ => string.Empty,
         };
 
-        return $"[{nameInk}]{Markup.Escape(project.ProjectName)}[/]{detail}";
+        return $"[{nameInk}]{Markup.Escape(project.DisplayPath)}[/]{detail}";
     }
 
     private void RenderDriftVerdict(PackageOriginReport report)
@@ -491,7 +602,7 @@ internal sealed class PackageOriginService
         {
             _console.Success(
                 $"One version everywhere: {resolvedVersions[0].Version} "
-                    + $"({resolvedVersions[0].ProjectNames.Count} project(s))."
+                    + $"({resolvedVersions[0].Projects.Count} project(s))."
             );
             return;
         }
@@ -499,9 +610,9 @@ internal sealed class PackageOriginService
         _console.Warning(
             $"Version drift: {resolvedVersions.Count} different versions are in use."
         );
-        foreach (var usage in resolvedVersions.OrderByDescending(v => v.ProjectNames.Count))
+        foreach (var usage in resolvedVersions.OrderByDescending(v => v.Projects.Count))
         {
-            _console.Dim($"  {usage.Version}: {string.Join(", ", usage.ProjectNames)}");
+            _console.Dim($"  {usage.Version}: {string.Join(", ", usage.Projects)}");
         }
     }
 }
