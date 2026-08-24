@@ -100,6 +100,11 @@ public sealed class ProjectFileScanner : IProjectFileScanner
 
     private static bool ConditionallyScoped(Microsoft.Build.Construction.ProjectPropertyElement property)
     {
+        if (!string.IsNullOrWhiteSpace(property.Condition))
+        {
+            return true;
+        }
+
         // The Condition usually lives on the enclosing PropertyGroup rather than on the
         // property itself, so the whole ancestor chain is inspected.
         for (var parent = property.Parent; parent is not null; parent = parent.Parent)

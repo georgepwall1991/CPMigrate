@@ -159,6 +159,26 @@ public class EolTargetFrameworkAnalyzerTests
         result.Issues.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Analyze_PropertyLevelConditionalTfm_IsNotJudged()
+    {
+        // The Condition can sit on the property element itself, not only on its group.
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(
+            projectPath,
+            "<Project Sdk=\"Microsoft.NET.Sdk\">"
+                + "<PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>"
+                + "<PropertyGroup><TargetFramework Condition=\"false()\">net6.0</TargetFramework></PropertyGroup>"
+                + "</Project>"
+        );
+
+        var result = _analyzer.Analyze(PackageInfo(projectPath));
+
+        result.Issues.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("NETCOREAPP3.1")]
     [InlineData("Net6.0")]
