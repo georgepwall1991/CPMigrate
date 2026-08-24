@@ -315,13 +315,17 @@ internal sealed class DoctorService
             Path.GetDirectoryName(workspaceTrimmed),
             StringComparison.Ordinal
         );
-        var foldsCase =
-            sameAncestry
+        var finalNameFolds =
+            string.Equals(
+                Path.GetFileName(resolvedTrimmed),
+                Path.GetFileName(workspaceTrimmed),
+                StringComparison.OrdinalIgnoreCase
+            )
             && !string.IsNullOrEmpty(parent)
             && Directory.Exists(parent)
             && CpmDriftAnalyzer.PathComparerFor(parent) == StringComparer.OrdinalIgnoreCase;
 
-        if (foldsCase)
+        if (sameAncestry && finalNameFolds)
         {
             // Already covered by the workspace write probe; a second identical line says nothing.
             return new DoctorCheck("Backup", DoctorStatus.Info,
