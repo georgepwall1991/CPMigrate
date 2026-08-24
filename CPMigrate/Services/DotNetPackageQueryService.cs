@@ -18,7 +18,10 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
     /// answered from data that cannot support it. Vulnerable/outdated/deprecated queries are different
     /// CLI commands with feed-dependent output and are never served from this cache.
     /// </summary>
-    private readonly ConcurrentDictionary<(string ProjectPath, string IsolatedDirectory), Lazy<Task<PlainListPayload>>> _plainListCache = new();
+    private readonly ConcurrentDictionary<
+        (string ProjectPath, StringComparer Comparison, string IsolatedDirectory),
+        Lazy<Task<PlainListPayload>>
+    > _plainListCache = new();
 
     private sealed record PlainListPayload(bool Success, string Output, bool IncludesTransitive);
 
@@ -105,8 +108,9 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         var pathKey = comparer == StringComparer.OrdinalIgnoreCase
             ? projectFilePath.ToUpperInvariant()
             : projectFilePath;
-        var key = (pathKey, isolatedIntermediateDirectory ?? string.Empty);
-
+        // The mode rides in the key: an uppercased insensitive path and a verbatim sensitive path
+        // could otherwise spell the identical tuple while meaning different projects.
+        var key = (pathKey, comparer, isolatedIntermediateDirectory ?? string.Empty);
         while (true)
         {
             var lazy = _plainListCache.GetOrAdd(
@@ -159,12 +163,11 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         var (output, success) = await _dotNetCliService.RunPackageListJsonAsync(projectFilePath, options);
         return new PlainListPayload(success, output, includeTransitive);
     }
-
     private void RemoveIfCurrent(
-        (string ProjectPath, string IsolatedDirectory) key,
+        (string ProjectPath, StringComparer Comparison, string IsolatedDirectory) key,
         Lazy<Task<PlainListPayload>> lazy)
     {
-        ((ICollection<KeyValuePair<(string ProjectPath, string IsolatedDirectory), Lazy<Task<PlainListPayload>>>>)_plainListCache)
+        ((ICollection<KeyValuePair<(string ProjectPath, StringComparer Comparison, string IsolatedDirectory), Lazy<Task<PlainListPayload>>>>)_plainListCache)
             .Remove(KeyValuePair.Create(key, lazy));
     }
 
