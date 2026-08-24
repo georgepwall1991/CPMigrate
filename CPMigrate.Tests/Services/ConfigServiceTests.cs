@@ -77,10 +77,11 @@ public class ConfigServiceTests : IDisposable
         File.WriteAllText(configPath, "{ invalid json without closing brace");
 
         // Act
-        var result = _configService.LoadConfig(_testDirectory);
+        var (result, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
 
-        // Assert
+        // Assert - malformed JSON still errors exactly as before; unknown-key linting adds nothing.
         result.Should().BeNull();
+        errorMessage.Should().StartWith($"Invalid JSON in {configPath}");
     }
 
     #endregion
@@ -216,6 +217,110 @@ public class ConfigServiceTests : IDisposable
         result.Retention.MaxBackups.Should().Be(10);
         result.ExcludeDirectories.Should().HaveCount(3);
         result.ExcludeDirectories.Should().Contain("node_modules");
+    }
+
+    [Fact]
+    public void LoadConfig_UnknownKey_WarnsWithSuggestionButStillLoads()
+    {
+        // Arrange
+        var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
+        File.WriteAllText(configPath, @"{ ""fialOn"": ""Never"" }");
+
+        // Act
+        var (config, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+
+        // Assert - the typo is reported with its nearest real key, but never fails the run.
+        config.Should().NotBeNull();
+        errorMessage.Should().NotBeNull();
+        errorMessage.Should().Contain(configPath);
+        errorMessage.Should().Contain("'fialOn'");
+        errorMessage.Should().Contain("did you mean 'failOn'?");
+    }
+
+    [Fact]
+    public void LoadConfig_MultipleUnknownKeys_CombinesIntoOneWarning()
+    {
+        // Arrange
+        var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
+        File.WriteAllText(
+            configPath,
+            @"{ ""fialOn"": ""Never"", ""verifyStrickt"": true }"
+        );
+
+        // Act
+        var (config, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+
+        // Assert
+        config.Should().NotBeNull();
+        errorMessage.Should().Contain("'fialOn'");
+        errorMessage.Should().Contain("did you mean 'failOn'?");
+        errorMessage.Should().Contain("'verifyStrickt'");
+        errorMessage.Should().Contain("did you mean 'verifyStrict'?");
+    }
+
+    [Fact]
+    public void LoadConfig_UnknownKeyInsideRetention_WarnsWithNestedPathAndSuggestion()
+    {
+        // Arrange
+        var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
+        File.WriteAllText(configPath, @"{ ""retention"": { ""maxBackupsx"": 5 } }");
+
+        // Act
+        var (_, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+
+        // Assert
+        errorMessage.Should().Contain("'retention.maxBackupsx'");
+        errorMessage.Should().Contain("did you mean 'retention.maxBackups'?");
+    }
+
+    [Fact]
+    public void LoadConfig_KeyDifferingOnlyInCase_IsNotReportedAsUnknown()
+    {
+        // Arrange - deserialization already matches keys case-insensitively, so casing is not a typo.
+        var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
+        File.WriteAllText(configPath, @"{ ""Failon"": ""Never"" }");
+
+        // Act
+        var (config, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+
+        // Assert
+        config.Should().NotBeNull();
+        config!.FailOn.Should().Be(FailOnSeverity.Never);
+        errorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public void LoadConfig_AllKnownKeys_ProducesNoWarning()
+    {
+        // Arrange
+        var configPath = Path.Combine(_testDirectory, ".cpmigrate.json");
+        var configContent =
+            @"{
+  ""$schema"": ""https://example.com/cpmigrate.schema.json"",
+  ""conflictStrategy"": ""Lowest"",
+  ""backup"": true,
+  ""backupDir"": "".cpmigrate_backup"",
+  ""addGitignore"": true,
+  ""keepVersionAttributes"": false,
+  ""mergeExisting"": true,
+  ""outputFormat"": ""Json"",
+  ""failOn"": ""Moderate"",
+  ""baseline"": ""cpmigrate-baseline.json"",
+  ""verify"": true,
+  ""verifyStrict"": false,
+  ""retention"": { ""enabled"": true, ""maxBackups"": 5 },
+  ""excludeDirectories"": [""bin"", ""obj""],
+  ""rules"": { ""Cpm0001"": ""none"" }
+}";
+        File.WriteAllText(configPath, configContent);
+
+        // Act
+        var (config, _, errorMessage) = _configService.LoadConfigDetailed(_testDirectory);
+
+        // Assert
+        config.Should().NotBeNull();
+        config!.VerifyStrict.Should().BeFalse();
+        errorMessage.Should().BeNull();
     }
 
     [Fact]

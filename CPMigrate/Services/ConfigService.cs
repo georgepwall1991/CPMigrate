@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CPMigrate.Models;
@@ -146,8 +147,11 @@ public class ConfigService
                 );
             }
 
-            var validationWarning = ValidateConfig(config);
-            return (config, configPath, validationWarning);
+            var warnings = new[] { ValidateConfig(config), DetectUnknownKeys(json, configPath) }
+                .Where(warning => warning is not null)
+                .Select(warning => warning!)
+                .ToList();
+            return (config, configPath, warnings.Count > 0 ? string.Join(" ", warnings) : null);
         }
         catch (JsonException ex)
         {
@@ -186,6 +190,204 @@ public class ConfigService
         }
 
         return warnings.Count > 0 ? string.Join(" ", warnings) : null;
+    }
+
+    /// <summary>
+    /// System.Text.Json ignores properties it cannot map, so a typo such as <c>fialOn</c> silently
+    /// disables the team policy it was meant to set. The JSON is therefore re-walked and every key
+    /// that matches no known model property — case-insensitively, since casing already deserializes
+    /// fine — is reported as a warning. The known keys come from the model's own
+    /// <see cref="JsonPropertyNameAttribute"/> values rather than a copied list, so they cannot
+    /// drift from what actually deserializes.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<
+        Type,
+        IReadOnlyDictionary<string, PropertyInfo>
+    > KnownKeysByType = BuildKnownKeys(typeof(ConfigModel));
+
+    private static Dictionary<Type, IReadOnlyDictionary<string, PropertyInfo>> BuildKnownKeys(
+        Type root
+    )
+    {
+        var knownKeys = new Dictionary<Type, IReadOnlyDictionary<string, PropertyInfo>>();
+        var pending = new Queue<Type>();
+        pending.Enqueue(root);
+
+        while (pending.Count > 0)
+        {
+            var type = pending.Dequeue();
+            if (!knownKeys.TryAdd(type, new Dictionary<string, PropertyInfo>()))
+            {
+                continue;
+            }
+
+            var byName = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var name = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name;
+                if (name == null)
+                {
+                    continue;
+                }
+
+                byName.Add(name, property);
+
+                var nested = Nullable.GetUnderlyingType(property.PropertyType)
+                    ?? property.PropertyType;
+                if (
+                    nested.IsClass
+                    && !typeof(System.Collections.IEnumerable).IsAssignableFrom(nested)
+                )
+                {
+                    pending.Enqueue(nested);
+                }
+            }
+
+            knownKeys[type] = byName;
+        }
+
+        return knownKeys;
+    }
+
+    private static string? DetectUnknownKeys(string json, string configPath)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(
+                json,
+                new JsonDocumentOptions
+                {
+                    CommentHandling = JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true,
+                }
+            );
+
+            var unknowns = new List<(string Key, string? Suggestion)>();
+            CollectUnknownKeys(document.RootElement, typeof(ConfigModel), string.Empty, unknowns);
+            if (unknowns.Count == 0)
+            {
+                return null;
+            }
+
+            var described = unknowns.Select(unknown =>
+                unknown.Suggestion is null
+                    ? $"'{unknown.Key}'"
+                    : $"'{unknown.Key}' — did you mean '{unknown.Suggestion}'?"
+            );
+            return $"Unknown setting(s) in {configPath}: {string.Join(", ", described)}.";
+        }
+        catch (JsonException)
+        {
+            // Malformed JSON was already rejected above with line information; this lint must never
+            // turn a loadable config into a failed one.
+            return null;
+        }
+    }
+
+    private static void CollectUnknownKeys(
+        JsonElement element,
+        Type type,
+        string prefix,
+        List<(string Key, string? Suggestion)> unknowns
+    )
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var known = KnownKeysByType[type];
+        foreach (var property in element.EnumerateObject())
+        {
+            if (!known.TryGetValue(property.Name, out var match))
+            {
+                unknowns.Add(
+                    (
+                        $"{prefix}{property.Name}",
+                        NearestKnownKey(property.Name, prefix, known.Keys)
+                    )
+                );
+                continue;
+            }
+
+            var nested =
+                Nullable.GetUnderlyingType(match.PropertyType) ?? match.PropertyType;
+            if (
+                KnownKeysByType.ContainsKey(nested)
+                && property.Value.ValueKind == JsonValueKind.Object
+            )
+            {
+                CollectUnknownKeys(
+                    property.Value,
+                    nested,
+                    $"{prefix}{property.Name}.",
+                    unknowns
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finds the known sibling key closest to an unknown one: within a small edit distance, or
+    /// contained in it (or containing it), so <c>fialOn</c> suggests <c>failOn</c>. Returns null
+    /// when nothing plausibly matches — guessing would be worse than silence.
+    /// </summary>
+    private static string? NearestKnownKey(
+        string name,
+        string prefix,
+        IEnumerable<string> candidates
+    )
+    {
+        const int maxEditDistance = 3;
+
+        string? best = null;
+        var bestDistance = int.MaxValue;
+        foreach (var candidate in candidates)
+        {
+            var distance = EditDistance(name, candidate);
+            var contained =
+                name.Contains(candidate, StringComparison.OrdinalIgnoreCase)
+                || candidate.Contains(name, StringComparison.OrdinalIgnoreCase);
+            if (distance > maxEditDistance && !contained)
+            {
+                continue;
+            }
+
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = $"{prefix}{candidate}";
+            }
+        }
+
+        return best;
+    }
+
+    private static int EditDistance(string left, string right)
+    {
+        var previous = new int[right.Length + 1];
+        var current = new int[right.Length + 1];
+        for (var column = 0; column <= right.Length; column++)
+        {
+            previous[column] = column;
+        }
+
+        for (var row = 1; row <= left.Length; row++)
+        {
+            current[0] = row;
+            for (var column = 1; column <= right.Length; column++)
+            {
+                var substitution = left[row - 1] == right[column - 1] ? 0 : 1;
+                current[column] = Math.Min(
+                    Math.Min(current[column - 1] + 1, previous[column] + 1),
+                    previous[column - 1] + substitution
+                );
+            }
+
+            (previous, current) = (current, previous);
+        }
+
+        return previous[right.Length];
     }
 
     /// <summary>

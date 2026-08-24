@@ -550,7 +550,7 @@ The tool targets .NET 10 with `LatestMajor` roll-forward and runs on any machine
 }
 ```
 
-Discovered by walking up from the solution/project path (or cwd). Contradictory settings warn; malformed JSON reports the exact line and column.
+Discovered by walking up from the solution/project path (or cwd). Contradictory settings warn; malformed JSON reports the exact line and column. Unknown keys are **named, not ignored** — a typo like `fialOn` warns `did you mean 'failOn'?` instead of silently leaving the setting unset (nested keys too, e.g. inside `retention`). Keys that differ only in case still deserialize normally and are not flagged. The run itself never fails on an unknown key.
 
 ---
 
