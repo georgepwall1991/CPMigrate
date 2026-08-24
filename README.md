@@ -44,7 +44,7 @@ CPMigrate replaces both with three things that actually hold up:
 | 🟨 | **VersionInconsistency** | Same package, different versions across projects | Moderate |
 | 🟨 | **FloatingVersion** | `4.*` or `[4.0.0,)` — restore picks the version, so the build isn't reproducible | Moderate |
 | 🟨 | **TransitiveConflict** | Divergent transitive graphs (auto-pinnable) | Moderate |
-| 🟨 | **EolTargetFramework** | Project targets `net6.0`, `net7.0`, `netcoreapp`, or another end-of-life runtime | Moderate |
+| 🟨 | **EolTargetFramework** | Project targets `net6.0`, `net7.0`, `net9.0`, `netcoreapp`, or another end-of-life runtime | Moderate |
 | 🟦 | **DuplicatePackageCasing** | `Newtonsoft.Json` vs `newtonsoft.json` | Low |
 | 🟦 | **RedundantReference** | The same `PackageReference` twice in one project | Low |
 | 🟦 | **OutdatedPackage** / **DeprecatedPackage** | Behind the feed / abandoned packages | Low |

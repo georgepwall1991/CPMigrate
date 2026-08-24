@@ -289,7 +289,8 @@ version actually in force for that project.
 **A project targets an end-of-life .NET version.**
 
 A runtime past end of life stops receiving security updates, so every package the solution resolves
-for it ships into a target nobody patches. `netcoreapp`, `net5.0`, `net6.0`, and `net7.0` are all
+for it ships into a target nobody patches. `netcoreapp`, `net5.0`, `net6.0`, `net7.0`, and `net9.0`
+(.NET 9 STS support ended May 2026) are all
 past end of life; matching is case-insensitive, and a multi-target project is flagged when *any* of
 its targets has lapsed, with each one named.
 

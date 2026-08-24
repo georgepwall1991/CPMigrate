@@ -49,6 +49,51 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         }
     }
 
+    /// <summary>
+    /// Every literal target framework the file declares, in document order, across all
+    /// <c>TargetFramework</c> and <c>TargetFrameworks</c> assignments.
+    ///
+    /// Unlike <see cref="GetTargetFramework"/>, which silently reports whichever assignment comes
+    /// first and therefore depends on document order when a project assigns the property more than
+    /// once, this returns every literal value so a caller can judge each declaration. MSBuild
+    /// expressions are skipped rather than guessed at; a project whose only TFM declarations are
+    /// expressions yields an empty list, which callers must treat as unexamined.
+    /// </summary>
+    public IReadOnlyList<string> GetDeclaredTargetFrameworks(string projectFilePath)
+    {
+        try
+        {
+            using var projectCollection = new ProjectCollection();
+            var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
+
+            return
+            [
+                .. projectRoot
+                    .Properties.Where(p =>
+                        p.Name == "TargetFramework" || p.Name == "TargetFrameworks"
+                    )
+                    .SelectMany(p => p.Value.Split(
+                        ';',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    ))
+                    .Where(v =>
+                        v.Length > 0
+                        && !v.Contains('$', StringComparison.Ordinal)
+                        && !v.Contains('(', StringComparison.Ordinal)
+                    ),
+            ];
+        }
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or UnauthorizedAccessException
+                        or Microsoft.Build.Exceptions.InvalidProjectFileException
+            )
+        {
+            return [];
+        }
+    }
+
     public string ProcessProject(
         string projectFilePath,
         Dictionary<string, HashSet<string>> packageVersions,

@@ -23,21 +23,18 @@ public class EolTargetFrameworkAnalyzer : IAnalyzer
     {
         var issues = new List<AnalysisIssue>();
 
-        foreach (var path in packageInfo.References.Select(r => r.ProjectPath).Distinct())
+        foreach (var path in packageInfo.GetProjectsScanned())
         {
-            var declared = _projectFileScanner.GetTargetFramework(path);
-            if (string.IsNullOrWhiteSpace(declared) || declared == "Unknown")
+            // Every literal declaration is judged, not whichever assignment the file happens to
+            // list first: a project can assign TargetFramework more than once, and order-dependent
+            // reading would let an inactive or overridden EOL target hide behind a newer one.
+            var targets = _projectFileScanner.GetDeclaredTargetFrameworks(path);
+            if (targets.Count == 0)
             {
-                // Gated on data like its siblings: a TFM that cannot be read is not judged.
+                // Gated on data like its siblings: TFMs that cannot be read are not judged.
                 continue;
             }
 
-            // Multi-target projects declare a semicolon-separated list; flag the project when any
-            // target is end of life, naming each one.
-            var targets = declared.Split(
-                ';',
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-            );
             var eol = targets
                 .Where(IsEndOfLife)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -87,6 +84,6 @@ public class EolTargetFrameworkAnalyzer : IAnalyzer
         }
 
         var major = normalized["net".Length..].Split('.')[0];
-        return major is "5" or "6" or "7";
+        return major is "5" or "6" or "7" or "9";
     }
 }

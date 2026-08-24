@@ -170,10 +170,11 @@ public static class AnalysisRuleCatalog
                 "A project targets an end-of-life .NET version.",
                 "A runtime past end of life stops receiving security updates, so every package the "
                     + "solution resolves for it ships into a target nobody patches. netcoreapp, "
-                    + "net5.0, net6.0, and net7.0 are all past end of life; .NET Framework and "
+                    + "net5.0, net6.0, net7.0, and net9.0 (.NET 9 STS support ended May 2026) "
+                    + "are all past end of life; .NET Framework and "
                     + "netstandard are not judged here — the former is still supported, the latter "
                     + "is a compile-time surface rather than a runtime. Retarget to a supported "
-                    + "release such as net8.0 or later.",
+                    + "LTS release such as net8.0 or net10.0.",
                 new[] { "dependencies", "security" }
             ),
             new(

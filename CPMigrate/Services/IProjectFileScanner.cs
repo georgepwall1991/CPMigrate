@@ -5,6 +5,13 @@ namespace CPMigrate.Services;
 public interface IProjectFileScanner
 {
     string GetTargetFramework(string projectFilePath);
+
+    /// <summary>
+    /// Every literal target framework the project file declares, across all
+    /// <c>TargetFramework</c>/<c>TargetFrameworks</c> assignments. Empty when nothing readable is
+    /// declared — callers must treat empty as "unexamined", never as "supported".
+    /// </summary>
+    IReadOnlyList<string> GetDeclaredTargetFrameworks(string projectFilePath);
     string ProcessProject(
         string projectFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
