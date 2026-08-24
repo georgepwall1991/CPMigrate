@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using CPMigrate.Analyzers;
 using CPMigrate.Models;
 using Spectre.Console;
 
@@ -293,10 +294,15 @@ internal sealed class DoctorService
             Path.IsPathRooted(backupDir) ? backupDir : Path.Combine(workspace, backupDir)
         );
 
-        // Case-sensitive where the filesystem actually is — a case-sensitive APFS volume or a
-        // case-sensitive NTFS directory makes /repo/App and /repo/app different directories, and
-        // only the real one is covered by the workspace probe. Same probe the drift analyzer uses.
-        var pathComparer = CpmDriftAnalyzer.PathComparerFor(workspace);
+        // Case sensitivity is a property of the directory an entry lives in, so identity of
+        // .../App vs .../app is decided by their parent, not by the workspace. Probe the parent —
+        // the same create-and-stat probe the drift analyzer uses — and let a missing or
+        // unprobeable parent fall back to Ordinal: treating the paths as different only means the
+        // backup probe runs, which is always safe.
+        var parent = Path.GetDirectoryName(resolved);
+        var pathComparer = !string.IsNullOrEmpty(parent) && Directory.Exists(parent)
+            ? CpmDriftAnalyzer.PathComparerFor(parent)
+            : StringComparer.Ordinal;
         if (
             pathComparer.Equals(
                 resolved.TrimEnd(Path.DirectorySeparatorChar),
