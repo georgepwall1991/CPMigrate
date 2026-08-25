@@ -184,6 +184,17 @@ public class BatchService
         // Display summary
         WriteBatchSummary(result, batchDir);
 
+        // Persistent rollup for CI/PR attachment — a file a team can keep, unlike the console
+        // summary above.
+        if (!string.IsNullOrEmpty(options.ReportPath))
+        {
+            BatchReportWriter.Write(result, options.ReportPath);
+            if (!options.Quiet)
+            {
+                _consoleService.Dim($"Batch report written to: {options.ReportPath}");
+            }
+        }
+
         return result;
     }
 

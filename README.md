@@ -342,6 +342,7 @@ Baselined findings stay visible everywhere (`suppressed: true` in JSON, `kind: "
 | `--batch` | | Recursively scan a directory for solutions |
 | `--batch-parallel` | `false` | Process solutions in parallel |
 | `--batch-continue` | `false` | Continue past a failing solution |
+| `--report <PATH>` | | Write a Markdown rollup of the batch run to a file |
 
 **Backup & rollback**
 

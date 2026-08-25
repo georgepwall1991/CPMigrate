@@ -252,4 +252,32 @@ public class OptionsValidationTests
         action.Should().Throw<ArgumentException>()
             .WithMessage("*--prune-backups and --prune-all require --force when --output Json is used*");
     }
+
+    [Fact]
+    public void Validate_ReportWithoutBatch_ThrowsArgumentException()
+    {
+        var options = new CPMigrate.Options
+        {
+            NoBackup = false,
+            BackupDir = ".",
+            ReportPath = "batch-report.md"
+        };
+
+        var action = () => options.Validate();
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--report requires --batch*");
+    }
+
+    [Fact]
+    public void Validate_ReportWithBatch_DoesNotThrow()
+    {
+        var options = new CPMigrate.Options
+        {
+            BatchDir = Path.GetTempPath(),
+            ReportPath = "batch-report.md"
+        };
+
+        var action = () => options.Validate();
+        action.Should().NotThrow();
+    }
 }

@@ -355,6 +355,12 @@ public class Options
     )]
     public bool BatchContinue { get; set; }
 
+    [Option(
+        "report",
+        HelpText = "Write a Markdown rollup of the batch run to this path (requires --batch)."
+    )]
+    public string? ReportPath { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Backup Management
     // ═══════════════════════════════════════════════════════════════════════
@@ -752,6 +758,10 @@ public class Options
         clone.BatchDir = string.Empty;
         clone.Rollback = false;
         clone.Interactive = false;
+
+        // The rollup is written once by the batch driver from the outer options; a solution run
+        // has no batch directory anymore, so a carried-over path would fail validation instead.
+        clone.ReportPath = null;
 
         return clone;
     }
@@ -1281,6 +1291,11 @@ public class Options
         if (BatchContinue && string.IsNullOrEmpty(BatchDir))
         {
             throw new ArgumentException("--batch-continue requires --batch.");
+        }
+
+        if (!string.IsNullOrEmpty(ReportPath) && string.IsNullOrEmpty(BatchDir))
+        {
+            throw new ArgumentException("--report requires --batch.");
         }
     }
 

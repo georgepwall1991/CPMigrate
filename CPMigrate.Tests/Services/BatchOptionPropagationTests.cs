@@ -28,6 +28,7 @@ public class BatchOptionPropagationTests
         [nameof(Options.GitignoreDir)] = "belongs to the solution being processed",
         [nameof(Options.Quiet)] = "individual solution output would drown the batch summary",
         [nameof(Options.BatchDir)] = "cleared so a solution run cannot recurse into another batch",
+        [nameof(Options.ReportPath)] = "written once by the batch driver, never per solution",
         [nameof(Options.Rollback)] = "batch never rolls back on behalf of a solution",
         [nameof(Options.Interactive)] = "a batch run cannot prompt per solution",
     };
@@ -101,6 +102,7 @@ public class BatchOptionPropagationTests
         clone.Quiet.Should().BeTrue();
         clone.BatchDir.Should().BeEmpty("a solution run must not recurse into another batch");
         clone.Rollback.Should().BeFalse();
+        clone.ReportPath.Should().BeNull("the rollup is written once by the batch driver");
         clone.Interactive.Should().BeFalse();
     }
 
@@ -154,8 +156,8 @@ public class BatchOptionPropagationTests
             Quiet = false,
             Verbose = true,
             BatchDir = "/source/batch",
-            BatchParallel = true,
             BatchContinue = true,
+            ReportPath = "/source/report.md",
             PruneBackups = true,
             PruneAll = true,
             Retention = 9,
