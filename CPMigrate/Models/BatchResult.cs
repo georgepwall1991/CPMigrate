@@ -67,7 +67,7 @@ public class BatchResult
     /// Timestamp when the batch operation completed.
     /// </summary>
     [JsonPropertyName("timestamp")]
-    public string Timestamp { get; init; } = DateTime.UtcNow.ToString("o");
+    public string Timestamp { get; set; } = DateTime.UtcNow.ToString("o");
 
     /// <summary>
     /// Exit code for the batch operation.

@@ -153,6 +153,7 @@ public class BatchService
         {
             _consoleService.Error($"No solution files found in: {batchDir}");
             result.Errors.Add("No solution files found");
+            WriteReportIfRequested(options, result);
             return result;
         }
 
@@ -181,11 +182,23 @@ public class BatchService
         // Build final result
         result.Solutions.AddRange(solutionResults);
 
+        // The report's date is the completion date: the default was captured at construction,
+        // before discovery and processing, which is wrong for a long batch.
+        result.Timestamp = DateTime.UtcNow.ToString("o");
+
         // Display summary
         WriteBatchSummary(result, batchDir);
 
+        WriteReportIfRequested(options, result);
+
+        return result;
+    }
+
+    private void WriteReportIfRequested(Options options, BatchResult result)
+    {
         // Persistent rollup for CI/PR attachment — a file a team can keep, unlike the console
-        // summary above.
+        // summary. Written on every completed batch, including an empty one: an explicitly
+        // requested artifact must exist even when there is nothing to summarize.
         if (!string.IsNullOrEmpty(options.ReportPath))
         {
             BatchReportWriter.Write(result, options.ReportPath);
@@ -194,8 +207,6 @@ public class BatchService
                 _consoleService.Dim($"Batch report written to: {options.ReportPath}");
             }
         }
-
-        return result;
     }
 
     private async Task<List<SolutionResult>> RunSequentialAsync(
