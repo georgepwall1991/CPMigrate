@@ -163,6 +163,68 @@ public class VerifyEndToEndTests : IDisposable
             .Contain("Version=\"9.9.9\"", "the project file must be untouched");
     }
 
+    [Fact]
+    public async Task FailsClosed_WhenAProjectRedirectsItsIntermediateOutput()
+    {
+        // A project that redirects MSBuildProjectExtensionsPath makes a plain dotnet restore write
+        // the real graph under artifacts/obj/, while an older obj/project.assets.json from a local
+        // build stays behind — right subject, parseable, plausible versions. Reading it in both
+        // captures compares the tree against itself and reports "unchanged" over a migration whose
+        // effect on this project was never observed. Clearing each capture's assets files before
+        // the restore is what turns that silent pass into a stated refusal.
+        var projectPath = Path.Combine(_root, "src", "Api", "Api.csproj");
+        WriteFile(
+            "src/Api/Api.csproj",
+            $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <MSBuildProjectExtensionsPath>$(MSBuildProjectDirectory)/artifacts/obj/</MSBuildProjectExtensionsPath>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj");
+        WriteFile(
+            "src/Api/obj/project.assets.json",
+            $$"""
+            {
+              "project": {
+                "restore": { "projectPath": "{{projectPath}}" },
+                "frameworks": { "net10.0": {} }
+              },
+              "targets": {
+                "net10.0": { "Newtonsoft.Json/13.0.3": { "type": "Package" } }
+              }
+            }
+            """
+        );
+
+        var (exitCode, verification) = await Verify();
+
+        exitCode.Should().Be(ExitCodes.GraphDrift);
+        verification.GetProperty("verdict").GetString().Should().Be("failed");
+        verification.GetProperty("passed").GetBoolean().Should().BeFalse();
+
+        var failures = verification.GetProperty("integrityFailures").EnumerateArray();
+        failures.Should().Contain(f =>
+            f.GetProperty("project").GetString() == "src/Api/Api.csproj"
+            && f.GetProperty("reason").GetString()!.Contains("no readable obj/project.assets.json")
+        );
+
+        verification
+            .GetProperty("rolledBack")
+            .GetBoolean()
+            .Should()
+            .BeTrue("a verdict the tool cannot vouch for undoes the migration");
+        File.Exists(Path.Combine(_root, "Directory.Packages.props"))
+            .Should()
+            .BeFalse("the rollback removes what the refused migration created");
+    }
+
     private async Task<(int ExitCode, JsonElement Verification)> Verify(
         string? target = null,
         params string[] extraArgs

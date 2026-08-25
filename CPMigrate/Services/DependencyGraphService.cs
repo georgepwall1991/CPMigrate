@@ -77,6 +77,33 @@ public class DependencyGraphService : IDependencyGraphService
         }
     }
 
+    /// <inheritdoc />
+    public bool TryClearResolvedGraph(string projectFilePath)
+    {
+        var assetsPath = GetAssetsPath(projectFilePath);
+
+        if (!File.Exists(assetsPath))
+        {
+            return true;
+        }
+
+        try
+        {
+            File.Delete(assetsPath);
+
+            return true;
+        }
+        catch (Exception ex)
+            when (ex is IOException or UnauthorizedAccessException)
+        {
+            _console.Warning(
+                $"Could not clear the previous resolved graph for {Path.GetFileName(projectFilePath)}: {ex.Message}"
+            );
+
+            return false;
+        }
+    }
+
     /// <summary>
     /// Whether this assets file is actually about this project.
     /// </summary>

@@ -3,17 +3,19 @@ using CPMigrate.Models;
 namespace CPMigrate.Services.Verify;
 
 /// <summary>
-/// Captures the resolved dependency graph of every project in scope by restoring and reading each
-/// project's <c>project.assets.json</c>.
+/// Captures the resolved dependency graph of every project in scope by clearing each project's
+/// previous <c>obj/project.assets.json</c>, restoring, and reading what the restore wrote.
 /// </summary>
 /// <remarks>
-/// The restore is a plain <c>dotnet restore</c> writing to each project's ordinary <c>obj/</c>. It
-/// deliberately does not reuse the scan path's redirected <c>MSBuildProjectExtensionsPath</c>: that
-/// redirect is passed as an environment variable, so it applies to every project in the MSBuild graph
-/// rather than the one being queried. Any project with a <c>ProjectReference</c> then tells its
-/// references to write to the same directory, they collide, and the query comes back describing no
-/// frameworks at all — which a caller counting packages reads as a successful scan of an empty project.
-/// That regression cost three of Serilog's six projects with no warning; see v3.28.1.
+/// The restore is a plain <c>dotnet restore</c> writing to each project's ordinary <c>obj/</c>, and
+/// every in-scope assets file is removed before it, so anything readable after a succeeded restore
+/// was written by that restore — an older file from this project's last local build cannot sit at
+/// the default path and pass for fresh. The redirect is passed as an environment variable by the
+/// scan path, so it applies to every project in the MSBuild graph rather than the one being
+/// queried: any project with a <c>ProjectReference</c> then tells its references to write to the
+/// same directory, they collide, and the query comes back describing no frameworks at all — which
+/// a caller counting packages reads as a successful scan of an empty project. That regression cost
+/// three of Serilog's six projects with no warning; see v3.28.1.
 /// </remarks>
 public sealed class AssetsGraphSnapshotService : IGraphSnapshotService
 {
@@ -39,6 +41,29 @@ public sealed class AssetsGraphSnapshotService : IGraphSnapshotService
         string? basePath
     )
     {
+        // Every in-scope assets file is removed BEFORE the restore, so a readable file afterwards
+        // provably came from this restore and not from some earlier build of this same project.
+        // Without this, a project that redirects its intermediate output leaves an older
+        // obj/project.assets.json in place — right subject, parseable, plausible versions — that
+        // both captures would then compare against themselves and report as an unchanged graph over
+        // a migration whose effect was never observed.
+        var ambiguous = FindAmbiguousProjects(projectPaths, basePath);
+        var unclearable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var projectPath in projectPaths)
+        {
+            // Ambiguous projects are never read, so their files are left alone too.
+            if (ambiguous.ContainsKey(projectPath))
+            {
+                continue;
+            }
+
+            if (!_dependencyGraph.TryClearResolvedGraph(projectPath))
+            {
+                unclearable.Add(projectPath);
+            }
+        }
+
         var (output, succeeded) = await _dotNetCli.RunRestoreAsync(restoreTargetPath);
 
         if (!succeeded)
@@ -55,7 +80,6 @@ public sealed class AssetsGraphSnapshotService : IGraphSnapshotService
 
         List<ProjectResolvedGraph> projects = [];
         List<UnreadableProject> unreadable = [];
-        var ambiguous = FindAmbiguousProjects(projectPaths, basePath);
 
         foreach (var projectPath in projectPaths)
         {
@@ -70,6 +94,22 @@ public sealed class AssetsGraphSnapshotService : IGraphSnapshotService
                     new UnreadableProject(
                         ProjectPackageInfo.ProjectId(basePath, projectPath),
                         reason
+                    )
+                );
+                continue;
+            }
+
+            if (unclearable.Contains(projectPath))
+            {
+                // The previous assets file is still there and this capture could not remove it, so
+                // anything readable at that path now cannot be told apart from an earlier build's
+                // graph. Refusing the project beats comparing a file of unknown provenance.
+                unreadable.Add(
+                    new UnreadableProject(
+                        ProjectPackageInfo.ProjectId(basePath, projectPath),
+                        "the previous obj/project.assets.json could not be removed before this "
+                            + "capture's restore, so a read at that path could not be told apart from "
+                            + "a stale graph"
                     )
                 );
                 continue;

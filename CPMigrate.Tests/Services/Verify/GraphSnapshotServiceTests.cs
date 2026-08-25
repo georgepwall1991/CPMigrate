@@ -142,10 +142,51 @@ public class GraphSnapshotServiceTests
         result.Snapshot.ResolvedVersionCount.Should().Be(4);
     }
 
+    [Fact]
+    public async Task ClearsThePreviousAssetsFile_BeforeRestoring()
+    {
+        // A readable obj/project.assets.json after the restore has to mean THIS restore wrote it.
+        // An older file — from this project's last local build, still at the default path after a
+        // redirect moved the real output elsewhere — parses perfectly and describes this very
+        // project; two captures would compare it against itself and report an unchanged graph over
+        // a migration whose effect was never observed. Clearing first is what makes freshness
+        // provable rather than guessed.
+        var sequence = new MockSequence();
+        _graph.InSequence(sequence).Setup(g => g.TryClearResolvedGraph("A.csproj")).Returns(true);
+        _cli.InSequence(sequence).Setup(c => c.RunRestoreAsync("Sln.sln")).ReturnsAsync(("restored", true));
+
+        await Sut.CaptureAsync("Sln.sln", ["A.csproj"], basePath: null);
+
+        _graph.Verify(g => g.TryClearResolvedGraph("A.csproj"), Times.Once);
+    }
+
+    [Fact]
+    public async Task FailsClosed_WhenThePreviousAssetsFileCannotBeCleared()
+    {
+        // If the stale file cannot be removed, nothing read afterwards can be attributed to this
+        // restore rather than an earlier build. The project is refused instead of compared on a
+        // file of unknown provenance.
+        GivenRestore(succeeds: true);
+        _graph.Setup(g => g.TryClearResolvedGraph("A.csproj")).Returns(false);
+
+        var result = await Sut.CaptureAsync("Sln.sln", ["A.csproj"], basePath: null);
+
+        result.Snapshot.Projects.Should().BeEmpty();
+        result.Snapshot.Unreadable.Should().ContainSingle(u =>
+            u.ProjectPath == "A.csproj"
+            && u.Reason.Contains("could not be removed")
+        );
+        _graph.Verify(g => g.TryReadResolvedGraph(It.IsAny<string>()), Times.Never);
+    }
+
     private void GivenRestore(bool succeeds)
     {
         _cli.Setup(c => c.RunRestoreAsync(It.IsAny<string>()))
             .ReturnsAsync((succeeds ? "restored" : "error NU1101", succeeds));
+        // Every capture clears first; a mock that declines would mark every project unreadable.
+        _graph
+            .Setup(g => g.TryClearResolvedGraph(It.IsAny<string>()))
+            .Returns(true);
     }
 
     private void GivenGraph(string projectPath, params ResolvedFramework[] frameworks)

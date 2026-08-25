@@ -8,7 +8,10 @@ namespace CPMigrate.Services.Verify;
 public interface IGraphSnapshotService
 {
     /// <summary>
-    /// Restores <paramref name="restoreTargetPath"/>, then reads the resolved graph of each project.
+    /// Clears each project's previous <c>obj/project.assets.json</c>, restores
+    /// <paramref name="restoreTargetPath"/>, then reads the resolved graph of each project. A file
+    /// readable after the restore therefore provably came from that restore, not from an earlier
+    /// build; absence after a succeeded restore is recorded as unreadable and fails closed.
     /// </summary>
     /// <param name="restoreTargetPath">The solution or project to restore.</param>
     /// <param name="projectPaths">Every project whose graph forms part of the snapshot.</param>
