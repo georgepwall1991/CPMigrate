@@ -1000,6 +1000,7 @@ public class Options
 
         if (
             Analyze
+            || Interactive
             || Rollback
             || ListBackups
             || PruneBackups
