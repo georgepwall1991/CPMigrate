@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.Json;
 using CPMigrate.Models;
 using CPMigrate.Services;
@@ -138,6 +139,110 @@ public class BaselineContractTests : IDisposable
         var issues = root.GetProperty("analysisIssues").EnumerateArray().ToList();
         issues.Should().NotBeEmpty("suppressed findings remain visible");
         issues.Should().Contain(i => i.GetProperty("suppressed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Analyze_StaleBaselineEntries_AreSurfacedInJson()
+    {
+        // A baseline entry whose finding has since been fixed suppresses nothing. Surfacing the
+        // count is what makes pruning a decision someone can make, instead of letting the file rot.
+        CreateFixture();
+        var baselinePath = Path.Combine(_testDirectory, "baseline.json");
+        await RunAsync(o =>
+        {
+            o.WriteBaseline = true;
+            o.Baseline = baselinePath;
+        });
+
+        // The drift disappears: both projects now agree on one version, so every entry went stale.
+        CreateProject("Lib.csproj", "Newtonsoft.Json", "13.0.1");
+
+        var stdout = await CaptureStdoutAsync(() =>
+            RunAsync(o =>
+            {
+                o.Baseline = baselinePath;
+                o.Output = OutputFormat.Json;
+            })
+        );
+
+        JsonDocument
+            .Parse(stdout)
+            .RootElement.GetProperty("summary")
+            .GetProperty("baselineStaleEntries")
+            .GetInt32()
+            .Should()
+            .BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Analyze_BaselineEntryWithUnknownRuleId_IsSurfacedDistinctly()
+    {
+        // A rule renamed or deleted after the baseline was written leaves an entry that can never
+        // mean anything again — even while its fingerprint still suppresses. It must be reported
+        // apart from stale entries, with a pointer at the valid rule IDs.
+        CreateFixture();
+        var baselinePath = Path.Combine(_testDirectory, "baseline.json");
+        await RunAsync(o =>
+        {
+            o.WriteBaseline = true;
+            o.Baseline = baselinePath;
+        });
+
+        RenameBaselineIssueCode(baselinePath, "Newtonsoft.Json", "VersionDrift");
+
+        var stdout = await CaptureStdoutAsync(() =>
+            RunAsync(o =>
+            {
+                o.Baseline = baselinePath;
+                o.Output = OutputFormat.Json;
+            })
+        );
+
+        var summary = JsonDocument.Parse(stdout).RootElement.GetProperty("summary");
+        summary
+            .GetProperty("baselineUnknownRuleCodes")
+            .EnumerateArray()
+            .Select(code => code.GetString())
+            .Should()
+            .Contain("VersionDrift");
+        summary
+            .GetProperty("issuesBaselined")
+            .GetInt32()
+            .Should()
+            .BeGreaterThan(0, "the fingerprint still matches, so this is not a stale entry");
+    }
+
+    [Fact]
+    public async Task Analyze_RottingBaseline_WarnsOnTheConsoleWithRemedies()
+    {
+        // The JSON fields are for parsers; a human watching the run needs the same two callouts,
+        // each with its remedy: --explain all for unknown rules, --write-baseline for pruning.
+        // Two independent pieces of accepted debt: Newtonsoft drift and Serilog drift.
+        CreateFixture();
+        CreateProject("Extra.csproj", "Serilog", "4.0.0");
+        CreateProject("Extra2.csproj", "Serilog", "3.0.0");
+        CreateSolution("Test.sln", "Api.csproj", "Lib.csproj", "Extra.csproj", "Extra2.csproj");
+        var baselinePath = Path.Combine(_testDirectory, "baseline.json");
+        await RunAsync(o =>
+        {
+            o.WriteBaseline = true;
+            o.Baseline = baselinePath;
+        });
+
+        // The Serilog entry cites a rule ID that no longer exists; the Newtonsoft drift is fixed,
+        // so its entry went stale under a rule that is still live.
+        RenameBaselineIssueCode(baselinePath, "Serilog", "VersionDrift");
+        CreateProject("Lib.csproj", "Newtonsoft.Json", "13.0.1");
+
+        var console = new TestDoubles.FakeConsoleService();
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--analyze", "--baseline", baselinePath, "-s", _testDirectory },
+            console
+        );
+
+        exitCode.Should().Be(ExitCodes.Success);
+        console.OutputMessages.Should().Contain(m => m.Contains("--explain all"));
+        console.OutputMessages.Should().Contain(m => m.Contains("--write-baseline"));
     }
 
     [Fact]
@@ -401,5 +506,23 @@ EndProject
         }
 
         return writer.ToString().Trim();
+    }
+
+    private static void RenameBaselineIssueCode(
+        string path,
+        string package,
+        string issueCode
+    )
+    {
+        var baseline = JsonNode.Parse(File.ReadAllText(path))!;
+        foreach (var finding in baseline["findings"]!.AsArray())
+        {
+            if (finding!["package"]!.GetValue<string>() == package)
+            {
+                finding["issueCode"] = issueCode;
+            }
+        }
+
+        File.WriteAllText(path, baseline.ToJsonString());
     }
 }

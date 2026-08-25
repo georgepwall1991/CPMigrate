@@ -14,10 +14,17 @@ namespace CPMigrate.Services;
 /// Baseline entries that matched nothing. These are findings that have since been fixed, so the
 /// entry is dead weight — surfacing them is what stops a baseline growing forever.
 /// </param>
+/// <param name="UnknownRuleCodes">
+/// Distinct issue codes recorded in the baseline that match no current rule ID. A baseline is not
+/// validated against the catalog when read, so a renamed or deleted rule leaves entries behind that
+/// can never mean anything again; naming the codes beats making the reader guess.
+/// </param>
 public record BaselineMatch(
     AnalysisReport Report,
     int Suppressed,
-    IReadOnlyList<BaselineFinding> Stale
+    IReadOnlyList<BaselineFinding> Stale,
+    IReadOnlyCollection<string> MatchedFingerprints,
+    IReadOnlyList<string> UnknownRuleCodes
 );
 
 /// <summary>
@@ -190,12 +197,32 @@ public sealed class BaselineService
     }
 
     /// <summary>
+    /// Every rule ID the catalog publishes. Rule IDs are the <see cref="AnalysisIssueCode"/> member
+    /// names, matched by name only — the same convention rule policy uses, so a numeric code can
+    /// never impersonate one.
+    /// </summary>
+    private static readonly HashSet<string> KnownRuleIds =
+        new(Enum.GetNames<AnalysisIssueCode>(), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>True when <paramref name="issueCode"/> names a rule the current catalog publishes.</summary>
+    public static bool IsKnownRuleId(string issueCode) => KnownRuleIds.Contains(issueCode);
+
+    /// <summary>
     /// Marks every finding present in the baseline as suppressed, and reports which baseline entries
     /// no longer match anything.
     /// </summary>
     /// <param name="report">The report to annotate.</param>
     /// <param name="baseline">The accepted findings.</param>
-    public BaselineMatch Apply(AnalysisReport report, BaselineFile baseline)
+    /// <param name="unevaluatedRuleCodes">
+    /// Rules this run could not have judged — opt-in analyzers whose data was never collected, or
+    /// rules switched off by policy. An entry citing one is left out of <c>Stale</c>: its finding
+    /// was absent without being fixed, and pruning it would drop live debt.
+    /// </param>
+    public BaselineMatch Apply(
+        AnalysisReport report,
+        BaselineFile baseline,
+        IReadOnlyCollection<AnalysisIssueCode>? unevaluatedRuleCodes = null
+    )
     {
         ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(baseline);
@@ -229,9 +256,49 @@ public sealed class BaselineService
         }
 
         var stale = baseline
-            .Findings.Where(finding => !matched.Contains(finding.Fingerprint))
+            .Findings.Where(finding =>
+                !matched.Contains(finding.Fingerprint)
+                && !Unevaluated(finding, unevaluatedRuleCodes)
+            )
             .ToList();
 
-        return new BaselineMatch(report with { Results = results }, suppressed, stale);
+        var unknownRuleCodes = baseline
+            .Findings
+            .Select(finding => finding.IssueCode)
+            .Where(code => !KnownRuleIds.Contains(code))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(code => code, StringComparer.Ordinal)
+            .ToList();
+
+        var matchedFingerprints = baseline
+            .Findings
+            .Where(finding => matched.Contains(finding.Fingerprint))
+            .Select(finding => finding.Fingerprint)
+            .ToList();
+
+        return new BaselineMatch(
+            report with { Results = results },
+            suppressed,
+            stale,
+            matchedFingerprints,
+            unknownRuleCodes
+        );
+    }
+
+    private static bool Unevaluated(
+        BaselineFinding finding,
+        IReadOnlyCollection<AnalysisIssueCode>? unevaluatedRuleCodes
+    )
+    {
+        if (unevaluatedRuleCodes is not { Count: > 0 })
+        {
+            return false;
+        }
+
+        return Enum.TryParse<AnalysisIssueCode>(
+            finding.IssueCode,
+            ignoreCase: true,
+            out var code
+        ) && unevaluatedRuleCodes.Contains(code);
     }
 }

@@ -102,6 +102,31 @@ public class MigrationResult
     public bool BaselineWritten { get; init; }
 
     /// <summary>
+    /// Baseline entries that matched no finding this run — debt accepted once and since fixed.
+    /// Reported so the file can be pruned; a stale entry suppresses nothing but makes the baseline
+    /// look like it is still doing work. Zero when no baseline was used or everything matched.
+    /// </summary>
+    public int? BaselineStaleEntries { get; init; }
+
+    /// <summary>
+    /// Distinct rule IDs cited by the baseline that the current catalog does not know — the mark of
+    /// a renamed or deleted rule. Empty when every entry names a live rule.
+    /// </summary>
+    public IReadOnlyList<string>? BaselineUnknownRuleCodes { get; init; }
+
+    /// <summary>
+    /// Baseline fingerprints this run's findings actually matched. Batch-level staleness
+    /// accounting needs the union across solutions; never serialized.
+    /// </summary>
+    public IReadOnlyCollection<string>? BaselineMatchedFingerprints { get; init; }
+
+    /// <summary>
+    /// Rules this run could not have judged (opt-in analyzers without data, policy-disabled rules).
+    /// Entries citing them are excluded from staleness; batch accounting needs the union.
+    /// </summary>
+    public IReadOnlyCollection<AnalysisIssueCode>? BaselineUnevaluatedRuleCodes { get; init; }
+
+    /// <summary>
     /// Findings that reached the <c>--fail-on</c> threshold — the subset <see cref="ExitCode"/>
     /// reflects. Recorded here rather than re-derived by reporters: the gate has exceptions (a
     /// successful <c>--fix</c> run does not gate on findings it just repaired), and a second

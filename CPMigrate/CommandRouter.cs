@@ -1061,7 +1061,9 @@ internal static class CommandRouter
                 result.BaselinePath
                     ?? (options.UsesBaseline() ? options.ResolveBaselinePath() : null),
                 result.BaselineWritten,
-                result.ProjectsDiscovered > 0 ? result.ProjectsDiscovered : null
+                result.ProjectsDiscovered > 0 ? result.ProjectsDiscovered : null,
+                result.BaselineStaleEntries ?? 0,
+                result.BaselineUnknownRuleCodes ?? []
             )
         );
 
@@ -1223,6 +1225,8 @@ internal static class CommandRouter
                     )
                     .ToList();
 
+        var baselineStaleness = BaselineStaleness(options, result);
+
         var operationResult = new OperationResult
         {
             Operation = operation,
@@ -1240,6 +1244,8 @@ internal static class CommandRouter
                 IssuesBaselined = options.UsesBaseline()
                     ? result.AnalysisReport?.SuppressedCount
                     : null,
+                BaselineStaleEntries = baselineStaleness.StaleEntries,
+                BaselineUnknownRuleCodes = baselineStaleness.UnknownRuleCodes,
                 DisabledRules = rulePolicy.ReportedDisabledRules(),
                 SeverityOverrides = rulePolicy.ReportedSeverityOverrides(),
                 HighestSeverity = result.AnalysisReport?.HighestSeverity?.ToString(),
@@ -1264,6 +1270,34 @@ internal static class CommandRouter
         var output = formatter.Format(operationResult);
 
         await JsonOutputWriter.EmitAsync(output, options, consoleService);
+    }
+
+    /// <summary>
+    /// The baseline-staleness fields a JSON summary carries, or nulls when no baseline was used —
+    /// the same "absence is meaningful" contract <c>issuesBaselined</c> keeps.
+    /// </summary>
+    private static (int? StaleEntries, IReadOnlyList<string>? UnknownRuleCodes) BaselineStaleness(
+        Options options,
+        MigrationResult result
+    )
+    {
+        if (!options.UsesBaseline())
+        {
+            return (null, null);
+        }
+
+        // Both null means matching never ran: a missing or unreadable baseline must not look like
+        // a checked one. An incomplete scan keeps its unknown-rule IDs (catalog membership does not
+        // depend on what the scans saw) while withholding the stale count.
+        if (result.BaselineUnknownRuleCodes is null && result.BaselineStaleEntries is null)
+        {
+            return (null, null);
+        }
+
+        return (
+            result.BaselineStaleEntries,
+            result.BaselineUnknownRuleCodes is { Count: > 0 } ? result.BaselineUnknownRuleCodes : null
+        );
     }
 
     private static async Task WriteJsonOutputForPackageUpdate(

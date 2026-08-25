@@ -82,7 +82,7 @@ cpmigrate --update-packages --bisect
 Requires **.NET SDK 8.0** or later. The tool itself targets `net10.0` with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.62.0
+dotnet tool install --global CPMigrate --version 3.63.0
 ```
 
 ```bash
@@ -307,6 +307,8 @@ cpmigrate --analyze --audit --baseline .cpmigrate-baseline.json
 ```
 
 Baselined findings stay visible everywhere (`suppressed: true` in JSON, `kind: "external"` in SARIF). A finding is keyed by rule + package + projects — a version drifting `13.0.1 → 13.0.2` stays suppressed; spreading to a new project does not.
+
+Baselines rot as the debt gets paid down, and a run that reads one now says so: entries that matched nothing show up as `summary.baselineStaleEntries` (plus a Markdown summary row and a terminal warning) so you can remove them from the file by hand. Do not reach for `--write-baseline` to prune: it replaces the baseline with every current finding, silently accepting new debt alongside the cleanup. Entries citing a rule ID the catalog no longer has — usually a renamed or deleted rule — are reported separately (`summary.baselineUnknownRuleCodes`, terminal warning pointing at `cpmigrate --explain all`) rather than being counted as fixed debt. Nothing is pruned automatically.
 
 </details>
 

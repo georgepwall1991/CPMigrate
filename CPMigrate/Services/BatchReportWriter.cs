@@ -63,6 +63,46 @@ public static class BatchReportWriter
             }
         }
 
+        // Per-solution runs are quiet, so this is the only place batch baseline rot becomes
+        // visible in the artifact a team keeps.
+        var staleEntries = result.BaselineVerdictComplete
+            ? result.BaselineStaleEntries
+                ?? result.Solutions.Sum(s => s.Summary?.BaselineStaleEntries ?? 0)
+            : 0;
+        var unknownCodes = (
+            result.BaselineVerdictComplete
+                ? result.BaselineUnknownRuleCodes
+                    ?? result.Solutions
+                        .SelectMany(s => s.Summary?.BaselineUnknownRuleCodes ?? [])
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(code => code, StringComparer.Ordinal)
+                        .ToList()
+                : []
+        );
+        if (staleEntries > 0 || unknownCodes.Count > 0)
+        {
+            builder.AppendLine("## Baseline rot");
+            builder.AppendLine();
+            if (staleEntries > 0)
+            {
+                builder.AppendLine(
+                    $"- {staleEntries.ToString(System.Globalization.CultureInfo.InvariantCulture)} "
+                        + "baseline entr(ies) matched no finding — fixed since. Remove the dead "
+                        + "entries from the baseline file by hand; --write-baseline would also "
+                        + "accept this run's new findings."
+                );
+            }
+
+            if (unknownCodes.Count > 0)
+            {
+                builder.AppendLine(
+                    "- Baseline cites rule ID(s) CPMigrate does not know ("
+                        + string.Join(", ", unknownCodes)
+                        + ") — likely renamed or removed rules. Run `cpmigrate --explain all`."
+                );
+            }
+        }
+
         return builder.ToString();
     }
 

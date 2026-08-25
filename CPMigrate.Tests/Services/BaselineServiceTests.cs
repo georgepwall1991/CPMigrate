@@ -152,6 +152,35 @@ public class BaselineServiceTests : IDisposable
 
         match.Suppressed.Should().Be(1);
         match.Stale.Should().ContainSingle(f => f.Package == "Gone.Package");
+        match.UnknownRuleCodes.Should().BeEmpty("every entry names a rule the catalog still has");
+    }
+
+    [Fact]
+    public void Apply_FlagsEntriesWhoseIssueCodeMatchesNoCatalogRule()
+    {
+        // A rule renamed or deleted after the baseline was written leaves entries that can never
+        // suppress anything again — a different problem from debt that was fixed, so it is named
+        // apart rather than folded into the stale count.
+        var stillThere = Issue(
+            "Newtonsoft.Json",
+            AnalysisIssueCode.VersionInconsistency,
+            AnalysisSeverity.Moderate
+        );
+        var baseline = _service.Create(ReportWith(stillThere));
+        baseline.Findings.Add(
+            new BaselineFinding(
+                "fingerprint-of-a-deleted-rule",
+                "VersionDrift",
+                "Old.Package",
+                "Moderate",
+                new[] { "Api.csproj" }
+            )
+        );
+
+        var match = _service.Apply(ReportWith(stillThere), baseline);
+
+        match.Suppressed.Should().Be(1);
+        match.UnknownRuleCodes.Should().ContainSingle().Which.Should().Be("VersionDrift");
     }
 
     [Fact]

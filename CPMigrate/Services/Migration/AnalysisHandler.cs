@@ -98,7 +98,7 @@ internal sealed class AnalysisHandler
             );
         }
 
-        var (baselinedReport, baselineError) = ApplyBaseline(options, report);
+        var (match, baselineError) = ApplyBaseline(options, report, scanFailures == 0 && deepScanFailures == 0);
         if (baselineError is not null)
         {
             _consoleService.Error(baselineError);
@@ -111,7 +111,7 @@ internal sealed class AnalysisHandler
             };
         }
 
-        report = baselinedReport;
+        report = match?.Report ?? report;
 
         if (!_quietMode)
         {
@@ -141,7 +141,8 @@ internal sealed class AnalysisHandler
             basePath,
             scanFailures,
             deepScanFailures,
-            projectPaths.Count
+            projectPaths.Count,
+            match
         );
     }
 
@@ -692,7 +693,8 @@ internal sealed class AnalysisHandler
         string basePath,
         int scanFailures,
         int deepScanFailures,
-        int projectsDiscovered
+        int projectsDiscovered,
+        BaselineMatch? baselineMatch
     )
     {
         FixReport? fixReport = null;
@@ -722,11 +724,22 @@ internal sealed class AnalysisHandler
                 // The rescan produces a fresh, unsuppressed report. Without reapplying the
                 // baseline, findings the team accepted would start failing the build the moment an
                 // unrelated fix ran.
-                var (postFixReport, postFixBaselineError) = ApplyBaseline(options, rescanned);
+                var (postFixMatch, postFixBaselineError) = ApplyBaseline(options, rescanned, postFixScanFailures == 0 && postFixDeepScanFailures == 0);
                 if (postFixBaselineError is not null)
                 {
                     _consoleService.Error(postFixBaselineError);
                 }
+
+                // The latest apply wins: the post-fix rescan is what the gate ran on, so only its
+                // match may speak. When the baseline cannot be re-read after the fixes, every
+                // post-fix verdict stays null — falling back to the pre-fix match would describe a
+                // tree that no longer exists, and the raw rescan is the only honest view.
+                var reportedMatch = postFixMatch;
+                var baselineVerdict = BaselineVerdict(
+                    reportedMatch,
+                    postFixScanFailures == 0 && postFixDeepScanFailures == 0
+                );
+                var postFixReport = postFixMatch?.Report ?? rescanned;
 
                 if (!_quietMode)
                 {
@@ -743,6 +756,12 @@ internal sealed class AnalysisHandler
                     AnalysisReport = report,
                     PostFixAnalysisReport = postFixReport,
                     FixReport = fixReport,
+                    BaselineStaleEntries = baselineVerdict.StaleEntries,
+                    BaselineUnknownRuleCodes = baselineVerdict.UnknownRuleCodes,
+                    BaselineMatchedFingerprints = baselineVerdict.MatchedFingerprints,
+                    BaselineUnevaluatedRuleCodes = reportedMatch is null
+                        ? null
+                        : UnevaluatedRuleCodes(options),
                     PackageInfo = packageInfo,
                     BasePath = basePath,
                     ScanFailures = postFixScanFailures,
@@ -760,20 +779,31 @@ internal sealed class AnalysisHandler
             }
         }
 
+        var nonFixVerdict = BaselineVerdict(
+            baselineMatch,
+            scanFailures == 0 && deepScanFailures == 0
+        );
+
         return await Task.FromResult(
             new MigrationResult
             {
                 ProjectsProcessed = packageInfo.ProjectCount,
                 PackagesCentralized = packageInfo.TotalReferences,
                 AnalysisReport = report,
-                FixReport = fixReport,
                 PackageInfo = packageInfo,
                 BasePath = basePath,
+                FixReport = fixReport,
+                GatedIssueCount = CountGatedIssues(report, options.FailOn),
+                BaselineStaleEntries = nonFixVerdict.StaleEntries,
+                BaselineUnknownRuleCodes = nonFixVerdict.UnknownRuleCodes,
+                BaselineMatchedFingerprints = nonFixVerdict.MatchedFingerprints,
+                BaselineUnevaluatedRuleCodes = baselineMatch is null
+                    ? null
+                    : UnevaluatedRuleCodes(options),
+                ExitCode = ResolveExitCode(report, options.FailOn, scanFailures, deepScanFailures),
                 ScanFailures = scanFailures,
                 DeepScanFailures = deepScanFailures,
                 ProjectsDiscovered = projectsDiscovered,
-                GatedIssueCount = CountGatedIssues(report, options.FailOn),
-                ExitCode = ResolveExitCode(report, options.FailOn, scanFailures, deepScanFailures),
             }
         );
     }
@@ -886,27 +916,105 @@ internal sealed class AnalysisHandler
         };
     }
 
+
+    /// <summary>
+    /// Rules this run could not have judged: opt-in analyzers whose data was never collected, and
+    /// rules switched off by policy, which report nothing at all. A baseline entry citing one of
+    /// these is not stale — its finding was merely absent from an incomplete evaluation — so it is
+    /// excluded from staleness rather than advised away.
+    /// </summary>
+    private static HashSet<Models.AnalysisIssueCode> UnevaluatedRuleCodes(Options options)
+    {
+        var unevaluated = new HashSet<Models.AnalysisIssueCode>();
+
+        // Opt-in analyzers never fire when their flag is absent, regardless of what the collected
+        // lists happen to contain — flag state, not collection shape, decides evaluability.
+        if (!options.AuditSecurity)
+        {
+            unevaluated.Add(Models.AnalysisIssueCode.SecurityVulnerability);
+        }
+
+        if (!options.AnalyzeLicenses)
+        {
+            unevaluated.Add(Models.AnalysisIssueCode.LicenseRisk);
+        }
+
+        if (!options.AnalyzeOutdated)
+        {
+            unevaluated.Add(Models.AnalysisIssueCode.OutdatedPackage);
+        }
+
+        if (!options.AnalyzeDeprecated)
+        {
+            unevaluated.Add(Models.AnalysisIssueCode.DeprecatedPackage);
+        }
+
+        // A direct-only scan cannot see transitive-only findings. TransitiveConflict judges
+        // nothing at all without that data, so its entries are unverifiable. The opt-in analyzers
+        // still fully judge direct packages in a direct scan, so their entries stay evaluable —
+        // silencing them wholesale would hide genuinely fixed direct debt forever. Residual edge:
+        // an accepted *transitive* outdated/deprecated/license finding looks fixed in a direct
+        // scan; the terminal warning always names the count before anyone prunes on it.
+        if (!options.IncludeTransitive)
+        {
+            unevaluated.Add(Models.AnalysisIssueCode.TransitiveConflict);
+        }
+
+        var disabledRules = options.ResolveRulePolicy().ReportedDisabledRules() ?? [];
+        foreach (var rule in disabledRules)
+        {
+            if (Enum.TryParse<Models.AnalysisIssueCode>(rule, ignoreCase: true, out var code))
+            {
+                unevaluated.Add(code);
+            }
+        }
+
+        return unevaluated;
+    }
+
     /// <summary>
     /// Marks findings the baseline has accepted, and reports entries that no longer match anything.
+    /// The match is returned rather than reduced to a report so the staleness counts survive to the
+    /// machine-readable outputs; the console lines alone do not reach a JSON or Markdown reader.
     /// </summary>
-    private (AnalysisReport Report, string? Error) ApplyBaseline(
+    /// <returns>The match, or null when no baseline was used or it could not be read.</returns>
+    private (BaselineMatch? Match, string? Error) ApplyBaseline(
         Options options,
-        AnalysisReport report
+        AnalysisReport report,
+        bool scanComplete
     )
     {
         if (!options.UsesBaseline())
         {
-            return (report, null);
+            return (null, null);
         }
 
         var path = options.ResolveBaselinePath();
         var (baseline, error) = _baselineService.Read(path);
         if (baseline is null)
         {
-            return (report, error);
+            return (null, error);
         }
 
-        var match = _baselineService.Apply(report, baseline);
+        var match = _baselineService.Apply(
+            report,
+            baseline,
+            UnevaluatedRuleCodes(options)
+        );
+
+        if (!_quietMode && match.UnknownRuleCodes.Count > 0)
+        {
+            // A rule ID that is no longer in the catalog means the entry can never suppress
+            // anything again — most likely the rule was renamed or deleted after the baseline was
+            // written. That is a different problem from debt that was fixed, so it gets its own
+            // line and a pointer at the valid IDs.
+            _consoleService.Warning(
+                $"Baseline {path}: entr(ies) cite rule ID(s) CPMigrate does not know "
+                    + $"({string.Join(", ", match.UnknownRuleCodes)}) — likely renamed or removed "
+                    + "since the baseline was written. Run 'cpmigrate --explain all' for the "
+                    + "current rule IDs."
+            );
+        }
 
         if (!_quietMode && match.Suppressed > 0)
         {
@@ -915,17 +1023,75 @@ internal sealed class AnalysisHandler
             );
         }
 
-        if (!_quietMode && match.Stale.Count > 0)
+        // An incomplete scan cannot tell fixed debt from merely unlooked-for debt, so the
+        // prune-able verdict stays silent — the same line BaselineVerdict draws for JSON/Markdown.
+        if (!_quietMode && scanComplete)
         {
-            // Dead entries accumulate silently and can start suppressing a finding that came back
-            // under the same identity, so they are worth naming.
-            _consoleService.Warning(
-                $"Baseline {path}: {match.Stale.Count} entr(ies) no longer match any finding "
-                    + "(fixed since). Re-run with --write-baseline to prune them."
+            var unknownCodes = new HashSet<string>(
+                match.UnknownRuleCodes,
+                StringComparer.OrdinalIgnoreCase
             );
+            var fixedSince = match.Stale.Count(finding => !unknownCodes.Contains(finding.IssueCode));
+            if (fixedSince > 0)
+            {
+                // Dead entries accumulate silently and can start suppressing a finding that came
+                // back under the same identity, so they are worth naming.
+                _consoleService.Warning(
+                    $"Baseline {path}: {fixedSince} entr(ies) no longer match any finding "
+                        + "(fixed since). Remove the dead entries from the baseline file by hand; --write-baseline would also accept this run's new findings."
+                );
+            }
         }
 
-        return (match.Report, null);
+        return (match, null);
+    }
+
+    /// <summary>
+    /// Stale entries whose rule ID is no longer in the catalog are counted as unknown rules, not
+    /// as fixed debt — the console path draws the same line, and JSON or Markdown readers must not
+    /// see one entry classified both ways.
+    /// </summary>
+    /// <summary>
+    /// A failed requested scan means some findings were never looked for: their baseline entries
+    /// are unverifiable, not fixed, so an incomplete run withholds every staleness field.
+    /// </summary>
+    private static (
+        int? StaleEntries,
+        IReadOnlyList<string>? UnknownRuleCodes,
+        IReadOnlyCollection<string>? MatchedFingerprints
+    ) BaselineVerdict(BaselineMatch? match, bool scanComplete)
+    {
+        if (match is null)
+        {
+            return (null, null, null);
+        }
+
+        // Catalog membership does not depend on what the scans saw — a renamed rule is reportable
+        // even in a run where nothing else could be judged.
+        if (!scanComplete)
+        {
+            return (null, match.UnknownRuleCodes, null);
+        }
+
+        return (
+            StaleEntriesExcludingUnknownRules(match),
+            match.UnknownRuleCodes,
+            match.MatchedFingerprints
+        );
+    }
+
+    private static int StaleEntriesExcludingUnknownRules(BaselineMatch? match)
+    {
+        if (match is null)
+        {
+            return 0;
+        }
+
+        var unknownCodes = new HashSet<string>(
+            match.UnknownRuleCodes,
+            StringComparer.OrdinalIgnoreCase
+        );
+        return match.Stale.Count(finding => !unknownCodes.Contains(finding.IssueCode));
     }
 
     /// <summary>

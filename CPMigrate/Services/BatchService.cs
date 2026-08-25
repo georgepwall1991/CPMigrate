@@ -11,6 +11,7 @@ public class BatchService
 {
     private readonly IConsoleService _consoleService;
     private readonly Func<Options, Task<MigrationResult>> _migrationExecutor;
+    private readonly BaselineService _baselineService = new();
 
     private static readonly HashSet<string> _defaultExcludedDirectories = new(
         StringComparer.OrdinalIgnoreCase
@@ -180,8 +181,68 @@ public class BatchService
             solutionResults = await RunSequentialAsync(options, solutions);
         }
 
-        // Build final result
+        // Build final result. "Complete" means every discovered solution ran AND applied the
+        // baseline: a failed solution contributes no matched fingerprints, so counting it would
+        // declare its live debt stale.
         result.Solutions.AddRange(solutionResults);
+        result.BaselineVerdictComplete =
+            result.Solutions.Count == solutions.Count
+            && result.Solutions.All(s => s.MatchedBaselineFingerprints is not null);
+
+        // A shared baseline spans solutions: an entry accepted for solution A is unmatched noise in
+        // solution B's own count, so per-solution sums double-report live debt as fixed. The batch
+        // verdict is computed once, against the union of what every solution actually matched — and
+        // only when the batch is complete, because a partial run cannot tell live debt from fixed.
+        // Known limit: fingerprints identify projects relative to their scan root, so this verdict
+        // assumes the baseline was recorded against the same solution roots the batch walked.
+
+        if (options.UsesBaseline() && result.BaselineVerdictComplete)
+        {
+            var baselinePath = options.ResolveBaselinePath();
+            var (baseline, readError) = _baselineService.Read(baselinePath);
+            if (baseline is not null)
+            {
+                var matched = result.Solutions
+                    .SelectMany(s => s.MatchedBaselineFingerprints ?? [])
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                // A rule no solution could judge keeps its entry out of "fixed" — the finding may
+                // still be live where nobody looked.
+                var unevaluated = result.Solutions
+                    .SelectMany(s => s.UnevaluatedRuleCodes ?? [])
+                    .ToHashSet();
+
+                var staleFindings = baseline
+                    .Findings
+                    .Where(f =>
+                        !matched.Contains(f.Fingerprint)
+                        && BaselineService.IsKnownRuleId(f.IssueCode)
+                        && !(
+                            Enum.TryParse<AnalysisIssueCode>(f.IssueCode, true, out var code)
+                            && unevaluated.Contains(code)
+                        )
+                    )
+                    .ToList();
+
+                // Unknown IDs are classified against the whole baseline: an entry whose fingerprint
+                // still matches somewhere still cites a rule that no longer exists.
+                var unknownCodes = baseline
+                    .Findings
+                    .Select(f => f.IssueCode)
+                    .Where(code => !BaselineService.IsKnownRuleId(code))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(code => code, StringComparer.Ordinal)
+                    .ToList();
+
+                result.BaselineStaleEntries = staleFindings.Count;
+                result.BaselineUnknownRuleCodes = unknownCodes;
+            }
+            else if (!_consoleService.IsInteractive || readError is not null)
+            {
+                // Read failures are already surfaced per-solution; stay silent here rather than
+                // inventing a second channel. No rot verdict without the file.
+            }
+        }
 
         // The report's date is the completion date: the default was captured at construction,
         // before discovery and processing, which is wrong for a long batch.
@@ -245,6 +306,10 @@ public class BatchService
                         ExitCode = migrationResult.ExitCode,
                         Summary = BuildSolutionSummary(migrationResult, solutionOptions),
                         PropsFile = migrationResult.PropsFilePath,
+                        MatchedBaselineFingerprints =
+                            migrationResult.BaselineMatchedFingerprints,
+                        UnevaluatedRuleCodes =
+                            migrationResult.BaselineUnevaluatedRuleCodes,
                     }
                 );
             }
@@ -369,6 +434,8 @@ public class BatchService
             ExitCode = migrationResult.ExitCode,
             Summary = BuildSolutionSummary(migrationResult, solutionOptions),
             PropsFile = migrationResult.PropsFilePath,
+            MatchedBaselineFingerprints = migrationResult.BaselineMatchedFingerprints,
+            UnevaluatedRuleCodes = migrationResult.BaselineUnevaluatedRuleCodes,
         };
     }
 
@@ -403,6 +470,10 @@ public class BatchService
             HighestSeverity = report?.HighestSeverity?.ToString(),
             ScanFailures = report is null ? null : migrationResult.ScanFailures,
             DeepScanFailures = report is null ? null : migrationResult.DeepScanFailures,
+            // Staleness is deliberately absent here: each solution applies the whole shared
+            // baseline, so its local unmatched entries include other solutions' live debt. A
+            // per-solution count would label cross-solution findings as fixed. The authoritative
+            // batch-wide verdict goes to the terminal summary and the --report artifact instead.
         };
     }
 
@@ -462,6 +533,40 @@ public class BatchService
         _consoleService.Dim($"  Total projects processed: {totals.ProjectsProcessed}");
         _consoleService.Dim($"  Total packages found: {totals.PackagesFound}");
         _consoleService.Dim($"  Total conflicts resolved: {totals.ConflictsResolved}");
+
+        // Per-solution runs are quiet, so ApplyBaseline's warnings never printed; this summary is
+        // where batch baseline rot gets its airtime. The batch-level verdict — computed against
+        // what every solution matched — is authoritative when it exists; per-solution counts are a
+        // single-solution view and summing them would double-report cross-solution debt.
+        var staleEntries = result.BaselineVerdictComplete
+            ? result.BaselineStaleEntries
+                ?? result.Solutions.Sum(s => s.Summary?.BaselineStaleEntries ?? 0)
+            : 0;
+        if (staleEntries > 0)
+        {
+            _consoleService.Warning(
+                $"{staleEntries} baseline entr(ies) across the batch matched no finding (fixed "
+                    + "since). Remove the dead entries from each solution's baseline file by hand; --write-baseline would also accept new findings."
+            );
+        }
+
+        var unknownCodes = (
+            result.BaselineVerdictComplete
+                ? result.BaselineUnknownRuleCodes
+                    ?? result.Solutions
+                        .SelectMany(s => s.Summary?.BaselineUnknownRuleCodes ?? [])
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList()
+                : []
+        );
+        if (unknownCodes.Count > 0)
+        {
+            _consoleService.Warning(
+                "The baselines cite rule ID(s) CPMigrate does not know ("
+                    + $"{string.Join(", ", unknownCodes)}) — likely renamed or removed rules. Run "
+                    + "'cpmigrate --explain all' for the current rule IDs."
+            );
+        }
 
         // List failed solutions
         var failures = result.Solutions.Where(s => !s.Success).ToList();

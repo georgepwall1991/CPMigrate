@@ -25,6 +25,14 @@ namespace CPMigrate.Services;
 /// project with no PackageReference contributes none — so a reference-derived count under-reports,
 /// and reads as zero for a solution whose projects have no packages at all.
 /// </param>
+/// <param name="BaselineStaleEntries">
+/// Baseline entries that matched no finding this run. They suppress nothing, so leaving them out
+/// would let a baseline look like it is still doing work while it rots.
+/// </param>
+/// <param name="BaselineUnknownRuleCodes">
+/// Rule IDs the baseline cites that the catalog does not know — usually renamed or deleted rules.
+/// Named so the reader can tell a dead entry from debt that was genuinely fixed.
+/// </param>
 public record MarkdownReportContext(
     FailOnSeverity FailOn = FailOnSeverity.Info,
     int? GatedIssueCount = null,
@@ -33,7 +41,9 @@ public record MarkdownReportContext(
     int DeepScanFailures = 0,
     string? BaselinePath = null,
     bool BaselineWritten = false,
-    int? ProjectsScanned = null
+    int? ProjectsScanned = null,
+    int BaselineStaleEntries = 0,
+    IReadOnlyList<string>? BaselineUnknownRuleCodes = null
 );
 
 /// <summary>
@@ -188,6 +198,14 @@ public static class MarkdownFormatter
             );
         }
 
+        if (context.BaselineStaleEntries > 0)
+        {
+            markdown.AppendLine(
+                CultureInfo.InvariantCulture,
+                $"| Stale baseline entries | {context.BaselineStaleEntries} |"
+            );
+        }
+
         markdown.AppendLine();
     }
 
@@ -327,17 +345,50 @@ public static class MarkdownFormatter
         MarkdownReportContext context
     )
     {
-        if (string.IsNullOrWhiteSpace(context.BaselinePath) || report.SuppressedCount == 0)
+        if (string.IsNullOrWhiteSpace(context.BaselinePath))
         {
             return;
         }
 
-        markdown.AppendLine(
-            CultureInfo.InvariantCulture,
-            $"{report.SuppressedCount} finding(s) marked *(baselined)* are accepted in "
-                + $"`{Escape(context.BaselinePath)}` and do not fail the build."
-        );
-        markdown.AppendLine();
+        var noted = false;
+        if (report.SuppressedCount > 0)
+        {
+            markdown.AppendLine(
+                CultureInfo.InvariantCulture,
+                $"{report.SuppressedCount} finding(s) marked *(baselined)* are accepted in "
+                    + $"`{Escape(context.BaselinePath)}` and do not fail the build."
+            );
+            noted = true;
+        }
+
+        if (context.BaselineStaleEntries > 0)
+        {
+            // A stale entry suppresses nothing: the debt it accepted is gone. Left unmentioned it
+            // makes the baseline look like it is still doing work while it quietly rots.
+            markdown.AppendLine(
+                CultureInfo.InvariantCulture,
+                $"{context.BaselineStaleEntries} baseline entr(ies) matched no finding — they are "
+                    + $"dead weight. Remove the dead entries from the baseline file by hand; --write-baseline would also accept this run's new findings."
+            );
+            noted = true;
+        }
+
+        if (context.BaselineUnknownRuleCodes is { Count: > 0 })
+        {
+            markdown.AppendLine(
+                CultureInfo.InvariantCulture,
+                $"Baseline cites {context.BaselineUnknownRuleCodes.Count} rule ID(s) "
+                    + $"CPMigrate does not know ({Escape(string.Join(", ", context.BaselineUnknownRuleCodes))})"
+                    + $" — likely renamed or removed rules rather than fixed findings. Run "
+                    + $"`cpmigrate --explain all` for the current rule IDs."
+            );
+            noted = true;
+        }
+
+        if (noted)
+        {
+            markdown.AppendLine();
+        }
     }
 
     private static void WriteFooter(StringBuilder markdown)

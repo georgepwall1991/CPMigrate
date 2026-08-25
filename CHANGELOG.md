@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Added
+- **Baseline rot is now reported wherever the baseline itself is.** A baseline records accepted debt, and debt gets paid down — but until now an entry whose finding no longer existed vanished silently into `Stale`, visible only as a terminal line a CI log loses. Every run that reads a baseline now says how many entries matched nothing (`summary.baselineStaleEntries` in JSON, a summary-table row and a note in Markdown, plus the existing terminal warning) so the dead entries can be removed from the file on purpose — by hand, not with `--write-baseline`, which would also accept every new finding the run reported. Entries whose `issueCode` names a rule the catalog no longer publishes — the fingerprint of a renamed or deleted rule — are called out separately rather than being counted as fixed debt: the console warning suggests `cpmigrate --explain all` for the current IDs, and JSON carries them in `summary.baselineUnknownRuleCodes`. Matching semantics are unchanged; nothing is pruned automatically. Output schema 1.8.0, additive: `summary.baselineStaleEntries` and `summary.baselineUnknownRuleCodes` arrived in 1.7.0, and the batch payload gained its own batch-wide `baselineStaleEntries` / `baselineUnknownRuleCodes` in 1.8.0.
+
 ## [3.63.0] - 2026-08-25
 
 ### Added

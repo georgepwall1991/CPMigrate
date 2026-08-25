@@ -46,13 +46,26 @@ public static class OutputMetadata
     /// <c>summary.disabledRules</c> draws for rule policy.
     /// </para>
     /// <para>
+    /// 1.8.0 additively introduced batch-level baseline-rot fields:
+    /// <c>baselineStaleEntries</c> and <c>baselineUnknownRuleCodes</c> on the batch payload.
+    /// Both are absent when no baseline was used, it could not be read, or the batch stopped
+    /// early — a partial run cannot tell live debt from fixed debt.
+    /// </para>
+    /// <para>
     /// 1.6.0 additively introduced the third top-level shape: the document
     /// <c>--why --output Json</c> prints, distinguished by <c>operation: "why"</c>. Consumers that
     /// select a schema by <c>outputSchemaVersion</c> must resolve 1.6.0 to validate such a payload;
     /// against 1.5.0 it is correctly rejected, which is why the version moved.
     /// </para>
+    /// <para>
+    /// 1.7.0 additively introduced <c>summary.baselineStaleEntries</c> and
+    /// <c>summary.baselineUnknownRuleCodes</c>: what a baseline no longer suppresses, and which of
+    /// its rule IDs have ceased to exist. Both are absent when no baseline was used, so a run
+    /// without one is indistinguishable from a fully matched one — the same "absence is meaningful"
+    /// contract the other summary fields keep.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.6.0";
+    public const string SchemaVersion = "1.8.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

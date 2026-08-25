@@ -302,6 +302,21 @@ public class OperationSummary
     public int? IssuesBaselined { get; init; }
 
     /// <summary>
+    /// Baseline entries that matched no finding this run — accepted debt that has since been fixed.
+    /// They suppress nothing, so a non-zero count means the baseline can be pruned. Absent when no
+    /// baseline was used.
+    /// </summary>
+    [JsonPropertyName("baselineStaleEntries")]
+    public int? BaselineStaleEntries { get; init; }
+
+    /// <summary>
+    /// Rule IDs the baseline cites that no current rule publishes — the mark of a renamed or
+    /// deleted rule rather than fixed debt. Empty when every entry names a live rule.
+    /// </summary>
+    [JsonPropertyName("baselineUnknownRuleCodes")]
+    public IReadOnlyList<string>? BaselineUnknownRuleCodes { get; init; }
+
+    /// <summary>
     /// Rules switched off by policy, so a consumer can tell a clean solution from one whose
     /// findings were configured away. Null when no rule was disabled.
     /// </summary>

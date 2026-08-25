@@ -241,6 +241,49 @@ public class MarkdownFormatterTests
         markdown.Should().Contain("Accepted in baseline");
         markdown.Should().Contain(".cpmigrate-baseline.json");
         markdown.Should().Contain("do not fail the build");
+        markdown
+            .Should()
+            .NotContain("matched no finding", "a healthy baseline has nothing to call out")
+            .And.NotContain("--explain all");
+    }
+
+    [Fact]
+    public void Format_StaleBaselineEntries_AreCalledOutForPruning()
+    {
+        // A stale entry suppresses nothing, so the report must not let the baseline look like it is
+        // still doing work while it rots.
+        var report = ReportWith(Issue("Newtonsoft.Json", AnalysisSeverity.Moderate));
+
+        var markdown = MarkdownFormatter.Format(
+            report,
+            EmptyPackageInfo(),
+            new MarkdownReportContext(
+                BaselinePath: ".cpmigrate-baseline.json",
+                BaselineStaleEntries: 3
+            )
+        );
+
+        markdown.Should().Contain("| Stale baseline entries | 3 |");
+        markdown.Should().Contain("matched no finding");
+        markdown.Should().Contain("--write-baseline", "pruning is the reader's decision to make");
+    }
+
+    [Fact]
+    public void Format_UnknownBaselineRuleIds_SuggestExplainAll()
+    {
+        // A renamed or deleted rule leaves entries that can never match again. They read like fixed
+        // debt unless the report says the rule itself is gone and where valid IDs are listed.
+        var markdown = MarkdownFormatter.Format(
+            EmptyReport(),
+            EmptyPackageInfo(),
+            new MarkdownReportContext(
+                BaselinePath: ".cpmigrate-baseline.json",
+                BaselineUnknownRuleCodes: new[] { "VersionDrift" }
+            )
+        );
+
+        markdown.Should().Contain("VersionDrift");
+        markdown.Should().Contain("--explain all");
     }
 
     [Fact]

@@ -5,7 +5,7 @@ namespace CPMigrate.Models;
 /// <summary>
 /// Result of a batch operation across multiple solutions.
 /// </summary>
-public class BatchResult
+public partial class BatchResult
 {
     /// <summary>
     /// JSON contract version for this payload.
@@ -115,6 +115,40 @@ public class SolutionResult
 
     [JsonPropertyName("propsFile")]
     public string? PropsFile { get; init; }
+
+    /// <summary>
+    /// Baseline fingerprints this solution's findings actually matched. Internal batch-level
+    /// staleness accounting only — never serialized, unlike <see cref="Summary"/>, whose stale
+    /// count is a single-solution view.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyCollection<string>? MatchedBaselineFingerprints { get; init; }
+
+    /// <summary>Rules this solution's run could not have judged; see <see cref="MatchedBaselineFingerprints"/>.</summary>
+    [JsonIgnore]
+    public IReadOnlyCollection<AnalysisIssueCode>? UnevaluatedRuleCodes { get; init; }
+}
+
+public partial class BatchResult
+{
+    /// <summary>
+    /// Batch-wide count of baseline entries that matched no finding in any solution. Null when no
+    /// baseline was used, it could not be read, or the batch stopped early — a partial run's union
+    /// of matches would classify every skipped solution's live debt as fixed.
+    /// </summary>
+    [JsonPropertyName("baselineStaleEntries")]
+    public int? BaselineStaleEntries { get; set; }
+
+    /// <summary>
+    /// Rule IDs the baselines cite that no current rule publishes, across the whole batch. Absent
+    /// under the same conditions as <see cref="BaselineStaleEntries"/>.
+    /// </summary>
+    [JsonPropertyName("baselineUnknownRuleCodes")]
+    public IReadOnlyList<string>? BaselineUnknownRuleCodes { get; set; }
+
+    /// <summary>True when every discovered solution was evaluated, making a staleness verdict trustworthy.</summary>
+    [JsonIgnore]
+    public bool BaselineVerdictComplete { get; set; }
 }
 
 /// <summary>
