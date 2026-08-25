@@ -149,27 +149,27 @@ public class TransitiveConflictFixer : IFixer
             return originalContent;
         }
 
-        // XmlWriter rewrites every newline to the host's Environment.NewLine, so the serialized form
-        // is normalized back to the endings the file actually uses before it is written.
+        // Search and construct in the project's own namespace: the default MSBuild namespace makes an
+        // unqualified search find nothing, and unqualified additions would serialize with xmlns="" —
+        // elements MSBuild ignores while the fix reports success.
+        var ns = root.Name.Namespace;
         var fileUsesCrlf = originalContent.Contains("\r\n", StringComparison.Ordinal);
         var newline = fileUsesCrlf ? "\r\n" : "\n";
         var pin = new XElement(
-            "PackageVersion",
+            ns + "PackageVersion",
             new XAttribute("Include", packageName),
             new XAttribute("Version", bestVersion)
         );
 
         var targetGroup = root
-            .Descendants("ItemGroup")
-            .Where(group => !group.Ancestors().Any(ancestor =>
-                ancestor.Name.LocalName is "Target" or "Choose" or "When" or "Otherwise"
-            ))
+            .Descendants(ns + "ItemGroup")
+            .Where(group => group.Parent == root)
             .FirstOrDefault(group => !IsConditional(group));
 
         if (targetGroup is null)
         {
             var itemGroup = new XElement(
-                "ItemGroup",
+                ns + "ItemGroup",
                 new XText(newline + "  "),
                 pin,
                 new XText(newline + "  ")

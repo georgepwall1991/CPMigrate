@@ -739,6 +739,95 @@ public class TransitiveConflictFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_NamespacedProps_AddsPinIntoNamespacedGroup()
+    {
+        // The default MSBuild namespace makes an unqualified search find no ItemGroup at all, and
+        // unqualified additions would carry xmlns="" — elements MSBuild ignores while the fix
+        // reports success.
+        CreatePropsFile(@"<Project xmlns=""http://schemas.microsoft.com/developer/msbuild/2003"">
+  <ItemGroup>
+    <PackageVersion Include=""Serilog"" Version=""3.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", "Project1.csproj", "Project1.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        content.Should().NotContain("xmlns=\"\"");
+
+        var document = XDocument.Parse(content);
+        var pin = document
+            .Descendants("{http://schemas.microsoft.com/developer/msbuild/2003}PackageVersion")
+            .Single(element => element.Attribute("Include")?.Value == "Newtonsoft.Json");
+        pin.Attribute("Version")?.Value.Should().Be("13.0.1");
+    }
+
+    [Fact]
+    public void Fix_ItemGroupUnderProjectExtensions_NotUsedForPinning()
+    {
+        // Only an ItemGroup whose parent is the Project root belongs to the static evaluation graph;
+        // extension data must not swallow the pin, so a fresh top-level group is created instead.
+        CreatePropsFile(@"<Project>
+  <ProjectExtensions>
+    <ItemGroup>
+      <PackageVersion Include=""Serilog"" Version=""3.0.0"" />
+    </ItemGroup>
+  </ProjectExtensions>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", "Project1.csproj", "Project1.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+
+        var document = XDocument.Parse(File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props")));
+        var pin = document
+            .Descendants("PackageVersion")
+            .Single(element => element.Attribute("Include")?.Value == "Newtonsoft.Json");
+        pin.Parent!.Name.LocalName.Should().Be("ItemGroup");
+        pin.Ancestors().Should().NotContain(element => element.Name.LocalName == "ProjectExtensions");
+    }
+
+    [Fact]
     public void Fix_CaseInsensitivePackageMatching_UpdatesCorrectly()
     {
         // Arrange
