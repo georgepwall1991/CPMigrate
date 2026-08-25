@@ -29,7 +29,7 @@ NuGet dependency drift is a slow leak. Version sprawl, duplicate references, tra
 CPMigrate replaces both with three things that actually hold up:
 
 - 🔍 **A dry-run-first migration** that shows you the exact `Directory.Packages.props` diff before it touches a byte.
-- 📊 **A dependency health scoreboard** — 12 analyzers, a 0–100 score, severity-gated CI exits.
+- 📊 **A dependency health scoreboard** — 16 rules across 13 analyzers, a 0–100 score, severity-gated CI exits.
 - 🛡️ **Updates that roll themselves back** the instant `dotnet test` goes red — and with `--bisect`, keep the largest subset that stays green instead of nuking all 38 because one broke.
 
 ---
@@ -142,20 +142,20 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 |---------|--------------|
 | 🏗️ **CPM migration** | Generate `Directory.Packages.props`, strip inline versions, conflict strategies, `--merge` |
 | 🔎 **`--verify`** | Restores before *and* after, diffs the resolved graph, attributes every change to the decision that caused it |
-| 🔬 **Dependency analysis** | 12 analyzers + scoreboard + 0–100 health score; JSON / SARIF / Markdown / **CSV** |
+| 🔬 **Dependency analysis** | 16 rules / 13 analyzers + scoreboard + 0–100 health score; JSON / SARIF / Markdown / **CSV** |
 | 🩹 **Auto-fix** | Version, casing, redundant refs, transitive pin |
 | 🔁 **Safe updates** | Latest versions + `dotnet test` + automatic rollback |
 | 🔪 **`--bisect`** | Largest green update subset; names the held-back packages |
 | 🧱 **`Directory.Build.props`** | Unify repeated properties across projects |
-| 🏢 **Batch / monorepo** | Sequential or parallel multi-solution runs |
+| 🏢 **Batch / monorepo** | Sequential or parallel multi-solution runs, with a `--report` Markdown rollup |
 | 💾 **Backup & rollback** | Timestamped on-disk backups for every destructive path |
 | 📄 **`.sln` + `.slnx`** | Classic solutions and Visual Studio 17.10+ `.slnx` |
-| 🩺 **`--doctor`** | Environment diagnostics: SDK, NuGet, disk space, write access, workspace, config, git |
+| 🩺 **`--doctor`** | Environment diagnostics: SDK, NuGet, disk space, write access, backup dir, workspace, config, git |
 |  **`--init`** | Scaffold `.cpmigrate.json` with team defaults |
 | 📟 **`--status`** | One-shot workspace health dashboard |
 | 🌳 **`--tree`** | ASCII dependency tree, direct + transitive |
 | 🕵️ **`--why`** | Trace one package: who declares it, who inherits it, version drift — as text or `--output Json` for CI |
-| 🔀 **`--diff`** | Unified diff preview on `--dry-run` |
+| 🔀 **`--diff`** | Unified diff preview on `--dry-run`; capture it with `--diff-file` for CI |
 
 ### Why not just do it by hand?
 
@@ -185,7 +185,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 <summary><b>🩺 Diagnostics &amp; workspace</b> — know your state before you change it</summary>
 
 ```bash
-cpmigrate --doctor                 # SDK, NuGet reachability, disk, write access, workspace, git — one table
+cpmigrate --doctor                 # SDK, NuGet reachability, disk, write access, backup dir, workspace, config, git — one table
 cpmigrate --status                 # repo-context dashboard, no wizard
 cpmigrate --tree --transitive      # ASCII dependency tree per project
 cpmigrate --why Newtonsoft.Json    # who declares it, who inherits it, do versions drift
@@ -200,6 +200,7 @@ cpmigrate --init                   # scaffold .cpmigrate.json (interactive or CI
 
 ```bash
 cpmigrate -s ./MySolution.sln --dry-run --diff   # preview, nothing written
+cpmigrate -s ./MySolution.sln --dry-run --diff-file changes.patch   # same preview, captured as a file artifact
 cpmigrate -s ./MySolution.sln --verify           # migrate, then prove the graph didn't move
 cpmigrate -s ./MySolution.sln --verify --verify-strict   # demand a literal no-op
 cpmigrate -s ./MySolution.sln --verify --output Markdown # the receipt, for the PR body
@@ -243,7 +244,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 
 | Option | Default | Description |
 |--------|:-------:|-------------|
-| `--doctor` | `false` | Diagnose the environment: SDK, NuGet, disk space, workspace writability, config, git |
+| `--doctor` | `false` | Diagnose the environment: SDK, NuGet, disk space, workspace writability, backup directory access, config, git |
 | `--init` | `false` | Scaffold a `.cpmigrate.json` (interactive, or CI-safe defaults) |
 | `--status` | `false` | One-shot workspace health dashboard |
 | `--tree` | `false` | ASCII dependency tree per project (add `--transitive` for the full graph) |
@@ -286,7 +287,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--fix-dry-run` | | `false` | Preview auto-fixes |
 | `--fail-on` | | `Info` | Lowest severity that fails: `Info`·`Low`·`Moderate`·`High`·`Critical`·`Never` |
 | `--rules` | | | Per-rule policy: `Rule=Severity` pairs, or `Rule=none` to switch a rule off |
-| `--max-parallelism` | | procs (≤8) | Projects scanned at once for `--audit`/`--outdated`/`--deprecated` |
+| `--max-parallelism` | | procs (≤8) | Projects scanned at once for `--audit`/`--outdated`/`--deprecated`, and for the concurrent per-project scans behind `--tree`/`--why` |
 | `--baseline` | | | Accepted-findings file; reported but never fail the build |
 | `--write-baseline` | | `false` | Record current findings as the baseline, then exit |
 
@@ -362,7 +363,7 @@ Baselined findings stay visible everywhere (`suppressed: true` in JSON, `kind: "
 
 | Option | Short | Default | Description |
 |--------|:-----:|:-------:|-------------|
-| `--output` | | `Terminal` | `Terminal` · `Json` · `Sarif` · `Markdown` · `Csv` (last four need `--analyze`) |
+| `--output` | | `Terminal` | `Terminal` · `Json` · `Sarif` · `Markdown` · `Csv` (`Sarif`/`Csv` need `--analyze`; `Markdown` needs `--analyze` or `--verify`) |
 | `--output-file` | | | Write `Json`/`Sarif`/`Markdown` to a file |
 | `--diff-file` | | | Append every `--dry-run` migration unified diff to a file; created empty when nothing changes, missing when the run crashed; rejected for every other command |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |

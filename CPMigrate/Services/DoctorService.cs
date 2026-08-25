@@ -26,16 +26,21 @@ internal sealed class DoctorService
         var theme = SpectreTheme.For(AnsiConsole.Console);
         var checks = new List<DoctorCheck>();
 
+        // The network probe starts first and is awaited last, so doctor costs HTTP latency in
+        // total — not HTTP latency plus every local check — while the report keeps the probe's
+        // established row position.
+        var nuGetTask = CheckNuGetConnectivityAsync();
+
         checks.Add(CheckDotNetSdk());
         checks.Add(CheckCpmigrateVersion());
         checks.Add(CheckRuntime());
-        checks.Add(await CheckNuGetConnectivityAsync());
         checks.AddRange(CheckWorkspace(searchPath));
         checks.Add(CheckDiskSpace(searchPath));
         checks.Add(CheckWriteAccess(searchPath));
         checks.Add(CheckBackupDirAccess(searchPath, backupDir));
         checks.Add(CheckConfigFile(searchPath));
         checks.Add(CheckGitStatus(searchPath));
+        checks.Insert(3, await nuGetTask);
 
         RenderReport(theme, checks);
 
