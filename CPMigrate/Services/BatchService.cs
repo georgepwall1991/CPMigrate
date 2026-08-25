@@ -153,6 +153,7 @@ public class BatchService
         {
             _consoleService.Error($"No solution files found in: {batchDir}");
             result.Errors.Add("No solution files found");
+            result.Timestamp = DateTime.UtcNow.ToString("o");
             WriteReportIfRequested(options, result);
             return result;
         }
