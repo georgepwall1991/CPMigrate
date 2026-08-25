@@ -110,6 +110,53 @@ public class ProgramRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_WhyWithMultipleIdsAndJsonOutput_IsRejectedBeforeTheScan()
+    {
+        // The published whyReport document describes one package; an array shape would break
+        // every existing consumer against the schema it validates against. The rejection must
+        // happen before discovery so a caller learns it in milliseconds, not after a full scan.
+        var fakeConsole = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--why", "Newtonsoft.Json,Serilog", "--output", "Json", "-s", "." },
+            fakeConsole
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        fakeConsole.ErrorMessages.Should().Contain(m => m.Contains("one ID per invocation"));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhyWithEmptySlotBetweenCommas_IsRejectedInsteadOfAnsweringFewerQuestions()
+    {
+        // A deny-list job that asked about three packages must not get two answers that look like
+        // a pass; an empty slot is a typo, reported before anything touches the disk.
+        var fakeConsole = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--why", "Newtonsoft.Json,,Serilog", "-s", "." },
+            fakeConsole
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        fakeConsole.ErrorMessages.Should().Contain(m => m.Contains("empty package ID"));
+    }
+
+    [Fact]
+    public void SplitWhyPackageIds_TrimsWhitespace_CollapsesDuplicateCaseInsensitively_KeepsOrder()
+    {
+        var ids = ProgramRunner.SplitWhyPackageIds(" Newtonsoft.Json , serilog ,Newtonsoft.Json");
+
+        ids.Should().Equal("Newtonsoft.Json", "serilog");
+    }
+
+    [Fact]
+    public void SplitWhyPackageIds_SingleId_YieldsOneEntry()
+    {
+        ProgramRunner.SplitWhyPackageIds("Newtonsoft.Json").Should().Equal("Newtonsoft.Json");
+    }
+
+    [Fact]
     public async Task RunAsync_AmbiguousVerb_SuggestsBothCandidates()
     {
         // "update" could mean --update (update CPMigrate itself) or --update-packages (update the

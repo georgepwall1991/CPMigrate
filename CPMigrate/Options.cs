@@ -471,8 +471,9 @@ public class Options
 
     [Option(
         "why",
-        HelpText = "Explain where a package comes from: which projects declare it directly, which "
-            + "see it only transitively through what, and whether versions drift across projects."
+        HelpText = "Explain where one or more packages come from (comma-separate IDs; one "
+            + "workspace scan serves them all): which projects declare each directly, which see it "
+            + "only transitively through what, and whether versions drift across projects."
     )]
     public string? Why { get; set; }
 

@@ -236,15 +236,17 @@ public static class ProgramRunner
     }
 
     /// <summary>
-    /// Traces one package through the workspace: who declares it, who only sees it transitively,
-    /// and whether the versions agree. Mirrors <see cref="RunTreeModeAsync"/>: a diagnostic mode
-    /// that scans every project itself and reports an incomplete scan rather than dressing partial
-    /// data up as a complete answer.
+    /// Traces one or more comma-separated packages through the workspace — one restore-backed
+    /// scan, then one answer per ID over the shared data: who declares each package, who only sees
+    /// it transitively, and whether the versions agree. Mirrors <see cref="RunTreeModeAsync"/>: a
+    /// diagnostic mode that scans every project itself and reports an incomplete scan rather than
+    /// dressing partial data up as a complete answer.
     ///
     /// <para>
     /// With <c>--output Json</c> the answer is one JSON document on stdout instead of console
-    /// rendering; <c>--output Sarif</c> is rejected outright. Both share analysis and exit codes
-    /// with the terminal path.
+    /// rendering; <c>--output Sarif</c> is rejected outright, and so is more than one package ID,
+    /// because the published document describes a single package. Both share analysis and exit
+    /// codes with the terminal path.
     /// </para>
     /// </summary>
     private static async Task<int> RunWhyModeAsync(Options options, ApplicationServices services)
@@ -257,6 +259,44 @@ public static class ProgramRunner
             services.ConsoleService.Error(
                 "--output Sarif cannot be combined with --why; SARIF reports analyzer findings "
                     + "only."
+            );
+            return ExitCodes.ValidationError;
+        }
+
+        // --why takes one or more comma-separated package IDs; every answer is served by a single
+        // workspace scan below. Parsing happens before anything touches the disk so a malformed
+        // list fails in milliseconds instead of after a full restore-backed scan.
+        IReadOnlyList<string> packageIds;
+
+        try
+        {
+            packageIds = SplitWhyPackageIds(options.Why!);
+        }
+        catch (ArgumentException rejection)
+        {
+            services.ConsoleService.Error(rejection.Message);
+            return ExitCodes.ValidationError;
+        }
+
+        if (packageIds.Count == 0)
+        {
+            services.ConsoleService.Error(
+                "--why requires a package ID, e.g. --why Newtonsoft.Json or "
+                    + "--why Newtonsoft.Json,Serilog."
+            );
+            return ExitCodes.ValidationError;
+        }
+
+        if (packageIds.Count > 1 && options.Output == OutputFormat.Json)
+        {
+            // The published whyReport document describes one package; an array shape would break
+            // every existing consumer against the schema it validates against. A CI job auditing
+            // N packages with --output Json runs one ID per invocation — each still pays only its
+            // own scan.
+            services.ConsoleService.Error(
+                "--output Json cannot be combined with multiple --why package IDs: the why "
+                    + "document describes one package. Pass one comma-separated list without "
+                    + "--output Json, or run one ID per invocation."
             );
             return ExitCodes.ValidationError;
         }
@@ -371,34 +411,42 @@ public static class ProgramRunner
                 DeclaredReferences: declaredReferences
             );
             var whyService = new PackageOriginService(executionConsole);
-            var request = new PackageOriginRequest(
-                options.Why!,
-                packageInfo,
-                resolvedGraphs,
-                projectPaths.Count,
-                failedScans,
-                // Every discovered project, including ones whose scans produced no rows —
-                // "this project does not have the package" is part of the answer.
-                projectPaths,
-                scanOutcomes
-            );
+            // One request per asked-about package, all over the same scanned data: this is the
+            // entire point of the comma-separated list — the restore-backed scan above runs once
+            // no matter how many IDs a CI job is auditing.
+            var requests = packageIds
+                .Select(packageId => new PackageOriginRequest(
+                    packageId,
+                    packageInfo,
+                    resolvedGraphs,
+                    projectPaths.Count,
+                    failedScans,
+                    // Every discovered project, including ones whose scans produced no rows —
+                    // "this project does not have the package" is part of the answer.
+                    projectPaths,
+                    scanOutcomes
+                ))
+                .ToList();
 
             // Machine-readable mode answers in one JSON document instead of console rendering.
             // Analysis and exit codes are shared with the console path; only the rendering differs.
+            // Multiple IDs never reach here: the JSON rejection above runs before the scan.
             if (options.Output == OutputFormat.Json)
             {
-                var (report, exitCode) = PackageOriginService.AnalyzeQuietly(request);
+                var (report, exitCode) = PackageOriginService.AnalyzeQuietly(requests[0]);
                 // EmitFailureAsync rather than EmitAsync: when --output-file cannot be written the
                 // document falls back to stdout instead of dying on an exception whose message the
                 // silent scan console would swallow.
                 await JsonOutputWriter.EmitFailureAsync(
-                    PackageOriginJsonWriter.Serialize(request, report, exitCode),
+                    PackageOriginJsonWriter.Serialize(requests[0], report, exitCode),
                     options
                 );
                 return exitCode;
             }
 
-            return await whyService.RunAsync(request);
+            return requests.Count == 1
+                ? await whyService.RunAsync(requests[0])
+                : await whyService.RunManyAsync(requests);
         }
         catch (Exception ex)
         {
@@ -409,6 +457,34 @@ public static class ProgramRunner
                 userConsole
             );
         }
+    }
+
+    /// <summary>
+    /// Splits a comma-separated <c>--why</c> value into package IDs, trimming whitespace around
+    /// each and collapsing duplicates (case-insensitively — package IDs compare the same way
+    /// everywhere else in the tool), first occurrence first.
+    ///
+    /// <para>
+    /// A segment left empty between commas is reported rather than skipped: <c>--why
+    /// Newtonsoft.Json,,Serilog</c> is almost certainly a typo, and silently answering two of the
+    /// three questions a deny-list job asked would look exactly like a pass.
+    /// </para>
+    /// </summary>
+    internal static IReadOnlyList<string> SplitWhyPackageIds(string raw)
+    {
+        var segments = raw.Split(',').Select(id => id.Trim()).ToList();
+        if (segments.Any(string.IsNullOrEmpty))
+        {
+            throw new ArgumentException(
+                "--why received an empty package ID between commas; "
+                    + "remove the stray comma or name a package for every slot.",
+                nameof(raw)
+            );
+        }
+
+        return segments
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>

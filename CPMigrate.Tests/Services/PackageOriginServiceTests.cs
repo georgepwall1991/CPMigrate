@@ -407,6 +407,56 @@ public class PackageOriginServiceTests
     }
 
     [Fact]
+    public async Task RunManyAsync_RendersEachPackageFromTheSharedScan_AndNamesItInABanner()
+    {
+        // One scanned dataset serves both questions: Serilog is found, Serilogg is not. The
+        // console run must answer both, each under its own named banner.
+        var found = BuildRequest(references: [Resolved("App", isTransitive: false)], declaredReferences: [Declared("App")]);
+        var missing = found with { PackageId = "Serilogg" };
+        var console = new CPMigrate.Tests.TestDoubles.FakeConsoleService();
+
+        var exitCode = await new PackageOriginService(console).RunManyAsync([found, missing]);
+
+        console.BannerMessages.Should().Contain(m => m.Contains("PACKAGE ORIGIN — Serilog"));
+        console.BannerMessages.Should().Contain(m => m.Contains("PACKAGE ORIGIN — Serilogg"));
+        // The not-found prose names its own package: both answers rendered from one dataset.
+        console.ErrorMessages.Should().ContainSingle(m => m.Contains("'Serilogg'"));
+        exitCode.Should().Be(ExitCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task RunManyAsync_ComposesExitCodesByWorstOutcome()
+    {
+        var shared = BuildRequest(
+            references: [],
+            declaredReferences: [],
+            projectPaths: ["/ws/src/App/App.csproj"],
+            failedScanCount: 1,
+            projectCount: 1
+        );
+        var incomplete = shared with { PackageId = "A" };
+        var notFound = shared with { PackageId = "B", FailedScanCount = 0 };
+        var console = new CPMigrate.Tests.TestDoubles.FakeConsoleService();
+
+        var exitCode = await new PackageOriginService(console).RunManyAsync([notFound, incomplete]);
+
+        // Incomplete beats not-found: a script reading only the process code must not mistake
+        // "one package absent" for "the whole workspace was read".
+        exitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+    }
+
+    [Theory]
+    [InlineData(new[] { 0, 0 }, 0)]
+    [InlineData(new[] { 1, 0 }, 1)]
+    [InlineData(new[] { 0, 8 }, 8)]
+    [InlineData(new[] { 1, 8 }, 8)]
+    [InlineData(new[] { 4 }, 4)]
+    public void CombineExitCodes_WorstOutcomeWins(int[] codes, int expected)
+    {
+        PackageOriginService.CombineExitCodes(codes).Should().Be(expected);
+    }
+
+    [Fact]
     public void Analyze_OnlyUnreadableProjects_AreNotReportedAsFound()
     {
         var request = BuildRequest(

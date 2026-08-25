@@ -172,6 +172,40 @@ internal sealed class PackageOriginService
         _console.Banner("PACKAGE ORIGIN");
         _console.WriteLine();
 
+        return AnswerAsync(request);
+    }
+
+    /// <summary>
+    /// Answers several <c>--why</c> questions from one workspace scan: each package's tree renders
+    /// sequentially under its own named banner, so the answers stay as readable as N single-package
+    /// runs without paying for the scan N times.
+    ///
+    /// <para>
+    /// The process exits with the worst of the per-package codes — any incomplete analysis beats
+    /// anything else (absence proven only over half a workspace is not absence), then any
+    /// not-found verdict, then success.
+    /// </para>
+    /// </summary>
+    public async Task<int> RunManyAsync(IReadOnlyList<PackageOriginRequest> requests)
+    {
+        _console.WriteHeader();
+
+        var exitCodes = new List<int>(requests.Count);
+        foreach (var request in requests)
+        {
+            _console.Banner($"PACKAGE ORIGIN — {request.PackageId}");
+            exitCodes.Add(await AnswerAsync(request));
+        }
+
+        return CombineExitCodes(exitCodes);
+    }
+
+    /// <summary>
+    /// One package's complete answer — analysis, rendering or not-found prose, exit code — without
+    /// the mode-level header and banner, which belong to the run, not the package.
+    /// </summary>
+    public Task<int> AnswerAsync(PackageOriginRequest request)
+    {
         var report = Analyze(request);
         var exitCode = MapExitCode(request, report);
 
@@ -211,6 +245,22 @@ internal sealed class PackageOriginService
         Render(request, report);
 
         return Task.FromResult(exitCode);
+    }
+
+    /// <summary>
+    /// Folds several per-package exit codes into one for the process, by worst-outcome-wins:
+    /// an incomplete analysis outranks everything (a CI job must not read "all clear" while part
+    /// of the workspace went unexamined), a not-found verdict outranks success, and only a run
+    /// where every package was found over a fully-read workspace exits clean.
+    /// </summary>
+    internal static int CombineExitCodes(IReadOnlyList<int> exitCodes)
+    {
+        if (exitCodes.Any(code => code == ExitCodes.IncompleteAnalysis))
+        {
+            return ExitCodes.IncompleteAnalysis;
+        }
+
+        return exitCodes.FirstOrDefault(code => code != ExitCodes.Success);
     }
 
     /// <summary>

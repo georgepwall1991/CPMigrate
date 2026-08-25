@@ -9,6 +9,19 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 ### Added
 - **Baseline rot is now reported wherever the baseline itself is.** A baseline records accepted debt, and debt gets paid down — but until now an entry whose finding no longer existed vanished silently into `Stale`, visible only as a terminal line a CI log loses. Every run that reads a baseline now says how many entries matched nothing (`summary.baselineStaleEntries` in JSON, a summary-table row and a note in Markdown, plus the existing terminal warning) so the dead entries can be removed from the file on purpose — by hand, not with `--write-baseline`, which would also accept every new finding the run reported. Entries whose `issueCode` names a rule the catalog no longer publishes — the fingerprint of a renamed or deleted rule — are called out separately rather than being counted as fixed debt: the console warning suggests `cpmigrate --explain all` for the current IDs, and JSON carries them in `summary.baselineUnknownRuleCodes`. Matching semantics are unchanged; nothing is pruned automatically. Output schema 1.8.0, additive: `summary.baselineStaleEntries` and `summary.baselineUnknownRuleCodes` arrived in 1.7.0, and the batch payload gained its own batch-wide `baselineStaleEntries` / `baselineUnknownRuleCodes` in 1.8.0.
 
+- **`--why` now accepts a comma-separated list of package IDs, and the workspace scan runs once
+  for all of them.** A CI job auditing a deny-list of N packages used to pay for N full invocations,
+  each repeating discovery and the restore-backed resolved scan; `--why A,B,C` scans once and renders
+  each package's answer sequentially under its own named banner (`PACKAGE ORIGIN — <id>`), so a
+  terminal run reads like N single-package runs. The process exits with the worst of the per-package
+  codes: any incomplete analysis exits 8 (absence proven only over half a workspace is not absence),
+  else any not-found verdict exits 1, else 0. Single-ID output is unchanged, and `--output Json`
+  keeps its one-package-per-document contract: combining it with multiple IDs is rejected before the
+  scan with an error pointing at one-ID-per-invocation, rather than breaking the published
+  `whyReport` schema with an array shape. Malformed lists fail in milliseconds, before anything
+  touches the disk — an empty slot between commas (`--why A,,B`) is rejected rather than silently
+  answered as two questions, and duplicate IDs collapse to one answer.
+
 - **Rollback now verifies backup integrity before restoring.** A rollback copied each file in
   `.cpmigrate_backup/` over the user's project with a blind `File.Copy` — nothing checked that the
   bytes still matched what was backed up, so a truncated, corrupted, or tampered backup file was

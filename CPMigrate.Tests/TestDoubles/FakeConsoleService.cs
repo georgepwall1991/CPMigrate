@@ -21,7 +21,9 @@ public class FakeConsoleService : IConsoleService
     public void Dim(string message) { OutputMessages.Add(message); }
     public void DryRun(string message) { OutputMessages.Add(message); }
     public void WriteHeader() { }
-    public void Banner(string message) { }
+    public List<string> BannerMessages { get; } = new();
+
+    public void Banner(string message) => BannerMessages.Add(message);
     public void Separator() { }
     public void WriteConflictsTable(Dictionary<string, HashSet<string>> packageVersions, List<string> conflicts, ConflictStrategy strategy) { }
     public void WriteSummaryTable(int projectCount, int packageCount, int conflictCount, string propsFilePath, string? backupPath, bool wasDryRun) { }

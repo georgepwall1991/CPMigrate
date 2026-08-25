@@ -154,7 +154,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 |  **`--init`** | Scaffold `.cpmigrate.json` with team defaults |
 | 📟 **`--status`** | One-shot workspace health dashboard |
 | 🌳 **`--tree`** | ASCII dependency tree, direct + transitive |
-| 🕵️ **`--why`** | Trace one package: who declares it, who inherits it, version drift — as text or `--output Json` for CI |
+| 🕵️ **`--why`** | Trace one or more packages (`--why A,B,C` shares one workspace scan): who declares each, who inherits it, version drift — as text or `--output Json` (one ID per JSON run) for CI |
 | 🔀 **`--diff`** | Unified diff preview on `--dry-run`; capture it with `--diff-file` for CI |
 
 ### Why not just do it by hand?
@@ -189,6 +189,7 @@ cpmigrate --doctor                 # SDK, NuGet reachability, disk, write access
 cpmigrate --status                 # repo-context dashboard, no wizard
 cpmigrate --tree --transitive      # ASCII dependency tree per project
 cpmigrate --why Newtonsoft.Json    # who declares it, who inherits it, do versions drift
+cpmigrate --why A,B,C              # same answers for a deny-list of packages, one scan
 cpmigrate --why Newtonsoft.Json --output Json   # the same answer, as one JSON document for CI
 cpmigrate --init                   # scaffold .cpmigrate.json (interactive or CI-safe)
 ```
@@ -248,7 +249,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--init` | `false` | Scaffold a `.cpmigrate.json` (interactive, or CI-safe defaults) |
 | `--status` | `false` | One-shot workspace health dashboard |
 | `--tree` | `false` | ASCII dependency tree per project (add `--transitive` for the full graph) |
-| `--why` | — | Explain where a package comes from: direct declarations (inline vs central pin), update-only amendments, transitive introducers, and version drift across projects. Pair with `--output Json` for one machine-readable document; exit codes match either mode |
+| `--why` | — | Explain where one or more comma-separated packages come from (`--why A,B,C`): direct declarations (inline vs central pin), update-only amendments, transitive introducers, and version drift across projects — each package's answer rendered under its own banner from one workspace scan. The exit code is the worst of the per-package answers: any incomplete scan → 8, else any not-found → 1, else 0. Pair with `--output Json` for a machine-readable document (one ID per JSON run; multi-ID + Json is rejected) |
 
 </details>
 
