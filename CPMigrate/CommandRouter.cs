@@ -1161,13 +1161,7 @@ internal static class CommandRouter
         // Rollback guidance must reach every format — quiet rollbacks silence the handler's own
         // note, and several writers return before the JSON block below. Stderr keeps stdout a pure
         // payload channel for machine-readable modes.
-        if (result.Warnings is { Count: > 0 })
-        {
-            foreach (var warning in result.Warnings)
-            {
-                Console.Error.WriteLine($"warning: {warning}");
-            }
-        }
+        RollbackWarningSink.Write(result.Warnings);
 
         if (options.Output == OutputFormat.Sarif)
         {
@@ -1196,47 +1190,10 @@ internal static class CommandRouter
         var operation = GetOperationName(options);
         var rulePolicy = PolicyThatShapedTheReport(options, result.AnalysisReport);
 
-        var analysisIssues =
-            result.AnalysisReport == null
-                ? new List<AnalysisIssueInfo>()
-                : result
-                    .AnalysisReport.Results.SelectMany(analyzer =>
-                        analyzer.Issues.Select(issue => new AnalysisIssueInfo
-                        {
-                            Type = analyzer.AnalyzerName,
-                            IssueCode = issue.IssueCode.ToString(),
-                            Severity = issue.Severity.ToString(),
-                            Package = issue.PackageName,
-                            Description = issue.Description,
-                            AffectedProjects = issue.AffectedProjects.ToList(),
-                            Fixable = issue.Fixable,
-                            Suppressed = issue.Suppressed,
-                            Metadata = issue.Metadata?.ToDictionary(
-                                kvp => kvp.Key,
-                                kvp => kvp.Value
-                            ),
-                        })
-                    )
-                    .ToList();
+        var analysisIssues = BuildAnalysisIssues(result);
+        var fixes = BuildFixInfos(result);
 
-        var fixes =
-            result.FixReport == null
-                ? new List<FixInfo>()
-                : result
-                    .FixReport.Results.SelectMany(fixResult =>
-                        fixResult.Changes.Select(change => new FixInfo
-                        {
-                            Type = fixResult.Description,
-                            Package = string.Empty,
-                            File = change.FilePath,
-                            From = change.Before,
-                            To = change.After,
-                            Applied = fixResult.Success,
-                        })
-                    )
-                    .ToList();
-
-var baselineStaleness = BaselineStaleness(options, result);
+        var baselineStaleness = BaselineStaleness(options, result);
 
         var operationResult = new OperationResult
         {
@@ -1288,6 +1245,54 @@ var baselineStaleness = BaselineStaleness(options, result);
     /// The baseline-staleness fields a JSON summary carries, or nulls when no baseline was used —
     /// the same "absence is meaningful" contract <c>issuesBaselined</c> keeps.
     /// </summary>
+
+    private static List<AnalysisIssueInfo> BuildAnalysisIssues(MigrationResult result)
+    {
+        if (result.AnalysisReport == null)
+        {
+            return [];
+        }
+
+        return result
+            .AnalysisReport.Results.SelectMany(analyzer =>
+                analyzer.Issues.Select(issue => new AnalysisIssueInfo
+                {
+                    Type = analyzer.AnalyzerName,
+                    IssueCode = issue.IssueCode.ToString(),
+                    Severity = issue.Severity.ToString(),
+                    Package = issue.PackageName,
+                    Description = issue.Description,
+                    AffectedProjects = issue.AffectedProjects.ToList(),
+                    Fixable = issue.Fixable,
+                    Suppressed = issue.Suppressed,
+                    Metadata = issue.Metadata?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                })
+            )
+            .ToList();
+    }
+
+    private static List<FixInfo> BuildFixInfos(MigrationResult result)
+    {
+        if (result.FixReport == null)
+        {
+            return [];
+        }
+
+        return result
+            .FixReport.Results.SelectMany(fixResult =>
+                fixResult.Changes.Select(change => new FixInfo
+                {
+                    Type = fixResult.Description,
+                    Package = string.Empty,
+                    File = change.FilePath,
+                    From = change.Before,
+                    To = change.After,
+                    Applied = fixResult.Success,
+                })
+            )
+            .ToList();
+    }
+
     private static (int? StaleEntries, IReadOnlyList<string>? UnknownRuleCodes) BaselineStaleness(
         Options options,
         MigrationResult result

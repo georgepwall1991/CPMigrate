@@ -1317,10 +1317,7 @@ public class MigrationService
                 // The error path rethrows, discarding this result — and quiet or machine-readable
                 // runs silenced the handler's own note. Stderr is the one channel guaranteed to
                 // survive both.
-                foreach (var warning in rollbackResult.Warnings ?? [])
-                {
-                    Console.Error.WriteLine($"warning: {warning}");
-                }
+                RollbackWarningSink.Write(rollbackResult.Warnings);
             }
         }
     }
