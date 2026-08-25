@@ -1,4 +1,5 @@
 using CPMigrate.Fixers;
+using System.Text.RegularExpressions;
 using CPMigrate.Models;
 using FluentAssertions;
 
@@ -372,6 +373,91 @@ public class RedundantReferenceFixerTests : IDisposable
         var updatedContent = File.ReadAllText(projectPath);
         updatedContent.Should().Contain("Include=\"Foo;Bar\"");
         updatedContent.Should().NotContain("Include=\"Foo\" Version=\"1.0.0\"");
+    }
+
+    [Fact]
+    public void Fix_ConditionalDuplicateAlongsideUnconditionalDuplicates_PreservesConditionalDeclaration()
+    {
+        // A framework-conditional declaration is how multi-targeting pins a version per TFM; it is not
+        // part of the duplicate evidence and must survive the tidy-up of the unconditional ones.
+        var projectPath = Path.Combine(_testDirectory, "ConditionalDuplicate.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Foo" Version="1.0.0" />
+                <PackageReference Include="Foo" Version="1.0.0" />
+              </ItemGroup>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageReference Include="Foo" Version="2.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var issue = new AnalysisIssue(
+            "Foo",
+            "Referenced 3 times",
+            new[] { "ConditionalDuplicate.csproj" }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "1.0.0", projectPath, "ConditionalDuplicate.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(issue, packageInfo, new FixRequest(string.Empty, ConflictStrategy.Highest, false));
+
+        result.Success.Should().BeTrue();
+        var updatedContent = File.ReadAllText(projectPath);
+        Regex.Matches(updatedContent, @"Include=""Foo""").Should().HaveCount(2);
+        updatedContent.Should().Contain("Version=\"2.0.0\"");
+    }
+
+    [Fact]
+    public void Fix_DuplicatesOnlyInsideChooseBranches_ChangesNothing()
+    {
+        // Two mutually exclusive Choose branches are not redundant with each other: exactly one of them
+        // ever applies, and removing either would silently drop a configuration's dependency.
+        var projectPath = Path.Combine(_testDirectory, "ChooseDuplicates.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <Choose>
+                <When Condition="'$(UseLegacy)' == 'true'">
+                  <ItemGroup>
+                    <PackageReference Include="Foo" Version="1.0.0" />
+                  </ItemGroup>
+                </When>
+                <Otherwise>
+                  <ItemGroup>
+                    <PackageReference Include="Foo" Version="1.0.0" />
+                  </ItemGroup>
+                </Otherwise>
+              </Choose>
+            </Project>
+            """
+        );
+        var originalContent = File.ReadAllText(projectPath);
+        var issue = new AnalysisIssue(
+            "Foo",
+            "Referenced 2 times with version 1.0.0",
+            new[] { "ChooseDuplicates.csproj" }
+        );
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Foo", "1.0.0", projectPath, "ChooseDuplicates.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(issue, packageInfo, new FixRequest(string.Empty, ConflictStrategy.Highest, false));
+
+        result.Success.Should().BeTrue();
+        result.Changes.Should().BeEmpty();
+        File.ReadAllText(projectPath).Should().Be(originalContent);
     }
 
     [Fact]

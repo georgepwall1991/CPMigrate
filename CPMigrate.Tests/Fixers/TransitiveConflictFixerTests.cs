@@ -2,6 +2,8 @@ using CPMigrate.Fixers;
 using CPMigrate.Models;
 using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using FluentAssertions;
 
 namespace CPMigrate.Tests.Fixers;
@@ -564,6 +566,176 @@ public class TransitiveConflictFixerTests : IDisposable
         // Assert
         result.Success.Should().BeTrue();
         result.Description.Should().Contain("already aligned");
+    }
+
+    [Fact]
+    public void Fix_MultipleItemGroups_AddsSingleEntry()
+    {
+        // The new pin used to be added by replacing every "</ItemGroup>" in the file, cloning the
+        // entry into each group — a duplicate PackageVersion definition no props file should carry.
+        CreatePropsFile(@"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""Serilog"" Version=""3.0.0"" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageVersion Include=""Moq"" Version=""4.18.0"" />
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", "Project1.csproj", "Project1.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        Regex.Matches(content, @"Include=""Newtonsoft\.Json""").Should().HaveCount(1);
+        content.Should().Contain("Serilog");
+        content.Should().Contain("Moq");
+    }
+
+    [Fact]
+    public void Fix_ConditionalOnlyItemGroups_AddsUnconditionalGroup()
+    {
+        // A group reserved for one framework by a Condition must not swallow a central pin that has
+        // to apply everywhere: the pin belongs in its own unconditional ItemGroup.
+        CreatePropsFile(@"<Project>
+  <ItemGroup Condition=""'$(TargetFramework)' == 'net8.0'"">
+    <PackageVersion Include=""Serilog"" Version=""3.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", "Project1.csproj", "Project1.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+
+        var document = XDocument.Parse(File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props")));
+        var pins = document
+            .Descendants("PackageVersion")
+            .Where(element => element.Attribute("Include")?.Value == "Newtonsoft.Json")
+            .ToList();
+        pins.Should().HaveCount(1);
+        pins[0].Attribute("Version")?.Value.Should().Be("13.0.1");
+
+        // The pin's whole ancestor chain must be free of conditions.
+        pins[0].Ancestors().Should().NotContain(element => element.Attribute("Condition") != null);
+    }
+
+    [Fact]
+    public void Fix_AddsPinToCrlfFile_WithoutDistortingLayout()
+    {
+        var propsContent = "<Project>\r\n  <ItemGroup>\r\n    <PackageVersion Include=\"Serilog\" Version=\"3.0.0\" />\r\n  </ItemGroup>\r\n</Project>\r\n";
+        File.WriteAllText(Path.Combine(_testDirectory, "Directory.Packages.props"), propsContent);
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", "Project1.csproj", "Project1.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        // The pin lands on its own line inside the existing unconditional group.
+        content.Should().Contain("<PackageVersion Include=\"Newtonsoft.Json\" Version=\"13.0.1\" />");
+        // The original five CR-LF endings survive, plus one for the added line.
+        Regex.Matches(content, "\r\n").Should().HaveCount(6);
+        content.Should().NotContain("\n\r");
+        content.Should().Contain("<PackageVersion Include=\"Serilog\" Version=\"3.0.0\" />\r\n");
+    }
+
+    [Fact]
+    public void Fix_ItemGroupsInsideTargetOrChoose_NotUsedForPinning()
+    {
+        // Items inside Target or Choose never provide a home for a central pin: restore does not
+        // evaluate them as part of the static item graph the pin has to live in.
+        CreatePropsFile(@"<Project>
+  <Target Name=""Legacy"">
+    <ItemGroup>
+      <PackageVersion Include=""Serilog"" Version=""3.0.0"" />
+    </ItemGroup>
+  </Target>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", "Project1.csproj", "Project1.csproj")
+        });
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            ConflictStrategy = ConflictStrategy.Highest
+        };
+
+        // Act
+        var result = _fixer.Fix(issue, packageInfo, options, dryRun: false);
+
+        // Assert
+        result.Success.Should().BeTrue();
+
+        var document = XDocument.Parse(File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props")));
+        var pin = document
+            .Descendants("PackageVersion")
+            .Single(element => element.Attribute("Include")?.Value == "Newtonsoft.Json");
+        pin.Ancestors().Should().NotContain(element => element.Name.LocalName == "Target");
     }
 
     [Fact]
