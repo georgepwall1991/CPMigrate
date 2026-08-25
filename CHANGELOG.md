@@ -55,6 +55,22 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   those files before every read, so its verdicts were never affected.
 
 ### Fixed
+- **Analyzer findings are emitted in a canonical order, stable across repeated runs on identical
+  scan data.** The
+  per-project batches behind one scan merge in whatever order concurrent workers finish, and every
+  analyzer grouped the combined reference list with LINQ `GroupBy` — whose output order is
+  first-occurrence order — so finding order, and everything derived from it (`VersionInconsistency`
+  descriptions listing which project had which version, the resolved-version sample a
+  deprecated/outdated finding records), could differ run to run. A CI job diffing two machine-readable
+  reports therefore saw batch-interleaving noise rather than real changes. `AnalysisService.Analyze`
+  now emits findings in one canonical order derived only from the data (input sequences are
+  canonicalized — `References`, vulnerabilities, outdated, deprecated, licenses, scanned projects;
+  declaration batches grouped by project with source order preserved),
+  and emits each result's findings in (issue code, package name) order; sequences already in order are
+  passed through untouched, and the payload shape is unchanged. Pinned by
+  `AnalysisServiceDeterminismTests`: identical serialized findings (the run timestamp is the one
+  field that deliberately varies) when the same four batches arrive forward, interleaved, or
+  reversed, and a canonical emission-order assertion.
 - **`--verify` can no longer mistake a stale `obj/project.assets.json` for a fresh one.** When a project redirects its intermediate output (`MSBuildProjectExtensionsPath`, `BaseIntermediateOutputPath`, or `ProjectAssetsFile`), a plain `dotnet restore` writes the real resolved graph to the redirected location while an older file at the default path — left there by the project's last local build, before the redirect existed — still parses perfectly and names this very project as its subject. Both verification captures then read that same stale file, compared it against itself, and reported an unchanged resolved graph over a migration whose effect on that project was never observed: a clean verdict asserting more than was compared. Each capture now removes every in-scope project's `obj/project.assets.json` before restoring, so anything readable afterwards provably came from *this* restore rather than from history. A redirected project consequently fails closed — its graph is recorded as unreadable, the verdict is `failed`, and the migration rolls back — instead of passing on a file of unknown provenance; a project whose stale file cannot be removed is refused the same way.
 
 ## [3.63.0] - 2026-08-25
