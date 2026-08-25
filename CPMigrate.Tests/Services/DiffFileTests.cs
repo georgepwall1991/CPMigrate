@@ -80,6 +80,35 @@ public class DiffFileCollectorTests : IDisposable
         append.Should().NotThrow();
         File.Exists(path).Should().BeFalse();
     }
+
+    [Fact]
+    public void Append_HeaderOnlyDiff_NoHunks_IsSkipped_SoEmptyFileMeansNoChanges()
+    {
+        var path = TempPath("diffs.patch");
+        var collector = new DiffFileCollector();
+        collector.Begin(path);
+
+        // What UnifiedDiffGenerator produces for byte-identical content: headers, no hunks.
+        collector.Append("--- a/Directory.Packages.props\n+++ b/Directory.Packages.props\n");
+        collector.Append(UnifiedDiffGenerator.Generate("old\n", "new\n", "Real.props"));
+
+        var content = File.ReadAllText(path);
+        content.Should().NotContain("Directory.Packages.props");
+        content.Should().Contain("--- a/Real.props");
+    }
+
+    [Fact]
+    public void Append_AllHunklessDiff_LeavesTheFileEmpty()
+    {
+        var path = TempPath("empty-means-no-change.patch");
+        var collector = new DiffFileCollector();
+        collector.Begin(path);
+
+        collector.Append(UnifiedDiffGenerator.Generate("same\n", "same\n", "Same.props"));
+
+        File.ReadAllText(path).Should().BeEmpty();
+    }
+
 }
 
 public class DiffFileOptionValidationTests
@@ -89,7 +118,16 @@ public class DiffFileOptionValidationTests
     [InlineData(OutputFormat.Sarif)]
     public void Validate_DiffFileWithMachineReadableOutput_ThrowsArgumentException(OutputFormat output)
     {
-        var options = new Options { Output = output, DiffFile = "diffs.patch" };
+        // Sarif's own guard (--analyze required) runs earlier in the contract chain; satisfy it
+        // so this test exercises the --diff-file check itself.
+        var options = new Options
+        {
+            Output = output,
+            DiffFile = "diffs.patch",
+            DryRun = true,
+            Analyze = output == OutputFormat.Sarif,
+        };
+
 
         var action = () => options.Validate();
 
@@ -100,11 +138,53 @@ public class DiffFileOptionValidationTests
     [Fact]
     public void Validate_DiffFileWithTerminalOutput_DoesNotThrow()
     {
-        var options = new Options { Output = OutputFormat.Terminal, DiffFile = "diffs.patch" };
+        var options = new Options { Output = OutputFormat.Terminal, DiffFile = "diffs.patch", DryRun = true };
 
         var action = () => options.Validate();
 
         action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_DiffFileWithoutDryRun_ThrowsArgumentException()
+    {
+        var options = new Options { DiffFile = "diffs.patch" };
+
+        var action = () => options.Validate();
+
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--diff-file can only be used with --dry-run*");
+    }
+
+    [Theory]
+    [InlineData("batch")]      // per-solution runs would truncate one shared path
+    [InlineData("analyze")]
+    [InlineData("rollback")]
+    [InlineData("list-backups")]
+    [InlineData("prune-backups")]
+    [InlineData("update-packages")]
+    [InlineData("unify-props")]
+    [InlineData("doctor")]
+    [InlineData("update")]
+    public void Validate_DiffFileOutsideMigrationDryRun_ThrowsArgumentException(string mode)
+    {
+        var options = mode switch
+        {
+            "batch" => new Options { BatchDir = ".", DiffFile = "d.patch", DryRun = true },
+            "analyze" => new Options { Analyze = true, DiffFile = "d.patch", DryRun = true },
+            "rollback" => new Options { Rollback = true, BackupDir = ".", DiffFile = "d.patch", DryRun = true },
+            "list-backups" => new Options { ListBackups = true, BackupDir = ".", DiffFile = "d.patch", DryRun = true },
+            "prune-backups" => new Options { PruneBackups = true, Force = true, DiffFile = "d.patch", DryRun = true },
+            "update-packages" => new Options { UpdatePackages = true, DiffFile = "d.patch", DryRun = true },
+            "unify-props" => new Options { UnifyProps = true, DiffFile = "d.patch", DryRun = true },
+            "doctor" => new Options { Doctor = true, DiffFile = "d.patch", DryRun = true },
+            _ => new Options { Update = true, DiffFile = "d.patch", DryRun = true },
+        };
+
+        var action = () => options.Validate();
+
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--diff-file can only be used with a plain --dry-run migration*");
     }
 }
 

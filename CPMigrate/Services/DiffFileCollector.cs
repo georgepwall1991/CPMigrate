@@ -36,6 +36,14 @@ public sealed class DiffFileCollector
             return;
         }
 
+        // A byte-identical merge still yields a diff — headers with no hunks. Appending it
+        // would break the contract that an empty artifact means "no changes", so only a diff
+        // carrying at least one @@ hunk lands in the file.
+        if (!diff.Split('\n').Any(line => line.StartsWith("@@ ", StringComparison.Ordinal)))
+        {
+            return;
+        }
+
         File.AppendAllText(_targetPath, (_hasContent ? "\n" : string.Empty) + diff);
         _hasContent = true;
     }

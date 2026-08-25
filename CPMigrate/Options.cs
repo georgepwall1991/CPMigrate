@@ -320,10 +320,10 @@ public class Options
 
     [Option(
         "diff-file",
-        HelpText = "Append every unified diff generated during --dry-run to this file, whether "
-            + "or not --diff renders it on screen. The file is created empty at the start of "
+        HelpText = "Append every unified diff generated during a --dry-run migration to this "
+            + "file, whether or not --diff renders it on screen. Created empty at the start of "
             + "the run: an empty artifact means no changes, a missing one means the run "
-            + "crashed. Cannot be used with --output Json or Sarif."
+            + "crashed. Rejected for every other command."
     )]
     public string? DiffFile { get; set; }
 
@@ -864,15 +864,6 @@ public class Options
             );
         }
 
-        if (
-            !string.IsNullOrEmpty(DiffFile)
-            && Output is OutputFormat.Json or OutputFormat.Sarif
-        )
-        {
-            throw new ArgumentException(
-                "--diff-file cannot be used with --output Json or --output Sarif."
-            );
-        }
 
         if (Output.IsMachineReadable() && Interactive)
         {
@@ -975,6 +966,56 @@ public class Options
         ValidateSarifOptions();
         ValidateMarkdownOptions();
         ValidateBaselineOptions();
+        ValidateDiffFileOptions();
+    }
+
+    /// <summary>
+    /// Validates the <c>--diff-file</c> contract. The artifact only makes sense where diffs are
+    /// actually produced: a migration dry-run. A real migration changes files and would leave an
+    /// empty artifact despite doing real work; every other mode (analysis, rollback, pruning,
+    /// package updates, batch, self-update, doctor) never reaches the diff-generation path, so
+    /// allowing the flag there would promise a file the command cannot fill.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when the combination is unsupported.</exception>
+    private void ValidateDiffFileOptions()
+    {
+        if (string.IsNullOrEmpty(DiffFile))
+        {
+            return;
+        }
+
+        if (Output is OutputFormat.Json or OutputFormat.Sarif)
+        {
+            throw new ArgumentException(
+                "--diff-file cannot be used with --output Json or --output Sarif."
+            );
+        }
+
+        if (!DryRun)
+        {
+            throw new ArgumentException(
+                "--diff-file can only be used with --dry-run."
+            );
+        }
+
+        if (
+            Analyze
+            || Rollback
+            || ListBackups
+            || PruneBackups
+            || PruneAll
+            || UpdatePackages
+            || UnifyProps
+            || Doctor
+            || Update
+            || !string.IsNullOrEmpty(BatchDir)
+        )
+        {
+            throw new ArgumentException(
+                "--diff-file can only be used with a plain --dry-run migration; it has no "
+                    + "meaning for this command."
+            );
+        }
     }
 
     /// <summary>
