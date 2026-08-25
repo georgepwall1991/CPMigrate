@@ -364,6 +364,7 @@ Baselined findings stay visible everywhere (`suppressed: true` in JSON, `kind: "
 |--------|:-----:|:-------:|-------------|
 | `--output` | | `Terminal` | `Terminal` · `Json` · `Sarif` · `Markdown` · `Csv` (last four need `--analyze`) |
 | `--output-file` | | | Write `Json`/`Sarif`/`Markdown` to a file |
+| `--diff-file` | | | Append every `--dry-run` unified diff to a file; created empty when nothing changes, so a missing file means the run crashed |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Diagnostic logging to `cpmigrate.log` |
 

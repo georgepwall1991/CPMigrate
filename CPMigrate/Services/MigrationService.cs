@@ -28,6 +28,7 @@ public class MigrationService
     private readonly MigrationVerifier _verifier;
     private readonly ILogger<MigrationService> _logger;
     private readonly bool _quietMode;
+    private readonly DiffFileCollector _diffCollector;
 
     /// <summary>
     /// Cached scan results from project discovery, to avoid redundant re-scanning.
@@ -44,7 +45,8 @@ public class MigrationService
         IFixService? fixService = null,
         bool quietMode = false,
         ILogger<MigrationService>? logger = null,
-        MigrationVerifier? verifier = null
+        MigrationVerifier? verifier = null,
+        DiffFileCollector? diffFileCollector = null
     )
     {
         _consoleService = consoleService;
@@ -80,6 +82,7 @@ public class MigrationService
             );
         _logger = logger ?? NullLogger<MigrationService>.Instance;
         _quietMode = quietMode;
+        _diffCollector = diffFileCollector ?? new DiffFileCollector();
     }
 
     private static IAnalysisService CreateDefaultAnalysisService(IConsoleService console) =>
@@ -130,6 +133,13 @@ public class MigrationService
     /// </summary>
     private async Task<MigrationResult> ExecuteMigrationAsync(Options options)
     {
+        if (!string.IsNullOrEmpty(options.DiffFile))
+        {
+            // Created before anything can fail: an absent artifact must mean the run crashed,
+            // never that nothing changed.
+            _diffCollector.Begin(options.DiffFile);
+        }
+
         var (outputPath, propsPath) = MigrationValidator.GetOutputPaths(options);
         var propsFileExists = MigrationValidator.IsAlreadyMigrated(propsPath);
         string? backupPath = null;
@@ -1063,25 +1073,32 @@ public class MigrationService
 
         if (options.DryRun)
         {
+            string? diff = null;
+            if (options.Diff || _diffCollector.IsEnabled)
+            {
+                var original = File.Exists(propsFilePath)
+                    ? await File.ReadAllTextAsync(propsFilePath)
+                    : null;
+                diff = UnifiedDiffGenerator.Generate(original, mergedContent, propsFilePath);
+            }
+
             if (!_quietMode)
             {
                 _consoleService.WriteLine();
                 _consoleService.DryRun($"Would update: {propsFilePath}");
                 _consoleService.WriteLine();
-                if (options.Diff)
+                if (diff != null && options.Diff)
                 {
-                    var original = File.Exists(propsFilePath)
-                        ? await File.ReadAllTextAsync(propsFilePath)
-                        : null;
-                    _consoleService.WriteDiff(
-                        UnifiedDiffGenerator.Generate(original, mergedContent, propsFilePath)
-                    );
+                    _consoleService.WriteDiff(diff);
                 }
                 else
                 {
                     _consoleService.WritePropsPreview(mergedContent);
                 }
             }
+
+            // A no-op unless --diff-file is set; the diff is produced either way once it is.
+            _diffCollector.Append(diff);
         }
         else
         {
@@ -1114,26 +1131,32 @@ public class MigrationService
 
         if (options.DryRun)
         {
+            string? diff = null;
+            if (options.Diff || _diffCollector.IsEnabled)
+            {
+                diff = UnifiedDiffGenerator.Generate(
+                    null,
+                    updatedPackagePropsContent,
+                    propsFilePath
+                );
+            }
+
             if (!_quietMode)
             {
                 _consoleService.WriteLine();
                 _consoleService.DryRun($"Would create: {propsFilePath}");
                 _consoleService.WriteLine();
-                if (options.Diff)
+                if (diff != null && options.Diff)
                 {
-                    _consoleService.WriteDiff(
-                        UnifiedDiffGenerator.Generate(
-                            null,
-                            updatedPackagePropsContent,
-                            propsFilePath
-                        )
-                    );
+                    _consoleService.WriteDiff(diff);
                 }
                 else
                 {
                     _consoleService.WritePropsPreview(updatedPackagePropsContent);
                 }
             }
+
+            _diffCollector.Append(diff);
         }
         else
         {

@@ -319,6 +319,15 @@ public class Options
     public string? OutputFile { get; set; }
 
     [Option(
+        "diff-file",
+        HelpText = "Append every unified diff generated during --dry-run to this file, whether "
+            + "or not --diff renders it on screen. The file is created empty at the start of "
+            + "the run: an empty artifact means no changes, a missing one means the run "
+            + "crashed. Cannot be used with --output Json or Sarif."
+    )]
+    public string? DiffFile { get; set; }
+
+    [Option(
         'q',
         "quiet",
         Default = false,
@@ -852,6 +861,16 @@ public class Options
         {
             throw new ArgumentException(
                 "--output-file can only be used with --output Json or --output Sarif."
+            );
+        }
+
+        if (
+            !string.IsNullOrEmpty(DiffFile)
+            && Output is OutputFormat.Json or OutputFormat.Sarif
+        )
+        {
+            throw new ArgumentException(
+                "--diff-file cannot be used with --output Json or --output Sarif."
             );
         }
 
