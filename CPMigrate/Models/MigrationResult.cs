@@ -127,6 +127,12 @@ public class MigrationResult
     public IReadOnlyCollection<AnalysisIssueCode>? BaselineUnevaluatedRuleCodes { get; init; }
 
     /// <summary>
+    /// Guidance a completed operation wants carried into machine-readable output. Never serialized
+    /// directly — CommandRouter maps these into OperationResult.Warnings.
+    /// </summary>
+    public IReadOnlyList<string>? Warnings { get; init; }
+
+    /// <summary>
     /// Findings that reached the <c>--fail-on</c> threshold — the subset <see cref="ExitCode"/>
     /// reflects. Recorded here rather than re-derived by reporters: the gate has exceptions (a
     /// successful <c>--fix</c> run does not gate on findings it just repaired), and a second

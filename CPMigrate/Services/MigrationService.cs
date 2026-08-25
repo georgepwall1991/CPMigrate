@@ -244,8 +244,8 @@ public class MigrationService
 
             var propsFilePath = await GeneratePropsFileAsync(options, packages);
 
-            var verification = baseline is null
-                ? null
+            var (verification, verificationWarnings) = baseline is null
+                ? (null, null)
                 : await VerifyMigrationAsync(
                     options,
                     baseline,
@@ -274,6 +274,7 @@ public class MigrationService
                 ConflictsResolved = conflicts.Count,
                 PropsFilePath = propsFilePath,
                 BackupPath = backupPath,
+                Warnings = verificationWarnings,
                 WasDryRun = options.DryRun,
                 ExitCode =
                     verification is null || verification.Passed(options.VerifyStrict)
@@ -334,7 +335,8 @@ public class MigrationService
     /// Captures the graph the migration produced, compares it against the baseline, and undoes the
     /// migration when the comparison cannot account for what moved.
     /// </summary>
-    private async Task<VerificationReport> VerifyMigrationAsync(
+    private async Task<(VerificationReport Report, IReadOnlyList<string>? Warnings)>
+        VerifyMigrationAsync(
         Options options,
         GraphSnapshotResult baseline,
         List<string> projectPaths,
@@ -361,19 +363,18 @@ public class MigrationService
 
         if (!report.ShouldRollBack)
         {
-            return report;
+            return (report, null);
         }
 
         // Recorded from what happened, not from what was supposed to. A payload asserting the tree was
         // restored when it was not is worse than one admitting it could not be.
-        return report with
-        {
-            RolledBack = await RollBackUnverifiedMigrationAsync(
-                options,
-                backupsCreated,
-                backupPath
-            ),
-        };
+        var (rolledBack, rollbackWarnings) = await RollBackUnverifiedMigrationAsync(
+            options,
+            backupsCreated,
+            backupPath
+        );
+
+        return (report with { RolledBack = rolledBack }, rollbackWarnings);
     }
 
     /// <summary>
@@ -389,11 +390,8 @@ public class MigrationService
     /// would leave precisely that change on disk while the report claimed otherwise.
     /// </remarks>
     /// <returns>Whether the working tree was actually restored.</returns>
-    private async Task<bool> RollBackUnverifiedMigrationAsync(
-        Options options,
-        bool backupsCreated,
-        string? backupPath
-    )
+    private async Task<(bool Restored, IReadOnlyList<string>? Warnings)>
+        RollBackUnverifiedMigrationAsync(Options options, bool backupsCreated, string? backupPath)
     {
         if (!backupsCreated || string.IsNullOrEmpty(backupPath))
         {
@@ -401,7 +399,7 @@ public class MigrationService
                 "No backup is available, so the migration could not be undone. The working tree still "
                     + "holds changes this run could not verify — use git to discard them."
             );
-            return false;
+            return (false, null);
         }
 
         _consoleService.Warning("Rolling the migration back.");
@@ -413,7 +411,7 @@ public class MigrationService
 
         if (result.ExitCode != ExitCodes.Success)
         {
-            return false;
+            return (false, result.Warnings);
         }
 
         // The exit code is not sufficient. RollbackHandler catches a failure to delete a props file
@@ -428,10 +426,10 @@ public class MigrationService
                 $"Rollback restored the project files but {Path.GetFileName(propsPath)} could not be "
                     + "removed, so central package management is still in force. Delete it by hand."
             );
-            return false;
+            return (false, result.Warnings);
         }
 
-        return true;
+        return (true, result.Warnings);
     }
 
     /// <summary>
@@ -1312,7 +1310,17 @@ public class MigrationService
                 )
             )
             {
-                await _rollbackHandler.ExecuteAsync(CreateRollbackOptions(options, backupPath));
+                var rollbackResult = await _rollbackHandler.ExecuteAsync(
+                    CreateRollbackOptions(options, backupPath)
+                );
+
+                // The error path rethrows, discarding this result — and quiet or machine-readable
+                // runs silenced the handler's own note. Stderr is the one channel guaranteed to
+                // survive both.
+                foreach (var warning in rollbackResult.Warnings ?? [])
+                {
+                    Console.Error.WriteLine($"warning: {warning}");
+                }
             }
         }
     }

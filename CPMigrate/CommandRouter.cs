@@ -1033,7 +1033,7 @@ internal static class CommandRouter
         if (result.Verification is not null)
         {
             await JsonOutputWriter.EmitAsync(
-                VerificationMarkdown.Format(result.Verification, options.VerifyStrict),
+                VerificationMarkdown.Format(result.Verification, options.VerifyStrict, result.Warnings),
                 options,
                 consoleService
             );
@@ -1158,6 +1158,17 @@ internal static class CommandRouter
         IConsoleService consoleService
     )
     {
+        // Rollback guidance must reach every format — quiet rollbacks silence the handler's own
+        // note, and several writers return before the JSON block below. Stderr keeps stdout a pure
+        // payload channel for machine-readable modes.
+        if (result.Warnings is { Count: > 0 })
+        {
+            foreach (var warning in result.Warnings)
+            {
+                Console.Error.WriteLine($"warning: {warning}");
+            }
+        }
+
         if (options.Output == OutputFormat.Sarif)
         {
             await WriteSarifOutputForMigration(options, result, consoleService);
@@ -1225,7 +1236,7 @@ internal static class CommandRouter
                     )
                     .ToList();
 
-        var baselineStaleness = BaselineStaleness(options, result);
+var baselineStaleness = BaselineStaleness(options, result);
 
         var operationResult = new OperationResult
         {
@@ -1264,6 +1275,7 @@ internal static class CommandRouter
                 : new BackupInfo { Path = result.BackupPath, FilesBackedUp = 0 },
             Verification = VerificationPayload.From(result.Verification, options.VerifyStrict),
             DryRun = result.WasDryRun,
+            Warnings = result.Warnings?.ToList() ?? [],
             Timestamp = DateTime.UtcNow.ToString("o"),
         };
 
@@ -1330,6 +1342,7 @@ internal static class CommandRouter
                 VerificationRuns = result.VerificationRuns,
                 BisectBudgetExhausted = result.BisectBudgetExhausted,
             },
+            Warnings = result.Warnings?.ToList() ?? [],
             PackageUpdates = result
                 .Updates.Select(update => new PackageUpdateInfo
                 {

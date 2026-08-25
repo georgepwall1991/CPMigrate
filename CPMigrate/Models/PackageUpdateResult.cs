@@ -38,6 +38,12 @@ public class PackageUpdateResult
     public bool WasRolledBack { get; init; }
 
     /// <summary>
+    /// Guidance carried to machine-readable consumers whose consoles are silenced — e.g. that
+    /// obj/project.assets.json describes a rejected probe until the next restore.
+    /// </summary>
+    public IReadOnlyList<string>? Warnings { get; init; }
+
+    /// <summary>
     /// Individual package update entries.
     /// </summary>
     public List<PackageUpdateEntry> Updates { get; init; } = [];

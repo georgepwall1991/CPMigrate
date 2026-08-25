@@ -52,9 +52,21 @@ internal sealed class RollbackHandler
         HandlePostRestoreCleanup(backupPath, manifest, failedCount);
         ShowRollbackSummary(restoredCount, failedCount);
 
+        // Machine-readable consumers never see the terminal note above — quiet mode silences it
+        // and scripted rollbacks run with --output Json. The guidance travels in the payload.
+        var guidanceWarnings = new List<string>();
+        if (failedCount == 0)
+        {
+            guidanceWarnings.Add(
+                "obj/project.assets.json may still hold resolved graphs written after this backup "
+                    + "was taken. Run dotnet restore before building."
+            );
+        }
+
         return new MigrationResult
         {
             ProjectsProcessed = restoredCount,
+            Warnings = guidanceWarnings,
             ExitCode = failedCount == 0 ? ExitCodes.Success : ExitCodes.FileOperationError
         };
     }
@@ -300,6 +312,16 @@ internal sealed class RollbackHandler
         if (failedCount == 0)
         {
             _consoleService.Success($"Rollback complete! Restored {restoredCount} file(s).");
+
+            // Backups cover project files and the props file, but never obj: any run that restored
+            // after writing (verification captures, test-verified update cycles) left resolved
+            // graphs there describing the state that was just undone. External tools reading those
+            // files see a graph the restored sources no longer produce, so say the fix out loud
+            // rather than leaving it to be discovered as a phantom build difference.
+            _consoleService.Dim(
+                "Note: obj/project.assets.json may still hold resolved graphs written after this "
+                    + "backup was taken. Run dotnet restore before building."
+            );
         }
         else
         {

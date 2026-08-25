@@ -34,9 +34,16 @@ public static class DriftAttributor
         ResolvedGraphSnapshot after
     )
     {
-        // Grouped rather than ToDictionary'd. Conflicts arrive distinct today, but a duplicate would
-        // throw here — turning a safety feature into the thing that takes the migration down, at the
-        // one moment the caller is relying on it to describe what just happened.
+        // Grouped rather than deduplicated, because this is the boundary where the "one decision per
+        // package" assumption would otherwise break silently. RecordDecisions walks a conflict list
+        // that is already one entry per package today, but nothing downstream enforces that: a
+        // ToDictionary here would throw and turn a safety feature into the thing that takes the
+        // migration down at the moment the caller relies on it, while keeping only the first entry
+        // would drop the other resolution without a word — and if the dropped one was the version
+        // that actually landed, a change the migration made gets reported as unexplained drift. So
+        // every decision recorded for a package is kept, and attribution matches the change against
+        // each; agreeing duplicates are harmless, and disagreeing ones each explain only the version
+        // they produced.
         var byPackage = decisions
             .GroupBy(
                 (MigrationDecision decision) => decision.PackageId,
@@ -44,7 +51,8 @@ public static class DriftAttributor
             )
             .ToDictionary(
                 (IGrouping<string, MigrationDecision> group) => group.Key,
-                (IGrouping<string, MigrationDecision> group) => group.First(),
+                (IGrouping<string, MigrationDecision> group) =>
+                    (IReadOnlyList<MigrationDecision>)[.. group],
                 StringComparer.OrdinalIgnoreCase
             );
 
@@ -110,25 +118,39 @@ public static class DriftAttributor
     ///
     /// The version has to match. A package the migration decided about that nonetheless landed
     /// somewhere else was not moved by that decision, and accepting it because the name matches is how
-    /// an unrelated fault gets waved through under a decision's name.
+    /// an unrelated fault gets waved through under a decision's name. Duplicate decisions for one
+    /// package are tolerated only when they agree — a decision IS the one version every project
+    /// should receive, so disagreeing duplicates are an internal fault, and attributing anything
+    /// under either of them would let reachable drift pass as explained. Those changes stay
+    /// unexplained and roll back.
     /// </summary>
     private static MigrationDecision? ExplainingDecision(
         GraphChange change,
-        Dictionary<string, MigrationDecision> byPackage
+        Dictionary<string, IReadOnlyList<MigrationDecision>> byPackage
     )
     {
-        if (change.After is null || !byPackage.TryGetValue(change.PackageId, out var decision))
+        if (change.After is null || !byPackage.TryGetValue(change.PackageId, out var candidates))
         {
             return null;
         }
 
-        return string.Equals(
-            decision.ResolvedVersion,
-            change.After,
-            StringComparison.OrdinalIgnoreCase
-        )
-            ? decision
-            : null;
+        var distinctVersions = candidates
+            .Select(decision => decision.ResolvedVersion)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (distinctVersions.Count > 1)
+        {
+            return null;
+        }
+
+        return candidates.FirstOrDefault(
+            (MigrationDecision decision) =>
+                string.Equals(
+                    decision.ResolvedVersion,
+                    change.After,
+                    StringComparison.OrdinalIgnoreCase
+                )
+        );
     }
 
     /// <summary>

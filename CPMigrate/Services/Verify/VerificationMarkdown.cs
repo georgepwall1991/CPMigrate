@@ -21,11 +21,25 @@ public static class VerificationMarkdown
     /// </summary>
     private const int RowLimit = 50;
 
-    public static string Format(VerificationReport report, bool strict)
+    public static string Format(
+        VerificationReport report,
+        bool strict,
+        IReadOnlyList<string>? warnings = null
+    )
     {
         var markdown = new StringBuilder();
 
         WriteHeading(markdown, report, strict);
+
+        if (warnings is { Count: > 0 })
+        {
+            foreach (var warning in warnings)
+            {
+                markdown.AppendLine($"> ⚠️ {warning}");
+            }
+
+            markdown.AppendLine();
+        }
 
         if (report.Verdict == VerificationVerdict.Failed)
         {

@@ -35,6 +35,25 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   cache: callers arriving while another project's query is still in flight await its result instead
   of each paying for their own restore.
 
+### Changed
+- **Duplicate migration decisions no longer vanish at the attribution boundary.** DriftAttributor
+  keyed decisions by package id with `GroupBy(...).First()`, so if two decisions were ever recorded
+  for the same package, only the first was kept — silently. If the dropped one was the version that
+  actually landed, a change the migration itself made would be reported as unexplained drift and
+  rolled back. Decisions now arrive at the attributor as one entry per recorded resolution and a
+  change is explained by whichever decision's version it landed on; agreeing duplicates are
+  harmless, disagreeing ones each explain only what they produced. Pinned by
+  `AttributesADirectChange_UsingTheSecondDecisionRecordedForAPackage` and
+  `StillExplainsNothing_WhenNoDecisionForThePackageMatchesTheLandedVersion`.
+
+- **A successful rollback now advises a fresh restore.** Backups cover project files and
+  `Directory.Packages.props` but not `obj/`, so after a rollback every `obj/project.assets.json`
+  written by a post-backup restore (`--verify`'s captures, a test-verified update's test cycles)
+  still describes the state that was just undone — external tools reading `obj/` directly see a
+  graph the restored sources no longer produce. The rollback summary prints the guidance
+  (`dotnet restore` before building) and the README says why; CPMigrate's own verification clears
+  those files before every read, so its verdicts were never affected.
+
 ### Fixed
 - **`--verify` can no longer mistake a stale `obj/project.assets.json` for a fresh one.** When a project redirects its intermediate output (`MSBuildProjectExtensionsPath`, `BaseIntermediateOutputPath`, or `ProjectAssetsFile`), a plain `dotnet restore` writes the real resolved graph to the redirected location while an older file at the default path — left there by the project's last local build, before the redirect existed — still parses perfectly and names this very project as its subject. Both verification captures then read that same stale file, compared it against itself, and reported an unchanged resolved graph over a migration whose effect on that project was never observed: a clean verdict asserting more than was compared. Each capture now removes every in-scope project's `obj/project.assets.json` before restoring, so anything readable afterwards provably came from *this* restore rather than from history. A redirected project consequently fails closed — its graph is recorded as unreadable, the verdict is `failed`, and the migration rolls back — instead of passing on a file of unknown provenance; a project whose stale file cannot be removed is refused the same way.
 

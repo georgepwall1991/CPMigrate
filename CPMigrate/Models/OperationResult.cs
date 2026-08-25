@@ -131,9 +131,16 @@ public class VerificationInfo
     [JsonPropertyName("rolledBack")]
     public bool RolledBack { get; init; }
 
+    /// <summary>
+    /// Projects whose resolved graph was actually read back and compared. Together with
+    /// <see cref="ProjectsExpected"/> this is the coverage statement — how much of the workspace the
+    /// verdict actually measured. Anything short of equality is itemised in
+    /// <see cref="IntegrityFailures"/>, so no separate ratio or unreadable count is carried.
+    /// </summary>
     [JsonPropertyName("projectsRestored")]
     public int ProjectsRestored { get; init; }
 
+    /// <summary>Every project verification was expected to measure, readable or not.</summary>
     [JsonPropertyName("projectsExpected")]
     public int ProjectsExpected { get; init; }
 

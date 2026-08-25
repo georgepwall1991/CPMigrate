@@ -282,6 +282,10 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         return new UpdateBackupContext(backupPath, manifest);
     }
 
+    private const string StaleAssetsGuidance =
+        "obj/project.assets.json still describes the rejected update until the next "
+        + "dotnet restore — restore before building or trusting external tools.";
+
     private void AnnounceApply(List<PackageUpdateEntry> updatesToApply)
     {
         var directCount = updatesToApply.Count(u => !u.IsTransitive);
@@ -319,9 +323,18 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             .Select(u => heldByName.ContainsKey(u.PackageName) ? u with { HeldBack = true } : u)
             .ToList();
 
+        // Mirror what the console was told: a rejected update leaves obj/ stale until the next
+        // restore, and held-back bisect probes were reverted without one.
+        IReadOnlyList<string>? warnings =
+            (!request.Bisect && !search.AnyApplied)
+            || (request.Bisect && search.HeldBack.Count > 0)
+                ? [StaleAssetsGuidance]
+                : null;
+
         return new PackageUpdateResult
         {
             ExitCode = search.AnyApplied ? ExitCodes.Success : ExitCodes.TestFailure,
+            Warnings = warnings,
             PackagesChecked = packagesChecked,
             PackagesUpdated = directApplied,
             PackagesSkipped = packagesChecked - directApplied,
@@ -358,6 +371,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 ? "dotnet restore failed!"
                 : "Tests failed!";
             _consoleService.Error($"{cause} Rolled back to previous versions.");
+            _consoleService.Dim(StaleAssetsGuidance);
             _consoleService.Dim(search.FailureOutput ?? string.Empty);
             return;
         }
@@ -383,6 +397,13 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         }
 
         _consoleService.WriteLine();
+
+        // Every held-back package was probed and reverted without a following restore, so obj/
+        // describes whichever probe ran last — not the kept subset.
+        if (search.HeldBack.Count > 0)
+        {
+            _consoleService.Dim(StaleAssetsGuidance);
+        }
 
         var total = search.Applied.Count + search.HeldBack.Count;
         if (search.AnyApplied)
@@ -434,6 +455,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         {
             await transaction.RevertAsync();
             _consoleService.Success("Rolled back to previous versions.");
+            _consoleService.Dim(StaleAssetsGuidance);
             BackupManager.CleanupBackups(backupPath, manifest);
 
             return new PackageUpdateResult
@@ -443,6 +465,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 TransitivePackagesFound = transitiveFound,
                 TestsPassed = false,
                 WasRolledBack = true,
+                Warnings = [StaleAssetsGuidance],
                 Updates = acceptedUpdates
             };
         }

@@ -476,6 +476,8 @@ A migration PR is sixty changed files, and `git diff` cannot answer the only que
 
 `--verify` rolls the migration back on drift it can't account for, so a failed job leaves the tree as it found it. Add `--verify-strict` when the migration must be a literal no-op — then *any* graph change fails, even one the receipt explains.
 
+After any rollback — including this one — run `dotnet restore` before building. Backups cover project files and `Directory.Packages.props`, not `obj/`, so `obj/project.assets.json` can still hold resolved graphs written *after* the backup was taken (by the verification captures, or by a test-verified update's restore). External tools that read `obj/` directly will see the undone graph until a fresh restore rewrites it. CPMigrate itself always clears those files before reading, so its own verdicts are unaffected.
+
 ---
 
 ## ❓ FAQ

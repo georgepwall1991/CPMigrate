@@ -238,6 +238,56 @@ public class DriftAttributionTests
     }
 
     [Fact]
+    public void ConflictingDuplicateDecisionsForAPackage_ExplainNothing()
+    {
+        // Two decisions for one package arrive distinct today — RecordDecisions walks a conflict list
+        // that already holds one entry per package — but nothing enforces that at this boundary. A
+        // decision IS the single version every project should receive: disagreeing duplicates mean an
+        // internal fault, and attributing a landed change under either of them would let reachable
+        // drift pass as explained and skip the rollback it exists to trigger.
+        var change = Changed("Serilog", "3.1.1", "4.3.0", direct: true);
+
+        var attributed = Attribute(
+            [change],
+            [UnifiedTo("Serilog", "4.4.0"), UnifiedTo("Serilog", "4.3.0")],
+            After(("Serilog", []))
+        );
+
+        attributed.Single().Kind.Should().Be(DriftExplanation.Unexplained);
+    }
+
+    [Fact]
+    public void AgreeingDuplicateDecisionsForAPackage_StillExplainAChange()
+    {
+        // Duplicates that agree on the version carry no fault; attribution proceeds normally.
+        var change = Changed("Serilog", "3.1.1", "4.3.0", direct: true);
+
+        var attributed = Attribute(
+            [change],
+            [UnifiedTo("Serilog", "4.3.0"), UnifiedTo("Serilog", "4.3.0")],
+            After(("Serilog", []))
+        );
+
+        attributed.Single().Kind.Should().Be(DriftExplanation.ConflictUnified);
+    }
+
+    [Fact]
+    public void StillExplainsNothing_WhenNoDecisionForThePackageMatchesTheLandedVersion()
+    {
+        // Keeping several decisions per package must not loosen the version match: a change that
+        // landed somewhere no decision produced stays unexplained, whatever else was decided.
+        var change = Changed("Serilog", "3.1.1", "5.0.0", direct: true);
+
+        var attributed = Attribute(
+            [change],
+            [UnifiedTo("Serilog", "4.4.0"), UnifiedTo("Serilog", "4.3.0")],
+            After(("Serilog", []))
+        );
+
+        attributed.Single().Kind.Should().Be(DriftExplanation.Unexplained);
+    }
+
+    [Fact]
     public void TerminatesOnACycleInTheGraph()
     {
         var changes = new[] { Changed("Serilog", "3.1.1", "4.4.0", direct: true) };
