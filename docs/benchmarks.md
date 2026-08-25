@@ -29,3 +29,19 @@ unification have to be fetched if they were not already local. Serilog's `PolySh
 one package; a repository with fifty conflicts will pay for fifty.
 
 If you run these in CI, track p50/p95 over time and publish deltas in release notes.
+
+## Measuring the concurrent scan and the payload cache
+
+The repository also carries a runnable harness, `benchmarks/`, that measures the two scan
+performance features on a synthetic solution it generates itself: N real projects with real
+restores, analyzed once serially (`--max-parallelism 1`) and once concurrently, then resolved-query
+passes timed uncached against cached through the shared payload cache. It is manual tooling — not
+part of the solution, never run in CI — so its wall-clock numbers stay out of the test suite:
+
+```sh
+dotnet run --project benchmarks --configuration Release [--projects 12] [--groups 4] [--keep]
+```
+
+See `benchmarks/README.md` for the full methodology. The regression guards for the same code are
+deterministic and timing-free: `GroupedScanSchedulerTests` and the concurrency tests under
+`CPMigrate.Tests/Services/`.

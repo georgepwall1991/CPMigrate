@@ -173,6 +173,34 @@ public class DotNetPackageQueryServiceCacheTests
             Times.Exactly(2));
     }
 
+    [Fact]
+    public async Task ConcurrentResolvedScansOfOneProject_InvokeSubprocessOnce()
+    {
+        // The Lazy in the payload cache exists for the concurrent scan: --tree and --why fire one
+        // resolved query per project across parallel directory groups, and callers that arrive while
+        // the subprocess is still running must await its result rather than each paying for their own
+        // restore. The mock's invocation delays long enough for every caller to pile up behind the
+        // single in-flight query before it completes, so a second subprocess would be visible in the count.
+        var cli = new Mock<IDotNetCliService>();
+        var invocations = 0;
+        cli.Setup(c => c.RunPackageListJsonAsync(It.IsAny<string>(), It.IsAny<DotNetPackageListOptions>()))
+            .Returns(async () =>
+            {
+                Interlocked.Increment(ref invocations);
+                await Task.Delay(50);
+                return (TransitiveOutput, true);
+            });
+        var service = new DotNetPackageQueryService(new FakeConsoleService(), cli.Object);
+
+        var scans = await Task.WhenAll(
+            Enumerable.Range(0, 8)
+                .Select(_ => service.ScanResolvedPackagesAsync(ProjectPath))
+        );
+
+        scans.Should().OnlyContain(scan => scan.References.Select(r => r.PackageName).Contains("Serilog"));
+        invocations.Should().Be(1);
+    }
+
     private static void SetupSuccessfulList(Mock<IDotNetCliService> cli, string output)
     {
         cli.Setup(c => c.RunPackageListJsonAsync(It.IsAny<string>(), It.IsAny<DotNetPackageListOptions>()))

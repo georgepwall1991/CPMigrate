@@ -9,6 +9,19 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 ### Added
 - **Baseline rot is now reported wherever the baseline itself is.** A baseline records accepted debt, and debt gets paid down — but until now an entry whose finding no longer existed vanished silently into `Stale`, visible only as a terminal line a CI log loses. Every run that reads a baseline now says how many entries matched nothing (`summary.baselineStaleEntries` in JSON, a summary-table row and a note in Markdown, plus the existing terminal warning) so the dead entries can be removed from the file on purpose — by hand, not with `--write-baseline`, which would also accept every new finding the run reported. Entries whose `issueCode` names a rule the catalog no longer publishes — the fingerprint of a renamed or deleted rule — are called out separately rather than being counted as fixed debt: the console warning suggests `cpmigrate --explain all` for the current IDs, and JSON carries them in `summary.baselineUnknownRuleCodes`. Matching semantics are unchanged; nothing is pruned automatically. Output schema 1.8.0, additive: `summary.baselineStaleEntries` and `summary.baselineUnknownRuleCodes` arrived in 1.7.0, and the batch payload gained its own batch-wide `baselineStaleEntries` / `baselineUnknownRuleCodes` in 1.8.0.
 
+- **Benchmark harness for the concurrent scan and the payload cache.** `benchmarks/` now carries a
+  standalone, manually run tool (`dotnet run --project benchmarks`) that generates a synthetic
+  N-project solution with real restores, times the CLI's analyze pass at `--max-parallelism 1`
+  against the machine's processor count, and times an uncached resolved-query pass against the same
+  pass served by `DotNetPackageQueryService`'s payload cache, printing one table. It is not part of
+  `CPMigrate.sln` and never runs in CI; the deterministic guards for the same code live in
+  `GroupedScanSchedulerTests` — peak observed concurrency within `--max-parallelism` and above one
+  across directory groups under a counting fake, two same-directory projects proven never to overlap
+  in time, results indexed by discovery order regardless of completion order — plus
+  `ConcurrentResolvedScansOfOneProject_InvokeSubprocessOnce`, which pins the Lazy dedup behind the
+  cache: callers arriving while another project's query is still in flight await its result instead
+  of each paying for their own restore.
+
 ### Fixed
 - **`--verify` can no longer mistake a stale `obj/project.assets.json` for a fresh one.** When a project redirects its intermediate output (`MSBuildProjectExtensionsPath`, `BaseIntermediateOutputPath`, or `ProjectAssetsFile`), a plain `dotnet restore` writes the real resolved graph to the redirected location while an older file at the default path — left there by the project's last local build, before the redirect existed — still parses perfectly and names this very project as its subject. Both verification captures then read that same stale file, compared it against itself, and reported an unchanged resolved graph over a migration whose effect on that project was never observed: a clean verdict asserting more than was compared. Each capture now removes every in-scope project's `obj/project.assets.json` before restoring, so anything readable afterwards provably came from *this* restore rather than from history. A redirected project consequently fails closed — its graph is recorded as unreadable, the verdict is `failed`, and the migration rolls back — instead of passing on a file of unknown provenance; a project whose stale file cannot be removed is refused the same way.
 

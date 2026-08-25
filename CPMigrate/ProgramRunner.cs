@@ -443,57 +443,30 @@ public static class ProgramRunner
         DependencyGraphService? graphService = null
     )
     {
-        var maxConcurrency = options.ResolveScanParallelism();
-        var results = new ConcurrentScanResult[projectPaths.Count];
-
-        var groups = Enumerable
-            .Range(0, projectPaths.Count)
-            .GroupBy(
-                index => ProjectDirectoryScanLock.DirectoryKeyFor(projectPaths[index]),
-                StringComparer.OrdinalIgnoreCase
-            )
-            .ToList();
-
-        var mightRedirect = ProjectDirectoryScanLock.MightRedirectIntermediateOutput(projectPaths);
-        using var redirectLock = mightRedirect
-            ? await ProjectDirectoryScanLock.AcquireRedirectingAsync()
-            : await ProjectDirectoryScanLock.AcquireOrdinaryAsync();
-
-        await Parallel.ForEachAsync(
-            groups,
-            new ParallelOptions { MaxDegreeOfParallelism = mightRedirect ? 1 : maxConcurrency },
-            async (group, _) =>
+        var results = await GroupedScanScheduler.RunAsync(
+            projectPaths,
+            options.ResolveScanParallelism(),
+            async (_, projectPath, _) =>
             {
-                foreach (var index in group)
-                {
-                    using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
-                    using var directorySlot = await ProjectDirectoryScanLock.AcquireDirectoryAsync(
-                        projectPaths[index]
-                    );
-
-                    var console = new BufferingConsoleService();
-                    // The graph reader reports malformed or unreadable assets files through the
-                    // same buffered console, so nothing inside the parallel window touches the
-                    // shared terminal.
-                    var scopedGraphService = graphService is null
-                        ? null
-                        : new DependencyGraphService(console);
-                    var (references, success) = await services
-                        .WithConsole(console)
-                        .ProjectAnalyzer.ScanResolvedPackagesAsync(
-                            projectPaths[index],
-                            includeTransitive
-                        );
-                    var graph = success && scopedGraphService is not null
-                        ? scopedGraphService.TryReadResolvedGraph(projectPaths[index])
-                        : null;
-                    results[index] = new ConcurrentScanResult(
-                        references,
-                        success,
-                        graph,
-                        console.Warnings
-                    );
-                }
+                var console = new BufferingConsoleService();
+                // The graph reader reports malformed or unreadable assets files through the
+                // same buffered console, so nothing inside the parallel window touches the
+                // shared terminal.
+                var scopedGraphService = graphService is null
+                    ? null
+                    : new DependencyGraphService(console);
+                var (references, success) = await services
+                    .WithConsole(console)
+                    .ProjectAnalyzer.ScanResolvedPackagesAsync(projectPath, includeTransitive);
+                var graph = success && scopedGraphService is not null
+                    ? scopedGraphService.TryReadResolvedGraph(projectPath)
+                    : null;
+                return new ConcurrentScanResult(
+                    references,
+                    success,
+                    graph,
+                    console.Warnings
+                );
             }
         );
 

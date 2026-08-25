@@ -320,58 +320,13 @@ internal sealed class AnalysisHandler
         // writes. That case is checked for separately and answered by running the whole scan serially —
         // conservatively, since the check is a heuristic rather than a guarantee.
         var maxConcurrency = options.ResolveScanParallelism();
-        var resolved = new (List<PackageReference> References, bool Success)[projectPaths.Count];
-
-        // Scheduled by directory rather than guarded by a lock. Projects in one directory run in sequence
-        // within their group; the groups run against each other.
-        //
-        // A lock was the first shape and it blocked badly: Parallel.ForEachAsync would start several
-        // projects from the same directory, all but one would sit waiting on the semaphore while still
-        // holding a worker and a global scan slot, and unrelated directories could not start at all. On a
-        // solution with a few crowded directories that is close to serial. Grouping avoids the queue
-        // entirely — nothing ever waits for a directory, because only one project from it is ever in flight.
-        var groups = Enumerable
-            .Range(0, projectPaths.Count)
-            .GroupBy(
-                index => ProjectDirectoryScanLock.DirectoryKeyFor(projectPaths[index]),
-                StringComparer.OrdinalIgnoreCase
+        var resolved = await GroupedScanScheduler.RunAsync(
+            projectPaths,
+            maxConcurrency,
+            (_, projectPath, _) => _projectAnalyzer.ScanResolvedPackagesAsync(
+                projectPath,
+                options.IncludeTransitive
             )
-            .ToList();
-
-        // A solution that redirects intermediate output somewhere shared cannot be grouped by directory at
-        // all, because the sharing is not visible in the paths. Those run one project at a time and, since
-        // --batch-parallel has other solutions running too, hold a process-wide lock while they do.
-        //
-        // Ordinary scans take the shared side of a second lock; a scan that might redirect takes it
-        // exclusively. Excluding only other redirecting scans was not enough — a redirect aimed at an
-        // ordinary project's directory races that project's restore, and directory keys cannot see it,
-        // because the sharing is not in the paths.
-        var mightRedirect = ProjectDirectoryScanLock.MightRedirectIntermediateOutput(projectPaths);
-        using var redirectLock = mightRedirect
-            ? await ProjectDirectoryScanLock.AcquireRedirectingAsync()
-            : await ProjectDirectoryScanLock.AcquireOrdinaryAsync();
-
-        await Parallel.ForEachAsync(
-            groups,
-            new ParallelOptions { MaxDegreeOfParallelism = mightRedirect ? 1 : maxConcurrency },
-            async (group, _) =>
-            {
-                foreach (var index in group)
-                {
-                    using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
-
-                    // Grouping keeps one solution's same-directory projects in sequence; this keeps them in
-                    // sequence against other solutions', which --batch-parallel runs at the same time.
-                    using var directorySlot = await ProjectDirectoryScanLock.AcquireDirectoryAsync(
-                        projectPaths[index]
-                    );
-
-                    resolved[index] = await _projectAnalyzer.ScanResolvedPackagesAsync(
-                        projectPaths[index],
-                        options.IncludeTransitive
-                    );
-                }
-            }
         );
 
         // Phase two: MSBuild. Serial, and deliberately so — see above.
@@ -397,60 +352,44 @@ internal sealed class AnalysisHandler
             return;
         }
 
-        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency };
-
         // Grouped exactly as the resolved scan is: these restore too, so two projects in one directory
         // corrupt each other here as well — and here the consequence is a vulnerability attributed to the
         // wrong project, or a vulnerable one reported clean.
-        var deepGroups = Enumerable
-            .Range(0, projectPaths.Count)
-            .GroupBy(
-                index => ProjectDirectoryScanLock.DirectoryKeyFor(projectPaths[index]),
-                StringComparer.OrdinalIgnoreCase
-            )
-            .ToList();
-
-        await Parallel.ForEachAsync(
-            deepGroups,
-            parallelOptions,
-            async (group, _) =>
+        var deepResults = await GroupedScanScheduler.RunAsync(
+            projectPaths,
+            maxConcurrency,
+            async (index, projectPath, _) =>
             {
-                foreach (var index in group)
+                var baseResult = results[index];
+                var vulnerabilities = new List<VulnerabilityInfo>();
+                var outdated = new List<OutdatedPackageInfo>();
+                var deprecated = new List<DeprecatedPackageInfo>();
+
+                var failures = await RunDeepScansAsync(
+                    options,
+                    projectPath,
+                    task: null,
+                    vulnerabilities,
+                    outdated,
+                    deprecated
+                );
+
+                progress?.Increment(1);
+
+                return baseResult with
                 {
-                    // The ceiling has to hold across the whole process, not per scan: --batch-parallel
-                    // runs several solutions at once, and a per-scan limit would multiply the advertised
-                    // cap by the number of solutions — producing the feed rate-limiting the cap exists to
-                    // avoid.
-                    using var slot = await ScanConcurrencyGate.AcquireAsync(maxConcurrency);
-                    using var directorySlot = await ProjectDirectoryScanLock.AcquireDirectoryAsync(
-                        projectPaths[index]
-                    );
-
-                    var vulnerabilities = new List<VulnerabilityInfo>();
-                    var outdated = new List<OutdatedPackageInfo>();
-                    var deprecated = new List<DeprecatedPackageInfo>();
-
-                    var failures = await RunDeepScansAsync(
-                        options,
-                        projectPaths[index],
-                        task: null,
-                        vulnerabilities,
-                        outdated,
-                        deprecated
-                    );
-
-                    results[index] = results[index] with
-                    {
-                        DeepScanFailures = failures,
-                        Vulnerabilities = vulnerabilities,
-                        Outdated = outdated,
-                        Deprecated = deprecated,
-                    };
-
-                    progress?.Increment(1);
-                }
+                    DeepScanFailures = failures,
+                    Vulnerabilities = vulnerabilities,
+                    Outdated = outdated,
+                    Deprecated = deprecated,
+                };
             }
         );
+
+        for (var index = 0; index < projectPaths.Count; index++)
+        {
+            results[index] = deepResults[index];
+        }
     }
 
     /// <summary>
