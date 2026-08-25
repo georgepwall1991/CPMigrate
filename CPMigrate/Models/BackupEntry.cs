@@ -14,4 +14,11 @@ public class BackupEntry
     /// Filename of the backup file (without directory path).
     /// </summary>
     public string BackupFileName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// SHA-256 of the original file's bytes, recorded when the backup was created. Null for
+    /// entries in manifests written before integrity verification existed; such entries are
+    /// restored without a check.
+    /// </summary>
+    public string? Sha256 { get; set; }
 }

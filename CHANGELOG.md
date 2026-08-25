@@ -9,6 +9,19 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 ### Added
 - **Baseline rot is now reported wherever the baseline itself is.** A baseline records accepted debt, and debt gets paid down — but until now an entry whose finding no longer existed vanished silently into `Stale`, visible only as a terminal line a CI log loses. Every run that reads a baseline now says how many entries matched nothing (`summary.baselineStaleEntries` in JSON, a summary-table row and a note in Markdown, plus the existing terminal warning) so the dead entries can be removed from the file on purpose — by hand, not with `--write-baseline`, which would also accept every new finding the run reported. Entries whose `issueCode` names a rule the catalog no longer publishes — the fingerprint of a renamed or deleted rule — are called out separately rather than being counted as fixed debt: the console warning suggests `cpmigrate --explain all` for the current IDs, and JSON carries them in `summary.baselineUnknownRuleCodes`. Matching semantics are unchanged; nothing is pruned automatically. Output schema 1.8.0, additive: `summary.baselineStaleEntries` and `summary.baselineUnknownRuleCodes` arrived in 1.7.0, and the batch payload gained its own batch-wide `baselineStaleEntries` / `baselineUnknownRuleCodes` in 1.8.0.
 
+- **Rollback now verifies backup integrity before restoring.** A rollback copied each file in
+  `.cpmigrate_backup/` over the user's project with a blind `File.Copy` — nothing checked that the
+  bytes still matched what was backed up, so a truncated, corrupted, or tampered backup file was
+  faithfully restored over the original and the rollback reported success: the tool's own undo
+  mechanism becoming the corruption vector. Every backup entry now records the SHA-256 of the
+  original file's bytes at backup time (`sha256` in `backup_manifest.json`), and restore computes
+  the backup file's hash first, refusing to copy anything on mismatch with an error naming the
+  project and both hashes (`BackupIntegrityException`). A failed verification counts as a failed
+  restore like any other: the rollback finishes with errors, keeps every backup file and the props
+  file for manual recovery, and exits non-zero instead of deleting the evidence. Manifests written
+  by older versions carry no hashes; those entries restore exactly as before, announced once per
+  run rather than per file.
+
 - **Benchmark harness for the concurrent scan and the payload cache.** `benchmarks/` now carries a
   standalone, manually run tool (`dotnet run --project benchmarks`) that generates a synthetic
   N-project solution with real restores, times the CLI's analyze pass at `--max-parallelism 1`

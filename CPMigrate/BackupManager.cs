@@ -104,9 +104,22 @@ public class BackupManager : IBackupManager
         var backupFileName = ResolveBackupFileName(filePath, fileName, timestamp, backupPath);
         var backupFilePath = Path.Combine(backupPath, backupFileName);
 
+        // One snapshot serves both the digest and the backup content: hashing a re-read of the
+        // source lets an editor or watcher change the file between the two steps, and copying
+        // blind lets in-flight corruption land in the backup unchecked.
+        byte[] originalBytes;
         try
         {
-            File.Copy(filePath, backupFilePath, overwrite: true);
+            originalBytes = File.ReadAllBytes(filePath);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            throw new IOException($"Failed to create backup for '{filePath}': {ex.Message}", ex);
+        }
+
+        try
+        {
+            File.WriteAllBytes(backupFilePath, originalBytes);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
@@ -117,6 +130,10 @@ public class BackupManager : IBackupManager
         {
             OriginalPath = Path.GetFullPath(filePath),
             BackupFileName = backupFileName,
+            Sha256 = Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(originalBytes)
+                )
+                .ToLowerInvariant(),
         };
     }
 
@@ -139,6 +156,7 @@ public class BackupManager : IBackupManager
     /// is added only when the plain one is already taken, so existing manifests and listings are
     /// unaffected.</para>
     /// </remarks>
+
     private static string ResolveBackupFileName(
         string filePath,
         string fileName,
@@ -288,6 +306,8 @@ public class BackupManager : IBackupManager
     /// </summary>
     /// <param name="backupPath">Path to the backup directory.</param>
     /// <param name="entry">The backup entry containing paths.</param>
+    /// <exception cref="BackupIntegrityException">Thrown when the backup file's contents do not
+    /// match the SHA-256 recorded at backup time; nothing is copied in that case.</exception>
     public static void RestoreFile(string backupPath, BackupEntry entry)
     {
         var backupFilePath = Path.Combine(backupPath, entry.BackupFileName);
@@ -297,7 +317,52 @@ public class BackupManager : IBackupManager
             throw new FileNotFoundException($"Backup file not found: {entry.BackupFileName}");
         }
 
-        File.Copy(backupFilePath, entry.OriginalPath, overwrite: true);
+        RestoreVerified(backupFilePath, entry.OriginalPath, entry.Sha256);
+    }
+
+    /// <summary>
+    /// Verifies and copies from ONE open stream. Checking the path and then copying from it again
+    /// would let a rewrite between the two steps restore bytes that were never verified — and a
+    /// successful rollback deletes the backup afterwards, destroying the evidence.
+    /// </summary>
+    private static void RestoreVerified(
+        string backupFilePath,
+        string originalPath,
+        string? expectedSha256
+    )
+    {
+        using var stream = new FileStream(
+            backupFilePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read
+        );
+
+        if (!string.IsNullOrEmpty(expectedSha256))
+        {
+            var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream))
+                .ToLowerInvariant();
+            if (
+                !string.Equals(actual, expectedSha256, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                throw new BackupIntegrityException(
+                    originalPath,
+                    Path.GetFileName(backupFilePath),
+                    expectedSha256,
+                    actual
+                );
+            }
+        }
+
+        stream.Seek(0, SeekOrigin.Begin);
+        using var destination = new FileStream(
+            originalPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None
+        );
+        stream.CopyTo(destination);
     }
 
     /// <summary>

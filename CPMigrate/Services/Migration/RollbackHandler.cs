@@ -126,6 +126,15 @@ internal sealed class RollbackHandler
         var restoredCount = 0;
         var failedCount = 0;
 
+        // Manifests written before integrity verification carry no hashes; say so once instead
+        // of per file.
+        if (!_quietMode && manifest.Backups.Any(b => string.IsNullOrEmpty(b.Sha256)))
+        {
+            _consoleService.Dim(
+                "Some backups predate integrity hashing; restoring them without verification."
+            );
+        }
+
         if (_quietMode)
         {
             foreach (var entry in manifest.Backups)

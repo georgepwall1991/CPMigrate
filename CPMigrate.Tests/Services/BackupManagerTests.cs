@@ -424,6 +424,81 @@ public class BackupManagerTests : IDisposable
     }
 
     [Fact]
+    public void CreateBackupThenRestore_EntryHashMatchesBackup_RestoresOriginalContent()
+    {
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        var project = WriteProjectAt("src/Api/Api.csproj", "<Project>original</Project>");
+        var entry = _backupManager.CreateBackupForProject(
+            new Options(),
+            project,
+            backupDir,
+            "20260803010101001"
+        );
+
+        entry!.Sha256.Should().NotBeNullOrEmpty();
+        File.WriteAllText(project, "<Project>migrated</Project>");
+
+        BackupManager.RestoreFile(backupDir, entry);
+
+        File.ReadAllText(project).Should().Be("<Project>original</Project>");
+    }
+
+    [Fact]
+    public void RestoreFile_CorruptedBackup_ThrowsAndLeavesOriginalUntouched()
+    {
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        var project = WriteProjectAt("src/Api/Api.csproj", "<Project>original</Project>");
+        var entry = _backupManager.CreateBackupForProject(
+            new Options(),
+            project,
+            backupDir,
+            "20260803010101001"
+        );
+        File.WriteAllText(
+            Path.Combine(backupDir, entry!.BackupFileName),
+            "<Project>tampered</Project>"
+        );
+        File.WriteAllText(project, "<Project>migrated</Project>");
+
+        var action = () => BackupManager.RestoreFile(backupDir, entry);
+        action
+            .Should()
+            .Throw<BackupIntegrityException>()
+            .WithMessage("*Api.csproj*does not match the SHA-256 recorded*");
+        File.ReadAllText(project).Should().Be("<Project>migrated</Project>");
+    }
+
+    [Fact]
+    public void RestoreFile_LegacyEntryWithoutHash_RestoresWithoutVerification()
+    {
+        var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+
+        var originalContent = "<Project><PropertyGroup></PropertyGroup></Project>";
+        var modifiedContent = "<Project><PropertyGroup>Modified</PropertyGroup></Project>";
+        var originalPath = Path.Combine(_testDirectory, "Test.csproj");
+        var backupFileName = "Test.csproj.backup_20231127120000";
+
+        File.WriteAllText(originalPath, modifiedContent);
+        File.WriteAllText(Path.Combine(backupDir, backupFileName), originalContent);
+
+        // A manifest written before integrity verification: no Sha256 recorded.
+        var entry = new BackupEntry
+        {
+            OriginalPath = originalPath,
+            BackupFileName = backupFileName,
+        };
+
+        BackupManager.RestoreFile(backupDir, entry);
+
+        File.ReadAllText(originalPath).Should().Be(originalContent);
+    }
+
+    [Fact]
     public void CleanupBackups_RemovesBackupFilesAndManifest()
     {
         var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
