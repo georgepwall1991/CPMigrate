@@ -244,9 +244,10 @@ public static class ProgramRunner
     ///
     /// <para>
     /// With <c>--output Json</c> the answer is one JSON document on stdout instead of console
-    /// rendering; <c>--output Sarif</c> is rejected outright, and so is more than one package ID,
-    /// because the published document describes a single package. Both share analysis and exit
-    /// codes with the terminal path.
+    /// rendering: a single-package run emits the published whyReport document, and several IDs
+    /// emit the multi-package document under its own <c>why-many</c> operation — same analysis,
+    /// same exit codes as the terminal path. <c>--output Sarif</c> is rejected outright, because
+    /// SARIF reports analyzer findings and --why produces none.
     /// </para>
     /// </summary>
     private static async Task<int> RunWhyModeAsync(Options options, ApplicationServices services)
@@ -283,20 +284,6 @@ public static class ProgramRunner
             services.ConsoleService.Error(
                 "--why requires a package ID, e.g. --why Newtonsoft.Json or "
                     + "--why Newtonsoft.Json,Serilog."
-            );
-            return ExitCodes.ValidationError;
-        }
-
-        if (packageIds.Count > 1 && options.Output == OutputFormat.Json)
-        {
-            // The published whyReport document describes one package; an array shape would break
-            // every existing consumer against the schema it validates against. A CI job auditing
-            // N packages with --output Json runs one ID per invocation — each still pays only its
-            // own scan.
-            services.ConsoleService.Error(
-                "--output Json cannot be combined with multiple --why package IDs: the why "
-                    + "document describes one package. Pass one comma-separated list without "
-                    + "--output Json, or run one ID per invocation."
             );
             return ExitCodes.ValidationError;
         }
@@ -427,20 +414,44 @@ public static class ProgramRunner
                     scanOutcomes
                 ))
                 .ToList();
-
             // Machine-readable mode answers in one JSON document instead of console rendering.
-            // Analysis and exit codes are shared with the console path; only the rendering differs.
-            // Multiple IDs never reach here: the JSON rejection above runs before the scan.
+            // Analysis and exit codes are shared with the console path; only the rendering differs:
+            // one ID emits the single-package document, several the multi-package one — both
+            // carrying exactly the verdicts and codes the terminal path settles.
             if (options.Output == OutputFormat.Json)
             {
-                var (report, exitCode) = PackageOriginService.AnalyzeQuietly(requests[0]);
+                var answers = requests
+                    .Select(request =>
+                    {
+                        var (report, answerExitCode) = PackageOriginService.AnalyzeQuietly(
+                            request
+                        );
+                        return (request, report, answerExitCode);
+                    })
+                    .ToList();
+
+                // The process verdict is the worst of the per-package answers, folded exactly as
+                // the terminal multi-package path folds its own.
+                var exitCode = answers.Count == 1
+                    ? answers[0].answerExitCode
+                    : PackageOriginService.CombineExitCodes(
+                        [.. answers.Select(answer => answer.answerExitCode)]
+                    );
+
                 // EmitFailureAsync rather than EmitAsync: when --output-file cannot be written the
                 // document falls back to stdout instead of dying on an exception whose message the
                 // silent scan console would swallow.
                 await JsonOutputWriter.EmitFailureAsync(
-                    PackageOriginJsonWriter.Serialize(requests[0], report, exitCode),
+                    answers.Count == 1
+                        ? PackageOriginJsonWriter.Serialize(
+                            answers[0].request,
+                            answers[0].report,
+                            answers[0].answerExitCode
+                        )
+                        : PackageOriginJsonWriter.SerializeMany(answers, exitCode),
                     options
                 );
+
                 return exitCode;
             }
 
@@ -583,7 +594,13 @@ public static class ProgramRunner
             var formatter = new JsonFormatter();
             var operationResult = new OperationResult
             {
-                Operation = "why",
+                // A multi-package request's failure must keep the discriminator its consumer
+                // routed on — flipping to "why" would strand the error in a shape their parser
+                // never selected.
+                Operation =
+                    SplitWhyPackageIds(options.Why!).Count > 1
+                        ? "why-many"
+                        : "why",
                 Success = false,
                 ExitCode = exitCode,
                 Errors = [errorMessage],

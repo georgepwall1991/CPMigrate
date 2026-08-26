@@ -258,6 +258,112 @@ public class PackageOriginJsonWriterTests
         await AssertParity(request, expected);
     }
 
+    [Fact]
+    public void SerializeMany_FoundAndNotFoundMix_EmitsWhyManyDocumentWithPerPackageAnswers()
+    {
+        var found = BuildRequest(
+            references: [Resolved("App", isTransitive: false)],
+            declaredReferences: [Declared("App")]
+        );
+        var missing = BuildRequest(
+            references:
+            [
+                Resolved("App", isTransitive: false),
+                OtherResolved("App", "Serilog.Sinks.Console"),
+            ],
+            declaredReferences: []
+        ) with { PackageId = "serilogg" };
+
+        var root = Parse(SerializeMany(found, missing));
+
+        root.GetProperty("operation").GetString().Should().Be("why-many");
+        root.GetProperty("outputSchemaVersion").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("packageIds").EnumerateArray()
+            .Select(id => id.GetString())
+            .Should()
+            .Equal("Serilog", "serilogg");
+
+        // Answers come back in the order the IDs were passed, each shaped like its
+        // single-package counterpart minus the document-level fields.
+        var results = root.GetProperty("results").EnumerateArray().ToList();
+        results.Should().HaveCount(2);
+
+        var foundAnswer = results[0];
+        foundAnswer.GetProperty("packageId").GetString().Should().Be("Serilog");
+        foundAnswer.GetProperty("status").GetString().Should().Be("found");
+        foundAnswer.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.Success);
+        Project(foundAnswer, "src/App/App.csproj").GetProperty("kind").GetString()
+            .Should().Be("centralPin");
+        foundAnswer.GetProperty("summary").GetProperty("direct").GetInt32().Should().Be(1);
+        foundAnswer.GetProperty("summary").GetProperty("projectCount").GetInt32().Should().Be(2);
+
+        var missingAnswer = results[1];
+        missingAnswer.GetProperty("packageId").GetString().Should().Be("serilogg");
+        missingAnswer.GetProperty("status").GetString().Should().Be("not-found");
+        missingAnswer.GetProperty("exitCode").GetInt32().Should()
+            .Be(ExitCodes.ValidationError);
+        missingAnswer.GetProperty("suggestions").EnumerateArray()
+            .Select(s => s.GetString())
+            .Should()
+            .Contain("Serilog");
+    }
+
+    [Fact]
+    public void SerializeMany_DocumentExitCode_IsTheWorstOfThePerPackageAnswers()
+    {
+        // One found over a fully-read workspace (0) plus one not-found (1): the process exits
+        // 1, exactly what RunManyAsync would return for the same run.
+        var found = BuildRequest(
+            references: [Resolved("App", isTransitive: false)],
+            declaredReferences: [Declared("App")],
+            projectPaths: [ProjectPath("App")]
+        );
+        var missing = BuildRequest(
+            references: [],
+            declaredReferences: [],
+            projectPaths: [ProjectPath("App")]
+        ) with { PackageId = "Unknown.Package" };
+
+        var root = Parse(SerializeMany(found, missing));
+
+        root.GetProperty("exitCode").GetInt32().Should()
+            .Be(ExitCodes.ValidationError)
+            .And.Be(PackageOriginService.CombineExitCodes([ExitCodes.Success, ExitCodes.ValidationError]));
+        root.GetProperty("results").EnumerateArray()
+            .Select(r => r.GetProperty("exitCode").GetInt32())
+            .Should()
+            .Equal(ExitCodes.Success, ExitCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task SerializeMany_IncompleteScan_OutranksEveryOtherVerdict()
+    {
+        // A found answer over an unreadable project exits 8 on the terminal path too — absence
+        // proven only over half a workspace is not absence, and neither is presence.
+        var request = BuildRequest(
+            references: [Resolved("App", isTransitive: false)],
+            declaredReferences: [Declared("App")],
+            projectPaths: [ProjectPath("App"), ProjectPath("Worker")],
+            scanOutcomes:
+            [
+                new(ProjectPath("App"), ResolvedRead: true, DeclarationsRead: true),
+                new(ProjectPath("Worker"), ResolvedRead: false, DeclarationsRead: false),
+            ],
+            failedScanCount: 1
+        );
+
+        var consoleExitCode = await ConsoleRunAsync(request);
+        var root = Parse(SerializeMany(request));
+
+        root.GetProperty("exitCode").GetInt32().Should()
+            .Be(ExitCodes.IncompleteAnalysis)
+            .And.Be(consoleExitCode);
+        var answer = root.GetProperty("results").EnumerateArray().Single();
+        answer.GetProperty("summary").GetProperty("unreadable").GetInt32().Should().Be(1);
+        answer.GetProperty("summary").GetProperty("failedScans").GetInt32().Should().Be(1);
+    }
+
     /// <summary>
     /// The whole parity contract in one assertion: the quiet path and the rendering path are asked
     /// about the same workspace, and must answer with the same number.
@@ -301,6 +407,22 @@ public class PackageOriginJsonWriterTests
 
     private static string ProjectPath(string projectName) =>
         $"/ws/src/{projectName}/{projectName}.csproj";
+
+    private static string SerializeMany(params PackageOriginRequest[] requests)
+    {
+        var answers = requests
+            .Select(request =>
+            {
+                var (report, exitCode) = PackageOriginService.AnalyzeQuietly(request);
+                return (request, report, exitCode);
+            })
+            .ToList();
+        var exitCode = PackageOriginService.CombineExitCodes(
+            [.. answers.Select(answer => answer.exitCode)]
+        );
+
+        return PackageOriginJsonWriter.SerializeMany(answers, exitCode);
+    }
 
     private static PackageReference Resolved(
         string projectName,

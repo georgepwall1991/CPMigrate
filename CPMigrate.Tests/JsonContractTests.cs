@@ -83,6 +83,67 @@ public class JsonContractTests : IDisposable
         doc.RootElement.GetProperty("operation").GetString().Should().Be("migrate");
     }
 
+    [Fact]
+    public async Task WhyMany_JsonQuiet_StdoutIsOneWhyManyDocument()
+    {
+        CreateFixture();
+        var stdout = await CaptureStdoutAsync(() =>
+            ProgramRunner.RunAsync(
+                [
+                    "--why", "Newtonsoft.Json,Missing.Package",
+                    "--output", "Json",
+                    "--quiet",
+                    "-s", _testDirectory,
+                ],
+                new TestDoubles.FakeConsoleService()));
+
+        stdout.Should().StartWith("{", "JSON mode must emit no preamble before the opening brace");
+        var doc = JsonDocument.Parse(stdout);
+        var root = doc.RootElement;
+        root.GetProperty("operation").GetString().Should().Be("why-many");
+        root.GetProperty("packageIds").EnumerateArray()
+            .Select(id => id.GetString())
+            .Should()
+            .Equal("Newtonsoft.Json", "Missing.Package");
+
+        var results = root.GetProperty("results").EnumerateArray().ToList();
+        results.Should().HaveCount(2);
+        results.Select(r => r.GetProperty("packageId").GetString())
+            .Should()
+            .Equal("Newtonsoft.Json", "Missing.Package");
+        // The declared package is found over a fully-read workspace (0); the invented one is
+        // genuinely absent (1) — so the process, and the mirrored document field, exit 1.
+        results[0].GetProperty("status").GetString().Should().Be("found");
+        results[0].GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.Success);
+        results[1].GetProperty("status").GetString().Should().Be("not-found");
+        results[1].GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.ValidationError);
+        root.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task WhySingle_JsonQuiet_StdoutIsStillTheWhyReportShape()
+    {
+        CreateFixture();
+        var stdout = await CaptureStdoutAsync(() =>
+            ProgramRunner.RunAsync(
+                [
+                    "--why", "Newtonsoft.Json",
+                    "--output", "Json",
+                    "--quiet",
+                    "-s", _testDirectory,
+                ],
+                new TestDoubles.FakeConsoleService()));
+
+        var doc = JsonDocument.Parse(stdout);
+        var root = doc.RootElement;
+        root.GetProperty("operation").GetString().Should().Be("why");
+        root.GetProperty("packageId").GetString().Should().Be("Newtonsoft.Json");
+        root.GetProperty("status").GetString().Should().Be("found");
+        root.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.Success);
+        root.TryGetProperty("results", out _).Should()
+            .BeFalse("the single-package document must not grow a results array");
+    }
+
     private void CreateFixture()
     {
         // Two projects with the same package at different versions — produces an

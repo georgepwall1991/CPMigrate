@@ -50,6 +50,10 @@ public class OutputSchemaDriftTests
         (typeof(PackageOriginFrameworkVersionPayload), "whyFrameworkVersion"),
         (typeof(PackageOriginVersionUsagePayload), "whyVersionUsage"),
         (typeof(PackageOriginSummaryPayload), "whySummary"),
+        // --why with several IDs serializes a fourth root. Omitting it would let the multi-package
+        // shape drift away from the schema the same way its single-package sibling once could.
+        (typeof(MultiWhyPayload), "whyManyReport"),
+        (typeof(WhyAnswerPayload), "whyAnswer"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -92,12 +96,13 @@ public class OutputSchemaDriftTests
     [Fact]
     public void Schema_GuardsEveryModelReachableFromPayloadRoots()
     {
-        // --why emits its own document root, so its models are reachable from there, just as the
+        // --why emits its own document roots, so its models are reachable from there, just as the
         // operation and batch models are reachable from OperationResult and BatchResult.
         var reachable = PayloadModelTypes(
             typeof(OperationResult),
             typeof(BatchResult),
-            typeof(PackageOriginPayload)
+            typeof(PackageOriginPayload),
+            typeof(MultiWhyPayload)
         );
 
         ModelDefinitions
@@ -204,8 +209,10 @@ public class OutputSchemaDriftTests
                     "update",
                     "interactive",
                     // The failure payloads --why emits when discovery or the run itself fails use
-                    // the standard operation shape, so "why" belongs in this enum too.
+                    // the standard operation shape, so "why" belongs in this enum too. A failed
+                    // multi-package request keeps the why-many discriminator, so both names appear.
                     "why",
+                    "why-many",
                     "batch-analyze",
                     "batch-migrate",
                 }
@@ -240,19 +247,44 @@ public class OutputSchemaDriftTests
     [Fact]
     public void Schema_AcceptsTheWhyDocumentAsATopLevelShape()
     {
-        // The why report is a third root alongside singleOperation and batchOperation; a consumer
-        // validating against this schema must not have it fall out of the oneOf.
+        // The why documents are roots alongside singleOperation and batchOperation; a consumer
+        // validating against this schema must not have either fall out of the oneOf.
         var references = Schema()
             .GetProperty("oneOf")
             .EnumerateArray()
             .Select(branch => branch.GetProperty("$ref").GetString())
             .ToList();
-
         references
             .Should()
             .Contain("#/definitions/whyReport")
+            .And.Contain("#/definitions/whyManyReport")
             .And.Contain("#/definitions/singleOperation")
             .And.Contain("#/definitions/batchOperation");
+    }
+
+    [Fact]
+    public void Schema_RequiresTheFieldsEveryWhyManyDocumentCarries()
+    {
+        var required = Definition("whyManyReport")
+            .GetProperty("required")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToList();
+
+        required
+            .Should()
+            .Contain(
+                new[]
+                {
+                    "outputSchemaVersion",
+                    "version",
+                    "operation",
+                    "packageIds",
+                    "exitCode",
+                    "results",
+                },
+                "these are set on every multi-package why document"
+            );
     }
 
     [Fact]

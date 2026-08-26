@@ -40,6 +40,65 @@ public sealed record PackageOriginPayload(
     [property: JsonPropertyName("suggestions")] IReadOnlyList<string> Suggestions
 );
 
+/// <summary>
+/// The machine-readable answer to a multi-package <c>--why A,B,C</c> question: every package's
+/// answer over the shared scan, serialized as one JSON document so a CI job auditing N packages
+/// pays for one invocation.
+/// </summary>
+/// <param name="OutputSchemaVersion">JSON contract version for this payload.</param>
+/// <param name="Version">CPMigrate version that produced this result.</param>
+/// <param name="Operation">
+/// The command that produced it — always <c>why-many</c>. A discriminator of its own rather than
+/// <c>why</c>: a consumer routing by <c>operation</c> must land here, not on
+/// <see cref="PackageOriginPayload"/>, whose shape this document deliberately does not share.
+/// </param>
+/// <param name="PackageIds">The packages asked about, as the request carried them, in order.</param>
+/// <param name="ExitCode">
+/// The code the process exits with — the worst of the per-package answers folded by
+/// <see cref="PackageOriginService.CombineExitCodes"/> — mirrored here so a consumer reading the
+/// document alone gets the same verdict a shell script would. Each result carries its own code
+/// too, so a caller can tell which package drove it.
+/// </param>
+/// <param name="Results">One answer per asked-about package, in the order the IDs were passed.</param>
+public sealed record MultiWhyPayload(
+    [property: JsonPropertyName("outputSchemaVersion")] string OutputSchemaVersion,
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("operation")] string Operation,
+    [property: JsonPropertyName("packageIds")] IReadOnlyList<string> PackageIds,
+    [property: JsonPropertyName("exitCode")] int ExitCode,
+    [property: JsonPropertyName("results")]
+        IReadOnlyList<WhyAnswerPayload> Results
+);
+
+/// <summary>
+/// One package's answer inside a <see cref="MultiWhyPayload"/>: everything a
+/// <see cref="PackageOriginPayload"/> says about the package itself, minus the fields that
+/// describe the document as a whole.
+/// </summary>
+/// <param name="PackageId">The package asked about, as the request carried it.</param>
+/// <param name="Status"><c>found</c> when any project declares or sees the package, else <c>not-found</c>.</param>
+/// <param name="ExitCode">
+/// The code this package's answer settled on, mapped exactly as a single-package run would map it.
+/// </param>
+/// <param name="Projects">Per-project findings, ordered by path.</param>
+/// <param name="Summary">Counts per relationship kind, plus how much of the workspace went unexamined.</param>
+/// <param name="VersionsInUse">
+/// Every distinct resolved version and the projects using it; more than one entry is version drift.
+/// </param>
+/// <param name="Suggestions">
+/// Near-miss package names present in the workspace, when the package was not found.
+/// </param>
+public sealed record WhyAnswerPayload(
+    [property: JsonPropertyName("packageId")] string PackageId,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("exitCode")] int ExitCode,
+    [property: JsonPropertyName("projects")] IReadOnlyList<PackageOriginProjectPayload> Projects,
+    [property: JsonPropertyName("summary")] PackageOriginSummaryPayload Summary,
+    [property: JsonPropertyName("versionsInUse")]
+        IReadOnlyList<PackageOriginVersionUsagePayload> VersionsInUse,
+    [property: JsonPropertyName("suggestions")] IReadOnlyList<string> Suggestions
+);
+
 /// <summary>One project's relationship to the traced package, for JSON consumers.</summary>
 /// <param name="ProjectPath">Full path to the project file, as scanned.</param>
 /// <param name="RelativePath">
@@ -146,6 +205,61 @@ internal static class PackageOriginJsonWriter
         int exitCode
     )
     {
+        var payload = new PackageOriginPayload(
+            OutputMetadata.SchemaVersion,
+            OutputMetadata.CurrentVersion,
+            Operation: "why",
+            report.PackageId,
+            report.Found ? "found" : "not-found",
+            exitCode,
+            ToProjectPayloads(request, report),
+            ToSummaryPayload(request, report),
+            ToVersionUsagePayloads(report),
+            report.Suggestions
+        );
+
+        return JsonSerializer.Serialize(payload, SerializerOptions);
+    }
+
+    /// <summary>
+    /// Builds and serializes the multi-package payload. <paramref name="exitCode"/> is the value
+    /// <see cref="PackageOriginService.CombineExitCodes"/> settled over the per-answer codes —
+    /// passed in rather than recomputed so the document cannot disagree with the process; each
+    /// answer's own code is likewise whatever <see cref="PackageOriginService.MapExitCode"/> said.
+    /// </summary>
+    public static string SerializeMany(
+        IReadOnlyList<(PackageOriginRequest Request, PackageOriginReport Report, int ExitCode)>
+            answers,
+        int exitCode
+    )
+    {
+        var payload = new MultiWhyPayload(
+            OutputMetadata.SchemaVersion,
+            OutputMetadata.CurrentVersion,
+            Operation: "why-many",
+            [.. answers.Select(answer => answer.Report.PackageId)],
+            exitCode,
+            [
+                .. answers.Select(answer => new WhyAnswerPayload(
+                    answer.Report.PackageId,
+                    answer.Report.Found ? "found" : "not-found",
+                    answer.ExitCode,
+                    ToProjectPayloads(answer.Request, answer.Report),
+                    ToSummaryPayload(answer.Request, answer.Report),
+                    ToVersionUsagePayloads(answer.Report),
+                    answer.Report.Suggestions
+                )),
+            ]
+        );
+
+        return JsonSerializer.Serialize(payload, SerializerOptions);
+    }
+
+    private static IReadOnlyList<PackageOriginProjectPayload> ToProjectPayloads(
+        PackageOriginRequest request,
+        PackageOriginReport report
+    )
+    {
         var graphsByProject = request.ResolvedGraphs
             .GroupBy(g => g.ProjectPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
@@ -157,44 +271,43 @@ internal static class PackageOriginJsonWriter
             .GroupBy(s => s.ProjectPath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-        var payload = new PackageOriginPayload(
-            OutputMetadata.SchemaVersion,
-            OutputMetadata.CurrentVersion,
-            Operation: "why",
-            report.PackageId,
-            report.Found ? "found" : "not-found",
-            exitCode,
-            [
-                .. report.Projects.Select(p => ToProjectPayload(
-                    p,
-                    request.PackageId,
-                    graphsByProject.GetValueOrDefault(p.ProjectPath),
-                    scansByProject.GetValueOrDefault(p.ProjectPath)
-                )),
-            ],
-            new PackageOriginSummaryPayload(
-                request.ProjectCount,
-                report.Projects.Count(p =>
-                    p.Kind is PackageOriginKind.InlineVersion or PackageOriginKind.CentralPin
-                ),
-                report.Projects.Count(p => p.Kind == PackageOriginKind.UpdateOnly),
-                report.Projects.Count(p => p.Kind == PackageOriginKind.TransitiveOnly),
-                report.Projects.Count(p => p.Kind == PackageOriginKind.Inherited),
-                report.Projects.Count(p => p.Kind == PackageOriginKind.NotPresent),
-                report.Projects.Count(p => p.Kind == PackageOriginKind.Unreadable),
-                request.FailedScanCount
+        return
+        [
+            .. report.Projects.Select(p => ToProjectPayload(
+                p,
+                request.PackageId,
+                graphsByProject.GetValueOrDefault(p.ProjectPath),
+                scansByProject.GetValueOrDefault(p.ProjectPath)
+            )),
+        ];
+    }
+
+    private static PackageOriginSummaryPayload ToSummaryPayload(
+        PackageOriginRequest request,
+        PackageOriginReport report
+    ) =>
+        new(
+            request.ProjectCount,
+            report.Projects.Count(p =>
+                p.Kind is PackageOriginKind.InlineVersion or PackageOriginKind.CentralPin
             ),
-            [
-                .. report.VersionsInUse.Select(v => new PackageOriginVersionUsagePayload(
-                    v.Version,
-                    v.Projects
-                )),
-            ],
-            report.Suggestions
+            report.Projects.Count(p => p.Kind == PackageOriginKind.UpdateOnly),
+            report.Projects.Count(p => p.Kind == PackageOriginKind.TransitiveOnly),
+            report.Projects.Count(p => p.Kind == PackageOriginKind.Inherited),
+            report.Projects.Count(p => p.Kind == PackageOriginKind.NotPresent),
+            report.Projects.Count(p => p.Kind == PackageOriginKind.Unreadable),
+            request.FailedScanCount
         );
 
-        return JsonSerializer.Serialize(payload, SerializerOptions);
-    }
+    private static IReadOnlyList<PackageOriginVersionUsagePayload> ToVersionUsagePayloads(
+        PackageOriginReport report
+    ) =>
+    [
+        .. report.VersionsInUse.Select(v => new PackageOriginVersionUsagePayload(
+            v.Version,
+            v.Projects
+        )),
+    ];
 
     private static PackageOriginProjectPayload ToProjectPayload(
         PackageOriginProjectReport project,

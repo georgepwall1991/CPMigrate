@@ -15,12 +15,23 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   each package's answer sequentially under its own named banner (`PACKAGE ORIGIN — <id>`), so a
   terminal run reads like N single-package runs. The process exits with the worst of the per-package
   codes: any incomplete analysis exits 8 (absence proven only over half a workspace is not absence),
-  else any not-found verdict exits 1, else 0. Single-ID output is unchanged, and `--output Json`
-  keeps its one-package-per-document contract: combining it with multiple IDs is rejected before the
-  scan with an error pointing at one-ID-per-invocation, rather than breaking the published
-  `whyReport` schema with an array shape. Malformed lists fail in milliseconds, before anything
-  touches the disk — an empty slot between commas (`--why A,,B`) is rejected rather than silently
-  answered as two questions, and duplicate IDs collapse to one answer.
+  else any not-found verdict exits 1, else 0. Malformed lists fail in milliseconds, before
+  anything touches the disk — an empty slot between commas (`--why A,,B`) is rejected rather than
+  silently answered as two questions, and duplicate IDs collapse to one answer.
+
+- **`--why A,B,C --output Json` now emits one multi-package JSON document instead of rejecting
+  the combination.** The comma-separated list previously worked only for terminal output; JSON
+  runs were turned away before the scan and told to run one ID per invocation, so an N-package
+  audit still paid N invocations. Several IDs now produce a single document under a new
+  `operation: "why-many"` (output schema version 1.9.0): the packages asked about, the process
+  exit code — folded from the per-package answers exactly as the terminal path folds its own,
+  incomplete scan → 8, else any not-found → 1, else 0 — and one `results` entry per package
+  carrying everything the single-package document says about that package (`packageId`, `status`,
+  its own `exitCode`, `projects`, `summary`, `versionsInUse`, `suggestions`), in the order the
+  IDs were passed. Single-ID JSON output keeps its document shape exactly: the `whyReport` shape
+  1.6.0 introduced, distinguished by its own `operation: "why"` — only the stamped
+  `outputSchemaVersion` moves to 1.9.0, as it does on every document this version produces, so
+  existing consumers keep parsing it untouched.
 
 - **Rollback now verifies backup integrity before restoring.** A rollback copied each file in
   `.cpmigrate_backup/` over the user's project with a blind `File.Copy` — nothing checked that the

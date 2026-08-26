@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Three payload shapes exist: a single operation, the aggregate --batch writes, and the --why package-origin report. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Four payload shapes exist: a single operation, the aggregate --batch writes, and the two --why package-origin reports — one package per document, or several under operation why-many. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -12,6 +12,9 @@
     },
     {
       "$ref": "#/definitions/whyReport"
+    },
+    {
+      "$ref": "#/definitions/whyManyReport"
     }
   ],
   "definitions": {
@@ -47,6 +50,7 @@
             "list-backups",
             "prune-backups",
             "why",
+            "why-many",
             "batch-analyze",
             "batch-migrate"
           ],
@@ -693,6 +697,84 @@
         "exitCode": {
           "type": "integer",
           "description": "Process exit code, mirrored from the run: 0 found with a complete scan, 1 not found with every project read, 8 part of the workspace could not be scanned"
+        },
+        "projects": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/whyProject" }
+        },
+        "summary": { "$ref": "#/definitions/whySummary" },
+        "versionsInUse": {
+          "type": "array",
+          "description": "Every distinct resolved version and its projects; more than one entry is version drift",
+          "items": { "$ref": "#/definitions/whyVersionUsage" }
+        },
+        "suggestions": {
+          "type": "array",
+          "description": "Near-miss package names present in the workspace, for a misspelled ID",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "whyManyReport": {
+      "type": "object",
+      "description": "The answer `--why A,B,C --output Json` prints instead of the console banners: every package's answer over one shared workspace scan. exitCode mirrors the process exit code — the worst of the per-package answers (any incomplete scan → 8, else any not-found → 1, else 0); each result also carries its own code so a caller can tell which package drove it.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "packageIds",
+        "exitCode",
+        "results"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["why-many"],
+          "description": "Always 'why-many'; distinguishes this shape from singleOperation, batchOperation, and the single-package whyReport"
+        },
+        "packageIds": {
+          "type": "array",
+          "description": "The packages asked about, as they were passed, in order",
+          "items": { "type": "string" }
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run: 0 every package found over a fully-read workspace, 1 some package not found, 8 part of the workspace could not be scanned — see the exit-code table in the README"
+        },
+        "results": {
+          "type": "array",
+          "description": "One answer per asked-about package, in the order the IDs were passed",
+          "items": { "$ref": "#/definitions/whyAnswer" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "whyAnswer": {
+      "type": "object",
+      "description": "One package's answer inside a whyManyReport: the same per-package fields whyReport carries, minus the document-level ones",
+      "required": [
+        "packageId",
+        "status",
+        "exitCode",
+        "projects",
+        "summary",
+        "versionsInUse",
+        "suggestions"
+      ],
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "description": "The package asked about, as it was passed"
+        },
+        "status": {
+          "enum": ["found", "not-found"],
+          "description": "'found' when any project declares or sees the package"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "The code this package's answer settles on, mapped exactly as a single-package run would map it"
         },
         "projects": {
           "type": "array",

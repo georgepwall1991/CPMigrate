@@ -64,8 +64,15 @@ public static class OutputMetadata
     /// without one is indistinguishable from a fully matched one — the same "absence is meaningful"
     /// contract the other summary fields keep.
     /// </para>
+    /// <para>
+    /// 1.9.0 additively introduced the fourth top-level shape: the document
+    /// <c>--why A,B,C --output Json</c> prints, distinguished by <c>operation: "why-many"</c>.
+    /// Each entry in its <c>results</c> array carries the per-package fields of the 1.6.0
+    /// whyReport shape; a consumer that resolves 1.9.0 validates both why shapes, and one keyed
+    /// only on <c>outputSchemaVersion</c> must resolve 1.9.0 before parsing a multi-package run.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.8.0";
+    public const string SchemaVersion = "1.9.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

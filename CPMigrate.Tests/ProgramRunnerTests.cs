@@ -109,22 +109,6 @@ public class ProgramRunnerTests
         fakeConsole.ErrorMessages.Should().Contain(m => m.Contains("--output Sarif"));
     }
 
-    [Fact]
-    public async Task RunAsync_WhyWithMultipleIdsAndJsonOutput_IsRejectedBeforeTheScan()
-    {
-        // The published whyReport document describes one package; an array shape would break
-        // every existing consumer against the schema it validates against. The rejection must
-        // happen before discovery so a caller learns it in milliseconds, not after a full scan.
-        var fakeConsole = new FakeConsoleService();
-
-        var exitCode = await ProgramRunner.RunAsync(
-            new[] { "--why", "Newtonsoft.Json,Serilog", "--output", "Json", "-s", "." },
-            fakeConsole
-        );
-
-        exitCode.Should().Be(ExitCodes.ValidationError);
-        fakeConsole.ErrorMessages.Should().Contain(m => m.Contains("one ID per invocation"));
-    }
 
     [Fact]
     public async Task RunAsync_WhyWithEmptySlotBetweenCommas_IsRejectedInsteadOfAnsweringFewerQuestions()
