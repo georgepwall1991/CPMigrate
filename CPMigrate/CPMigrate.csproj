@@ -13,12 +13,12 @@
     <Product>CPMigrate</Product>
     <Title>CPMigrate — NuGet Central Package Management Migration &amp; Dependency Analysis CLI</Title>
     <Description>Migrate .NET solutions to NuGet Central Package Management (CPM). Generate Directory.Packages.props, analyze dependency health (version drift, transitive conflicts, vulnerabilities), auto-fix package issues, unify Directory.Build.props, and update NuGet packages with test verification and rollback — including --bisect to keep the largest green subset.</Description>
-    <PackageReleaseNotes>3.63.0 adds `--why`, a per-project answer to where one package comes from (declared inline or against the central pin, update-only, transitive with its introducer named from the resolved graph), with `--output Json` for CI under output schema 1.6.0. New analyzer rule EolTargetFramework flags end-of-life runtimes (netcoreapp*, net5.0-net7.0, net9.0) while leaving conditional assignments unjudged. Unknown keys in .cpmigrate.json are now reported with did-you-mean suggestions instead of silently ignored, and warnings no longer disable valid settings. --tree and --why scan projects concurrently and resolved/transitive views share one list-package invocation per project. --doctor gained disk-space, write-access and backup-directory checks; --batch gained --report for a deterministic Markdown rollup; --dry-run gained --diff-file to capture every proposed change as a unified-diff artifact.</PackageReleaseNotes>
+    <PackageReleaseNotes>3.64.0 hardens the trust paths and pays down latency. Auto-fixers can no longer corrupt project files: the transitive-conflict pin lands in exactly one unconditional, namespace-correct ItemGroup instead of every group in the file. --verify clears stale assets graphs before each capture, so a redirected build's leftover project.assets.json can no longer produce a false "unchanged" verdict; drift attribution considers every recorded decision and rejects contradictory ones. Rollback verifies SHA-256 integrity before restoring anything. Baselines report their own rot - stale entries and renamed rule IDs - across console, JSON and Markdown. --why accepts comma-separated package IDs (one scan, all answers, console or a new why-many JSON document under output schema 1.9.0), analysis output is byte-stable regardless of scan interleaving, and a grouped scan scheduler plus benchmarks/ harness guard the concurrency and cache wins with deterministic tests.</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://georgepwall1991.github.io/CPMigrate/</PackageProjectUrl>
     <TargetFramework>net10.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
-    <Version>3.63.0</Version>
+    <Version>3.64.0</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/georgepwall1991/CPMigrate</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
