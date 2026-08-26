@@ -103,7 +103,10 @@ public static class BatchReportWriter
             }
         }
 
-        return builder.ToString();
+        // Normalize to LF unconditionally: AppendLine emits CRLF on Windows, and a report whose
+        // bytes depend on the OS that happened to run the batch would break the diffability this
+        // artifact exists for.
+        return builder.ToString().Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
     /// <summary>
