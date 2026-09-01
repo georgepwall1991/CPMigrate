@@ -1,5 +1,7 @@
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using CPMigrate.Analyzers;
 using CPMigrate.Models;
 using Spectre.Console;
@@ -12,13 +14,27 @@ internal sealed class DoctorService
     private const string NuGetServiceIndexUrl = "https://api.nuget.org/v3/index.json";
 #pragma warning restore S1075
 
+    private static readonly Regex DetailedSourceLine = new(
+        @"^\s*\d+\.\s+(?<name>.+?)\s+\[(?<state>Enabled|Disabled)\]\s*$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled,
+        TimeSpan.FromSeconds(1)
+    );
+
     private readonly IConsoleService _console;
     private readonly ISolutionDiscovery _solutionDiscovery;
+    private readonly IDotNetCliService _dotNetCli;
+    private readonly HttpClient? _httpClient;
 
-    public DoctorService(IConsoleService console, ISolutionDiscovery solutionDiscovery)
+    public DoctorService(
+        IConsoleService console,
+        ISolutionDiscovery solutionDiscovery,
+        IDotNetCliService? dotNetCli = null,
+        HttpClient? httpClient = null)
     {
         _console = console;
         _solutionDiscovery = solutionDiscovery;
+        _dotNetCli = dotNetCli ?? new DotNetCliService();
+        _httpClient = httpClient;
     }
 
     public async Task<int> RunAsync(string searchPath, string? backupDir = null)
@@ -26,10 +42,10 @@ internal sealed class DoctorService
         var theme = SpectreTheme.For(AnsiConsole.Console);
         var checks = new List<DoctorCheck>();
 
-        // The network probe starts first and is awaited last, so doctor costs HTTP latency in
+        // The feed probe starts first and is awaited last, so doctor costs HTTP latency in
         // total — not HTTP latency plus every local check — while the report keeps the probe's
         // established row position.
-        var nuGetTask = CheckNuGetConnectivityAsync();
+        var nuGetTask = CheckNuGetSourcesAsync(searchPath);
 
         checks.Add(CheckDotNetSdk());
         checks.Add(CheckCpmigrateVersion());
@@ -107,28 +123,239 @@ internal sealed class DoctorService
         return new DoctorCheck("Runtime", DoctorStatus.Ok, $"{runtime} on {os} ({arch})");
     }
 
-    private static async Task<DoctorCheck> CheckNuGetConnectivityAsync()
+    private async Task<DoctorCheck> CheckNuGetSourcesAsync(string searchPath)
+    {
+        HttpClient? owned = null;
+        HttpClient client;
+        if (_httpClient is null)
+        {
+            owned = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            client = owned;
+        }
+        else
+        {
+            client = _httpClient;
+        }
+
+        try
+        {
+            var workingDirectory = Directory.Exists(searchPath)
+                ? searchPath
+                : Path.GetDirectoryName(Path.GetFullPath(searchPath)) ?? ".";
+
+            var (output, success) = await _dotNetCli.RunNugetListSourceAsync(workingDirectory);
+            var sources = success ? ParseNugetListSource(output) : [];
+            if (sources.Count == 0)
+            {
+                return await ProbeNugetOrgFallbackAsync(client);
+            }
+
+            var probes = new List<(NugetSource Source, int? StatusCode)>();
+            foreach (var source in sources.Where(s => s.Enabled))
+            {
+                if (!source.IsHttp)
+                {
+                    probes.Add((source, StatusCode: null));
+                    continue;
+                }
+
+                probes.Add((source, await ProbeHttpSourceAsync(client, source.Location)));
+            }
+
+            return SummarizeNugetSources(probes);
+        }
+        finally
+        {
+            owned?.Dispose();
+        }
+    }
+
+    private static async Task<int?> ProbeHttpSourceAsync(HttpClient client, string location)
     {
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            var response = await client.GetAsync(NuGetServiceIndexUrl);
-
-            if (response.IsSuccessStatusCode)
-            {
-                return new DoctorCheck("NuGet", DoctorStatus.Ok, "nuget.org reachable");
-            }
-
-            return new DoctorCheck("NuGet", DoctorStatus.Warning,
-                $"nuget.org returned {(int)response.StatusCode}",
-                "Package queries may fail. Check your network or proxy settings.");
+            using var response = await client.GetAsync(location);
+            return (int)response.StatusCode;
         }
         catch (Exception)
         {
-            return new DoctorCheck("NuGet", DoctorStatus.Warning,
-                "Cannot reach nuget.org",
-                "Package version lookups and --audit will fail. Check your network connection.");
+            return null;
         }
+    }
+
+    private static async Task<DoctorCheck> ProbeNugetOrgFallbackAsync(HttpClient client)
+    {
+        try
+        {
+            using var response = await client.GetAsync(NuGetServiceIndexUrl);
+            if (response.IsSuccessStatusCode)
+            {
+                return new DoctorCheck(
+                    "NuGet",
+                    DoctorStatus.Ok,
+                    "nuget.org reachable (could not list configured sources)",
+                    "Run 'dotnet nuget list source' in the workspace to confirm private feeds."
+                );
+            }
+
+            return new DoctorCheck(
+                "NuGet",
+                DoctorStatus.Warning,
+                $"nuget.org returned {(int)response.StatusCode}",
+                "Could not list configured sources, and the public feed is not healthy either."
+            );
+        }
+        catch (Exception)
+        {
+            return new DoctorCheck(
+                "NuGet",
+                DoctorStatus.Warning,
+                "Cannot list configured NuGet sources or reach nuget.org",
+                "Package version lookups and --audit will fail. Check your network connection."
+            );
+        }
+    }
+
+    /// <summary>
+    /// Parses <c>dotnet nuget list source --format Detailed</c> (and the Short shape as a fallback)
+    /// into named sources. Disabled entries stay in the list so a test can see them; the probe
+    /// skips them.
+    /// </summary>
+    internal static IReadOnlyList<NugetSource> ParseNugetListSource(string output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return [];
+        }
+
+        var sources = new List<NugetSource>();
+        var lines = output.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var detailed = DetailedSourceLine.Match(line);
+            if (detailed.Success)
+            {
+                var location = ReadIndentedLocation(lines, i + 1);
+                sources.Add(
+                    new NugetSource(
+                        detailed.Groups["name"].Value.Trim(),
+                        location,
+                        Enabled: detailed.Groups["state"].Value.Equals("Enabled", StringComparison.OrdinalIgnoreCase)
+                    )
+                );
+                continue;
+            }
+
+            // Short format: "nuget.org [Enabled]" with no following URL. Keep the name so the
+            // doctor can still say which source exists; probing falls back to nuget.org only.
+            var trimmed = line.Trim();
+            if (trimmed.EndsWith("[Enabled]", StringComparison.OrdinalIgnoreCase)
+                || trimmed.EndsWith("[Disabled]", StringComparison.OrdinalIgnoreCase))
+            {
+                var enabled = trimmed.EndsWith("[Enabled]", StringComparison.OrdinalIgnoreCase);
+                var name = trimmed[..trimmed.LastIndexOf('[')].Trim();
+                if (name.Length > 0
+                    && !name.Equals("Registered Sources:", StringComparison.OrdinalIgnoreCase)
+                    && sources.TrueForAll(s => !s.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    sources.Add(new NugetSource(name, Location: string.Empty, enabled));
+                }
+            }
+        }
+
+        return sources;
+    }
+
+    private static string ReadIndentedLocation(string[] lines, int start)
+    {
+        for (var i = start; i < lines.Length; i++)
+        {
+            var candidate = lines[i];
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            if (DetailedSourceLine.IsMatch(candidate))
+            {
+                return string.Empty;
+            }
+
+            return candidate.Trim();
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Turns per-source probe results into the single doctor row. 200 is reachable; 401/403 is
+    /// reachable-but-authenticated (a private feed answering, not a down feed); anything else
+    /// names the source so the warning is actionable.
+    /// </summary>
+    internal static DoctorCheck SummarizeNugetSources(IReadOnlyList<(NugetSource Source, int? StatusCode)> probes)
+    {
+        if (probes.Count == 0)
+        {
+            return new DoctorCheck(
+                "NuGet",
+                DoctorStatus.Warning,
+                "No enabled NuGet sources",
+                "Add a source with 'dotnet nuget add source', or check nuget.config."
+            );
+        }
+
+        var reachable = new List<string>();
+        var problems = new List<string>();
+
+        foreach (var (source, status) in probes)
+        {
+            if (!source.IsHttp)
+            {
+                reachable.Add($"{source.Name} (local)");
+                continue;
+            }
+
+            if (status is (int)HttpStatusCode.OK)
+            {
+                reachable.Add(source.Name);
+                continue;
+            }
+
+            if (status is (int)HttpStatusCode.Unauthorized or (int)HttpStatusCode.Forbidden)
+            {
+                reachable.Add($"{source.Name} (authenticated)");
+                continue;
+            }
+
+            problems.Add(
+                status is null
+                    ? $"{source.Name} unreachable"
+                    : $"{source.Name} returned {status}"
+            );
+        }
+
+        if (problems.Count == 0)
+        {
+            return new DoctorCheck(
+                "NuGet",
+                DoctorStatus.Ok,
+                $"{reachable.Count} source(s) reachable: {string.Join(", ", reachable)}"
+            );
+        }
+
+        var detail = string.Join("; ", problems);
+        if (reachable.Count > 0)
+        {
+            detail += $"; reachable: {string.Join(", ", reachable)}";
+        }
+
+        return new DoctorCheck(
+            "NuGet",
+            DoctorStatus.Warning,
+            detail,
+            "Package updates and --outdated use these feeds. Fix the named source or your credential provider."
+        );
     }
 
     private List<DoctorCheck> CheckWorkspace(string searchPath)
@@ -441,3 +668,16 @@ internal sealed record DoctorCheck(
     DoctorStatus Status,
     string Details,
     string? Hint = null);
+
+/// <summary>
+/// One entry from <c>dotnet nuget list source</c>.
+/// </summary>
+/// <param name="Name">The source name as registered (nuget.org, Contoso, …).</param>
+/// <param name="Location">URL or local path. Empty when the Short listing omitted it.</param>
+/// <param name="Enabled">Whether the source is enabled.</param>
+internal readonly record struct NugetSource(string Name, string Location, bool Enabled)
+{
+    public bool IsHttp =>
+        Location.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        || Location.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+}

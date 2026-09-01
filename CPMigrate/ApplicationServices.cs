@@ -1,5 +1,6 @@
 using CPMigrate.Models;
 using CPMigrate.Services;
+using CPMigrate.Services.Update;
 using CPMigrate.Services.Verify;
 using Microsoft.Extensions.Logging;
 
@@ -139,9 +140,7 @@ internal sealed class ApplicationServices
             ConsoleService,
             ProjectAnalyzer,
             new PropsGenerator(VersionResolver),
-            new NuGetVersionLookupService(
-                logger: _loggerFactory?.CreateLogger<NuGetVersionLookupService>()
-            ),
+            new RestoreBackedUpdateCandidateSource(ProjectAnalyzer),
             new DotNetCliService(),
             BackupManager,
             _loggerFactory?.CreateLogger<PackageUpdateService>()

@@ -21,6 +21,15 @@ public interface IDotNetCliService
     Task<(string Output, bool Success)> RunRestoreAsync(string solutionOrProjectPath);
 
     /// <summary>
+    /// Execute 'dotnet nuget list source' so callers can see the feeds restore will use.
+    /// </summary>
+    /// <param name="workingDirectory">
+    /// Directory whose NuGet.Config chain should be listed. NuGet walks from here to the user- and
+    /// machine-level configs, so a repo with a private feed only appears when this is that repo.
+    /// </param>
+    Task<(string Output, bool Success)> RunNugetListSourceAsync(string workingDirectory);
+
+    /// <summary>
     /// Execute 'dotnet test' command.
     /// </summary>
     /// <param name="solutionOrProjectPath">Solution or project to test.</param>

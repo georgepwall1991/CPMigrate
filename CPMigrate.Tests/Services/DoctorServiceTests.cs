@@ -155,4 +155,92 @@ public class DoctorServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Configured NuGet sources
+
+    [Fact]
+    public void ParseNugetListSource_DetailedFormat_ReadsNameLocationAndEnabled()
+    {
+        const string output = """
+            Registered Sources:
+              1.  nuget.org [Enabled]
+                  https://api.nuget.org/v3/index.json
+              2.  Contoso [Enabled]
+                  https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json
+              3.  Offline [Disabled]
+                  /opt/nuget/offline
+            """;
+
+        var sources = DoctorService.ParseNugetListSource(output);
+
+        sources.Should().HaveCount(3);
+        sources[0].Name.Should().Be("nuget.org");
+        sources[0].Location.Should().Be("https://api.nuget.org/v3/index.json");
+        sources[0].Enabled.Should().BeTrue();
+        sources[0].IsHttp.Should().BeTrue();
+        sources[1].Name.Should().Be("Contoso");
+        sources[1].IsHttp.Should().BeTrue();
+        sources[2].Name.Should().Be("Offline");
+        sources[2].Enabled.Should().BeFalse();
+        sources[2].IsHttp.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ParseNugetListSource_ShortFormat_KeepsNamesWithoutUrls()
+    {
+        const string output = """
+            nuget.org [Enabled]
+            Contoso [Enabled]
+            Offline [Disabled]
+            """;
+
+        var sources = DoctorService.ParseNugetListSource(output);
+
+        sources.Select(s => s.Name).Should().Equal("nuget.org", "Contoso", "Offline");
+        sources.Should().OnlyContain(s => s.Location.Length == 0);
+    }
+
+    [Fact]
+    public void SummarizeNugetSources_AllReachable_DoesNotMentionNugetOrgAlone()
+    {
+        var check = DoctorService.SummarizeNugetSources(
+            [
+                (new NugetSource("nuget.org", "https://api.nuget.org/v3/index.json", true), 200),
+                (new NugetSource("Contoso", "https://pkgs.dev.azure.com/feed", true), 401),
+                (new NugetSource("Offline", "/opt/nuget", true), null),
+            ]);
+
+        check.Status.Should().Be(DoctorStatus.Ok);
+        check.Details.Should().Contain("nuget.org");
+        check.Details.Should().Contain("Contoso (authenticated)");
+        check.Details.Should().Contain("Offline (local)");
+        check.Details.Should().NotBe("nuget.org reachable");
+    }
+
+    [Fact]
+    public void SummarizeNugetSources_FailedSource_NamesItAsWarning()
+    {
+        var check = DoctorService.SummarizeNugetSources(
+            [
+                (new NugetSource("nuget.org", "https://api.nuget.org/v3/index.json", true), 200),
+                (new NugetSource("Contoso", "https://pkgs.dev.azure.com/feed", true), 503),
+            ]);
+
+        check.Status.Should().Be(DoctorStatus.Warning);
+        check.Details.Should().Contain("Contoso returned 503");
+        check.Details.Should().Contain("nuget.org");
+        check.Hint.Should().Contain("feeds");
+    }
+
+    [Fact]
+    public void SummarizeNugetSources_UnreachableHttp_NamesTheSource()
+    {
+        var check = DoctorService.SummarizeNugetSources(
+            [(new NugetSource("Contoso", "https://pkgs.dev.azure.com/feed", true), null)]);
+
+        check.Status.Should().Be(DoctorStatus.Warning);
+        check.Details.Should().Contain("Contoso unreachable");
+    }
+
+    #endregion
 }

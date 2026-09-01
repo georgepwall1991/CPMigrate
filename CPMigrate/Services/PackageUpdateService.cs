@@ -9,12 +9,15 @@ namespace CPMigrate.Services;
 /// <summary>
 /// Orchestrates updating NuGet packages to latest versions with test verification and rollback.
 /// </summary>
-public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
+public sealed class PackageUpdateService : IPackageUpdateService
 {
+    private const string IncompleteScanGuidance =
+        "A project that cannot restore against your configured feeds cannot be updated safely.";
+
     private readonly IConsoleService _consoleService;
     private readonly IProjectAnalyzer _projectAnalyzer;
     private readonly PropsGenerator _propsGenerator;
-    private readonly INuGetVersionLookupService _nuGetLookup;
+    private readonly IUpdateCandidateSource _candidateSource;
     private readonly IDotNetCliService _dotNetCli;
     private readonly IBackupManager _backupManager;
     private readonly ILogger<PackageUpdateService> _logger;
@@ -23,7 +26,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         IConsoleService consoleService,
         IProjectAnalyzer projectAnalyzer,
         PropsGenerator propsGenerator,
-        INuGetVersionLookupService nuGetLookup,
+        IUpdateCandidateSource candidateSource,
         IDotNetCliService dotNetCli,
         IBackupManager backupManager,
         ILogger<PackageUpdateService>? logger = null)
@@ -31,7 +34,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         _consoleService = consoleService;
         _projectAnalyzer = projectAnalyzer;
         _propsGenerator = propsGenerator;
-        _nuGetLookup = nuGetLookup;
+        _candidateSource = candidateSource;
         _dotNetCli = dotNetCli;
         _backupManager = backupManager;
         _logger = logger ?? NullLogger<PackageUpdateService>.Instance;
@@ -52,27 +55,25 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         }
 
         _consoleService.Info($"Checking {load.CurrentVersions.Count} packages for updates...");
-        var (updates, transitiveFound) = await QueryAllUpdatesAsync(load.CurrentVersions, load.ProjectPaths, request);
+        var scan = await QueryAllUpdatesAsync(load.CurrentVersions, load.ProjectPaths, request);
+        if (scan.UnscannedProjects.Count > 0)
+        {
+            return BuildIncompleteScanResult(load.CurrentVersions.Count, scan);
+        }
 
-        ReportFailedLookups();
+        if (scan.TransitiveScanFailed)
+        {
+            _consoleService.Warning("Could not scan transitive dependencies. Continuing with direct updates only.");
+        }
 
-        var availableUpdates = ApplyOnlyFilter(FilterAvailableUpdates(updates), request);
+        var availableUpdates = ApplyOnlyFilter(FilterAvailableUpdates(scan.Updates.ToList()), request);
         if (availableUpdates.Count == 0)
         {
-            // Deliberately not "Everything up to date!" when a lookup failed: that claim would be
-            // false, and it is the claim a user acts on.
-            if (_nuGetLookup.GetFailedLookups().Count > 0)
-            {
-                _consoleService.Warning(
-                    "No updates found, but some packages could not be checked — see above."
-                );
-            }
-            else
-            {
-                _consoleService.Success("Everything up to date!");
-            }
+            // A package absent from every configured feed is not a candidate — that is the correct
+            // answer, not an incomplete one. Incomplete is UnscannedProjects, handled above.
+            _consoleService.Success("Everything up to date!");
 
-            return BuildNoUpdatesResult(load.CurrentVersions.Count, transitiveFound);
+            return BuildNoUpdatesResult(load.CurrentVersions.Count, scan.TransitivePackagesFound);
         }
 
         ShowUpdatesTable(availableUpdates);
@@ -87,14 +88,14 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 ExitCode = ExitCodes.Success,
                 PackagesChecked = load.CurrentVersions.Count,
                 PackagesSkipped = load.CurrentVersions.Count,
-                TransitivePackagesFound = transitiveFound,
+                TransitivePackagesFound = scan.TransitivePackagesFound,
                 Updates = acceptedUpdates
             };
         }
 
         if (request.DryRun)
         {
-            return BuildDryRunResult(load.CurrentVersions.Count, transitiveFound, updatesToApply, acceptedUpdates);
+            return BuildDryRunResult(load.CurrentVersions.Count, scan.TransitivePackagesFound, updatesToApply, acceptedUpdates);
         }
 
         var backup = await CreateBackupAsync(request, load.PropsPath);
@@ -124,12 +125,12 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             // The props file may be half-written; get the user back to a known state before surfacing this.
             _consoleService.Error($"Update failed while writing Directory.Packages.props: {ex.Message}");
             return await RecoverFromWriteFailureAsync(
-                transaction, backup.Path, backup.Manifest, load.CurrentVersions.Count, acceptedUpdates, transitiveFound);
+                transaction, backup.Path, backup.Manifest, load.CurrentVersions.Count, acceptedUpdates, scan.TransitivePackagesFound);
         }
 
         return FinalizeSearch(
             search, backup.Path, backup.Manifest, load.CurrentVersions.Count,
-            acceptedUpdates, transitiveFound, request);
+            acceptedUpdates, scan.TransitivePackagesFound, request);
     }
 
     private IUpdateSearchStrategy CreateSearchStrategy(PackageUpdateRequest request)
@@ -166,23 +167,45 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         return new UpdateLoadContext(basePath, projectPaths, propsPath, currentVersions);
     }
 
-    private async Task<(List<PackageUpdateEntry> Updates, int TransitiveFound)> QueryAllUpdatesAsync(
+    private Task<UpdateCandidateScan> QueryAllUpdatesAsync(
         Dictionary<string, HashSet<string>> currentVersions,
         List<string> projectPaths,
         PackageUpdateRequest request)
     {
-        var updates = await QueryNuGetForUpdatesAsync(currentVersions, request.IncludePrerelease);
+        return _candidateSource.FindAsync(
+            projectPaths,
+            currentVersions,
+            request.IncludeTransitive,
+            request.IncludePrerelease,
+            request.MaxParallelism);
+    }
 
-        var transitiveFound = 0;
-        if (request.IncludeTransitive)
+    private PackageUpdateResult BuildIncompleteScanResult(int packagesChecked, UpdateCandidateScan scan)
+    {
+        var names = string.Join(
+            ", ",
+            scan.UnscannedProjects.OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+        var warning =
+            $"Could not scan {scan.UnscannedProjects.Count} project(s) against the configured NuGet feeds: {names}. "
+            + IncompleteScanGuidance;
+
+        _logger.LogWarning(
+            "Update candidate scan incomplete for {Count} project(s): {Projects}",
+            scan.UnscannedProjects.Count,
+            names);
+
+        _consoleService.Error(
+            $"Could not scan {scan.UnscannedProjects.Count} project(s) against the configured NuGet feeds: {names}");
+        _consoleService.Dim(IncompleteScanGuidance);
+
+        return new PackageUpdateResult
         {
-            var (transitive, found) = await ScanAndQueryTransitiveUpdatesAsync(
-                projectPaths, currentVersions, request.IncludePrerelease);
-            transitiveFound = found;
-            updates.AddRange(transitive);
-        }
-
-        return (updates, transitiveFound);
+            ExitCode = ExitCodes.IncompleteAnalysis,
+            PackagesChecked = packagesChecked,
+            PackagesSkipped = packagesChecked,
+            TransitivePackagesFound = scan.TransitivePackagesFound,
+            Warnings = [warning]
+        };
     }
 
     /// <summary>
@@ -486,11 +509,6 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        _nuGetLookup.Dispose();
-    }
-
     private static string? FindPropsFile(string basePath)
     {
         var propsPath = Path.Combine(basePath, "Directory.Packages.props");
@@ -501,104 +519,6 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
     {
         var slnFiles = Directory.GetFiles(basePath, "*.sln");
         return slnFiles.Length > 0 ? slnFiles[0] : null;
-    }
-
-    private async Task<List<PackageUpdateEntry>> QueryNuGetForUpdatesAsync(
-        Dictionary<string, HashSet<string>> currentVersions,
-        bool includePrerelease)
-    {
-        var updates = new List<PackageUpdateEntry>();
-        using var semaphore = new SemaphoreSlim(8);
-        var tasks = new List<Task<PackageUpdateEntry?>>();
-
-        foreach (var (packageName, versions) in currentVersions)
-        {
-            var currentVersion = ResolveCurrentVersion(versions);
-            if (currentVersion == null)
-            {
-                _logger.LogWarning("Could not parse any version for {PackageName}, skipping", packageName);
-                continue;
-            }
-            tasks.Add(QuerySinglePackageAsync(packageName, currentVersion, includePrerelease, semaphore));
-        }
-
-        var results = await Task.WhenAll(tasks);
-        updates.AddRange(results.Where(r => r != null).Cast<PackageUpdateEntry>());
-
-        return updates;
-    }
-
-    private static string? ResolveCurrentVersion(HashSet<string> versions)
-    {
-        if (versions.Count == 1)
-        {
-            return versions.First();
-        }
-
-        return versions
-            .Select(v => NuGetVersion.TryParse(v, out var parsed) ? parsed : null)
-            .Where(v => v != null)
-            .OrderByDescending(v => v)
-            .FirstOrDefault()
-            ?.ToNormalizedString();
-    }
-
-    private async Task<PackageUpdateEntry?> QuerySinglePackageAsync(
-        string packageName,
-        string currentVersion,
-        bool includePrerelease,
-        SemaphoreSlim semaphore)
-    {
-        await semaphore.WaitAsync();
-        try
-        {
-            var latestVersion = await _nuGetLookup.GetLatestVersionAsync(packageName, includePrerelease);
-            if (latestVersion == null)
-            {
-                _logger.LogWarning("Could not fetch version for {PackageName}, skipping", packageName);
-                return null;
-            }
-
-            var currentNuGet = NuGetVersion.TryParse(currentVersion, out var parsed) ? parsed : null;
-            if (currentNuGet == null)
-            {
-                _logger.LogWarning("Could not parse current version {Version} for {PackageName}", currentVersion, packageName);
-                return null;
-            }
-
-            var isMajor = latestVersion.Major != currentNuGet.Major;
-
-            return new PackageUpdateEntry(
-                packageName,
-                currentVersion,
-                latestVersion.ToNormalizedString(),
-                isMajor,
-                !isMajor);
-        }
-        finally
-        {
-            semaphore.Release();
-        }
-    }
-
-    /// <summary>
-    /// Names the packages whose version could not be determined. A failed lookup returns the same
-    /// "no newer version" as a package that is genuinely current, so without this the run reports a
-    /// silently incomplete result as a clean one.
-    /// </summary>
-    private void ReportFailedLookups()
-    {
-        var failed = _nuGetLookup.GetFailedLookups();
-        if (failed.Count == 0)
-        {
-            return;
-        }
-
-        _consoleService.Warning(
-            $"Could not check {failed.Count} package(s) after retries: "
-                + string.Join(", ", failed.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
-        );
-        _consoleService.Dim("These are reported as unchanged, not as up to date.");
     }
 
     private void ShowUpdatesTable(List<PackageUpdateEntry> updates)
@@ -685,126 +605,6 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             _consoleService.DryRun($"  {update.PackageName}: {update.CurrentVersion} → {update.LatestVersion}");
         }
         _consoleService.WriteLine();
-    }
-
-    /// <summary>
-    /// Scans all projects for transitive dependencies, deduplicates them, excludes those already
-    /// managed as direct deps, and queries NuGet for their latest versions.
-    /// </summary>
-    /// <returns>A tuple of (update entries, total transitive deps found before filtering).</returns>
-    private async Task<(List<PackageUpdateEntry> Updates, int TotalFound)> ScanAndQueryTransitiveUpdatesAsync(
-        List<string> projectPaths,
-        Dictionary<string, HashSet<string>> currentVersions,
-        bool includePrerelease)
-    {
-        _consoleService.Info("Scanning transitive dependencies...");
-
-        var allTransitive = new List<PackageReference>();
-        var anySuccess = false;
-
-        foreach (var projectPath in projectPaths)
-        {
-            try
-            {
-                var (refs, success) = await _projectAnalyzer.ScanTransitivePackagesAsync(projectPath);
-                if (success)
-                {
-                    allTransitive.AddRange(refs);
-                    anySuccess = true;
-                }
-                else
-                {
-                    _logger.LogWarning("Transitive scan failed for {Project}", Path.GetFileName(projectPath));
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Transitive scan failed for {Project}", Path.GetFileName(projectPath));
-            }
-        }
-
-        if (!anySuccess)
-        {
-            _consoleService.Warning("Could not scan transitive dependencies. Continuing with direct updates only.");
-            return ([], 0);
-        }
-
-        var deduplicated = allTransitive
-            .GroupBy(r => r.PackageName, StringComparer.OrdinalIgnoreCase)
-            .Select(g =>
-            {
-                var highest = g
-                    .Select(r => (Ref: r, Parsed: NuGetVersion.TryParse(r.Version, out var v) ? v : null))
-                    .Where(x => x.Parsed != null)
-                    .OrderByDescending(x => x.Parsed)
-                    .FirstOrDefault();
-                return highest.Ref;
-            })
-            .Where(r => r != null)
-            .Select(r => r)
-            .ToList();
-
-        var totalFound = deduplicated.Count;
-
-        var transitiveOnly = deduplicated
-            .Where(r => !currentVersions.ContainsKey(r.PackageName))
-            .ToList();
-
-        if (transitiveOnly.Count == 0)
-        {
-            _consoleService.Info("No transitive updates found (all already managed as direct dependencies).");
-            return ([], totalFound);
-        }
-
-        _consoleService.Info($"Found {transitiveOnly.Count} transitive dependencies to check...");
-
-        using var semaphore = new SemaphoreSlim(8);
-        var tasks = transitiveOnly.Select(r =>
-            QuerySingleTransitivePackageAsync(r.PackageName, r.Version, includePrerelease, semaphore));
-
-        var results = await Task.WhenAll(tasks);
-        var updates = results.Where(r => r != null).Cast<PackageUpdateEntry>().ToList();
-
-        return (updates, totalFound);
-    }
-
-    private async Task<PackageUpdateEntry?> QuerySingleTransitivePackageAsync(
-        string packageName,
-        string currentVersion,
-        bool includePrerelease,
-        SemaphoreSlim semaphore)
-    {
-        await semaphore.WaitAsync();
-        try
-        {
-            var latestVersion = await _nuGetLookup.GetLatestVersionAsync(packageName, includePrerelease);
-            if (latestVersion == null)
-            {
-                _logger.LogWarning("Could not fetch version for transitive dep {PackageName}, skipping", packageName);
-                return null;
-            }
-
-            var currentNuGet = NuGetVersion.TryParse(currentVersion, out var parsed) ? parsed : null;
-            if (currentNuGet == null)
-            {
-                _logger.LogWarning("Could not parse transitive version {Version} for {PackageName}", currentVersion, packageName);
-                return null;
-            }
-
-            var isMajor = latestVersion.Major != currentNuGet.Major;
-
-            return new PackageUpdateEntry(
-                packageName,
-                currentVersion,
-                latestVersion.ToNormalizedString(),
-                isMajor,
-                !isMajor,
-                IsTransitive: true);
-        }
-        finally
-        {
-            semaphore.Release();
-        }
     }
 
 }
