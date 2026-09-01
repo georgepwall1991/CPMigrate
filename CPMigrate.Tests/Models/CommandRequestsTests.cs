@@ -89,7 +89,15 @@ public class CommandRequestsTests
 
         rollback.Should().Be(new RollbackRequest(backup, output));
         listBackups.Should().Be(new ListBackupsRequest("backups", output));
-        packageUpdate.Should().Be(new PackageUpdateRequest(options.SolutionFileDir, true, true, true, backup, output));
+        packageUpdate.Should().Be(
+            new PackageUpdateRequest(
+                options.SolutionFileDir,
+                true,
+                true,
+                true,
+                backup,
+                output,
+                MaxParallelism: options.ResolveScanParallelism()));
         batch.Should().Be(new BatchRequest("batch-root", true, true, true, true, output));
     }
 

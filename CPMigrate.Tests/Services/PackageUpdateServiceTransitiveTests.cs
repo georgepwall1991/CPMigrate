@@ -3,7 +3,6 @@ using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
 using Moq;
-using NuGet.Versioning;
 
 namespace CPMigrate.Tests.Services;
 
@@ -12,7 +11,7 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     private readonly string _testDirectory;
     private readonly FakeConsoleService _consoleService;
     private readonly Mock<IProjectAnalyzer> _projectAnalyzerMock;
-    private readonly Mock<INuGetVersionLookupService> _nuGetLookupMock;
+    private readonly FakeUpdateCandidateSource _candidates = new();
     private readonly Mock<IDotNetCliService> _dotNetCliMock;
     private readonly Mock<IBackupManager> _backupManagerMock;
     private readonly PropsGenerator _propsGenerator;
@@ -25,8 +24,6 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
 
         _consoleService = new FakeConsoleService();
         _projectAnalyzerMock = new Mock<IProjectAnalyzer>();
-        _nuGetLookupMock = new Mock<INuGetVersionLookupService>();
-        _nuGetLookupMock.Setup(x => x.GetFailedLookups()).Returns(Array.Empty<string>());
         _dotNetCliMock = new Mock<IDotNetCliService>();
         _backupManagerMock = new Mock<IBackupManager>();
         _propsGenerator = new PropsGenerator();
@@ -35,7 +32,7 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
             _consoleService,
             _projectAnalyzerMock.Object,
             _propsGenerator,
-            _nuGetLookupMock.Object,
+            _candidates,
             _dotNetCliMock.Object,
             _backupManagerMock.Object);
     }
@@ -51,31 +48,20 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     [Fact]
     public async Task TransitiveUpdatesDiscovered_AppearInUpdateList()
     {
-        // Arrange
         SetupProjectAnalyzer();
         CreatePropsFile(("Newtonsoft.Json", "13.0.3"));
         CreateSolutionFile();
 
-        // Direct package is up to date
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
+        AddTransitiveUpdate("System.Text.Encodings.Web", "7.0.0", "8.0.0");
+        _candidates.TransitivePackagesFound = 1;
 
-        // Transitive dep has an update
-        SetupTransitiveScan("System.Text.Encodings.Web", "7.0.0");
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("System.Text.Encodings.Web", false))
-            .ReturnsAsync(NuGetVersion.Parse("8.0.0"));
-
-        // Accept major update for transitive
         _consoleService.SelectionResponses.Enqueue("Accept major update to 8.0.0");
 
         SetupBackupAndBuild();
 
-        var options = CreateOptions(includeTransitive: true);
+        var result = await _sut.UpdatePackagesAsync(CreateOptions(includeTransitive: true));
 
-        // Act
-        var result = await _sut.UpdatePackagesAsync(options);
-
-        // Assert
         result.ExitCode.Should().Be(ExitCodes.Success);
         result.TransitivePackagesFound.Should().BeGreaterThan(0);
         result.TransitivePackagesUpdated.Should().Be(1);
@@ -86,24 +72,17 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     [Fact]
     public async Task TransitiveDepsExcludedIfAlreadyDirect()
     {
-        // Arrange — Newtonsoft.Json is both a direct dep and appears as transitive
         SetupProjectAnalyzer();
         CreatePropsFile(("Newtonsoft.Json", "13.0.1"));
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
-
-        // Transitive scan returns Newtonsoft.Json (same as direct)
-        SetupTransitiveScan("Newtonsoft.Json", "13.0.1");
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
+        // A restore-backed source never emits a transitive duplicate of a central pin.
+        _candidates.TransitivePackagesFound = 1;
 
         SetupBackupAndBuild();
 
-        var options = CreateOptions(includeTransitive: true);
+        var result = await _sut.UpdatePackagesAsync(CreateOptions(includeTransitive: true));
 
-        // Act
-        var result = await _sut.UpdatePackagesAsync(options);
-
-        // Assert — should only have the direct update, not a duplicate transitive entry
         result.Updates.Where(u => u.PackageName == "Newtonsoft.Json").Should().HaveCount(1);
         result.Updates.Should().NotContain(u => u.PackageName == "Newtonsoft.Json" && u.IsTransitive);
     }
@@ -111,26 +90,18 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     [Fact]
     public async Task TransitiveDryRun_ShowsBothSections()
     {
-        // Arrange
         SetupProjectAnalyzer();
         CreatePropsFile(("Newtonsoft.Json", "13.0.1"));
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
+        AddTransitiveUpdate("System.Text.Encodings.Web", "7.0.0", "7.0.1");
+        _candidates.TransitivePackagesFound = 1;
 
-        SetupTransitiveScan("System.Text.Encodings.Web", "7.0.0");
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("System.Text.Encodings.Web", false))
-            .ReturnsAsync(NuGetVersion.Parse("7.0.1"));
+        var result = await _sut.UpdatePackagesAsync(CreateOptions(dryRun: true, includeTransitive: true));
 
-        var options = CreateOptions(dryRun: true, includeTransitive: true);
-
-        // Act
-        var result = await _sut.UpdatePackagesAsync(options);
-
-        // Assert
         result.ExitCode.Should().Be(ExitCodes.Success);
-        result.PackagesUpdated.Should().Be(1); // direct
-        result.TransitivePackagesUpdated.Should().Be(1); // transitive
+        result.PackagesUpdated.Should().Be(1);
+        result.TransitivePackagesUpdated.Should().Be(1);
         result.Updates.Should().Contain(u => u.PackageName == "Newtonsoft.Json" && !u.IsTransitive);
         result.Updates.Should().Contain(u => u.PackageName == "System.Text.Encodings.Web" && u.IsTransitive);
     }
@@ -138,32 +109,21 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     [Fact]
     public async Task TransitiveUpdatesPinnedInProps()
     {
-        // Arrange
         SetupProjectAnalyzer();
         var propsPath = CreatePropsFile(("Newtonsoft.Json", "13.0.3"));
         CreateSolutionFile();
 
-        // Direct is up to date
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
-
-        // Transitive has minor update (auto-accepted)
-        SetupTransitiveScan("System.Text.Encodings.Web", "7.0.0");
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("System.Text.Encodings.Web", false))
-            .ReturnsAsync(NuGetVersion.Parse("7.0.1"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
+        AddTransitiveUpdate("System.Text.Encodings.Web", "7.0.0", "7.0.1");
+        _candidates.TransitivePackagesFound = 1;
 
         SetupBackupAndBuild();
 
-        var options = CreateOptions(includeTransitive: true);
+        var result = await _sut.UpdatePackagesAsync(CreateOptions(includeTransitive: true));
 
-        // Act
-        var result = await _sut.UpdatePackagesAsync(options);
-
-        // Assert
         result.ExitCode.Should().Be(ExitCodes.Success);
         result.TransitivePackagesUpdated.Should().Be(1);
 
-        // Verify the props file now contains the transitive pin
         var propsContent = await File.ReadAllTextAsync(propsPath);
         propsContent.Should().Contain("System.Text.Encodings.Web");
         propsContent.Should().Contain("7.0.1");
@@ -172,27 +132,18 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     [Fact]
     public async Task TransitiveScanFailure_SkipsGracefully()
     {
-        // Arrange
         SetupProjectAnalyzer();
         CreatePropsFile(("Newtonsoft.Json", "13.0.1"));
         CreateSolutionFile();
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
-
-        // All transitive scans fail
-        _projectAnalyzerMock
-            .Setup(p => p.ScanTransitivePackagesAsync(It.IsAny<string>()))
-            .ReturnsAsync((new List<PackageReference>(), false));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
+        _candidates.TransitiveScanFailed = true;
+        _candidates.TransitivePackagesFound = 0;
 
         SetupBackupAndBuild();
 
-        var options = CreateOptions(includeTransitive: true);
+        var result = await _sut.UpdatePackagesAsync(CreateOptions(includeTransitive: true));
 
-        // Act
-        var result = await _sut.UpdatePackagesAsync(options);
-
-        // Assert — should still succeed with direct updates
         result.ExitCode.Should().Be(ExitCodes.Success);
         result.TransitivePackagesFound.Should().Be(0);
         result.TransitivePackagesUpdated.Should().Be(0);
@@ -202,20 +153,14 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     [Fact]
     public async Task RollbackIncludesTransitivePins()
     {
-        // Arrange
         SetupProjectAnalyzer();
         var propsPath = CreatePropsFile(("Newtonsoft.Json", "13.0.3"));
         CreateSolutionFile();
         CreateBackupFile(propsPath, "backup");
 
-        // Direct is up to date
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
-
-        // Transitive has update
-        SetupTransitiveScan("System.Text.Encodings.Web", "7.0.0");
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("System.Text.Encodings.Web", false))
-            .ReturnsAsync(NuGetVersion.Parse("7.0.1"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
+        AddTransitiveUpdate("System.Text.Encodings.Web", "7.0.0", "7.0.1");
+        _candidates.TransitivePackagesFound = 1;
 
         _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = propsPath, BackupFileName = "backup" });
@@ -225,12 +170,8 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
         _dotNetCliMock.Setup(d => d.RunTestAsync(It.IsAny<string>()))
             .ReturnsAsync(("FAILED", false));
 
-        var options = CreateOptions(includeTransitive: true);
+        var result = await _sut.UpdatePackagesAsync(CreateOptions(includeTransitive: true));
 
-        // Act
-        var result = await _sut.UpdatePackagesAsync(options);
-
-        // Assert
         result.ExitCode.Should().Be(ExitCodes.TestFailure);
         result.WasRolledBack.Should().BeTrue();
     }
@@ -238,29 +179,22 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     [Fact]
     public async Task NoTransitiveFlag_DoesNotScanTransitive()
     {
-        // Arrange
         SetupProjectAnalyzer();
         CreatePropsFile(("Newtonsoft.Json", "13.0.1"));
         CreateSolutionFile();
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
+        AddTransitiveUpdate("System.Text.Encodings.Web", "7.0.0", "7.0.1");
 
         SetupBackupAndBuild();
 
-        var options = CreateOptions(includeTransitive: false);
+        var result = await _sut.UpdatePackagesAsync(CreateOptions(includeTransitive: false));
 
-        // Act
-        var result = await _sut.UpdatePackagesAsync(options);
-
-        // Assert
         result.ExitCode.Should().Be(ExitCodes.Success);
         result.TransitivePackagesFound.Should().Be(0);
-        _projectAnalyzerMock.Verify(
-            p => p.ScanTransitivePackagesAsync(It.IsAny<string>()), Times.Never);
+        _candidates.LastIncludeTransitive.Should().BeFalse();
+        result.Updates.Should().NotContain(u => u.IsTransitive);
     }
-
-    #region Helpers
 
     private void SetupProjectAnalyzer()
     {
@@ -269,15 +203,12 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
             .ReturnsAsync((_testDirectory, new List<string> { projectPath }));
     }
 
-    private void SetupTransitiveScan(string packageName, string version)
+    private void AddTransitiveUpdate(string packageName, string current, string latest)
     {
-        var projectPath = Path.Combine(_testDirectory, "Test.csproj");
-        _projectAnalyzerMock
-            .Setup(p => p.ScanTransitivePackagesAsync(projectPath))
-            .ReturnsAsync((new List<PackageReference>
-            {
-                new(packageName, version, projectPath, "Test.csproj", IsTransitive: true)
-            }, true));
+        var isMajor = NuGet.Versioning.NuGetVersion.Parse(latest).Major
+            != NuGet.Versioning.NuGetVersion.Parse(current).Major;
+        _candidates.ExtraUpdates.Add(
+            new PackageUpdateEntry(packageName, current, latest, isMajor, !isMajor, IsTransitive: true));
     }
 
     private void SetupBackupAndBuild()
@@ -324,8 +255,7 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     {
         var backupDir = Path.Combine(_testDirectory, ".cpmigrate_backup");
         Directory.CreateDirectory(backupDir);
-        var backupFilePath = Path.Combine(backupDir, backupFileName);
-        File.Copy(originalPath, backupFilePath, overwrite: true);
+        File.Copy(originalPath, Path.Combine(backupDir, backupFileName), overwrite: true);
     }
 
     private Options CreateOptions(bool dryRun = false, bool includePrerelease = false, bool includeTransitive = false)
@@ -341,6 +271,4 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
             NoBackup = false
         };
     }
-
-    #endregion
 }

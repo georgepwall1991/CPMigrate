@@ -3,7 +3,6 @@ using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
 using Moq;
-using NuGet.Versioning;
 
 namespace CPMigrate.Tests.Services.Update;
 
@@ -16,17 +15,7 @@ public class PackageUpdateServiceBisectTests : IDisposable
     private readonly string _testDirectory;
     private readonly FakeConsoleService _console = new();
     private readonly Mock<IProjectAnalyzer> _projectAnalyzer = new();
-    private readonly Mock<INuGetVersionLookupService> _nuGet = CreateLookupMock();
-
-    /// <summary>
-    /// The interface promises a non-null FailedLookups; Moq would return null for it.
-    /// </summary>
-    private static Mock<INuGetVersionLookupService> CreateLookupMock()
-    {
-        var mock = new Mock<INuGetVersionLookupService>();
-        mock.Setup(x => x.GetFailedLookups()).Returns(Array.Empty<string>());
-        return mock;
-    }
+    private readonly FakeUpdateCandidateSource _candidates = new();
     private readonly Mock<IDotNetCliService> _cli = new();
     private readonly PackageUpdateService _sut;
     private readonly string _propsPath;
@@ -45,7 +34,7 @@ public class PackageUpdateServiceBisectTests : IDisposable
             _console,
             _projectAnalyzer.Object,
             new PropsGenerator(),
-            _nuGet.Object,
+            _candidates,
             _cli.Object,
             new BackupManager());
     }
@@ -200,9 +189,7 @@ public class PackageUpdateServiceBisectTests : IDisposable
         finalProps.Should().Contain("Include=\"Beta\" Version=\"1.0.0\"");
     }
 
-    private void SetLatest(string package, string version) =>
-        _nuGet.Setup(n => n.GetLatestVersionAsync(package, It.IsAny<bool>()))
-            .ReturnsAsync(NuGetVersion.Parse(version));
+    private void SetLatest(string package, string version) => _candidates.SetLatest(package, version);
 
     /// <summary>
     /// Decides pass/fail from the props file as it stands on disk, which is what a real test run reacts to.

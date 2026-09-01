@@ -297,7 +297,7 @@
         <h2>From version soup to CPM in five commands</h2>
       </div>
       <div class="flow">
-        <div class="fstep"><div class="fnum">01</div><div><h3>Check the environment</h3><p>SDK, NuGet reachability, workspace, git — one diagnostic table.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --doctor</code></pre></div></div></div>
+        <div class="fstep"><div class="fnum">01</div><div><h3>Check the environment</h3><p>SDK, configured NuGet sources, workspace, git — one diagnostic table.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --doctor</code></pre></div></div></div>
         <div class="fstep"><div class="fnum">02</div><div><h3>Score the graph</h3><p>CI-safe exit codes: <code>0</code> clean · <code>5</code> findings · <code>8</code> incomplete scan.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate --analyze --audit --outdated --deprecated</code></pre></div></div></div>
         <div class="fstep"><div class="fnum">03</div><div><h3>Preview as a diff</h3><p><code>--diff</code> renders the exact <code>Directory.Packages.props</code> change before anything is written.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln --dry-run --diff</code></pre></div></div></div>
         <div class="fstep"><div class="fnum">04</div><div><h3>Migrate, and prove it</h3><p>Generates the props file, strips inline versions, keeps a timestamped backup — then <code>--verify</code> restores before and after and diffs the resolved graph. Exit <code>9</code> and an automatic rollback on drift nothing accounts for.</p><div class="code-block"><button class="copy-btn">copy</button><pre><code>cpmigrate -s ./MySolution.sln --verify</code></pre></div></div></div>
@@ -314,7 +314,7 @@
       </div>
       <div class="grid">
         <article class="card"><h3>Resolved-graph proof</h3><p><code>--verify</code> answers the only question a migration PR raises: does this change what we ship? Every moved version, attributed to the decision that caused it.</p><span class="cmd">cpmigrate -s ./Sln.sln --verify</span></article>
-        <article class="card"><h3>Environment doctor</h3><p>One command verifies SDK, feed, workspace and git before you touch anything.</p><span class="cmd">cpmigrate --doctor</span></article>
+        <article class="card"><h3>Environment doctor</h3><p>One command verifies SDK, configured NuGet sources, workspace and git before you touch anything.</p><span class="cmd">cpmigrate --doctor</span></article>
         <article class="card"><h3>Config scaffolding</h3><p><code>--init</code> writes a <code>.cpmigrate.json</code> of team defaults — interactive or CI-safe.</p><span class="cmd">cpmigrate --init</span></article>
         <article class="card"><h3>Workspace status</h3><p>A repository-context dashboard without entering the wizard.</p><span class="cmd">cpmigrate --status</span></article>
         <article class="card"><h3>Dependency tree</h3><p>Direct + transitive packages per project, rendered as ASCII.</p><span class="cmd">cpmigrate --tree --transitive</span></article>
@@ -654,7 +654,7 @@ brew install cpmigrate</code></pre></div></div>
       doctor: function () { return [
         '<span class="t-green">✔</span> SDK        <span class="t-dim">.NET 10.0.100</span>',
         '<span class="t-green">✔</span> Tool       <span class="t-dim">CPMigrate v3.64.0</span>',
-        '<span class="t-green">✔</span> NuGet      <span class="t-dim">nuget.org reachable (142ms)</span>',
+        '<span class="t-green">✔</span> NuGet      <span class="t-dim">2 source(s) reachable: nuget.org, Contoso (142ms)</span>',
         '<span class="t-green">✔</span> Solutions  <span class="t-dim">1 found (MySolution.sln)</span>',
         '<span class="t-green">✔</span> CPM        <span class="t-dim">Directory.Packages.props — 38 versions</span>',
         '<span class="t-amber">!</span> Git        <span class="t-amber">working tree dirty — commit before migrating</span>',

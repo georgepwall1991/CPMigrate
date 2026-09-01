@@ -127,7 +127,8 @@ public sealed record PackageUpdateRequest(
     bool Bisect = false,
     int BisectBudget = BisectSearchStrategy.DefaultBudget,
     string? BisectTestFilter = null,
-    IReadOnlyList<string>? OnlyPackages = null)
+    IReadOnlyList<string>? OnlyPackages = null,
+    int MaxParallelism = 1)
 {
     public static PackageUpdateRequest FromOptions(Options options) =>
         new(
@@ -140,7 +141,8 @@ public sealed record PackageUpdateRequest(
             Bisect: options.Bisect,
             BisectBudget: options.EffectiveBisectBudget,
             BisectTestFilter: options.BisectTestFilter,
-            OnlyPackages: options.ParseOnlyPackages());
+            OnlyPackages: options.ParseOnlyPackages(),
+            MaxParallelism: options.ResolveScanParallelism());
 }
 
 public sealed record BatchRequest(

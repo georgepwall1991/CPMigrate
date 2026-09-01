@@ -3,7 +3,6 @@ using CPMigrate.Services;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
 using Moq;
-using NuGet.Versioning;
 
 namespace CPMigrate.Tests.Services;
 
@@ -12,7 +11,7 @@ public class PackageUpdateServiceTests : IDisposable
     private readonly string _testDirectory;
     private readonly FakeConsoleService _consoleService;
     private readonly Mock<IProjectAnalyzer> _projectAnalyzerMock;
-    private readonly Mock<INuGetVersionLookupService> _nuGetLookupMock;
+    private readonly FakeUpdateCandidateSource _candidates = new();
     private readonly Mock<IDotNetCliService> _dotNetCliMock;
     private readonly Mock<IBackupManager> _backupManagerMock;
     private readonly PropsGenerator _propsGenerator;
@@ -25,8 +24,6 @@ public class PackageUpdateServiceTests : IDisposable
 
         _consoleService = new FakeConsoleService();
         _projectAnalyzerMock = new Mock<IProjectAnalyzer>();
-        _nuGetLookupMock = new Mock<INuGetVersionLookupService>();
-        _nuGetLookupMock.Setup(x => x.GetFailedLookups()).Returns(Array.Empty<string>());
         _dotNetCliMock = new Mock<IDotNetCliService>();
         _backupManagerMock = new Mock<IBackupManager>();
         _propsGenerator = new PropsGenerator();
@@ -35,7 +32,7 @@ public class PackageUpdateServiceTests : IDisposable
             _consoleService,
             _projectAnalyzerMock.Object,
             _propsGenerator,
-            _nuGetLookupMock.Object,
+            _candidates,
             _dotNetCliMock.Object,
             _backupManagerMock.Object);
     }
@@ -70,8 +67,7 @@ public class PackageUpdateServiceTests : IDisposable
         SetupProjectAnalyzer();
         CreatePropsFile(("Newtonsoft.Json", "13.0.3"));
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
 
         var options = CreateOptions();
 
@@ -90,8 +86,7 @@ public class PackageUpdateServiceTests : IDisposable
         SetupProjectAnalyzer();
         CreatePropsFile(("Newtonsoft.Json", "12.0.3"));
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
 
         var options = CreateOptions(dryRun: true);
 
@@ -116,8 +111,7 @@ public class PackageUpdateServiceTests : IDisposable
         CreatePropsFile(("Newtonsoft.Json", "13.0.1"));
         CreateSolutionFile();
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
 
         _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = Path.Combine(_testDirectory, "Directory.Packages.props"), BackupFileName = "backup" });
@@ -146,8 +140,7 @@ public class PackageUpdateServiceTests : IDisposable
         CreatePropsFile(("Newtonsoft.Json", "12.0.3"));
         CreateSolutionFile();
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("14.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "14.0.3");
 
         // User accepts the major update (first option)
         _consoleService.SelectionResponses.Enqueue("Accept major update to 14.0.3");
@@ -177,8 +170,7 @@ public class PackageUpdateServiceTests : IDisposable
         SetupProjectAnalyzer();
         CreatePropsFile(("Newtonsoft.Json", "12.0.3"));
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("14.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "14.0.3");
 
         // User skips the major update
         _consoleService.SelectionResponses.Enqueue("Skip this package");
@@ -202,8 +194,7 @@ public class PackageUpdateServiceTests : IDisposable
         CreateSolutionFile();
         var backupFilePath = CreateBackupFile(propsPath, "backup");
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
 
         _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = propsPath, BackupFileName = "backup" });
@@ -233,8 +224,7 @@ public class PackageUpdateServiceTests : IDisposable
         CreateSolutionFile();
         var backupFilePath = CreateBackupFile(propsPath, "backup");
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
-            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
 
         _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = propsPath, BackupFileName = "backup" });
@@ -254,19 +244,17 @@ public class PackageUpdateServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdatePackagesAsync_NuGetLookupFails_SkipsPackage()
+    public async Task UpdatePackagesAsync_PackageAbsentFromOutdatedScan_IsNotProposed()
     {
-        // Arrange
+        // A pin whose package never appears in the restore-backed outdated rows is not a
+        // candidate — that is how a private-feed package used to look "up to date" when
+        // nuget.org 404'd it, and how a squatted nuget.org version is now refused.
         SetupProjectAnalyzer();
         CreatePropsFile(("WorkingPackage", "1.0.0"), ("BrokenPackage", "1.0.0"));
         CreateSolutionFile();
 
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("WorkingPackage", false))
-            .ReturnsAsync(NuGetVersion.Parse("2.0.0"));
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("BrokenPackage", false))
-            .ReturnsAsync((NuGetVersion?)null);
+        _candidates.SetLatest("WorkingPackage", "2.0.0");
 
-        // Accept the major update for WorkingPackage
         _consoleService.SelectionResponses.Enqueue("Accept major update to 2.0.0");
 
         _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
@@ -279,52 +267,89 @@ public class PackageUpdateServiceTests : IDisposable
 
         var options = CreateOptions();
 
-        // Act
         var result = await _sut.UpdatePackagesAsync(options);
 
-        // Assert
         result.ExitCode.Should().Be(ExitCodes.Success);
-        // BrokenPackage was skipped, only WorkingPackage was updated
         result.Updates.Should().NotContain(u => u.PackageName == "BrokenPackage");
     }
 
     [Fact]
-    public async Task UpdatePackagesAsync_IncludePrerelease_PassedToNuGetLookup()
+    public async Task UpdatePackagesAsync_IncludePrerelease_PassedToCandidateSource()
     {
-        // Arrange
         SetupProjectAnalyzer();
         CreatePropsFile(("TestPkg", "1.0.0"));
-
-        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("TestPkg", true))
-            .ReturnsAsync(NuGetVersion.Parse("1.0.0"));
+        _candidates.SetLatest("TestPkg", "1.0.0");
 
         var options = CreateOptions(includePrerelease: true);
 
-        // Act
         await _sut.UpdatePackagesAsync(options);
 
-        // Assert
-        _nuGetLookupMock.Verify(n => n.GetLatestVersionAsync("TestPkg", true), Times.Once);
+        _candidates.LastIncludePrerelease.Should().BeTrue();
+        _candidates.FindCalls.Should().Be(1);
     }
 
     [Fact]
-    public void Dispose_DisposesLookupService_WhenLookupOwnsResources()
+    public async Task UpdatePackagesAsync_UnscannedProject_ExitsIncompleteAndWritesNothing()
     {
-        // Arrange
-        var disposableLookup = new DisposableNuGetVersionLookupService();
-        var service = new PackageUpdateService(
-            _consoleService,
-            _projectAnalyzerMock.Object,
-            _propsGenerator,
-            disposableLookup,
-            _dotNetCliMock.Object,
-            _backupManagerMock.Object);
+        SetupProjectAnalyzer();
+        var propsPath = CreatePropsFile(("Newtonsoft.Json", "13.0.1"));
+        var original = await File.ReadAllTextAsync(propsPath);
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
+        _candidates.UnscannedProjects.Add("Broken.csproj");
 
-        // Act
-        service.Dispose();
+        var result = await _sut.UpdatePackagesAsync(CreateOptions());
 
-        // Assert
-        disposableLookup.Disposed.Should().BeTrue();
+        result.ExitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+        result.Warnings.Should().Contain(w => w.Contains("Broken.csproj"));
+        result.Warnings.Should().Contain(w => w.Contains("cannot be updated safely"));
+        _consoleService.ErrorMessages.Should().Contain(m => m.Contains("Broken.csproj"));
+        (await File.ReadAllTextAsync(propsPath)).Should().Be(original);
+        _backupManagerMock.Verify(
+            b => b.CreateBackupForProject(
+                It.IsAny<BackupSettings>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>()),
+            Times.Never);
+        _backupManagerMock.Verify(
+            b => b.CreateBackupForProject(
+                It.IsAny<Options>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdatePackagesAsync_UnscannedProject_DryRunAlsoExitsIncomplete()
+    {
+        SetupProjectAnalyzer();
+        var propsPath = CreatePropsFile(("Newtonsoft.Json", "13.0.1"));
+        var original = await File.ReadAllTextAsync(propsPath);
+        _candidates.SetLatest("Newtonsoft.Json", "13.0.3");
+        _candidates.UnscannedProjects.Add("Broken.csproj");
+
+        var result = await _sut.UpdatePackagesAsync(CreateOptions(dryRun: true));
+
+        result.ExitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+        result.Warnings.Should().NotBeNull();
+        (await File.ReadAllTextAsync(propsPath)).Should().Be(original);
+    }
+
+    [Fact]
+    public async Task UpdatePackagesAsync_UnscannedProject_JsonOutputCarriesWarning()
+    {
+        SetupProjectAnalyzer();
+        CreatePropsFile(("Newtonsoft.Json", "13.0.1"));
+        _candidates.UnscannedProjects.Add("Api.csproj");
+
+        var options = CreateOptions();
+        options.Output = OutputFormat.Json;
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+        result.Warnings.Should().Contain(w => w.Contains("Api.csproj"));
     }
 
     private void SetupProjectAnalyzer()
@@ -379,30 +404,5 @@ public class PackageUpdateServiceTests : IDisposable
             BackupDir = _testDirectory,
             NoBackup = false
         };
-    }
-
-    private sealed class DisposableNuGetVersionLookupService : INuGetVersionLookupService, IDisposable
-    {
-        public bool Disposed { get; private set; }
-
-        public IReadOnlyCollection<string> GetFailedLookups()
-        {
-            return Array.Empty<string>();
-        }
-
-        public Task<NuGetVersion?> GetLatestVersionAsync(string packageId, bool includePrerelease = false)
-        {
-            return Task.FromResult<NuGetVersion?>(null);
-        }
-
-        public Task<NuGetVersion?> GetLatestVersionInMajorAsync(string packageId, int majorVersion, bool includePrerelease = false)
-        {
-            return Task.FromResult<NuGetVersion?>(null);
-        }
-
-        public void Dispose()
-        {
-            Disposed = true;
-        }
     }
 }

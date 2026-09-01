@@ -150,7 +150,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | 🏢 **Batch / monorepo** | Sequential or parallel multi-solution runs, with a `--report` Markdown rollup |
 | 💾 **Backup & rollback** | Timestamped on-disk backups for every destructive path |
 | 📄 **`.sln` + `.slnx`** | Classic solutions and Visual Studio 17.10+ `.slnx` |
-| 🩺 **`--doctor`** | Environment diagnostics: SDK, NuGet, disk space, write access, backup dir, workspace, config, git |
+| 🩺 **`--doctor`** | Environment diagnostics: SDK, configured NuGet sources, disk space, write access, backup dir, workspace, config, git |
 |  **`--init`** | Scaffold `.cpmigrate.json` with team defaults |
 | 📟 **`--status`** | One-shot workspace health dashboard |
 | 🌳 **`--tree`** | ASCII dependency tree, direct + transitive |
@@ -185,7 +185,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 <summary><b>🩺 Diagnostics &amp; workspace</b> — know your state before you change it</summary>
 
 ```bash
-cpmigrate --doctor                 # SDK, NuGet reachability, disk, write access, backup dir, workspace, config, git — one table
+cpmigrate --doctor                 # SDK, configured NuGet sources, disk, write access, backup dir, workspace, config, git — one table
 cpmigrate --status                 # repo-context dashboard, no wizard
 cpmigrate --tree --transitive      # ASCII dependency tree per project
 cpmigrate --why Newtonsoft.Json    # who declares it, who inherits it, do versions drift
@@ -246,7 +246,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 
 | Option | Default | Description |
 |--------|:-------:|-------------|
-| `--doctor` | `false` | Diagnose the environment: SDK, NuGet, disk space, workspace writability, backup directory access, config, git |
+| `--doctor` | `false` | Diagnose the environment: SDK, configured NuGet sources, disk space, workspace writability, backup directory access, config, git |
 | `--init` | `false` | Scaffold a `.cpmigrate.json` (interactive, or CI-safe defaults) |
 | `--status` | `false` | One-shot workspace health dashboard |
 | `--tree` | `false` | ASCII dependency tree per project (add `--transitive` for the full graph) |
@@ -319,7 +319,7 @@ Baselines rot as the debt gets paid down, and a run that reads one now says so: 
 
 | Option | Default | Description |
 |--------|:-------:|-------------|
-| `--update-packages` | `false` | Update all packages, test, rollback on failure |
+| `--update-packages` | `false` | Update all packages from the solution's configured NuGet feeds (NuGet.Config, credentials, source mapping), test, rollback on failure. A project that cannot restore against those feeds exits `8` and writes nothing |
 | `--include-prerelease` | `false` | Include pre-release versions |
 | `--bisect` | `false` | Keep the largest green subset instead of reverting all |
 | `--bisect-budget` | `16` | Max restore+test cycles a bisection may spend |
@@ -401,7 +401,7 @@ The contract a CI gate is written against — and the one thing a script can't d
 | `5` | AnalysisIssuesFound | Analysis detected issues (your CI gate) |
 | `6` | UnexpectedError | Unhandled exception |
 | `7` | TestFailure | Tests failed after update (rollback done); with `--bisect`, only when *nothing* could be kept |
-| `8` | IncompleteAnalysis | A scan didn't finish — treat as **re-run**, never as clean |
+| `8` | IncompleteAnalysis | A scan didn't finish — treat as **re-run**, never as clean. `--analyze` and `--update-packages` both use this |
 | `9` | GraphDrift | `--verify` found the resolved graph moved unexplained, or couldn't prove it hadn't |
 
 > ⚠️ **Exit `8` is the whole point of the gate.** If a project fails to scan, the run reports *nothing* for the part it couldn't read. A green `0` on an incomplete scan would let a vulnerability slip through. Always branch on `8`.
@@ -504,6 +504,13 @@ It can, and that's the point of `--verify`. Moving a version from a `.csproj` in
 <summary><b>What <i>is</i> <code>Directory.Packages.props</code>?</b></summary>
 
 The file NuGet Central Package Management reads versions from, so every project shares one version per package instead of declaring its own. CPMigrate generates and maintains it. [Microsoft's CPM docs](https://learn.microsoft.com/nuget/consume-packages/central-package-management) cover the format.
+
+</details>
+
+<details>
+<summary><b>Does it work with private feeds / Azure Artifacts / air-gapped mirrors?</b></summary>
+
+Yes. `--update-packages`, `--outdated`, `--audit`, `--deprecated`, and `--licenses` all go through `dotnet` (or the packages restore already placed on disk), so they honour the solution's NuGet.Config sources, credential providers, and package source mapping. "Latest" means latest on a feed restore is allowed to use — not latest on nuget.org. A project that cannot restore against those feeds is an incomplete run (exit `8`), not "everything up to date". `--doctor` lists the configured sources and probes each HTTP one.
 
 </details>
 

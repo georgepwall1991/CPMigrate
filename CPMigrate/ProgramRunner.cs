@@ -14,7 +14,9 @@ public static class ProgramRunner
     /// <summary>
     /// Runs the application with the specified arguments.
     /// </summary>
+#pragma warning disable CA1506 // Entry dispatcher: options, services, and every early-exit mode share this method
     public static async Task<int> RunAsync(string[] args, IConsoleService? customConsole = null)
+#pragma warning restore CA1506
     {
         var bootstrapServices = ApplicationServices.Create(customConsole);
 

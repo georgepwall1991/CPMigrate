@@ -29,7 +29,7 @@
     <section class="section">
       <div class="eyebrow">Package updates with rollback</div>
       <h1>Update NuGet packages without gambling on a broken branch</h1>
-      <p class="page-intro">CPMigrate treats package updates as a workflow, not just a version bump. You can preview changes, include transitive dependencies, run tests after applying them, and roll back automatically if verification fails.</p>
+      <p class="page-intro">CPMigrate treats package updates as a workflow, not just a version bump. Latest version is whatever the solution's NuGet.Config feeds will restore — including Azure Artifacts, GitHub Packages, and air-gapped mirrors — not nuget.org alone. You can preview changes, include transitive dependencies, run tests after applying them, and roll back automatically if verification fails. A project that cannot restore against those feeds exits 8 and writes nothing.</p>
       <pre><code>cpmigrate --update-packages --dry-run
 cpmigrate --update-packages --transitive
 cpmigrate --update-packages --include-prerelease

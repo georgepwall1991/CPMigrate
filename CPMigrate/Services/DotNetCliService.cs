@@ -58,6 +58,18 @@ public class DotNetCliService : IDotNetCliService
         return await RunDotNetCommandAsync($"restore \"{solutionOrProjectPath}\"", Path.GetDirectoryName(solutionOrProjectPath) ?? ".");
     }
 
+    public async Task<(string Output, bool Success)> RunNugetListSourceAsync(string workingDirectory)
+    {
+        var directory = string.IsNullOrWhiteSpace(workingDirectory) ? "." : workingDirectory;
+        if (File.Exists(directory))
+        {
+            directory = Path.GetDirectoryName(Path.GetFullPath(directory)) ?? ".";
+        }
+
+        // Detailed, not Short: Short is name-only, and the doctor has to probe each HTTP source.
+        return await RunDotNetCommandAsync("nuget list source --format Detailed", directory);
+    }
+
     public async Task<(string Output, bool Success)> RunTestAsync(string solutionOrProjectPath, string? testFilter = null)
     {
         return await RunDotNetCommandAsync(
