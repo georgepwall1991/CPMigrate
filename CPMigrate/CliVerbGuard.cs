@@ -32,6 +32,8 @@ internal static class CliVerbGuard
         ["init"] = ["--init"],
         ["status"] = ["--status"],
         ["why"] = ["--why"],
+        ["remediate"] = ["--remediate"],
+        ["patch"] = ["--remediate"],
     };
 
     /// <summary>

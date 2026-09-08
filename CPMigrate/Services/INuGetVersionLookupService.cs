@@ -33,4 +33,19 @@ public interface INuGetVersionLookupService : IDisposable
     /// <param name="includePrerelease">Whether to include pre-release versions.</param>
     /// <returns>The latest version within the major version, or null if not found.</returns>
     Task<NuGetVersion?> GetLatestVersionInMajorAsync(string packageId, int majorVersion, bool includePrerelease = false);
+
+    /// <summary>
+    /// Gets every published version of a package, newest first.
+    ///
+    /// Distinct from <see cref="GetLatestVersionAsync"/> because remediation asks a different
+    /// question: not "what is newest" but "what is the lowest version that clears this advisory".
+    /// Answering that needs the whole list, and picking the newest instead would turn a one-patch
+    /// bump into an unrelated major upgrade.
+    /// </summary>
+    /// <param name="packageId">The NuGet package ID.</param>
+    /// <returns>
+    /// Every published version sorted descending, including pre-release; null if the package was not
+    /// found or the lookup failed. Callers distinguish the two through <see cref="GetFailedLookups"/>.
+    /// </returns>
+    Task<IReadOnlyList<NuGetVersion>?> GetAllVersionsAsync(string packageId);
 }

@@ -71,8 +71,17 @@ public static class OutputMetadata
     /// whyReport shape; a consumer that resolves 1.9.0 validates both why shapes, and one keyed
     /// only on <c>outputSchemaVersion</c> must resolve 1.9.0 before parsing a multi-package run.
     /// </para>
+    /// <para>
+    /// 1.10.0 additively introduced <c>remediation</c> on the single-operation shape: the receipt
+    /// <c>--remediate</c> produces, alongside a <c>remediate</c> entry in the <c>operation</c> enum.
+    /// Absent on every other command, so a run that never remediated stays distinguishable from one
+    /// that remediated and cleared nothing. The field a gate should read is
+    /// <c>remediation.advisoriesAfter</c>: it is measured by a second vulnerability scan run after
+    /// verification passed, not derived by subtracting what was applied, so "these versions changed"
+    /// and "the advisories are gone" remain separate claims. It is absent when no re-scan happened.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.9.0";
+    public const string SchemaVersion = "1.10.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

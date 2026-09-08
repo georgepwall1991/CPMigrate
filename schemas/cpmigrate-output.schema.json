@@ -52,7 +52,8 @@
             "why",
             "why-many",
             "batch-analyze",
-            "batch-migrate"
+            "batch-migrate",
+            "remediate"
           ],
           "description": "Which command produced the payload"
         },
@@ -110,6 +111,9 @@
         },
         "verification": {
           "$ref": "#/definitions/verification"
+        },
+        "remediation": {
+          "$ref": "#/definitions/remediation"
         },
         "dryRun": {
           "type": "boolean",
@@ -440,6 +444,127 @@
         },
         "filesBackedUp": {
           "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "remediation": {
+      "type": "object",
+      "description": "The security receipt a --remediate run produces. Absent when --remediate was not passed. advisoriesAfter comes from a second vulnerability scan run after verification passed, not from subtracting what was applied, so a consumer can tell \"these versions changed\" from \"the advisories are gone\". Added in output schema 1.10.0.",
+      "required": [
+        "advisoriesBefore",
+        "reVerified",
+        "remediated",
+        "heldBack",
+        "actions"
+      ],
+      "properties": {
+        "advisoriesBefore": {
+          "type": "integer",
+          "description": "Distinct advisory findings reported before remediation ran"
+        },
+        "advisoriesAfter": {
+          "type": "integer",
+          "description": "Distinct advisory findings a fresh scan reported afterwards. Absent when no re-scan happened: a dry run, or a run where nothing was applied"
+        },
+        "reVerified": {
+          "type": "boolean",
+          "description": "Whether the confirming scan completed. False means fixes were written but nothing has been proven"
+        },
+        "remediated": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Packages whose fix was written and survived verification"
+        },
+        "heldBack": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Packages whose fix was reverted because verification went red"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/remediationAction"
+          },
+          "description": "Every package the plan considered, with its outcome"
+        }
+      },
+      "additionalProperties": false
+    },
+    "remediationAction": {
+      "type": "object",
+      "description": "One package's remediation outcome",
+      "required": [
+        "package",
+        "currentVersion",
+        "outcome",
+        "transitive",
+        "majorBump",
+        "severity",
+        "advisories",
+        "cves",
+        "projects"
+      ],
+      "properties": {
+        "package": {
+          "type": "string"
+        },
+        "currentVersion": {
+          "type": "string"
+        },
+        "targetVersion": {
+          "type": "string",
+          "description": "The lowest published version that clears every advisory against this package, not the newest. Absent when none was found"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "withheldMajor",
+            "noFixAvailable",
+            "advisoryDataUnavailable",
+            "advisoryNotInDatabase",
+            "transitivePinningDisabled",
+            "advisoryDoesNotCoverResolvedVersion",
+            "unknown"
+          ]
+        },
+        "transitive": {
+          "type": "boolean"
+        },
+        "majorBump": {
+          "type": "boolean"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Advisory identifiers as the .NET SDK reported them"
+        },
+        "cves": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "CVE identifiers resolved from the advisory database. The SDK reports only an advisory URL, so these are the first CVE numbers CPMigrate can publish"
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why nothing was applied. Absent when outcome is planned"
         }
       },
       "additionalProperties": false

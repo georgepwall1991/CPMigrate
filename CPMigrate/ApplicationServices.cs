@@ -1,5 +1,6 @@
 using CPMigrate.Models;
 using CPMigrate.Services;
+using CPMigrate.Services.Remediation;
 using CPMigrate.Services.Verify;
 using Microsoft.Extensions.Logging;
 
@@ -145,6 +146,23 @@ internal sealed class ApplicationServices
             new DotNetCliService(),
             BackupManager,
             _loggerFactory?.CreateLogger<PackageUpdateService>()
+        );
+    }
+
+    public RemediationService CreateRemediationService()
+    {
+        return new RemediationService(
+            ConsoleService,
+            ProjectAnalyzer,
+            new DotNetPackageQueryService(ConsoleService),
+            new PropsGenerator(VersionResolver),
+            new NuGetVersionLookupService(
+                logger: _loggerFactory?.CreateLogger<NuGetVersionLookupService>()
+            ),
+            new OsvAdvisoryOracle(logger: _loggerFactory?.CreateLogger<OsvAdvisoryOracle>()),
+            new DotNetCliService(),
+            BackupManager,
+            _loggerFactory?.CreateLogger<RemediationService>()
         );
     }
 

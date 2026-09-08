@@ -400,6 +400,11 @@ public class PackageUpdateServiceTests : IDisposable
             return Task.FromResult<NuGetVersion?>(null);
         }
 
+        public Task<IReadOnlyList<NuGetVersion>?> GetAllVersionsAsync(string packageId)
+        {
+            return Task.FromResult<IReadOnlyList<NuGetVersion>?>(null);
+        }
+
         public void Dispose()
         {
             Disposed = true;
