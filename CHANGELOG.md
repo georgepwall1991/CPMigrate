@@ -96,6 +96,14 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   successful scoped run still saw the untouched findings and reported itself incomplete — it could
   never exit `0` unless the rest of the solution happened to be clean.
 
+- **A misspelled `--only` name is rejected, not answered.** `--only Newtonsof.Json` over a workspace
+  whose `Newtonsoft.Json` has a live CVE produced no findings for that name and exited `0`, taking a
+  CI gate green over an unremediated advisory. A typo and an already-clean package are
+  indistinguishable by findings alone, so the names are checked against the workspace instead: one
+  the props file does not pin and the scan never reported is named in an error and the run exits `1`
+  having written nothing. Same reasoning as an unknown `--rules` ID being rejected rather than
+  ignored — a silently dropped filter looks exactly like a working one.
+
 ### Fixed
 - **`--remediate` honours the documented "current directory when omitted" default for `-s`.**
   `SolutionFileDir` defaults to an empty string, which `Path.GetFullPath` rejects rather than resolves.

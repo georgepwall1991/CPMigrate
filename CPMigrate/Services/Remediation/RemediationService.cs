@@ -113,6 +113,25 @@ public sealed class RemediationService : IRemediationService, IDisposable
             return Failed(ExitCodes.IncompleteAnalysis, "vulnerability scan did not complete");
         }
 
+        var unknownOnly = FindUnknownOnlyPackages(request.OnlyPackages, currentVersions, vulnerabilities);
+
+        if (unknownOnly.Count > 0)
+        {
+            // A misspelled --only name is indistinguishable at runtime from one that is simply clean:
+            // both produce no findings, and both would exit 0 over a workspace whose CVE is still
+            // sitting there. Naming the packages the workspace does not have is the only way the two
+            // stay distinguishable -- the same reason an unknown --rules ID is rejected rather than
+            // ignored.
+            _consoleService.Error(
+                $"--only names {(unknownOnly.Count == 1 ? "a package" : "packages")} this workspace does "
+                    + $"not reference: {string.Join(", ", unknownOnly)}. Nothing has been changed."
+            );
+            return Failed(
+                ExitCodes.ValidationError,
+                $"--only names unknown package(s): {string.Join(", ", unknownOnly)}"
+            );
+        }
+
         var advisoriesBefore = CountAdvisories(vulnerabilities, request.OnlyPackages);
 
         if (advisoriesBefore == 0)
@@ -426,6 +445,36 @@ public sealed class RemediationService : IRemediationService, IDisposable
         }
 
         return (all, complete);
+    }
+
+    /// <summary>
+    /// The <c>--only</c> names that match nothing in the workspace at all.
+    /// </summary>
+    /// <remarks>
+    /// A name is known when the props file pins it or the scan reported an advisory against it — the
+    /// second case matters because a purely transitive package is a legitimate target and never
+    /// appears in the props file. Anything else is a name this workspace does not have, which in
+    /// practice means a typo.
+    /// </remarks>
+    private static IReadOnlyList<string> FindUnknownOnlyPackages(
+        IReadOnlyList<string>? onlyPackages,
+        Dictionary<string, HashSet<string>> currentVersions,
+        IReadOnlyList<VulnerabilityInfo> vulnerabilities
+    )
+    {
+        if (onlyPackages is not { Count: > 0 })
+        {
+            return [];
+        }
+
+        var known = new HashSet<string>(currentVersions.Keys, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var vulnerability in vulnerabilities)
+        {
+            known.Add(vulnerability.PackageName);
+        }
+
+        return onlyPackages.Where(name => !known.Contains(name)).ToList();
     }
 
     /// <summary>

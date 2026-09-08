@@ -500,6 +500,51 @@ public sealed class RemediationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AMisspelledOnlyName_IsRejectedRatherThanReportedClean()
+    {
+        // The dangerous case: --only Newtonsof.Json over a workspace whose Newtonsoft.Json has a live
+        // CVE produces no findings for that name and would exit 0, taking a CI gate green over an
+        // unremediated advisory. A clean package and a typo are indistinguishable by findings alone,
+        // so the name is checked against the workspace instead.
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            _ => ([Finding()], true)
+        );
+
+        var result = await service.RemediateAsync(
+            Request() with
+            {
+                OnlyPackages = ["Vulnerabl.Pkg"],
+            }
+        );
+
+        result.ExitCode.Should().Be(ExitCodes.ValidationError);
+        result.Errors.Should().ContainSingle().Which.Should().Contain("Vulnerabl.Pkg");
+    }
+
+    [Fact]
+    public async Task AnOnlyNameThatIsPinnedButHasNoAdvisory_IsAcceptedAsAlreadyClean()
+    {
+        // The legitimate twin of the case above: the package exists, it just has nothing wrong with
+        // it. That has to stay a clean exit 0, or narrowing a run to a healthy package would fail.
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            _ => ([Finding()], true)
+        );
+
+        var result = await service.RemediateAsync(
+            Request() with
+            {
+                OnlyPackages = ["Vulnerable.Pkg"],
+            }
+        );
+
+        result.ExitCode.Should().NotBe(ExitCodes.ValidationError);
+    }
+
+    [Fact]
     public async Task NoAdvisories_ReportsSuccessWithoutRunningTests()
     {
         using var service = BuildService(
