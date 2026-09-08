@@ -79,6 +79,20 @@ public static class ExitCodes
     /// version of a package ships exits <see cref="Success"/> on every other measure.
     /// </summary>
     public const int GraphDrift = 9;
+
+    /// <summary>
+    /// A <c>--remediate</c> run finished, but at least one reported advisory is still there: no
+    /// published version clears it, the only fix crosses a major version and was withheld, or the fix
+    /// broke verification and was held back.
+    ///
+    /// Separate from <see cref="AnalysisIssuesFound"/> because it answers a different question. A `5`
+    /// says findings exist; a `10` says findings exist <em>and CPMigrate has already tried</em>, so a
+    /// pipeline can treat it as "a human has to look at this" rather than as debt to be scheduled.
+    /// Separate from <see cref="TestFailure"/>, which means nothing could be kept green at all, and
+    /// from <see cref="IncompleteAnalysis"/>, which means the advisory data itself could not be read —
+    /// there the correct response is to re-run, not to intervene.
+    /// </summary>
+    public const int RemediationIncomplete = 10;
 }
 
 /// <summary>
@@ -521,6 +535,26 @@ public class Options
     public bool IncludePrerelease { get; set; }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // v3.65 Options - Security remediation
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Option(
+        "remediate",
+        Default = false,
+        HelpText = "Clear known security advisories by moving each vulnerable package to the lowest "
+            + "version that fixes it, then verify with dotnet test and re-scan to prove it."
+    )]
+    public bool Remediate { get; set; }
+
+    [Option(
+        "allow-major",
+        Default = false,
+        HelpText = "Let --remediate apply a fix that crosses a major version. Withheld by default: a "
+            + "major bump is an API break a green test suite does not rule out."
+    )]
+    public bool AllowMajor { get; set; }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // v3.6 Options - Bisecting Updates
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -553,7 +587,7 @@ public class Options
     )]
     public string? BisectTestFilter { get; set; }
 
-    [Option("only", HelpText = "Comma-separated package IDs to restrict --update-packages to.")]
+    [Option("only", HelpText = "Comma-separated package IDs to restrict --update-packages or --remediate to.")]
     public string? Only { get; set; }
 
     /// <summary>
@@ -574,6 +608,18 @@ public class Options
 
         return names.Count > 0 ? names : null;
     }
+
+    /// <summary>
+    /// The workspace path to operate on, with the documented "current directory when omitted"
+    /// default already applied.
+    ///
+    /// <see cref="SolutionFileDir"/> defaults to an empty string, which every consumer has to turn
+    /// into <c>.</c> before handing it to <see cref="Path.GetFullPath(string)"/> — that call throws
+    /// on an empty string rather than resolving it. Resolving it here keeps the default in one place
+    /// instead of in each caller that remembers.
+    /// </summary>
+    public string EffectiveWorkspacePath =>
+        string.IsNullOrWhiteSpace(SolutionFileDir) ? "." : SolutionFileDir;
 
     public bool HasExplicitSolutionPath => !string.IsNullOrWhiteSpace(SolutionFileDir);
 
@@ -788,6 +834,12 @@ public class Options
 
         // Prune mode exits early after validation
         if (ValidatePruneOptions())
+        {
+            return;
+        }
+
+        // Remediate mode exits early after validation
+        if (ValidateRemediateOptions())
         {
             return;
         }
@@ -1129,6 +1181,11 @@ public class Options
             return "--update-packages";
         }
 
+        if (Remediate)
+        {
+            return "--remediate";
+        }
+
         if (Interactive)
         {
             return "--interactive";
@@ -1282,6 +1339,11 @@ public class Options
         if (UpdatePackages)
         {
             return "--update-packages";
+        }
+
+        if (Remediate)
+        {
+            return "--remediate";
         }
 
         if (Interactive)
@@ -1531,14 +1593,89 @@ public class Options
     }
 
     /// <summary>
+    /// Validates remediation mode.
+    ///
+    /// The stray-flag checks run unconditionally, before the mode's own early return, so that
+    /// <c>--allow-major</c> on a command that cannot honour it is rejected rather than quietly
+    /// ignored — a silently dropped security flag looks exactly like one that was applied.
+    /// </summary>
+    /// <returns>True when remediation mode is active and no further validation applies.</returns>
+    private bool ValidateRemediateOptions()
+    {
+        if (AllowMajor && !Remediate)
+        {
+            throw new ArgumentException("--allow-major requires --remediate.");
+        }
+
+        if (!Remediate)
+        {
+            return false;
+        }
+
+        if (UpdatePackages)
+        {
+            throw new ArgumentException(
+                "--remediate cannot be used with --update-packages. Remediation moves packages the "
+                    + "smallest distance that clears an advisory; updating moves them to the newest "
+                    + "version, which would discard that choice."
+            );
+        }
+
+        if (Analyze)
+        {
+            throw new ArgumentException(
+                "--remediate cannot be used with --analyze. Remediation runs its own vulnerability "
+                    + "scan; use --analyze --audit to report without changing anything."
+            );
+        }
+
+        if (Interactive)
+        {
+            throw new ArgumentException("--remediate cannot be used with --interactive.");
+        }
+
+        if (Rollback)
+        {
+            throw new ArgumentException("--remediate cannot be used with --rollback.");
+        }
+
+        if (UnifyProps)
+        {
+            throw new ArgumentException("--remediate cannot be used with --unify-props.");
+        }
+
+        if (Verify)
+        {
+            throw new ArgumentException(
+                "--remediate cannot be used with --verify, which proves a migration did not change the "
+                    + "resolved graph. Remediation changes it on purpose."
+            );
+        }
+
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            throw new ArgumentException("--remediate cannot be used with --batch.");
+        }
+
+        if (Bisect && DryRun)
+        {
+            throw new ArgumentException(
+                "--bisect cannot be used with --dry-run. Bisection has to run tests against real changes."
+            );
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Validates the bisect option family. Runs before the --update-packages early return so a stray
     /// --bisect on an unrelated command is rejected rather than silently ignored.
     /// </summary>
     private void ValidateBisectOptions()
     {
-        if (Bisect && !UpdatePackages)
+        if (Bisect && !UpdatePackages && !Remediate)
         {
-            throw new ArgumentException("--bisect requires --update-packages.");
+            throw new ArgumentException("--bisect requires --update-packages or --remediate.");
         }
 
         if (!string.IsNullOrWhiteSpace(BisectTestFilter) && !Bisect)
@@ -1556,9 +1693,9 @@ public class Options
             throw new ArgumentException("--bisect-budget must be at least 1.");
         }
 
-        if (!string.IsNullOrWhiteSpace(Only) && !UpdatePackages)
+        if (!string.IsNullOrWhiteSpace(Only) && !UpdatePackages && !Remediate)
         {
-            throw new ArgumentException("--only requires --update-packages.");
+            throw new ArgumentException("--only requires --update-packages or --remediate.");
         }
     }
 

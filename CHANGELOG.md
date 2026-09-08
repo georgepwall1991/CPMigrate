@@ -6,6 +6,82 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.65.0] - 2026-09-08
+
+### Added
+- **`--remediate`: the smallest version bump that clears a CVE, proven by your own tests.** CPMigrate
+  could find security advisories and could not fix them — `SecurityVulnerability` was the only rule
+  shipping as "Fixable: no", and the only remediation on offer was `--update-packages`, which moves
+  everything to newest and is exactly the "update everything and pray" this tool exists to replace.
+  The gap was in the data: `dotnet list package --vulnerable` reports a severity and an advisory URL
+  and never the version that fixes it, so `VulnerabilityInfo.FixedVersion` was empty on every real
+  scan and the finding ended at "High severity vulnerability found in 3 project(s)."
+
+  `cpmigrate --remediate` closes it. For each advisory the SDK reports, it computes the **lowest**
+  published version that escapes every advisory against that package, applies only those bumps, runs
+  `dotnet restore` and `dotnet test`, and rolls back on red — through the same transaction, verifier
+  and search strategies `--update-packages` already uses, so `--bisect`, `--bisect-budget`,
+  `--bisect-test-filter`, `--only` and `--no-backup` all behave identically. Lowest rather than newest
+  is the whole point: taking the newest turns a one-patch security fix into an unrelated feature
+  upgrade and drags in every behaviour change since, producing precisely the diff a security patch
+  most needs to avoid. A remediation diff should be the smallest change that makes the advisory go
+  away, so a reviewer can see it *is* a security fix and nothing else.
+
+  **Findings still come from the SDK.** The fix version comes from looking that one advisory up by its
+  exact GHSA id at [OSV.dev](https://osv.dev) and reading its affected ranges. The join is on the
+  identifier CPMigrate already stored, so the advisory database is a remediation oracle, never a second
+  scanner: it cannot invent a finding, contradict the SDK, or make a clean solution report dirty. It is
+  also why the receipt can finally print **CVE-2024-21907** where every previous version could only
+  print an advisory URL.
+
+  **It re-scans rather than asserting.** After verification goes green the vulnerability scan runs
+  again, and the receipt reports what *that* found. `remediation.advisoriesAfter` is measured, never
+  derived by subtracting what was applied, and exit `0` requires it to be zero — a remediation that
+  reported success on the strength of its own plan would be asserting the thing it was supposed to
+  prove.
+
+  Two refusals are deliberate. A fix that exists only in a higher major version is planned, named and
+  **withheld** unless `--allow-major` is passed: a major bump is an API break a green test suite does
+  not rule out, so it is a decision rather than a fix. And when the advisory database cannot be
+  reached, or does not carry an advisory the SDK reported, the run exits `8` and writes nothing rather
+  than falling back to a latest-version bump — a version clearing the advisories that *could* be read
+  may sit squarely inside the range of the one that could not, so a target computed then would carry
+  the authority of a proof it does not have.
+
+  `cpmigrate --remediate --dry-run` produces the identical plan without writing, because the planning
+  and the applying are the same code path rather than two that agree by convention.
+
+- **Exit code `10` (`RemediationIncomplete`).** A remediation ran and an advisory is still there: no
+  published version clears it, the only fix was a withheld major, or the tests held it back. Distinct
+  from `5` (findings exist) because it also says CPMigrate already tried, so a pipeline can treat it as
+  "a human has to look at this" rather than as debt to schedule; distinct from `7` (nothing could be
+  kept green) and from `8` (the advisory data itself could not be read, where the answer is to re-run).
+
+- **`INuGetVersionLookupService.GetAllVersionsAsync`.** The lookup already fetched and cached the full
+  published version list to answer "what is newest"; remediation needs the whole list to answer "what
+  is lowest and clear", so it is now exposed rather than re-fetched.
+
+### Changed
+- **Vulnerability findings now record whether they arrived transitively.** The SDK reports top-level
+  and transitive advisories under the same shape and the parser had an `isTransitive` flag for every
+  other package list but this one, so the distinction was read and discarded. It only starts to matter
+  once something wants to *fix* the finding: a direct reference is remediated by moving the version it
+  already declares, while a purely transitive one has no version to move and needs a new central pin.
+  Writing the first where the second was needed fixes nothing, silently. `VulnerabilityInfo` gains
+  `IsTransitive`, defaulted so existing construction is unaffected.
+
+- **Output schema 1.10.0**, additive: the single-operation shape gains an optional `remediation`
+  receipt (`advisoriesBefore`, the measured `advisoriesAfter`, `reVerified`, `remediated`, `heldBack`,
+  and one `actions` entry per package carrying its outcome, target version, advisories, CVEs and
+  affected projects), and `remediate` joins the `operation` enum. Absent on every other command, so a
+  run that never remediated stays distinguishable from one that remediated and cleared nothing.
+
+### Fixed
+- **`--remediate` honours the documented "current directory when omitted" default for `-s`.**
+  `SolutionFileDir` defaults to an empty string, which `Path.GetFullPath` rejects rather than resolves.
+  A new `Options.EffectiveWorkspacePath` applies the default in one place. (`--update-packages` has the
+  same latent fault on that path and is unchanged here; it is tracked separately.)
+
 ## [3.64.0] - 2026-08-26
 
 ### Added

@@ -1,0 +1,322 @@
+using CPMigrate;
+using CPMigrate.Models;
+using CPMigrate.Services;
+using CPMigrate.Services.Remediation;
+using CPMigrate.Tests.TestDoubles;
+using FluentAssertions;
+using Moq;
+using NuGet.Versioning;
+
+namespace CPMigrate.Tests.Services.Remediation;
+
+/// <summary>
+/// End-to-end guards for remediation, through the real backup manager and a real props file on disk
+/// with the .NET CLI mocked.
+///
+/// The cases worth the setup cost are the ones where remediation must refuse to act: an incomplete
+/// scan, and advisory data that could not be read. Both are situations where doing the obvious thing
+/// — remediating what is known — produces a green run over a package that is still exposed.
+/// </summary>
+[Collection("Sequential")]
+public sealed class RemediationServiceTests : IDisposable
+{
+    private readonly string _root;
+    private readonly string _propsPath;
+    private readonly string _projectPath;
+
+    public RemediationServiceTests()
+    {
+        _root = Path.Combine(Path.GetTempPath(), $"CPMigrateRemediate_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(_root, "src"));
+
+        _propsPath = Path.Combine(_root, "Directory.Packages.props");
+        File.WriteAllText(
+            _propsPath,
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Vulnerable.Pkg" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        _projectPath = Path.Combine(_root, "src", "Api.csproj");
+        File.WriteAllText(
+            _projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+              <ItemGroup><PackageReference Include="Vulnerable.Pkg" /></ItemGroup>
+            </Project>
+            """
+        );
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root))
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        GC.SuppressFinalize(this);
+    }
+
+    private const string AdvisoryUrl = "https://github.com/advisories/GHSA-aaaa-bbbb-cccc";
+
+    private VulnerabilityInfo Finding() =>
+        new("Vulnerable.Pkg", "High", AdvisoryUrl, "1.0.0", string.Empty, "Api.csproj", _projectPath);
+
+    private sealed class StubOracle(AdvisoryRecord? record) : IAdvisoryOracle
+    {
+        public IReadOnlyCollection<string> GetFailedLookups() => [];
+
+        public Task<AdvisoryRecord?> LookupAsync(string advisoryId, string packageId) =>
+            Task.FromResult(record);
+
+        public void Dispose() { }
+    }
+
+    private sealed class StubVersionLookup(params string[] versions) : INuGetVersionLookupService
+    {
+        public IReadOnlyCollection<string> GetFailedLookups() => [];
+
+        public Task<NuGetVersion?> GetLatestVersionAsync(string p, bool includePrerelease = false) =>
+            Task.FromResult<NuGetVersion?>(null);
+
+        public Task<NuGetVersion?> GetLatestVersionInMajorAsync(string p, int m, bool includePrerelease = false) =>
+            Task.FromResult<NuGetVersion?>(null);
+
+        public Task<IReadOnlyList<NuGetVersion>?> GetAllVersionsAsync(string packageId) =>
+            Task.FromResult<IReadOnlyList<NuGetVersion>?>(versions.Select(NuGetVersion.Parse).ToList());
+
+        public void Dispose() { }
+    }
+
+    private static AdvisoryRecord AdvisoryFixedIn(string fixedVersion) =>
+        new(
+            "GHSA-aaaa-bbbb-cccc",
+            ["CVE-1111-2222"],
+            "HIGH",
+            [
+                new AdvisoryVersionRange(
+                    [(NuGetVersion.Parse("0.0.0"), true), (NuGetVersion.Parse(fixedVersion), false)]
+                ),
+            ],
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        );
+
+    private RemediationService BuildService(
+        IAdvisoryOracle oracle,
+        INuGetVersionLookupService versionLookup,
+        Func<int, (List<VulnerabilityInfo>, bool)> scanByCall,
+        bool testsPass = true
+    )
+    {
+        var console = new FakeConsoleService { IsInteractive = false };
+
+        var analyzer = new Mock<IProjectAnalyzer>();
+        analyzer
+            .Setup(a => a.DiscoverProjectsFromSolutionAsync(It.IsAny<string>()))
+            .ReturnsAsync((_root, new List<string> { _projectPath }));
+
+        var scanCall = 0;
+        var query = new Mock<IDotNetPackageQueryService>();
+        query
+            .Setup(q => q.ScanVulnerabilitiesAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync(() => scanByCall(++scanCall));
+
+        var cli = new Mock<IDotNetCliService>();
+        cli.Setup(c => c.RunRestoreAsync(It.IsAny<string>())).ReturnsAsync((string.Empty, true));
+        cli.Setup(c => c.RunTestAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync((testsPass ? string.Empty : "test failure", testsPass));
+
+        return new RemediationService(
+            console,
+            analyzer.Object,
+            query.Object,
+            new PropsGenerator(new VersionResolver(console)),
+            versionLookup,
+            oracle,
+            cli.Object,
+            new BackupManager()
+        );
+    }
+
+    private RemediateRequest Request(bool dryRun = false, bool allowMajor = false) =>
+        new(
+            SolutionPath: _root,
+            AllowMajor: allowMajor,
+            IncludePrerelease: false,
+            DryRun: dryRun,
+            Backup: new BackupSettings(true, Path.Combine(_root, ".backup"), false, _root),
+            Output: new CommandOutput(OutputFormat.Json, Quiet: true, Force: true, OutputFile: null)
+        );
+
+    [Fact]
+    public async Task AGreenRun_AppliesTheFixAndProvesItWithASecondScan()
+    {
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0", "1.9.0"),
+            // First scan reports the advisory; the confirming scan reports none.
+            call => call == 1 ? ([Finding()], true) : ([], true)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        result.AdvisoriesBefore.Should().Be(1);
+        result.AdvisoriesAfter.Should().Be(0);
+        result.ReVerified.Should().BeTrue();
+        result.Remediated.Should().ContainSingle().Which.Should().Be("Vulnerable.Pkg");
+
+        File.ReadAllText(_propsPath)
+            .Should()
+            .Contain("1.2.0", "the lowest clear version is what should land")
+            .And.NotContain("1.9.0");
+    }
+
+    [Fact]
+    public async Task AConfirmingScanThatStillReportsAdvisories_IsNotReportedAsSuccess()
+    {
+        // The whole point of re-scanning: the plan said this would clear, and it did not.
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            _ => ([Finding()], true)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.RemediationIncomplete);
+        result.AdvisoriesAfter.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RedTests_RollBackTheFixAndLeaveThePropsFileExactlyAsItWas()
+    {
+        var before = File.ReadAllText(_propsPath);
+
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            call => call == 1 ? ([Finding()], true) : ([], true),
+            testsPass: false
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.TestFailure);
+        result.WasRolledBack.Should().BeTrue();
+        result.Remediated.Should().BeEmpty();
+        File.ReadAllText(_propsPath).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task AnIncompleteVulnerabilityScan_ChangesNothingAndReportsExitEight()
+    {
+        var before = File.ReadAllText(_propsPath);
+
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            _ => ([], false)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+        File.ReadAllText(_propsPath).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task AnUnreachableAdvisoryOracle_ChangesNothingRatherThanFallingBackToLatest()
+    {
+        // The behaviour that keeps an air-gapped CI honest: no advisory data means no proof, and an
+        // unproven remediation must not be allowed to go green.
+        var before = File.ReadAllText(_propsPath);
+
+        using var service = BuildService(
+            new StubOracle(null),
+            new StubVersionLookup("1.0.0", "1.2.0", "9.9.9"),
+            call => call == 1 ? ([Finding()], true) : ([], true)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+        result.Actions.Should().ContainSingle();
+        result.Actions[0].Outcome.Should().Be(RemediationOutcome.AdvisoryDataUnavailable);
+        File.ReadAllText(_propsPath).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task ADryRun_ReportsThePlanWithoutTouchingTheFile()
+    {
+        var before = File.ReadAllText(_propsPath);
+
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            _ => ([Finding()], true)
+        );
+
+        var result = await service.RemediateAsync(Request(dryRun: true));
+
+        result.DryRun.Should().BeTrue();
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        result.Actions[0].TargetVersion.Should().Be("1.2.0");
+        File.ReadAllText(_propsPath).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task AMajorOnlyFix_IsWithheldWithoutAllowMajorAndAppliedWithIt()
+    {
+        var before = File.ReadAllText(_propsPath);
+
+        using (
+            var withheld = BuildService(
+                new StubOracle(AdvisoryFixedIn("2.0.0")),
+                new StubVersionLookup("1.0.0", "2.0.0"),
+                call => call == 1 ? ([Finding()], true) : ([], true)
+            )
+        )
+        {
+            var result = await withheld.RemediateAsync(Request());
+
+            result.ExitCode.Should().Be(ExitCodes.RemediationIncomplete);
+            result.Actions[0].Outcome.Should().Be(RemediationOutcome.WithheldMajor);
+            File.ReadAllText(_propsPath).Should().Be(before);
+        }
+
+        using var allowed = BuildService(
+            new StubOracle(AdvisoryFixedIn("2.0.0")),
+            new StubVersionLookup("1.0.0", "2.0.0"),
+            call => call == 1 ? ([Finding()], true) : ([], true)
+        );
+
+        var applied = await allowed.RemediateAsync(Request(allowMajor: true));
+
+        applied.ExitCode.Should().Be(ExitCodes.Success);
+        File.ReadAllText(_propsPath).Should().Contain("2.0.0");
+    }
+
+    [Fact]
+    public async Task NoAdvisories_ReportsSuccessWithoutRunningTests()
+    {
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            _ => ([], true)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        result.VerificationRuns.Should().Be(0);
+    }
+}

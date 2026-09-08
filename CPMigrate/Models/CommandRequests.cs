@@ -143,6 +143,46 @@ public sealed record PackageUpdateRequest(
             OnlyPackages: options.ParseOnlyPackages());
 }
 
+/// <summary>
+/// A <c>--remediate</c> run: clear every advisory the SDK reports, using the smallest version bump
+/// that does it, and prove the result with the project's own tests.
+/// </summary>
+/// <param name="SolutionPath">Workspace to remediate.</param>
+/// <param name="AllowMajor">Whether a fix that crosses a major version may be applied.</param>
+/// <param name="IncludePrerelease">Whether pre-release versions are acceptable fix targets.</param>
+/// <param name="DryRun">Plan only; write nothing.</param>
+/// <param name="Backup">Backup settings for the props file.</param>
+/// <param name="Output">Output format settings.</param>
+/// <param name="Bisect">Keep the largest subset of fixes that stays green instead of reverting all.</param>
+/// <param name="BisectBudget">Maximum restore+test cycles a bisection may spend.</param>
+/// <param name="BisectTestFilter"><c>dotnet test --filter</c> expression used for each probe.</param>
+/// <param name="OnlyPackages">When set, restricts remediation to these package IDs.</param>
+public sealed record RemediateRequest(
+    string SolutionPath,
+    bool AllowMajor,
+    bool IncludePrerelease,
+    bool DryRun,
+    BackupSettings Backup,
+    CommandOutput Output,
+    bool Bisect = false,
+    int BisectBudget = BisectSearchStrategy.DefaultBudget,
+    string? BisectTestFilter = null,
+    IReadOnlyList<string>? OnlyPackages = null)
+{
+    public static RemediateRequest FromOptions(Options options) =>
+        new(
+            SolutionPath: options.EffectiveWorkspacePath,
+            AllowMajor: options.AllowMajor,
+            IncludePrerelease: options.IncludePrerelease,
+            DryRun: options.DryRun,
+            Backup: BackupSettings.FromOptions(options),
+            Output: CommandOutput.FromOptions(options),
+            Bisect: options.Bisect,
+            BisectBudget: options.EffectiveBisectBudget,
+            BisectTestFilter: options.BisectTestFilter,
+            OnlyPackages: options.ParseOnlyPackages());
+}
+
 public sealed record BatchRequest(
     string BatchDir,
     bool Analyze,

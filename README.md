@@ -31,6 +31,7 @@ CPMigrate replaces both with three things that actually hold up:
 - 🔍 **A dry-run-first migration** that shows you the exact `Directory.Packages.props` diff before it touches a byte.
 - 📊 **A dependency health scoreboard** — 16 rules across 13 analyzers, a 0–100 score, severity-gated CI exits.
 - 🛡️ **Updates that roll themselves back** the instant `dotnet test` goes red — and with `--bisect`, keep the largest subset that stays green instead of nuking all 38 because one broke.
+- 🚑 **CVEs that fix themselves — minimally.** `--remediate` moves each vulnerable package to the *lowest* version that clears its advisory, tests it, rolls back on red, then **re-scans to prove the CVE is gone**.
 
 ---
 
@@ -71,6 +72,10 @@ cpmigrate -s ./MySolution.sln --verify
 
 # 4 · update packages; tests fail → automatic rollback
 cpmigrate --update-packages --bisect
+
+# 5 · clear every CVE with the smallest bump that fixes it — then prove it's gone
+cpmigrate --remediate --dry-run     # the plan
+cpmigrate --remediate               # apply · test · roll back on red · re-scan
 ```
 
 **No flags?** Bare `cpmigrate` drops you into **Mission Control**, an interactive wizard. **One project?** `cpmigrate --project ./src/Api/Api.csproj --dry-run`. **Monorepo?** `cpmigrate --batch ./repo --batch-parallel`. **Team defaults?** `cpmigrate --init` scaffolds a `.cpmigrate.json`.
@@ -82,7 +87,7 @@ cpmigrate --update-packages --bisect
 Requires **.NET SDK 8.0** or later. The tool itself targets `net10.0` with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.64.0
+dotnet tool install --global CPMigrate --version 3.65.0
 ```
 
 ```bash
@@ -146,6 +151,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | 🩹 **Auto-fix** | Version, casing, redundant refs, transitive pin |
 | 🔁 **Safe updates** | Latest versions + `dotnet test` + automatic rollback |
 | 🔪 **`--bisect`** | Largest green update subset; names the held-back packages |
+| 🚑 **`--remediate`** | Clears CVEs with the *smallest* version bump that fixes them — test-verified, rolled back on red, then re-scanned to prove it. Names the CVE, not just the advisory URL |
 | 🧱 **`Directory.Build.props`** | Unify repeated properties across projects |
 | 🏢 **Batch / monorepo** | Sequential or parallel multi-solution runs, with a `--report` Markdown rollup |
 | 💾 **Backup & rollback** | Timestamped on-disk backups for every destructive path |
@@ -330,6 +336,34 @@ Baselines rot as the debt gets paid down, and a run that reads one now says so: 
 
 </details>
 
+<details open>
+<summary><b>Security remediation</b></summary>
+
+| Option | Default | Description |
+|--------|:-------:|-------------|
+| `--remediate` | `false` | Clear known advisories: move each vulnerable package to the **lowest** version that fixes it, run `dotnet test`, roll back on red, then re-scan to prove the CVEs are gone |
+| `--allow-major` | `false` | Let `--remediate` apply a fix that crosses a major version. Withheld and reported by default |
+
+`--remediate` also honours `--bisect`, `--bisect-budget`, `--bisect-test-filter`, `--only`, `--dry-run`, `--include-prerelease`, `--no-backup` and `--output Json`.
+
+**Why "lowest" and not "latest".** `--update-packages` asks what is newest, which is right for staying current and wrong for clearing a CVE: it turns a one-patch security fix into an unrelated feature upgrade and drags in every behaviour change since. A remediation diff should be the smallest change that makes the advisory go away, so a reviewer can see it *is* a security fix and nothing else.
+
+**Where the fix version comes from.** Findings still come from `dotnet list package --vulnerable` — CPMigrate adds no advisories of its own. But the SDK reports only a severity and an advisory URL, never the version that fixes it. `--remediate` looks that one advisory up by its exact GHSA id at [OSV.dev](https://osv.dev), reads the affected ranges, and picks the lowest published version outside all of them. It is a remediation oracle, not a second scanner: it cannot invent a finding, and it is the reason the receipt can finally print a **CVE number** instead of a URL.
+
+**It re-scans rather than asserting.** After verification goes green, the vulnerability scan runs again and the receipt reports what *that* found — `remediation.advisoriesAfter` is measured, never derived by subtracting what was applied. Exit `0` requires it to be zero.
+
+```bash
+cpmigrate --remediate --dry-run                 # the plan: every advisory, the minimum version that clears it
+cpmigrate --remediate                           # apply · restore · test · roll back on red · re-scan
+cpmigrate --remediate --bisect                  # keep the largest subset that stays green
+cpmigrate --remediate --allow-major             # permit major bumps when no in-major fix exists
+cpmigrate --remediate --output Json --quiet     # the receipt, for CI
+```
+
+> ⚠️ **Air-gapped CI:** the advisory oracle needs `api.osv.dev`. If it is unreachable, `--remediate` exits `8` and writes nothing rather than falling back to a latest-version bump — an unproven fix must not go green.
+
+</details>
+
 <details>
 <summary><b>Modernization · batch · backup · output · rules</b></summary>
 
@@ -403,6 +437,7 @@ The contract a CI gate is written against — and the one thing a script can't d
 | `7` | TestFailure | Tests failed after update (rollback done); with `--bisect`, only when *nothing* could be kept |
 | `8` | IncompleteAnalysis | A scan didn't finish — treat as **re-run**, never as clean |
 | `9` | GraphDrift | `--verify` found the resolved graph moved unexplained, or couldn't prove it hadn't |
+| `10` | RemediationIncomplete | `--remediate` ran but an advisory is still there: no version fixes it, the fix is a withheld major, or tests held it back |
 
 > ⚠️ **Exit `8` is the whole point of the gate.** If a project fails to scan, the run reports *nothing* for the part it couldn't read. A green `0` on an incomplete scan would let a vulnerability slip through. Always branch on `8`.
 
@@ -511,6 +546,17 @@ The file NuGet Central Package Management reads versions from, so every project 
 <summary><b>Can it roll back a bad update?</b></summary>
 
 Two ways. `--update-packages` runs `dotnet test` and rolls back on failure. `--update-packages --bisect` keeps the largest green subset and names the held-back packages. Migrations get timestamped backups restorable with `cpmigrate --rollback`.
+
+</details>
+
+<details>
+<summary><b>Can it actually fix a CVE, not just report one?</b></summary>
+
+Yes — `cpmigrate --remediate`. For each advisory `--audit` reports, it finds the **lowest** published version that clears it, applies only those bumps, runs `dotnet test`, and rolls back on red (`--bisect` keeps the largest green subset). Then it runs the vulnerability scan *again* and reports what that second scan found: `remediation.advisoriesAfter` is measured, not inferred, and exit `0` requires it to be zero.
+
+Lowest rather than latest is deliberate. `--update-packages` asks what is newest, which turns a one-patch security fix into an unrelated feature upgrade. A remediation diff should be the smallest change that makes the advisory go away.
+
+The findings still come from `dotnet list package --vulnerable` — CPMigrate adds no advisories of its own. Only the *fix version* is looked up externally, by exact GHSA id at [OSV.dev](https://osv.dev), which is also how the receipt can name a CVE instead of a URL. If that lookup can't be reached, the run exits `8` and writes nothing rather than guessing.
 
 </details>
 

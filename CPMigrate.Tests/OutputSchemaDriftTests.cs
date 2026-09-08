@@ -37,6 +37,11 @@ public class OutputSchemaDriftTests
         // VerificationCandidateInfo is intentionally inline under verificationDecision.candidates;
         // a focused assertion below guards that existing public schema shape without rewriting it.
         (typeof(VerificationIntegrityFailureInfo), "verificationIntegrityFailure"),
+        // The remediation receipt is a public contract on the same footing as the verification one:
+        // a CI gate branches on advisoriesAfter, so a field added here without the schema following
+        // would break that consumer silently.
+        (typeof(RemediationInfo), "remediation"),
+        (typeof(RemediationActionInfo), "remediationAction"),
         // --batch serializes BatchResult, a different shape entirely. Omitting these let the
         // schema require exitCode and summary on a payload that has neither, so valid batch
         // output failed validation.
@@ -202,6 +207,7 @@ public class OutputSchemaDriftTests
                     "migrate",
                     "rollback",
                     "update-packages",
+                    "remediate",
                     // A pre-dispatch rejection can produce a payload for any mode the router can
                     // select, not just the ones that get far enough to report a result — so the
                     // enum has to cover every name in the dispatch table, or a consumer validating
