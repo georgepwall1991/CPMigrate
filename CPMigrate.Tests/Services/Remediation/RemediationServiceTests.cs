@@ -70,9 +70,15 @@ public sealed class RemediationServiceTests : IDisposable
     private VulnerabilityInfo Finding() =>
         new("Vulnerable.Pkg", "High", AdvisoryUrl, "1.0.0", string.Empty, "Api.csproj", _projectPath);
 
-    private sealed class StubOracle(AdvisoryRecord? record) : IAdvisoryOracle
+    /// <param name="record">The advisory to return, or null for no answer.</param>
+    /// <param name="unreachable">
+    /// Whether the absence is a transport failure. The oracle records those and leaves a definitive
+    /// "not found" unrecorded, and that difference is what separates exit 8 from exit 10.
+    /// </param>
+    private sealed class StubOracle(AdvisoryRecord? record, bool unreachable = false) : IAdvisoryOracle
     {
-        public IReadOnlyCollection<string> GetFailedLookups() => [];
+        public IReadOnlyCollection<string> GetFailedLookups() =>
+            unreachable ? ["GHSA-aaaa-bbbb-cccc"] : [];
 
         public Task<AdvisoryRecord?> LookupAsync(string advisoryId, string packageId) =>
             Task.FromResult(record);
@@ -241,7 +247,7 @@ public sealed class RemediationServiceTests : IDisposable
         var before = File.ReadAllText(_propsPath);
 
         using var service = BuildService(
-            new StubOracle(null),
+            new StubOracle(null, unreachable: true),
             new StubVersionLookup("1.0.0", "1.2.0", "9.9.9"),
             call => call == 1 ? ([Finding()], true) : ([], true)
         );
@@ -252,6 +258,41 @@ public sealed class RemediationServiceTests : IDisposable
         result.Actions.Should().ContainSingle();
         result.Actions[0].Outcome.Should().Be(RemediationOutcome.AdvisoryDataUnavailable);
         File.ReadAllText(_propsPath).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task AnAdvisoryTheDatabaseDoesNotCarry_ReportsIncompleteRatherThanTellingCiToReRun()
+    {
+        var before = File.ReadAllText(_propsPath);
+
+        using var service = BuildService(
+            new StubOracle(null),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            call => call == 1 ? ([Finding()], true) : ([], true)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.RemediationIncomplete, "a definitive 404 is a permanent answer");
+        result.Actions[0].Outcome.Should().Be(RemediationOutcome.AdvisoryNotInDatabase);
+        File.ReadAllText(_propsPath).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task ACleanSolution_PublishesAdvisoriesAfterZeroForTheGateToRead()
+    {
+        // README tells people to gate on advisoriesAfter == 0. Leaving it null on the cleanest
+        // possible run drops the field from the payload and fails that gate.
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            _ => ([], true)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.AdvisoriesAfter.Should().Be(0);
+        result.ReVerified.Should().BeTrue();
     }
 
     [Fact]

@@ -18,10 +18,21 @@ public enum RemediationOutcome
     NoFixAvailable,
 
     /// <summary>
-    /// The advisory database could not be reached, or does not carry this advisory. Distinct from
-    /// <see cref="NoFixAvailable"/>, which is a real answer; this is the absence of one.
+    /// The advisory database could not be reached. Distinct from <see cref="NoFixAvailable"/>, which
+    /// is a real answer; this is the absence of one, and the correct response is to re-run.
     /// </summary>
     AdvisoryDataUnavailable,
+
+    /// <summary>
+    /// The database answered and does not carry this advisory, so no fix version can be computed
+    /// from it.
+    ///
+    /// Deliberately not <see cref="AdvisoryDataUnavailable"/>: that one means "ask again", and a
+    /// definitive 404 will say the same thing forever. Conflating them makes CI retry a permanent
+    /// answer and — because unreadable data aborts the whole run — blocks every other package's fix
+    /// behind one advisory nobody can look up.
+    /// </summary>
+    AdvisoryNotInDatabase,
 
     /// <summary>The advisory data does not describe the resolved version, so no fix can be proven.</summary>
     AdvisoryDoesNotCoverResolvedVersion,

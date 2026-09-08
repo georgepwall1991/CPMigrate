@@ -117,7 +117,14 @@ public sealed class RemediationService : IRemediationService, IDisposable
         if (vulnerabilities.Count == 0)
         {
             _consoleService.Success("No known advisories. Nothing to remediate.");
-            return new RemediationResult { ExitCode = ExitCodes.Success, ReVerified = true };
+            return new RemediationResult
+            {
+                ExitCode = ExitCodes.Success,
+                AdvisoriesBefore = 0,
+                AdvisoriesAfter = 0,
+                ReVerified = true,
+                DryRun = request.DryRun,
+            };
         }
 
         _consoleService.Info(
@@ -147,6 +154,7 @@ public sealed class RemediationService : IRemediationService, IDisposable
                 ExitCode = ExitCodes.IncompleteAnalysis,
                 Actions = plan.Actions,
                 AdvisoriesBefore = advisoriesBefore,
+                DryRun = request.DryRun,
                 Errors = ["advisory data unavailable for one or more findings"],
             };
         }
@@ -205,11 +213,12 @@ public sealed class RemediationService : IRemediationService, IDisposable
 
         _consoleService.Info($"Applying {entries.Count} security fix(es)...");
 
+        var verificationTarget = FindSolutionFile(basePath) ?? basePath;
         var transaction = await PropsUpdateTransaction.BeginAsync(propsPath, currentVersions, _propsGenerator);
         var runner = new DotNetVerificationRunner(
             _dotNetCli,
             _consoleService,
-            FindSolutionFile(basePath) ?? basePath,
+            verificationTarget,
             request.BisectTestFilter
         );
         var strategy = CreateSearchStrategy(request);
@@ -262,6 +271,21 @@ public sealed class RemediationService : IRemediationService, IDisposable
 
         // The proof. Everything above is what CPMigrate decided; this is what the SDK says afterwards,
         // and it is what the receipt reports.
+        //
+        // The restore is load-bearing, not hygiene. A bisected search ends by re-applying the good
+        // subset *after* its final verification, so obj/project.assets.json still describes the
+        // probe that was rejected. dotnet list package reads that file, so without this the
+        // confirming scan would measure a state that no longer exists on disk -- and advisoriesAfter
+        // is the number that decides exit 0.
+        _consoleService.Info("Restoring before the confirming scan...");
+        var (restoreOutput, restoreSucceeded) = await _dotNetCli.RunRestoreAsync(verificationTarget);
+
+        if (!restoreSucceeded)
+        {
+            _logger.LogWarning("Restore before the confirming scan failed: {Output}", restoreOutput);
+            return BuildFinalResult(plan, search, remediated, heldBack, advisoriesBefore, 0, afterComplete: false);
+        }
+
         _consoleService.Info("Re-scanning to confirm the advisories are gone...");
         _packageQuery.ClearCache();
         var (after, afterComplete) = await ScanAsync(projectPaths);

@@ -100,11 +100,24 @@ public sealed class RemediationPlanner
             .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var resolvedVersionText = findings
-            .Select(f => f.ResolvedVersion)
-            .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
+        // The highest resolved version, not the first one scanned. A central pin replaces every
+        // project's version at once, so computing it from an arbitrary member of the group can pin
+        // below what another project already resolves — silently downgrading that project while
+        // reporting a security fix. Starting from the highest makes the target an upgrade, or no
+        // change, for every project in the group.
+        var resolvedVersions = findings
+            .Select(f => NuGetVersion.TryParse(f.ResolvedVersion, out var parsed) ? parsed : null)
+            .Where(v => v != null)
+            .Select(v => v!)
+            .ToList();
 
-        if (!NuGetVersion.TryParse(resolvedVersionText, out var currentVersion))
+        var currentVersion = resolvedVersions.Count > 0 ? resolvedVersions.Max() : null;
+
+        var resolvedVersionText = currentVersion?.ToNormalizedString()
+            ?? findings.Select(f => f.ResolvedVersion).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))
+            ?? string.Empty;
+
+        if (currentVersion is null)
         {
             return Unresolvable(
                 packageName,
@@ -119,26 +132,41 @@ public sealed class RemediationPlanner
         }
 
         var advisories = new List<AdvisoryRecord>();
-        var unreadable = new List<string>();
+        var unreachable = new List<string>();
+        var unknown = new List<string>();
 
         foreach (var advisoryId in advisoryIds)
         {
             var record = await _oracle.LookupAsync(advisoryId, packageName);
 
-            if (record == null)
+            if (record != null)
             {
-                unreadable.Add(advisoryId);
+                advisories.Add(record);
                 continue;
             }
 
-            advisories.Add(record);
+            // The oracle records transport failures and leaves a definitive "not found" unrecorded,
+            // which is the only way to tell "ask again" from "the answer is no".
+            var failed = _oracle.GetFailedLookups();
+            var lookupKey = OsvAdvisoryOracle.ExtractAdvisoryId(advisoryId);
+
+            if (failed.Contains(advisoryId, StringComparer.OrdinalIgnoreCase)
+                || failed.Contains(lookupKey, StringComparer.OrdinalIgnoreCase))
+            {
+                unreachable.Add(advisoryId);
+            }
+            else
+            {
+                unknown.Add(advisoryId);
+            }
         }
 
-        if (unreadable.Count > 0)
+        // Partial advisory data is not a partial answer. A version that clears the advisories that
+        // could be read may be squarely inside the range of one that could not, so a target computed
+        // now would carry the authority of a proof it does not have. That holds for both cases; only
+        // the advice differs, and only the first is worth re-running.
+        if (unreachable.Count > 0)
         {
-            // Partial advisory data is not a partial answer. A version that clears the advisories that
-            // could be read may be squarely inside the range of one that could not, so a target
-            // computed now would carry the authority of a proof it does not have.
             return Unresolvable(
                 packageName,
                 resolvedVersionText,
@@ -147,7 +175,21 @@ public sealed class RemediationPlanner
                 severity,
                 projects,
                 RemediationOutcome.AdvisoryDataUnavailable,
-                $"no version data for {string.Join(", ", unreadable)}"
+                $"the advisory database could not be reached for {string.Join(", ", unreachable)}"
+            );
+        }
+
+        if (unknown.Count > 0)
+        {
+            return Unresolvable(
+                packageName,
+                resolvedVersionText,
+                isTransitive,
+                advisoryIds,
+                severity,
+                projects,
+                RemediationOutcome.AdvisoryNotInDatabase,
+                $"the advisory database does not carry {string.Join(", ", unknown)}, so no fix version can be computed"
             );
         }
 

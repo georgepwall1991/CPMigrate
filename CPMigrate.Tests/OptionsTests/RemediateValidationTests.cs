@@ -132,6 +132,45 @@ public class RemediateValidationTests
     }
 
     [Fact]
+    public void Validate_RemediateWithBisectTestFilterButNoBisect_Throws()
+    {
+        // Remediation returns early from Validate(), so the shared bisect family has to be checked on
+        // that path too. Without it the filter was accepted and then silently ignored, and a user
+        // would believe their probes were being narrowed when they were not.
+        var options = new Options { Remediate = true, BisectTestFilter = "Category=Fast" };
+
+        options
+            .Invoking(o => o.Validate())
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*--bisect-test-filter requires --bisect*");
+    }
+
+    [Fact]
+    public void Validate_RemediateWithBisectBudgetButNoBisect_Throws()
+    {
+        var options = new Options { Remediate = true, BisectBudget = 4 };
+
+        options
+            .Invoking(o => o.Validate())
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*--bisect-budget requires --bisect*");
+    }
+
+    [Fact]
+    public void Validate_RemediateWithZeroBisectBudget_Throws()
+    {
+        var options = new Options { Remediate = true, Bisect = true, BisectBudget = 0 };
+
+        options
+            .Invoking(o => o.Validate())
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*--bisect-budget must be at least 1*");
+    }
+
+    [Fact]
     public void Validate_OnlyWithRemediate_DoesNotThrow()
     {
         var options = new Options { Remediate = true, Only = "Newtonsoft.Json" };

@@ -1507,6 +1507,7 @@ internal static class CommandRouter
             RemediationOutcome.WithheldMajor => "withheldMajor",
             RemediationOutcome.NoFixAvailable => "noFixAvailable",
             RemediationOutcome.AdvisoryDataUnavailable => "advisoryDataUnavailable",
+            RemediationOutcome.AdvisoryNotInDatabase => "advisoryNotInDatabase",
             RemediationOutcome.AdvisoryDoesNotCoverResolvedVersion =>
                 "advisoryDoesNotCoverResolvedVersion",
             _ => "unknown",

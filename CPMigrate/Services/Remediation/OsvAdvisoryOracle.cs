@@ -243,7 +243,14 @@ public sealed class OsvAdvisoryOracle : IAdvisoryOracle
                     continue;
                 }
 
-                ranges.AddRange(ReadRanges(entry));
+                var entryRanges = ReadRanges(entry);
+
+                if (entryRanges is null)
+                {
+                    return null;
+                }
+
+                ranges.AddRange(entryRanges);
 
                 foreach (var version in ReadStringArray(entry, "versions"))
                 {
@@ -276,15 +283,41 @@ public sealed class OsvAdvisoryOracle : IAdvisoryOracle
             && string.Equals(name, packageId, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IEnumerable<AdvisoryVersionRange> ReadRanges(JsonElement affectedEntry)
+    /// <summary>
+    /// Reads the usable ranges out of one <c>affected</c> entry.
+    /// </summary>
+    /// <returns>
+    /// The ranges, or null when the entry carries one this code cannot evaluate. Null is not "no
+    /// ranges": the caller turns it into a refusal to answer, because the alternative is worse in
+    /// both directions. A dropped <c>fixed</c> event leaves a range that opens and never closes, so
+    /// every version reads as vulnerable and a package with a published fix is reported unfixable;
+    /// a dropped <c>introduced</c> does the reverse and can present an affected version as the fix.
+    /// </returns>
+    private static List<AdvisoryVersionRange>? ReadRanges(JsonElement affectedEntry)
     {
+        var result = new List<AdvisoryVersionRange>();
+
         if (!affectedEntry.TryGetProperty("ranges", out var ranges) || ranges.ValueKind != JsonValueKind.Array)
         {
-            yield break;
+            return result;
         }
 
         foreach (var range in ranges.EnumerateArray())
         {
+            // GIT ranges express boundaries as commit hashes, which carry no version ordering at all.
+            // They sit alongside ECOSYSTEM ranges on the same advisory, so skipping them is normal
+            // rather than exceptional -- the ECOSYSTEM range is the one that describes NuGet.
+            var rangeType = range.TryGetProperty("type", out var typeNode) ? typeNode.GetString() : null;
+
+            if (
+                rangeType is not null
+                && !string.Equals(rangeType, "ECOSYSTEM", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(rangeType, "SEMVER", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                continue;
+            }
+
             if (!range.TryGetProperty("events", out var events) || events.ValueKind != JsonValueKind.Array)
             {
                 continue;
@@ -294,17 +327,23 @@ public sealed class OsvAdvisoryOracle : IAdvisoryOracle
 
             foreach (var evt in events.EnumerateArray())
             {
-                if (TryReadEvent(evt, out var boundary))
+                if (!TryReadEvent(evt, out var boundary))
                 {
-                    boundaries.Add(boundary);
+                    // An event this parser does not understand inside a range it does. Refusing the
+                    // whole advisory is the only safe reading.
+                    return null;
                 }
+
+                boundaries.Add(boundary);
             }
 
             if (boundaries.Count > 0)
             {
-                yield return new AdvisoryVersionRange(boundaries);
+                result.Add(new AdvisoryVersionRange(boundaries));
             }
         }
+
+        return result;
     }
 
     private static bool TryReadEvent(JsonElement evt, out (NuGetVersion Version, bool Opens) boundary)
@@ -332,21 +371,35 @@ public sealed class OsvAdvisoryOracle : IAdvisoryOracle
             return false;
         }
 
-        if (evt.TryGetProperty("fixed", out var fixedNode) && NuGetVersion.TryParse(fixedNode.GetString(), out var fixedVersion))
+        if (evt.TryGetProperty("fixed", out var fixedNode))
         {
-            boundary = (fixedVersion, Opens: false);
-            return true;
+            return NuGetVersion.TryParse(fixedNode.GetString(), out var fixedVersion)
+                && Boundary(fixedVersion, opens: false, out boundary);
         }
 
-        if (evt.TryGetProperty("last_affected", out var lastNode) && NuGetVersion.TryParse(lastNode.GetString(), out var lastAffected))
+        if (evt.TryGetProperty("last_affected", out var lastNode))
         {
             // last_affected is inclusive where fixed is exclusive. Closing the window just past it
             // lets one sweep handle both forms without carrying a second flag through the range.
-            boundary = (NextAfter(lastAffected), Opens: false);
+            return NuGetVersion.TryParse(lastNode.GetString(), out var lastAffected)
+                && Boundary(NextAfter(lastAffected), opens: false, out boundary);
+        }
+
+        if (evt.TryGetProperty("limit", out _))
+        {
+            // A limit marker bounds how far the range was evaluated; it is not a boundary of the
+            // vulnerable window, so it is skipped rather than treated as unreadable.
+            boundary = (new NuGetVersion(0, 0, 0), Opens: false);
             return true;
         }
 
         return false;
+    }
+
+    private static bool Boundary(NuGetVersion version, bool opens, out (NuGetVersion Version, bool Opens) boundary)
+    {
+        boundary = (version, opens);
+        return true;
     }
 
     /// <summary>

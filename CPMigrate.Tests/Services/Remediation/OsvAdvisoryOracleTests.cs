@@ -204,6 +204,85 @@ public class OsvAdvisoryOracleTests
         Parse(json, "Pkg").Should().BeNull();
     }
 
+    [Fact]
+    public void AGitRangeAlongsideAnEcosystemRange_IsSkippedRatherThanReadAsVersions()
+    {
+        // GIT boundaries are commit hashes with no version ordering. Reading them would drop the
+        // unparseable "fixed" event, leaving a range that opens and never closes — so every version
+        // reads as vulnerable and a package with a published fix is reported unfixable.
+        const string json = """
+        {
+          "id": "GHSA-git",
+          "affected": [
+            {
+              "package": { "name": "Pkg", "ecosystem": "NuGet" },
+              "ranges": [
+                {
+                  "type": "GIT",
+                  "repo": "https://github.com/example/pkg",
+                  "events": [ { "introduced": "0" }, { "fixed": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2" } ]
+                },
+                {
+                  "type": "ECOSYSTEM",
+                  "events": [ { "introduced": "0" }, { "fixed": "2.0.0" } ]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var record = Parse(json, "Pkg")!;
+
+        record.Affects(NuGetVersion.Parse("1.9.0")).Should().BeTrue();
+        record.Affects(NuGetVersion.Parse("2.0.0")).Should().BeFalse("the ECOSYSTEM range is the one that describes NuGet");
+    }
+
+    [Fact]
+    public void AnUnparseableBoundaryInsideAVersionRange_RefusesTheAdvisoryRatherThanGuessing()
+    {
+        // Dropping the bad event would leave a half-open range. Refusing sends this to the planner
+        // as "no usable data", which fails the run loudly instead of computing a wrong fix version.
+        const string json = """
+        {
+          "id": "GHSA-bad",
+          "affected": [
+            {
+              "package": { "name": "Pkg", "ecosystem": "NuGet" },
+              "ranges": [
+                { "type": "ECOSYSTEM", "events": [ { "introduced": "0" }, { "fixed": "not-a-version" } ] }
+              ]
+            }
+          ]
+        }
+        """;
+
+        Parse(json, "Pkg").Should().BeNull();
+    }
+
+    [Fact]
+    public void AnExplicitVersion_MatchesTheSameReleaseSpelledDifferently()
+    {
+        // OSV spells versions as the feed published them; candidates come from NuGet's index. A
+        // string compare would miss 4.5 vs 4.5.0, and the miss offers an affected version as the fix.
+        const string json = """
+        {
+          "id": "GHSA-spelling",
+          "affected": [
+            {
+              "package": { "name": "Pkg", "ecosystem": "NuGet" },
+              "versions": [ "4.5" ]
+            }
+          ]
+        }
+        """;
+
+        var record = Parse(json, "Pkg")!;
+
+        record.Affects(NuGetVersion.Parse("4.5.0")).Should().BeTrue();
+        record.Affects(NuGetVersion.Parse("4.6.0")).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("https://github.com/advisories/GHSA-5crp-9r3c-p9vr", "GHSA-5crp-9r3c-p9vr")]
     [InlineData("https://github.com/advisories/GHSA-5crp-9r3c-p9vr/", "GHSA-5crp-9r3c-p9vr")]

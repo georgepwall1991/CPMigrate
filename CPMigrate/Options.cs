@@ -1664,6 +1664,11 @@ public class Options
             );
         }
 
+        // Remediation returns from Validate() here, so the shared bisect family has to be checked on
+        // this path too. Without it --remediate --bisect-test-filter X was accepted with no --bisect
+        // and the filter silently dropped, and the budget floor went unchecked.
+        ValidateBisectOptions();
+
         return true;
     }
 

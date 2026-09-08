@@ -35,10 +35,46 @@ public class RemediationPlannerTests
             return this;
         }
 
+        /// <summary>The database could not be reached: recorded as a failed lookup, so "ask again".</summary>
+        /// <summary>An advisory with two separate vulnerable windows, as a reintroduced flaw has.</summary>
+        public FakeOracle KnowsTwoWindows(
+            string advisoryId,
+            string firstIntroduced,
+            string firstFixed,
+            string secondIntroduced,
+            string secondFixed
+        )
+        {
+            _records[advisoryId] = new AdvisoryRecord(
+                advisoryId,
+                ["CVE-1111-2222"],
+                "HIGH",
+                [
+                    new AdvisoryVersionRange(
+                        [
+                            (NuGetVersion.Parse(firstIntroduced), true),
+                            (NuGetVersion.Parse(firstFixed), false),
+                            (NuGetVersion.Parse(secondIntroduced), true),
+                            (NuGetVersion.Parse(secondFixed), false),
+                        ]
+                    ),
+                ],
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            );
+            return this;
+        }
+
         public FakeOracle CannotAnswer(string advisoryId)
         {
             _records[advisoryId] = null;
             _failed.Add(advisoryId);
+            return this;
+        }
+
+        /// <summary>The database answered and has no such advisory: a permanent no, never recorded.</summary>
+        public FakeOracle DoesNotCarry(string advisoryId)
+        {
+            _records[advisoryId] = null;
             return this;
         }
 
@@ -158,6 +194,54 @@ public class RemediationPlannerTests
         plan.Actions[0].TargetVersion.Should().BeNull();
         plan.HasUnavailableAdvisoryData.Should().BeTrue();
         plan.GetApplicable().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AnAdvisoryTheDatabaseDoesNotCarry_IsAPermanentAnswerNotARetry()
+    {
+        // A definitive 404 will say the same thing forever. Reporting it as unavailable data makes CI
+        // re-run a permanent answer and, because unavailable data aborts the whole run, blocks every
+        // other package's fix behind it.
+        var oracle = new FakeOracle().DoesNotCarry("GHSA-aaaa-bbbb-cccc");
+        var lookup = new FakeVersionLookup().Publishes("Pkg", "1.0.0", "1.2.0");
+        var planner = new RemediationPlanner(oracle, lookup);
+
+        var plan = await planner.PlanAsync(
+            [Finding("Pkg", "1.0.0")],
+            allowMajor: false,
+            includePrerelease: false
+        );
+
+        plan.Actions[0].Outcome.Should().Be(RemediationOutcome.AdvisoryNotInDatabase);
+        plan.HasUnavailableAdvisoryData.Should().BeFalse("nothing needs re-running");
+    }
+
+    [Fact]
+    public async Task APackageResolvingToSeveralVersions_IsPlannedFromTheHighest()
+    {
+        // A central pin replaces every project's version at once. Computing it from whichever
+        // project scanned first can pin below what another project already resolves, silently
+        // downgrading it while reporting a security fix.
+        // Two vulnerable windows, and two projects sitting one in each. Planning from the first
+        // finding would pick 1.2.0 — clear for that project, and a downgrade for the one on 3.5.0.
+        var oracle = new FakeOracle()
+            .KnowsTwoWindows("GHSA-aaaa-bbbb-cccc", "1.0.0", "1.2.0", "3.0.0", "3.6.0");
+        var lookup = new FakeVersionLookup().Publishes("Pkg", "1.0.0", "1.2.0", "3.5.0", "3.6.0");
+        var planner = new RemediationPlanner(oracle, lookup);
+
+        var plan = await planner.PlanAsync(
+            [
+                Finding("Pkg", "1.0.0"),
+                Finding("Pkg", "3.5.0", "Worker.csproj"),
+            ],
+            allowMajor: true,
+            includePrerelease: false
+        );
+
+        plan.Actions[0].CurrentVersion.Should().Be("3.5.0");
+        plan.Actions[0]
+            .TargetVersion.Should()
+            .Be("3.6.0", "the target has to be an upgrade for every project in the group, not just the first");
     }
 
     [Fact]

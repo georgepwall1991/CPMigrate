@@ -527,6 +527,7 @@
             "withheldMajor",
             "noFixAvailable",
             "advisoryDataUnavailable",
+            "advisoryNotInDatabase",
             "advisoryDoesNotCoverResolvedVersion",
             "unknown"
           ]

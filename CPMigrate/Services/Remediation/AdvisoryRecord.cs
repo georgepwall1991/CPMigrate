@@ -103,10 +103,42 @@ public sealed record AdvisoryRecord(
     {
         ArgumentNullException.ThrowIfNull(version);
 
-        return ExplicitVersions.Contains(version.ToNormalizedString())
-            || ExplicitVersions.Contains(version.OriginalVersion ?? version.ToNormalizedString())
-            || Ranges.Any(r => r.Contains(version));
+        return MatchesExplicitVersion(version) || Ranges.Any(r => r.Contains(version));
     }
+
+    /// <summary>
+    /// Whether the advisory's enumerated version list names this version.
+    ///
+    /// Compared as versions rather than as strings: OSV spells them the way the feed published them
+    /// and the candidate comes from NuGet's own index, so <c>4.5</c> and <c>4.5.0</c> are routinely
+    /// the same release written two ways. A string compare misses that, and the miss is in the
+    /// dangerous direction — a version the database calls affected would be offered as the fix.
+    /// </summary>
+    private bool MatchesExplicitVersion(NuGetVersion version)
+    {
+        return ExplicitVersions.Count != 0 && _parsedExplicitVersions.Value.Contains(version);
+    }
+
+    /// <summary>
+    /// The enumerated versions, parsed once. <see cref="NuGetVersion"/>'s own equality is what makes
+    /// <c>4.5</c> and <c>4.5.0</c> compare equal, which is the whole reason this is not a string set.
+    /// A version the database spells in a way NuGet cannot parse is dropped: the ranges remain, and
+    /// an unparseable entry cannot describe a candidate that came from NuGet's index anyway.
+    /// </summary>
+    private readonly Lazy<HashSet<NuGetVersion>> _parsedExplicitVersions = new(() =>
+    {
+        var parsed = new HashSet<NuGetVersion>();
+
+        foreach (var raw in ExplicitVersions)
+        {
+            if (NuGetVersion.TryParse(raw, out var version))
+            {
+                parsed.Add(version);
+            }
+        }
+
+        return parsed;
+    });
 
     /// <summary>
     /// The identifier to show a human: the CVE number when the database publishes one, otherwise the
