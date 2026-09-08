@@ -119,7 +119,9 @@ public sealed class RemediationServiceTests : IDisposable
         IAdvisoryOracle oracle,
         INuGetVersionLookupService versionLookup,
         Func<int, (List<VulnerabilityInfo>, bool)> scanByCall,
-        bool testsPass = true
+        bool testsPass = true,
+        string? discoveredBasePath = null,
+        string? discoveredProjectPath = null
     )
     {
         var console = new FakeConsoleService { IsInteractive = false };
@@ -127,7 +129,9 @@ public sealed class RemediationServiceTests : IDisposable
         var analyzer = new Mock<IProjectAnalyzer>();
         analyzer
             .Setup(a => a.DiscoverProjectsFromSolutionAsync(It.IsAny<string>()))
-            .ReturnsAsync((_root, new List<string> { _projectPath }));
+            .ReturnsAsync(
+                (discoveredBasePath ?? _root, new List<string> { discoveredProjectPath ?? _projectPath })
+            );
 
         var scanCall = 0;
         var query = new Mock<IDotNetPackageQueryService>();
@@ -461,36 +465,12 @@ public sealed class RemediationServiceTests : IDisposable
         var nestedProject = Path.Combine(nested, "Billing.csproj");
         File.WriteAllText(nestedProject, File.ReadAllText(_projectPath));
 
-        var console = new FakeConsoleService { IsInteractive = false };
-        var analyzer = new Mock<IProjectAnalyzer>();
-        analyzer
-            .Setup(a => a.DiscoverProjectsFromSolutionAsync(It.IsAny<string>()))
-            .ReturnsAsync((nested, new List<string> { nestedProject }));
-
-        var query = new Mock<IDotNetPackageQueryService>();
-        var scanCall = 0;
-        query
-            .Setup(q => q.ScanVulnerabilitiesAsync(It.IsAny<string>(), It.IsAny<string?>()))
-            .ReturnsAsync(() =>
-                ++scanCall == 1
-                    ? (new List<VulnerabilityInfo> { Finding() }, true)
-                    : (new List<VulnerabilityInfo>(), true)
-            );
-
-        var cli = new Mock<IDotNetCliService>();
-        cli.Setup(c => c.RunRestoreAsync(It.IsAny<string>())).ReturnsAsync((string.Empty, true));
-        cli.Setup(c => c.RunTestAsync(It.IsAny<string>(), It.IsAny<string?>()))
-            .ReturnsAsync((string.Empty, true));
-
-        using var service = new RemediationService(
-            console,
-            analyzer.Object,
-            query.Object,
-            new PropsGenerator(new VersionResolver(console)),
-            new StubVersionLookup("1.0.0", "1.2.0"),
+        using var service = BuildService(
             new StubOracle(AdvisoryFixedIn("1.2.0")),
-            cli.Object,
-            new BackupManager()
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            call => call == 1 ? ([Finding()], true) : ([], true),
+            discoveredBasePath: nested,
+            discoveredProjectPath: nestedProject
         );
 
         var result = await service.RemediateAsync(Request() with { SolutionPath = nested });
