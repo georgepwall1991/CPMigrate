@@ -84,6 +84,13 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   written or the property being enabled unasked: turning it on changes how every transitive
   dependency in the repository resolves, which is far beyond the advisory at hand.
 
+- **A solution below its governing `Directory.Packages.props` is remediated, not refused.** The props
+  lookup checked only the solution's own directory, so the layout this tool is most often pointed at
+  — one props file at a monorepo root, solutions in subdirectories — was told "CPM is not enabled"
+  about a repository where it plainly was. The lookup now walks up the way MSBuild does. A repository
+  that redirects the file with `DirectoryPackagesPropsPath` still gets the refusal: resolving that
+  needs full MSBuild evaluation, and refusing writes nothing.
+
 - **`--only` narrows what remediation answers for, including the proof.** The confirming scan counted
   every advisory in the workspace while the plan covered only the selected packages, so a completely
   successful scoped run still saw the untouched findings and reported itself incomplete — it could

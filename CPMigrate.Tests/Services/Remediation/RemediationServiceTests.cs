@@ -450,6 +450,56 @@ public sealed class RemediationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ASolutionBelowTheGoverningPropsFile_IsRemediatedRatherThanCalledCpmDisabled()
+    {
+        // The monorepo layout: one Directory.Packages.props at the repository root, solutions in
+        // subdirectories. MSBuild walks up to find it, so refusing here reported "CPM is not enabled"
+        // about a repository where it plainly is.
+        var nested = Path.Combine(_root, "services", "Billing");
+        Directory.CreateDirectory(nested);
+
+        var nestedProject = Path.Combine(nested, "Billing.csproj");
+        File.WriteAllText(nestedProject, File.ReadAllText(_projectPath));
+
+        var console = new FakeConsoleService { IsInteractive = false };
+        var analyzer = new Mock<IProjectAnalyzer>();
+        analyzer
+            .Setup(a => a.DiscoverProjectsFromSolutionAsync(It.IsAny<string>()))
+            .ReturnsAsync((nested, new List<string> { nestedProject }));
+
+        var query = new Mock<IDotNetPackageQueryService>();
+        var scanCall = 0;
+        query
+            .Setup(q => q.ScanVulnerabilitiesAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync(() =>
+                ++scanCall == 1
+                    ? (new List<VulnerabilityInfo> { Finding() }, true)
+                    : (new List<VulnerabilityInfo>(), true)
+            );
+
+        var cli = new Mock<IDotNetCliService>();
+        cli.Setup(c => c.RunRestoreAsync(It.IsAny<string>())).ReturnsAsync((string.Empty, true));
+        cli.Setup(c => c.RunTestAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync((string.Empty, true));
+
+        using var service = new RemediationService(
+            console,
+            analyzer.Object,
+            query.Object,
+            new PropsGenerator(new VersionResolver(console)),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            cli.Object,
+            new BackupManager()
+        );
+
+        var result = await service.RemediateAsync(Request() with { SolutionPath = nested });
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        File.ReadAllText(_propsPath).Should().Contain("1.2.0", "the ancestor props file is the one that governs");
+    }
+
+    [Fact]
     public async Task NoAdvisories_ReportsSuccessWithoutRunningTests()
     {
         using var service = BuildService(

@@ -612,10 +612,40 @@ public sealed class RemediationService : IRemediationService, IDisposable
         );
     }
 
+    /// <summary>
+    /// Finds the <c>Directory.Packages.props</c> that actually governs this workspace, walking up
+    /// from the solution directory the way MSBuild does.
+    /// </summary>
+    /// <remarks>
+    /// Checking only the solution's own directory is wrong for the layout this tool is most often
+    /// pointed at: a monorepo with one props file at the repository root and solutions in
+    /// subdirectories. MSBuild walks up from each project and takes the first file it finds, so a
+    /// nested solution is governed by the ancestor — and refusing to remediate it reported "CPM is
+    /// not enabled" about a repository where it plainly is.
+    ///
+    /// Not handled: a repository that redirects the file with <c>DirectoryPackagesPropsPath</c>.
+    /// Resolving that needs full MSBuild evaluation, which this pass does not perform; such a
+    /// repository still gets the "not found" refusal, which writes nothing.
+    /// </remarks>
+    /// <param name="basePath">Directory to start from.</param>
+    /// <returns>The governing props file, or null when no ancestor has one.</returns>
     private static string? FindPropsFile(string basePath)
     {
-        var candidate = Path.Combine(basePath, "Directory.Packages.props");
-        return File.Exists(candidate) ? candidate : null;
+        var directory = new DirectoryInfo(Path.GetFullPath(basePath));
+
+        while (directory != null)
+        {
+            var candidate = Path.Combine(directory.FullName, "Directory.Packages.props");
+
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     private static string? FindSolutionFile(string basePath)
