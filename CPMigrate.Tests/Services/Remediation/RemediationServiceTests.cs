@@ -109,7 +109,7 @@ public sealed class RemediationServiceTests : IDisposable
             "HIGH",
             [
                 new AdvisoryVersionRange(
-                    [(NuGetVersion.Parse("0.0.0"), true), (NuGetVersion.Parse(fixedVersion), false)]
+                    [new AdvisoryBoundary(NuGetVersion.Parse("0.0.0"), AdvisoryBoundaryKind.Introduced), new AdvisoryBoundary(NuGetVersion.Parse(fixedVersion), AdvisoryBoundaryKind.Fixed)]
                 ),
             ],
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -293,6 +293,109 @@ public sealed class RemediationServiceTests : IDisposable
 
         result.AdvisoriesAfter.Should().Be(0);
         result.ReVerified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AScopedRun_JudgesItselfOnTheAdvisoriesItWasAskedAbout()
+    {
+        // --only narrows what is planned. Counting the whole workspace afterwards made a perfectly
+        // successful scoped run see the untouched findings in the confirming scan and report itself
+        // incomplete -- so it could never exit 0 unless the rest of the solution happened to be clean.
+        var other = new VulnerabilityInfo(
+            "Other.Pkg",
+            "High",
+            "https://github.com/advisories/GHSA-zzzz-yyyy-xxxx",
+            "1.0.0",
+            string.Empty,
+            "Api.csproj",
+            _projectPath
+        );
+
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            // The unselected package stays vulnerable in both scans; the selected one is cleared.
+            call => call == 1 ? ([Finding(), other], true) : ([other], true)
+        );
+
+        var result = await service.RemediateAsync(Request() with { OnlyPackages = ["Vulnerable.Pkg"] });
+
+        result.AdvisoriesBefore.Should().Be(1, "only the selected package is being answered for");
+        result.AdvisoriesAfter.Should().Be(0);
+        result.ExitCode.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task ATransitiveOnlyFix_IsReportedRatherThanWrittenWhenPinningIsOff()
+    {
+        // A PackageVersion for a package nothing references directly does not move the resolved
+        // graph unless the repo opts into transitive pinning. Writing one anyway leaves a dead entry
+        // that looks like an applied fix, and it passes verification precisely because nothing changed.
+        var before = File.ReadAllText(_propsPath);
+
+        var transitiveFinding = new VulnerabilityInfo(
+            "Vulnerable.Pkg",
+            "High",
+            AdvisoryUrl,
+            "1.0.0",
+            string.Empty,
+            "Api.csproj",
+            _projectPath,
+            IsTransitive: true
+        );
+
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            call => call == 1 ? ([transitiveFinding], true) : ([], true)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.RemediationIncomplete);
+        result.Actions[0].Outcome.Should().Be(RemediationOutcome.TransitivePinningDisabled);
+        File.ReadAllText(_propsPath).Should().Be(before, "a pin that cannot govern the graph is not written");
+    }
+
+    [Fact]
+    public async Task ATransitiveOnlyFix_IsWrittenWhenTheRepositoryEnablesPinning()
+    {
+        File.WriteAllText(
+            _propsPath,
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Other.Pkg" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var transitiveFinding = new VulnerabilityInfo(
+            "Vulnerable.Pkg",
+            "High",
+            AdvisoryUrl,
+            "1.0.0",
+            string.Empty,
+            "Api.csproj",
+            _projectPath,
+            IsTransitive: true
+        );
+
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            call => call == 1 ? ([transitiveFinding], true) : ([], true)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        File.ReadAllText(_propsPath).Should().Contain("Vulnerable.Pkg").And.Contain("1.2.0");
     }
 
     [Fact]

@@ -23,8 +23,8 @@ public class SafeVersionResolverTests
             [
                 new AdvisoryVersionRange(
                     [
-                        (NuGetVersion.Parse(introduced), true),
-                        (NuGetVersion.Parse(fixedVersion), false),
+                        new AdvisoryBoundary(NuGetVersion.Parse(introduced), AdvisoryBoundaryKind.Introduced),
+                        new AdvisoryBoundary(NuGetVersion.Parse(fixedVersion), AdvisoryBoundaryKind.Fixed),
                     ]
                 ),
             ],

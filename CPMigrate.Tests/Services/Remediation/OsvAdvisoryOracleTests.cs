@@ -169,6 +169,57 @@ public class OsvAdvisoryOracleTests
     }
 
     [Fact]
+    public void LastAffected_WithAPrerelease_DoesNotSweepUpTheStableRelease()
+    {
+        // Converting last_affected to an exclusive bound a patch higher closes at 1.2.4, which
+        // wrongly covers stable 1.2.3 -- a release that sorts *above* 1.2.3-beta and is not affected.
+        // The effect is to hide the real minimum fix.
+        const string json = """
+        {
+          "id": "GHSA-prerelease-last",
+          "affected": [
+            {
+              "package": { "name": "Pkg", "ecosystem": "NuGet" },
+              "ranges": [
+                { "type": "ECOSYSTEM", "events": [ { "introduced": "1.0.0" }, { "last_affected": "1.2.3-beta" } ] }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var record = Parse(json, "Pkg")!;
+
+        record.Affects(NuGetVersion.Parse("1.2.3-beta")).Should().BeTrue();
+        record.Affects(NuGetVersion.Parse("1.2.3")).Should().BeFalse("stable 1.2.3 is above the last affected pre-release");
+    }
+
+    [Fact]
+    public void LastAffected_WithAFourthComponent_DoesNotSweepUpTheNextRevision()
+    {
+        // 1.2.3.1 sits between 1.2.3.0 and 1.2.4, so a patch-increment approximation marks a safe
+        // release as affected.
+        const string json = """
+        {
+          "id": "GHSA-revision-last",
+          "affected": [
+            {
+              "package": { "name": "Pkg", "ecosystem": "NuGet" },
+              "ranges": [
+                { "type": "ECOSYSTEM", "events": [ { "introduced": "1.0.0" }, { "last_affected": "1.2.3.0" } ] }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var record = Parse(json, "Pkg")!;
+
+        record.Affects(NuGetVersion.Parse("1.2.3.0")).Should().BeTrue();
+        record.Affects(NuGetVersion.Parse("1.2.3.1")).Should().BeFalse();
+    }
+
+    [Fact]
     public void AVersionListedOutright_IsAffectedEvenWithoutARange()
     {
         const string json = """

@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using CPMigrate.Models;
 using CPMigrate.Services.Update;
 using Microsoft.Extensions.Logging;
@@ -112,9 +113,9 @@ public sealed class RemediationService : IRemediationService, IDisposable
             return Failed(ExitCodes.IncompleteAnalysis, "vulnerability scan did not complete");
         }
 
-        var advisoriesBefore = CountAdvisories(vulnerabilities);
+        var advisoriesBefore = CountAdvisories(vulnerabilities, request.OnlyPackages);
 
-        if (vulnerabilities.Count == 0)
+        if (advisoriesBefore == 0)
         {
             _consoleService.Success("No known advisories. Nothing to remediate.");
             return new RemediationResult
@@ -159,7 +160,33 @@ public sealed class RemediationService : IRemediationService, IDisposable
             };
         }
 
+        var plannedActions = plan.GetApplicable();
+
+        // CENTRAL PACKAGE TRANSITIVE PINNING: a <PackageVersion> for a package nothing references
+        // directly does not override the resolved graph unless the repository opts into transitive
+        // pinning. Without this guard such a fix writes an entry that changes nothing, sails through
+        // verification precisely because the graph never moved, and is caught only by the confirming
+        // scan -- leaving a dead entry behind and an exit 10 that reads like a missing fix rather
+        // than an unusable one. Turning the property on unasked is not the answer either: it changes
+        // how every transitive dependency in the repository resolves, far beyond this advisory.
+        var transitivePinningEnabled = HasTransitivePinningEnabled(propsPath);
+        var withheldTransitive = !transitivePinningEnabled && plannedActions.Any(a => a.IsTransitive);
+
+        if (withheldTransitive)
+        {
+            plan = WithdrawTransitiveActions(plan);
+        }
+
         var applicable = plan.GetApplicable();
+
+        if (withheldTransitive)
+        {
+            _consoleService.Warning(
+                "Some advisories are only reachable transitively, and this repository does not set "
+                    + "CentralPackageTransitivePinningEnabled. A central pin would not move the resolved "
+                    + "graph, so those fixes are reported rather than written."
+            );
+        }
 
         if (applicable.Count == 0)
         {
@@ -289,7 +316,7 @@ public sealed class RemediationService : IRemediationService, IDisposable
         _consoleService.Info("Re-scanning to confirm the advisories are gone...");
         _packageQuery.ClearCache();
         var (after, afterComplete) = await ScanAsync(projectPaths);
-        var advisoriesAfter = CountAdvisories(after);
+        var advisoriesAfter = CountAdvisories(after, request.OnlyPackages);
 
         return BuildFinalResult(
             plan, search, remediated, heldBack, advisoriesBefore, advisoriesAfter, afterComplete
@@ -406,9 +433,24 @@ public sealed class RemediationService : IRemediationService, IDisposable
     /// target framework. A multi-target project reports the same advisory several times, and counting
     /// those separately would make the before/after numbers move for reasons that are not fixes.
     /// </summary>
-    private static int CountAdvisories(IReadOnlyList<VulnerabilityInfo> vulnerabilities)
+    /// <param name="vulnerabilities">The findings to count.</param>
+    /// <param name="onlyPackages">
+    /// When set, restricts the count to these packages — the same narrowing the planner applies.
+    /// Counting the whole workspace here while planning only part of it made the receipt answer a
+    /// question the user did not ask: a perfectly successful <c>--only</c> run would still see the
+    /// untouched findings in the confirming scan and report itself incomplete.
+    /// </param>
+    private static int CountAdvisories(
+        IReadOnlyList<VulnerabilityInfo> vulnerabilities,
+        IReadOnlyList<string>? onlyPackages
+    )
     {
+        var only = onlyPackages is { Count: > 0 }
+            ? new HashSet<string>(onlyPackages, StringComparer.OrdinalIgnoreCase)
+            : null;
+
         return vulnerabilities
+            .Where(v => only == null || only.Contains(v.PackageName))
             .Select(v => $"{v.PackageName}|{v.Id}")
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
@@ -515,6 +557,59 @@ public sealed class RemediationService : IRemediationService, IDisposable
     {
         _nuGetLookup.Dispose();
         _advisoryOracle.Dispose();
+    }
+
+    /// <summary>
+    /// Whether the props file opts into central transitive pinning, which is what makes a
+    /// <c>PackageVersion</c> for an undeclared package actually govern the resolved graph.
+    /// </summary>
+    /// <param name="propsPath">Path to <c>Directory.Packages.props</c>.</param>
+    /// <returns>True when the property is present and true.</returns>
+    private static bool HasTransitivePinningEnabled(string propsPath)
+    {
+        try
+        {
+            var document = XDocument.Load(propsPath);
+
+            return document
+                .Descendants()
+                .Any(e =>
+                    string.Equals(
+                        e.Name.LocalName,
+                        "CentralPackageTransitivePinningEnabled",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    && bool.TryParse(e.Value.Trim(), out var enabled)
+                    && enabled
+                );
+        }
+        catch (Exception ex) when (ex is IOException or System.Xml.XmlException)
+        {
+            // Unreadable means unproven, and an unproven pin is one that might do nothing.
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Rewrites the plan so transitive-only fixes are reported instead of applied.
+    /// </summary>
+    private static RemediationPlan WithdrawTransitiveActions(RemediationPlan plan)
+    {
+        return new RemediationPlan(
+            plan.Actions
+                .Select(action =>
+                    action is { Outcome: RemediationOutcome.Planned, IsTransitive: true }
+                        ? action with
+                        {
+                            Outcome = RemediationOutcome.TransitivePinningDisabled,
+                            Reason =
+                                "the package is only reached transitively, and a central pin does not "
+                                + "govern the graph unless CentralPackageTransitivePinningEnabled is true",
+                        }
+                        : action
+                )
+                .ToList()
+        );
     }
 
     private static string? FindPropsFile(string basePath)

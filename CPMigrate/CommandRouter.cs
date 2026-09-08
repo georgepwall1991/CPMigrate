@@ -1508,6 +1508,7 @@ internal static class CommandRouter
             RemediationOutcome.NoFixAvailable => "noFixAvailable",
             RemediationOutcome.AdvisoryDataUnavailable => "advisoryDataUnavailable",
             RemediationOutcome.AdvisoryNotInDatabase => "advisoryNotInDatabase",
+            RemediationOutcome.TransitivePinningDisabled => "transitivePinningDisabled",
             RemediationOutcome.AdvisoryDoesNotCoverResolvedVersion =>
                 "advisoryDoesNotCoverResolvedVersion",
             _ => "unknown",

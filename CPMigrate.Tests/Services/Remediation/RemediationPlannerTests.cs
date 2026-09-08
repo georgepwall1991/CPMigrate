@@ -27,7 +27,7 @@ public class RemediationPlannerTests
                 "HIGH",
                 [
                     new AdvisoryVersionRange(
-                        [(NuGetVersion.Parse("0.0.0"), true), (NuGetVersion.Parse(fixedVersion), false)]
+                        [new AdvisoryBoundary(NuGetVersion.Parse("0.0.0"), AdvisoryBoundaryKind.Introduced), new AdvisoryBoundary(NuGetVersion.Parse(fixedVersion), AdvisoryBoundaryKind.Fixed)]
                     ),
                 ],
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -52,10 +52,10 @@ public class RemediationPlannerTests
                 [
                     new AdvisoryVersionRange(
                         [
-                            (NuGetVersion.Parse(firstIntroduced), true),
-                            (NuGetVersion.Parse(firstFixed), false),
-                            (NuGetVersion.Parse(secondIntroduced), true),
-                            (NuGetVersion.Parse(secondFixed), false),
+                            new AdvisoryBoundary(NuGetVersion.Parse(firstIntroduced), AdvisoryBoundaryKind.Introduced),
+                            new AdvisoryBoundary(NuGetVersion.Parse(firstFixed), AdvisoryBoundaryKind.Fixed),
+                            new AdvisoryBoundary(NuGetVersion.Parse(secondIntroduced), AdvisoryBoundaryKind.Introduced),
+                            new AdvisoryBoundary(NuGetVersion.Parse(secondFixed), AdvisoryBoundaryKind.Fixed),
                         ]
                     ),
                 ],

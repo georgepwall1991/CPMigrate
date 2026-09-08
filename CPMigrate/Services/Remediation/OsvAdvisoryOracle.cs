@@ -323,7 +323,7 @@ public sealed class OsvAdvisoryOracle : IAdvisoryOracle
                 continue;
             }
 
-            var boundaries = new List<(NuGetVersion Version, bool Opens)>();
+            var boundaries = new List<AdvisoryBoundary>();
 
             foreach (var evt in events.EnumerateArray())
             {
@@ -334,7 +334,10 @@ public sealed class OsvAdvisoryOracle : IAdvisoryOracle
                     return null;
                 }
 
-                boundaries.Add(boundary);
+                if (boundary.HasValue)
+                {
+                    boundaries.Add(boundary.Value);
+                }
             }
 
             if (boundaries.Count > 0)
@@ -346,25 +349,34 @@ public sealed class OsvAdvisoryOracle : IAdvisoryOracle
         return result;
     }
 
-    private static bool TryReadEvent(JsonElement evt, out (NuGetVersion Version, bool Opens) boundary)
+    /// <summary>
+    /// Reads one OSV range event.
+    /// </summary>
+    /// <param name="evt">The event object.</param>
+    /// <param name="boundary">
+    /// The boundary it denotes, or null for an event that is not a boundary at all (a <c>limit</c>
+    /// marker bounds how far the range was evaluated).
+    /// </param>
+    /// <returns>False when the event is a boundary this parser cannot read, which invalidates the range.</returns>
+    private static bool TryReadEvent(JsonElement evt, out AdvisoryBoundary? boundary)
     {
-        boundary = default;
+        boundary = null;
 
         if (evt.TryGetProperty("introduced", out var introduced))
         {
             var raw = introduced.GetString();
 
-            // "0" is OSV's way of saying "every version up to the first fix". NuGetVersion parses it,
-            // but spelling the intent out keeps the zero-version boundary from looking accidental.
+            // "0" is OSV's way of saying "every version up to the first fix". NuGetVersion parses
+            // it, but spelling the intent out keeps the zero-version boundary from looking accidental.
             if (raw == "0")
             {
-                boundary = (new NuGetVersion(0, 0, 0), Opens: true);
+                boundary = new AdvisoryBoundary(new NuGetVersion(0, 0, 0), AdvisoryBoundaryKind.Introduced);
                 return true;
             }
 
             if (NuGetVersion.TryParse(raw, out var introducedVersion))
             {
-                boundary = (introducedVersion, Opens: true);
+                boundary = new AdvisoryBoundary(introducedVersion, AdvisoryBoundaryKind.Introduced);
                 return true;
             }
 
@@ -373,43 +385,38 @@ public sealed class OsvAdvisoryOracle : IAdvisoryOracle
 
         if (evt.TryGetProperty("fixed", out var fixedNode))
         {
-            return NuGetVersion.TryParse(fixedNode.GetString(), out var fixedVersion)
-                && Boundary(fixedVersion, opens: false, out boundary);
+            if (!NuGetVersion.TryParse(fixedNode.GetString(), out var fixedVersion))
+            {
+                return false;
+            }
+
+            boundary = new AdvisoryBoundary(fixedVersion, AdvisoryBoundaryKind.Fixed);
+            return true;
         }
 
         if (evt.TryGetProperty("last_affected", out var lastNode))
         {
-            // last_affected is inclusive where fixed is exclusive. Closing the window just past it
-            // lets one sweep handle both forms without carrying a second flag through the range.
-            return NuGetVersion.TryParse(lastNode.GetString(), out var lastAffected)
-                && Boundary(NextAfter(lastAffected), opens: false, out boundary);
+            if (!NuGetVersion.TryParse(lastNode.GetString(), out var lastAffected))
+            {
+                return false;
+            }
+
+            // Carried as an inclusive boundary rather than converted to an exclusive one a patch
+            // higher. That approximation is wrong wherever a release sits between the two: stable
+            // 1.2.3 is already above 1.2.3-beta, and 1.2.3.1 is above 1.2.3.0, so closing at 1.2.4
+            // would mark safe releases as affected and hide the real minimum fix.
+            boundary = new AdvisoryBoundary(lastAffected, AdvisoryBoundaryKind.LastAffected);
+            return true;
         }
 
         if (evt.TryGetProperty("limit", out _))
         {
             // A limit marker bounds how far the range was evaluated; it is not a boundary of the
             // vulnerable window, so it is skipped rather than treated as unreadable.
-            boundary = (new NuGetVersion(0, 0, 0), Opens: false);
             return true;
         }
 
         return false;
-    }
-
-    private static bool Boundary(NuGetVersion version, bool opens, out (NuGetVersion Version, bool Opens) boundary)
-    {
-        boundary = (version, opens);
-        return true;
-    }
-
-    /// <summary>
-    /// The smallest version strictly greater than the given one, used to convert OSV's inclusive
-    /// <c>last_affected</c> boundary into the exclusive form the sweep uses. A build-metadata-free
-    /// patch bump is sufficient: no real release sits between <c>x.y.z</c> and <c>x.y.(z+1)</c>.
-    /// </summary>
-    private static NuGetVersion NextAfter(NuGetVersion version)
-    {
-        return new NuGetVersion(version.Major, version.Minor, version.Patch + 1);
     }
 
     private static string? ReadSeverity(JsonElement root)

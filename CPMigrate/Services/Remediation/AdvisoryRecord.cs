@@ -10,38 +10,65 @@ namespace CPMigrate.Services.Remediation;
 /// can open and close several times (a flaw reintroduced in a later branch is one range with four
 /// events), and collapsing that into one interval would report the gap between them as vulnerable.
 /// </summary>
+/// <summary>
+/// Which side of the vulnerable window a boundary marks.
+/// </summary>
+public enum AdvisoryBoundaryKind
+{
+    /// <summary>OSV <c>introduced</c>: the window opens at this version, inclusive.</summary>
+    Introduced,
+
+    /// <summary>OSV <c>fixed</c>: the window closes at this version, exclusive of it.</summary>
+    Fixed,
+
+    /// <summary>OSV <c>last_affected</c>: the window closes after this version, inclusive of it.</summary>
+    LastAffected,
+}
+
+/// <summary>
+/// One boundary of an advisory's vulnerable window.
+/// </summary>
+/// <param name="Version">The version the boundary sits at.</param>
+/// <param name="Kind">Which side it marks, and whether it includes its own version.</param>
+public readonly record struct AdvisoryBoundary(NuGetVersion Version, AdvisoryBoundaryKind Kind);
+
+/// <summary>
+/// The version windows an advisory applies to, as OSV expresses them: a sequence of
+/// <c>introduced</c> / <c>fixed</c> / <c>last_affected</c> events over a single package.
+///
+/// Kept as the raw event list rather than a <see cref="VersionRange"/> because a single OSV range
+/// can open and close several times (a flaw reintroduced in a later branch is one range with four
+/// events), and collapsing that into one interval would report the gap between them as vulnerable.
+/// </summary>
 public sealed class AdvisoryVersionRange
 {
-    private readonly IReadOnlyList<(NuGetVersion Version, bool Opens)> _events;
+    private readonly IReadOnlyList<AdvisoryBoundary> _boundaries;
 
     /// <summary>
     /// Builds a range from its boundary events.
     /// </summary>
-    /// <param name="events">
-    /// Boundaries as (version, opens) pairs, where <c>opens</c> marks an <c>introduced</c> event and
-    /// its absence marks the exclusive upper bound produced by <c>fixed</c> or <c>last_affected</c>.
-    /// Order does not matter; they are sorted here.
-    /// </param>
-    public AdvisoryVersionRange(IEnumerable<(NuGetVersion Version, bool Opens)> events)
+    /// <param name="boundaries">The boundaries, in any order; they are sorted here.</param>
+    public AdvisoryVersionRange(IEnumerable<AdvisoryBoundary> boundaries)
     {
-        ArgumentNullException.ThrowIfNull(events);
+        ArgumentNullException.ThrowIfNull(boundaries);
 
-        // Sorted ascending so the sweep in Contains reads the boundaries in version order regardless
-        // of the order the document listed them. An "introduced" sorts before a "fixed" at the same
-        // version: a release cannot both start and end being vulnerable, and treating the close as
-        // last matches OSV's own resolution of that degenerate case.
-        _events = events
-            .OrderBy(e => e.Version)
-            .ThenByDescending(e => e.Opens)
+        // Sorted ascending so the sweep reads boundaries in version order regardless of the order
+        // the document listed them. An "introduced" sorts before a close at the same version: a
+        // release cannot both start and end being vulnerable, and letting the close win matches
+        // OSV's own resolution of that degenerate case.
+        _boundaries = boundaries
+            .OrderBy(b => b.Version)
+            .ThenBy(b => b.Kind == AdvisoryBoundaryKind.Introduced ? 0 : 1)
             .ToList();
     }
 
     /// <summary>
     /// Whether this range covers a version.
     ///
-    /// Walks the boundaries in ascending order and keeps the state the last boundary at or below the
-    /// candidate left behind — the sweep OSV's specification describes, which is why it handles a
-    /// range that reopens without any special case.
+    /// Walks the boundaries in ascending order and keeps the state the last applicable one left
+    /// behind — the sweep OSV's specification describes, which is why a range that reopens needs no
+    /// special case. <see cref="AdvisoryBoundaryKind.LastAffected"/> is the one inclusive close, so
+    /// it applies strictly below the candidate while the others apply at or below it.
     /// </summary>
     /// <param name="version">The version to test.</param>
     /// <returns>True when the advisory applies to this version.</returns>
@@ -51,14 +78,16 @@ public sealed class AdvisoryVersionRange
 
         var affected = false;
 
-        foreach (var (boundary, opens) in _events)
+        foreach (var boundary in _boundaries)
         {
-            if (boundary > version)
-            {
-                break;
-            }
+            var applies = boundary.Kind == AdvisoryBoundaryKind.LastAffected
+                ? boundary.Version < version
+                : boundary.Version <= version;
 
-            affected = opens;
+            if (applies)
+            {
+                affected = boundary.Kind == AdvisoryBoundaryKind.Introduced;
+            }
         }
 
         return affected;

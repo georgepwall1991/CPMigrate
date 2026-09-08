@@ -76,6 +76,19 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   affected projects), and `remediate` joins the `operation` enum. Absent on every other command, so a
   run that never remediated stays distinguishable from one that remediated and cleared nothing.
 
+- **A transitive-only advisory is reported, not silently half-fixed.** A `PackageVersion` entry for a
+  package nothing references directly does not govern the resolved graph unless the repository sets
+  `CentralPackageTransitivePinningEnabled`. Writing one regardless would sail through verification —
+  precisely because the graph never moved — and leave a dead entry behind. Those fixes are now
+  withheld with `transitivePinningDisabled` and a console note naming the property, rather than
+  written or the property being enabled unasked: turning it on changes how every transitive
+  dependency in the repository resolves, which is far beyond the advisory at hand.
+
+- **`--only` narrows what remediation answers for, including the proof.** The confirming scan counted
+  every advisory in the workspace while the plan covered only the selected packages, so a completely
+  successful scoped run still saw the untouched findings and reported itself incomplete — it could
+  never exit `0` unless the rest of the solution happened to be clean.
+
 ### Fixed
 - **`--remediate` honours the documented "current directory when omitted" default for `-s`.**
   `SolutionFileDir` defaults to an empty string, which `Path.GetFullPath` rejects rather than resolves.

@@ -36,6 +36,14 @@ public enum RemediationOutcome
 
     /// <summary>The advisory data does not describe the resolved version, so no fix can be proven.</summary>
     AdvisoryDoesNotCoverResolvedVersion,
+
+    /// <summary>
+    /// A fix exists, but the package is only reached transitively and the repository has not enabled
+    /// central transitive pinning — so writing a <c>PackageVersion</c> for it would not move the
+    /// resolved graph. Reported rather than written, because an entry that changes nothing is worse
+    /// than none: it looks like the fix was applied.
+    /// </summary>
+    TransitivePinningDisabled,
 }
 
 /// <summary>

@@ -528,6 +528,7 @@
             "noFixAvailable",
             "advisoryDataUnavailable",
             "advisoryNotInDatabase",
+            "transitivePinningDisabled",
             "advisoryDoesNotCoverResolvedVersion",
             "unknown"
           ]
