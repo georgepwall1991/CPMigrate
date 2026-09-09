@@ -40,7 +40,9 @@ CPMigrate replaces both with three things that actually hold up:
 | | Rule | What it finds | Severity |
 |:--:|------|---------------|:--:|
 | 🟥 | **SecurityVulnerability** | Known CVEs in direct *and* transitive deps (`--audit`) | Critical |
-| 🟧 | **InlineVersionUnderCpm** | CPM drift — inline overrides, missing pins, orphaned entries, CPM switched off | High |
+| 🟧 | **InlineVersionUnderCpm** | Inline `Version` overriding the central pin | High |
+| 🟧 | **CpmNotEnabled** | Props file exists but central management is switched off | High |
+| 🟧 | **MissingPackageVersion** | A reference with no version, inline or central — restore fails | High |
 | 🟧 | **LicenseRisk** | Copyleft (GPL/AGPL) & proprietary licenses (`--licenses`) | High |
 | 🟨 | **VersionInconsistency** | Same package, different versions across projects | Moderate |
 | 🟨 | **FloatingVersion** | `4.*` or `[4.0.0,)` — restore picks the version, so the build isn't reproducible | Moderate |
@@ -49,6 +51,8 @@ CPMigrate replaces both with three things that actually hold up:
 | 🟦 | **DuplicatePackageCasing** | `Newtonsoft.Json` vs `newtonsoft.json` | Low |
 | 🟦 | **RedundantReference** | The same `PackageReference` twice in one project | Low |
 | 🟦 | **OutdatedPackage** / **DeprecatedPackage** | Behind the feed / abandoned packages | Low |
+| 🟦 | **OrphanedPackageVersion** | Central pins no project references anymore | Low |
+| 🟦 | **RedundantDirectReference** | A direct reference already provided transitively | Low |
 | ⬜ | **FrameworkAlignment** | Projects drifting across `TargetFramework` values | Info |
 
 Every finding carries a stable rule ID — paste it straight into `cpmigrate --explain <RuleId>` for the why and the fix. Full reference: [`docs/rules.md`](docs/rules.md).

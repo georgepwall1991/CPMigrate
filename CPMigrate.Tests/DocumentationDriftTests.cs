@@ -87,6 +87,22 @@ public class DocumentationDriftTests
     }
 
     [Fact]
+    public void EveryAnalysisRule_IsInTheReadmeCatches()
+    {
+        // The README table silently dropped four rules (including the whole lifting rule) while
+        // docs/rules.md stayed complete — only the docs page was guarded. A rule missing here
+        // is one nobody evaluating the tool knows exists.
+        var readme = Readme();
+
+        Enum.GetValues<AnalysisIssueCode>()
+            .Where(code => code != AnalysisIssueCode.Unknown)
+            .Select(code => code.ToString())
+            .Where(name => !readme.Contains($"**{name}**", StringComparison.Ordinal))
+            .Should()
+            .BeEmpty("a rule with no README row cannot be found from the catches table");
+    }
+
+    [Fact]
     public void EveryAnalysisRule_IsInTheRuleReference()
     {
         // --explain reads from the catalog, which is already asserted complete; this is the published page
