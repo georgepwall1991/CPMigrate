@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Fixed
+- **CSV reports now quote fields containing a bare carriage return.** The escaper quoted values with a comma, quote, or `\n`, but a lone `\r` passed through unquoted and silently broke row parsing in strict CSV readers. `\r` now triggers quoting exactly like `\n`, pinned by a new `CsvFormatterTests` contract suite (header shape, column order, quoting/escaping, multi-project joins, empty report).
+
 ## [3.65.0] - 2026-09-08
 
 ### Added
