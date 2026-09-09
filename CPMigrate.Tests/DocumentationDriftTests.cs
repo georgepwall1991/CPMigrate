@@ -69,6 +69,24 @@ public class DocumentationDriftTests
     }
 
     [Fact]
+    public void EveryExitCode_IsInTheSiteManPage()
+    {
+        // The site's man page stopped at 8 while the tool grew 9 and 10 — silently, because
+        // only the README table was guarded. A code missing here is a CI gate written blind.
+        var site = File.ReadAllText(RepositoryFile(Path.Combine("site", "index.html")));
+
+        foreach (var (name, value) in ExitCodeValues())
+        {
+            site.Should().Contain(
+                $"<span class=\"c\">{value}</span>",
+                $"exit code {value} has to be in the site man page");
+            site.Should().Contain(
+                $"<span class=\"nm\">{name}</span>",
+                $"exit code {value} has to be named {name} so the two cannot drift apart");
+        }
+    }
+
+    [Fact]
     public void EveryAnalysisRule_IsInTheRuleReference()
     {
         // --explain reads from the catalog, which is already asserted complete; this is the published page
