@@ -202,6 +202,53 @@ public class SarifFormatterTests : IDisposable
             .Be(severity.ToString());
     }
 
+    [Theory]
+    [MemberData(nameof(AllRealRules))]
+    public void Format_EveryCatalogRule_HasAStableRuleIdentity(AnalysisIssueCode code)
+    {
+        // Rules only appear in SARIF when a fixture produces them, so a catalog entry with an
+        // empty description or a broken help link would ship unnoticed. Every rule gets an
+        // issue so every entry is rendered and checked.
+        var report = new AnalysisReport(
+            1,
+            1,
+            new[]
+            {
+                new AnalyzerResult(
+                    "Analyzer",
+                    new[] { Issue("Pkg", code, AnalysisSeverity.Moderate) }
+                ),
+            }
+        );
+
+        var run = FormatToDocument(
+            report,
+            new ProjectPackageInfo(Array.Empty<PackageReference>())
+        ).RootElement.GetProperty("runs")[0];
+
+        run.GetProperty("results")[0].GetProperty("ruleId").GetString().Should().Be(code.ToString());
+        var rule = run.GetProperty("tool").GetProperty("driver").GetProperty("rules")
+            .EnumerateArray()
+            .Should()
+            .ContainSingle(r => r.GetProperty("id").GetString() == code.ToString())
+            .Subject;
+        rule.GetProperty("name").GetString().Should().Be(code.ToString());
+        rule.GetProperty("shortDescription").GetProperty("text").GetString()
+            .Should().NotBeNullOrWhiteSpace();
+        rule.GetProperty("helpUri").GetString().Should().Contain("docs/rules.md");
+    }
+
+    public static TheoryData<AnalysisIssueCode> AllRealRules()
+    {
+        var data = new TheoryData<AnalysisIssueCode>();
+        foreach (var code in Enum.GetValues<AnalysisIssueCode>().Where(c => c != AnalysisIssueCode.Unknown))
+        {
+            data.Add(code);
+        }
+
+        return data;
+    }
+
     [Fact]
     public void Format_ResolvesAffectedProjectsToRepositoryRelativeUris()
     {
