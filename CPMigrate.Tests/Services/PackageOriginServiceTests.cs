@@ -474,6 +474,62 @@ public class PackageOriginServiceTests
         report.Found.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task AnswerAsync_UnknownPackage_NamesItAndPointsAtTheTree()
+    {
+        // The terminal verdict for a clean miss has three jobs: name the token, say what was
+        // searched, and say where to look next — otherwise a deny-list audit ends at a shrug.
+        var request = BuildRequest(references: [], declaredReferences: []);
+        var console = new CPMigrate.Tests.TestDoubles.FakeConsoleService();
+        var service = new PackageOriginService(console);
+
+        var exitCode = await service.AnswerAsync(request);
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.ErrorMessages.Should().ContainSingle(m =>
+            m.Contains("'Serilog'") && m.Contains("was not declared or resolved"));
+        console.OutputMessages.Should().Contain(m => m.Contains("--tree"));
+    }
+
+    [Fact]
+    public async Task AnswerAsync_UnknownPackageWithFailedScans_SaysItMayStillLiveThere()
+    {
+        // Absence over a half-read workspace is not absence: the verdict must hedge and the
+        // exit code must say re-run, not not-found.
+        var request = BuildRequest(
+            references: [],
+            declaredReferences: [],
+            failedScanCount: 1,
+            projectCount: 2);
+        var console = new CPMigrate.Tests.TestDoubles.FakeConsoleService();
+        var service = new PackageOriginService(console);
+
+        var exitCode = await service.AnswerAsync(request);
+
+        exitCode.Should().Be(ExitCodes.IncompleteAnalysis);
+        console.ErrorMessages.Should().ContainSingle(m =>
+            m.Contains("'Serilog'") && m.Contains("may still live there"));
+    }
+
+    [Fact]
+    public async Task AnswerAsync_UnknownPackageWithNearMiss_SuggestsIt()
+    {
+        var request = BuildRequest(
+            references:
+            [
+                Resolved("App", isTransitive: false),
+                OtherResolved("App", "Serilog.Sinks.Console"),
+            ],
+            declaredReferences: []) with { PackageId = "serilogg" };
+        var console = new CPMigrate.Tests.TestDoubles.FakeConsoleService();
+        var service = new PackageOriginService(console);
+
+        var exitCode = await service.AnswerAsync(request);
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        console.OutputMessages.Should().Contain(m => m.Contains("Did you mean 'Serilog'?"));
+    }
+
     private static PackageOriginRequest BuildRequest(
         IReadOnlyList<PackageReference> references,
         IReadOnlyList<PackageReference> declaredReferences,
