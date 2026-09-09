@@ -132,4 +132,24 @@ public class CommandRequestsTests
         output.IsJson.Should().BeFalse();
         output.IsNonInteractive.Should().BeFalse();
     }
+
+    [Fact]
+    public void PackageUpdateRequest_OmittedSolutionPath_DefaultsToCurrentDirectory()
+    {
+        // -s documents "current directory when omitted". The raw default is an empty string,
+        // which Path.GetFullPath rejects downstream — the request must carry the default applied.
+        var request = PackageUpdateRequest.FromOptions(new Options());
+
+        request.SolutionPath.Should().Be(".");
+        Path.GetFullPath(request.SolutionPath).Should().Be(Directory.GetCurrentDirectory());
+    }
+
+    [Fact]
+    public void PackageUpdateRequest_ExplicitSolutionPath_IsPreserved()
+    {
+        var options = new Options { SolutionFileDir = Path.Combine("repo", "App.sln") };
+
+        PackageUpdateRequest.FromOptions(options).SolutionPath.Should().Be(options.SolutionFileDir);
+    }
+
 }

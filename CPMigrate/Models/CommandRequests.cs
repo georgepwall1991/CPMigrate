@@ -131,7 +131,7 @@ public sealed record PackageUpdateRequest(
 {
     public static PackageUpdateRequest FromOptions(Options options) =>
         new(
-            SolutionPath: options.SolutionFileDir,
+            SolutionPath: options.EffectiveWorkspacePath,
             IncludePrerelease: options.IncludePrerelease,
             IncludeTransitive: options.IncludeTransitive,
             DryRun: options.DryRun,
