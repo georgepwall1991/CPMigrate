@@ -24,6 +24,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **`--why` JSON documents now pin their schema stamp.** The single-shape tests asserted the exact `outputSchemaVersion`, but the `why` and `why-many` documents only asserted non-empty — a stale stamp would have passed. Both now require `OutputMetadata.SchemaVersion`.
 - **Baseline schema drift is now guarded.** Nothing tied the baseline writer to `cpmigrate-baseline.schema.json`, so a model field without a schema update (or the reverse) broke the contract silently. Six reflection tests pin shape, required fields, severity enum, version const, and closed properties.
 - **Every rule's SARIF identity is now pinned.** Rule entries only rendered when a fixture produced them, so a catalog entry with an empty description or broken help link shipped unnoticed. A theory renders one issue per rule and checks `ruleId`, entry `id`/`name`, non-empty descriptions, and the docs help link.
+- **Fish and PowerShell completions are now pinned end to end.** Only Bash and Zsh had dispatch-level purity tests; the other two shells rode the same path untested. A theory asserts each emits only its script.
 
 ## [3.65.0] - 2026-09-08
 
