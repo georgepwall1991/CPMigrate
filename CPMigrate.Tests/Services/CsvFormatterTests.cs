@@ -87,6 +87,8 @@ public class CsvFormatterTests
         var report = ReportWith(issue);
 
         var csv = CsvFormatter.Format(report, EmptyPackageInfo());
+
+        csv.Should().Contain("\"first line\nsecond line\"");
     }
 
     [Fact]
@@ -101,6 +103,8 @@ public class CsvFormatterTests
         var report = ReportWith(issue);
 
         var csv = CsvFormatter.Format(report, EmptyPackageInfo());
+
+        csv.Should().Contain("\"first line\rsecond line\"");
     }
 
     [Fact]
