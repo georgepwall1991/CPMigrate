@@ -1,5 +1,7 @@
 using CPMigrate.Services;
+using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
+using Moq;
 
 namespace CPMigrate.Tests.Services;
 
@@ -94,7 +96,7 @@ public class DoctorServiceTests : IDisposable
     {
         var check = DoctorService.ProbeWriteAccess(_testDirectory);
 
-        check.Name.Should().Be("Write");
+        check.Name.Should().Be("Workspace");
         check.Status.Should().Be(DoctorStatus.Ok);
         Directory.EnumerateFiles(_testDirectory).Should().BeEmpty();
     }
@@ -152,6 +154,37 @@ public class DoctorServiceTests : IDisposable
         var check = DoctorService.CheckDiskSpace(filePath);
 
         check.Status.Should().NotBe(DoctorStatus.Info);
+    }
+
+    #endregion
+
+    #region Report Shape
+
+    [Fact]
+    public void CollectChecks_EmptyWorkspace_ReportsTheFullCheckSetInOrder()
+    {
+        // The report is a fixed table: a renamed, added, or dropped check changes what the
+        // README promises, so the name set and order are pinned here rather than inferred.
+        var discovery = new Mock<ISolutionDiscovery>();
+        discovery.Setup(d => d.GetSolutionFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+        var service = new DoctorService(new FakeConsoleService(), discovery.Object);
+
+        var checks = service.CollectChecks(
+            _testDirectory,
+            backupDir: null,
+            new DoctorCheck("NuGet", DoctorStatus.Ok, "nuget.org reachable"));
+
+        checks.Select(c => c.Name).Should().Equal(
+            "SDK", "Tool", "Runtime", "NuGet", "Solutions", "CPM", "Disk",
+            "Workspace", "Backup", "Config", "Git");
+        foreach (var check in checks)
+        {
+            check.Details.Should().NotBeNullOrWhiteSpace($"{check.Name} must say what it found");
+            if (check.Status is DoctorStatus.Error or DoctorStatus.Warning)
+            {
+                check.Hint.Should().NotBeNullOrWhiteSpace($"{check.Name} must say what to do next");
+            }
+        }
     }
 
     #endregion
