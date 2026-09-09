@@ -20,6 +20,13 @@ public static class TelemetryService
         try
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (string.IsNullOrWhiteSpace(home))
+            {
+                // HOME unset or pointing nowhere (containers, service accounts): fall back to
+                // silence rather than scattering a .cpmigrate directory into the working folder.
+                return;
+            }
+
             var telemetryDir = Path.Combine(home, ".cpmigrate", "telemetry");
             Directory.CreateDirectory(telemetryDir);
 
