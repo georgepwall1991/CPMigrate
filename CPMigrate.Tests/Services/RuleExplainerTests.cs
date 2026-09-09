@@ -104,6 +104,20 @@ public class RuleExplainerTests
     }
 
     [Fact]
+    public void Explain_RedundantDirectReference_IncludesExampleAndFixHint()
+    {
+        // The lifting rule used to fall through both guidance switches, so its --explain page
+        // ended where the actionable part should start.
+        var (output, found) = RuleExplainer.Explain("RedundantDirectReference");
+
+        found.Should().BeTrue();
+        output.Should().Contain("Example:");
+        output.Should().Contain("--transitive");
+        output.Should().Contain("How to fix:");
+        output.Should().Contain("transitively");
+    }
+
+    [Fact]
     public void Explain_WrapsProseRatherThanEmittingOneLongLine()
     {
         var (output, _) = RuleExplainer.Explain("SecurityVulnerability");
