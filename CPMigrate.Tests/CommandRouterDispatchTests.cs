@@ -49,6 +49,26 @@ public class CommandRouterDispatchTests : IDisposable
         console.SelectionResponses.Should().BeEmpty("the wizard must not have been entered");
     }
 
+    [Theory]
+    [InlineData("Fish", "complete -c cpmigrate")]
+    [InlineData("PowerShell", "Register-ArgumentCompleter")]
+    public async Task Completions_AllShells_EmitOnlyTheirScript(string shell, string marker)
+    {
+        // Bash and Zsh have dedicated purity tests; Fish and PowerShell ride the same
+        // pure-output path and deserve the same guarantee: script only, exit clean.
+        var console = new FakeConsoleService();
+
+        var stdout = await CaptureStdoutAsync(() =>
+            ProgramRunner.RunAsync(
+                new[] { "--completions", shell, "-s", _testDirectory },
+                console
+            )
+        );
+
+        stdout.Should().Contain(marker);
+        stdout.Should().NotContain("Loaded config from");
+    }
+
     [Fact]
     public async Task Explain_WinsOverTheDefaultMigrateAction()
     {
