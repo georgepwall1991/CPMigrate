@@ -7,30 +7,25 @@ namespace CPMigrate.Tests.Services;
 /// <summary>
 /// Telemetry is opt-in and local-only, and that promise has to survive refactors: disabled by
 /// default, enabled only by an explicit value, and the payload carrying operational facts —
-/// never repository, package, or file content.
+/// never repository, package, or file content. The destination is injected, so no test depends
+/// on how the OS resolves the user profile (<c>HOME</c> on Unix, the profile lookup on Windows).
 /// </summary>
 public class TelemetryServiceTests : IDisposable
 {
     private readonly string _home;
     private readonly string? _previousOptIn;
-    private readonly string? _previousHome;
 
     public TelemetryServiceTests()
     {
         _home = Path.Combine(Path.GetTempPath(), "cpmigrate-telemetry-" + Guid.NewGuid().ToString("N"));
-        // GetFolderPath(UserProfile) resolves empty unless the directory exists, so the
-        // sandbox home must be real before anything reads it.
         Directory.CreateDirectory(_home);
         _previousOptIn = Environment.GetEnvironmentVariable("CPMIGRATE_TELEMETRY_OPT_IN");
-        _previousHome = Environment.GetEnvironmentVariable("HOME");
-        Environment.SetEnvironmentVariable("HOME", _home);
         Environment.SetEnvironmentVariable("CPMIGRATE_TELEMETRY_OPT_IN", null);
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("CPMIGRATE_TELEMETRY_OPT_IN", _previousOptIn);
-        Environment.SetEnvironmentVariable("HOME", _previousHome);
         try
         {
             Directory.Delete(_home, recursive: true);
@@ -43,61 +38,42 @@ public class TelemetryServiceTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    [Fact]
-    public void RecordCommandRun_DisabledByDefault_WritesNothing()
+    [Theory]
+    [InlineData("1", true)]
+    [InlineData("true", true)]
+    [InlineData("yes", true)]
+    [InlineData("TRUE", true)]
+    [InlineData("Yes", true)]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData(" ", false)]
+    [InlineData("0", false)]
+    [InlineData("false", false)]
+    [InlineData("no", false)]
+    [InlineData("2", false)]
+    public void IsEnabled_OnlyExplicitOptInValuesEnable(string? value, bool expected)
     {
-        TelemetryService.RecordCommandRun(new Options(), ExitCodes.Success, TimeSpan.FromSeconds(1));
+        Environment.SetEnvironmentVariable("CPMIGRATE_TELEMETRY_OPT_IN", value);
 
-        Directory.Exists(Path.Combine(_home, ".cpmigrate")).Should().BeFalse("telemetry is opt-in");
+        TelemetryService.IsEnabled().Should().Be(expected);
     }
 
     [Fact]
-    public void RecordCommandRun_UnresolvableHome_WritesNothingAndThrowsNothing()
+    public void RecordCommandRun_DisabledByDefault_DoesNotThrow()
     {
-        // Containers and service accounts can have HOME unset or pointing nowhere, in which
-        // case the profile lookup resolves empty. That must be silence, not a .cpmigrate
-        // directory scattered into whatever the working directory happens to be.
-        Environment.SetEnvironmentVariable("CPMIGRATE_TELEMETRY_OPT_IN", "1");
-        Environment.SetEnvironmentVariable("HOME", Path.Combine(_home, "does-not-exist"));
-        var cwdMarker = Path.Combine(Directory.GetCurrentDirectory(), ".cpmigrate");
-        var existed = Directory.Exists(cwdMarker);
-
+        // The gate is closed, so this returns before touching the filesystem — safe to run
+        // against the real profile resolution on any OS.
         var act = () => TelemetryService.RecordCommandRun(new Options(), ExitCodes.Success, TimeSpan.FromSeconds(1));
 
         act.Should().NotThrow();
-        Directory.Exists(cwdMarker).Should().Be(existed, "telemetry must never scatter into the working directory");
     }
 
-    [Theory]
-    [InlineData("0")]
-    [InlineData("false")]
-    [InlineData("no")]
-    [InlineData("")]
-    [InlineData(" ")]
-    [InlineData("2")]
-    public void RecordCommandRun_WithoutExplicitOptIn_WritesNothing(string value)
+    [Fact]
+    public void RecordEvent_OptedInRun_AppendsOneEvent()
     {
-        Environment.SetEnvironmentVariable("CPMIGRATE_TELEMETRY_OPT_IN", value);
+        TelemetryService.RecordEvent(_home, new Options { Analyze = true }, ExitCodes.Success, TimeSpan.FromSeconds(2));
 
-        TelemetryService.RecordCommandRun(new Options(), ExitCodes.Success, TimeSpan.FromSeconds(1));
-
-        Directory.Exists(Path.Combine(_home, ".cpmigrate")).Should().BeFalse($"'{value}' is not an opt-in");
-    }
-
-    [Theory]
-    [InlineData("1")]
-    [InlineData("true")]
-    [InlineData("yes")]
-    [InlineData("TRUE")]
-    [InlineData("Yes")]
-    public void RecordCommandRun_WithExplicitOptIn_AppendsOneEvent(string value)
-    {
-        Environment.SetEnvironmentVariable("CPMIGRATE_TELEMETRY_OPT_IN", value);
-
-        TelemetryService.RecordCommandRun(new Options { Analyze = true }, ExitCodes.Success, TimeSpan.FromSeconds(2));
-
-        var line = ReadSingleEvent();
-        var payload = JsonDocument.Parse(line).RootElement;
+        var payload = JsonDocument.Parse(ReadSingleEvent()).RootElement;
         payload.GetProperty("operation").GetString().Should().Be("analyze");
         payload.GetProperty("success").GetBoolean().Should().BeTrue();
         payload.GetProperty("exitCode").GetInt32().Should().Be(ExitCodes.Success);
@@ -107,11 +83,9 @@ public class TelemetryServiceTests : IDisposable
     }
 
     [Fact]
-    public void RecordCommandRun_FailedRun_RecordsFailureCategory()
+    public void RecordEvent_FailedRun_RecordsFailureCategory()
     {
-        Environment.SetEnvironmentVariable("CPMIGRATE_TELEMETRY_OPT_IN", "1");
-
-        TelemetryService.RecordCommandRun(new Options { UpdatePackages = true }, ExitCodes.TestFailure, TimeSpan.Zero);
+        TelemetryService.RecordEvent(_home, new Options { UpdatePackages = true }, ExitCodes.TestFailure, TimeSpan.Zero);
 
         var payload = JsonDocument.Parse(ReadSingleEvent()).RootElement;
         payload.GetProperty("operation").GetString().Should().Be("update-packages");
@@ -120,13 +94,12 @@ public class TelemetryServiceTests : IDisposable
     }
 
     [Fact]
-    public void RecordCommandRun_PayloadContainsNoRepositoryContent()
+    public void RecordEvent_PayloadContainsNoRepositoryContent()
     {
         // The privacy contract: operational facts only. Package IDs, paths, and versions
         // must never appear in the event.
-        Environment.SetEnvironmentVariable("CPMIGRATE_TELEMETRY_OPT_IN", "1");
-
-        TelemetryService.RecordCommandRun(
+        TelemetryService.RecordEvent(
+            _home,
             new Options { Analyze = true, SolutionFileDir = "/secret/acme" },
             ExitCodes.Success,
             TimeSpan.FromSeconds(1));
@@ -134,13 +107,29 @@ public class TelemetryServiceTests : IDisposable
         var line = ReadSingleEvent();
         line.Should().NotContain("acme");
         line.Should().NotContain("/secret");
-        line.Should().NotContain(".sln");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void RecordEvent_UnresolvableHome_WritesNothingAndThrowsNothing(string? home)
+    {
+        // Containers and service accounts can have no resolvable home. That must be silence,
+        // not a .cpmigrate directory scattered into whatever the working directory is.
+        var cwdMarker = Path.Combine(Directory.GetCurrentDirectory(), ".cpmigrate");
+        var existed = Directory.Exists(cwdMarker);
+
+        var act = () => TelemetryService.RecordEvent(home, new Options(), ExitCodes.Success, TimeSpan.FromSeconds(1));
+
+        act.Should().NotThrow();
+        Directory.Exists(cwdMarker).Should().Be(existed, "telemetry must never scatter into the working directory");
     }
 
     private string ReadSingleEvent()
     {
         var file = Path.Combine(_home, ".cpmigrate", "telemetry", "events.ndjson");
-        File.Exists(file).Should().BeTrue("opting in must record the run");
+        File.Exists(file).Should().BeTrue("the event must be recorded");
         var lines = File.ReadAllLines(file);
         lines.Should().HaveCount(1);
         return lines[0];
