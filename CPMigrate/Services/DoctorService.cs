@@ -24,24 +24,14 @@ internal sealed class DoctorService
     public async Task<int> RunAsync(string searchPath, string? backupDir = null)
     {
         var theme = SpectreTheme.For(AnsiConsole.Console);
-        var checks = new List<DoctorCheck>();
 
         // The network probe starts first and is awaited last, so doctor costs HTTP latency in
         // total — not HTTP latency plus every local check — while the report keeps the probe's
         // established row position.
         var nuGetTask = CheckNuGetConnectivityAsync();
 
-        checks.Add(CheckDotNetSdk());
-        checks.Add(CheckCpmigrateVersion());
-        checks.Add(CheckRuntime());
-        checks.AddRange(CheckWorkspace(searchPath));
-        checks.Add(CheckDiskSpace(searchPath));
-        checks.Add(CheckWriteAccess(searchPath));
-        checks.Add(CheckBackupDirAccess(searchPath, backupDir));
-        checks.Add(CheckConfigFile(searchPath));
-        checks.Add(CheckGitStatus(searchPath));
+        var checks = CollectChecks(searchPath, backupDir);
         checks.Insert(3, await nuGetTask);
-
         RenderReport(theme, checks);
 
         var failures = checks.Count(c => c.Status == DoctorStatus.Error);
@@ -64,6 +54,30 @@ internal sealed class DoctorService
         }
 
         return ExitCodes.Success;
+    }
+
+    /// <summary>
+    /// Every local check doctor reports, in report order, without the network probe: the probe
+    /// runs concurrently while these execute, and the caller inserts its result at the
+    /// established position. Separated from <see cref="RunAsync"/> so the check-name set is
+    /// assertable without the network or the console render — both would make the test about
+    /// something else.
+    /// </summary>
+    internal List<DoctorCheck> CollectChecks(string searchPath, string? backupDir)
+    {
+        var checks = new List<DoctorCheck>
+        {
+            CheckDotNetSdk(),
+            CheckCpmigrateVersion(),
+            CheckRuntime(),
+        };
+        checks.AddRange(CheckWorkspace(searchPath));
+        checks.Add(CheckDiskSpace(searchPath));
+        checks.Add(CheckWriteAccess(searchPath));
+        checks.Add(CheckBackupDirAccess(searchPath, backupDir));
+        checks.Add(CheckConfigFile(searchPath));
+        checks.Add(CheckGitStatus(searchPath));
+        return checks;
     }
 
     private static DoctorCheck CheckDotNetSdk()
@@ -241,7 +255,7 @@ internal sealed class DoctorService
     {
         if (!Directory.Exists(dir))
         {
-            return new DoctorCheck("Write", DoctorStatus.Info,
+            return new DoctorCheck("Workspace", DoctorStatus.Info,
                 $"Cannot probe '{dir}' — directory does not exist");
         }
 
@@ -259,23 +273,23 @@ internal sealed class DoctorService
                 // Creating files but being denied Delete/DeleteChild is real: the atomic writer
                 // replaces existing files, which needs deletion rights, so a migration would die
                 // mid-run. A leftover probe is evidence of exactly that.
-                return new DoctorCheck("Write", DoctorStatus.Warning,
+                return new DoctorCheck("Workspace", DoctorStatus.Warning,
                     $"Workspace accepts new files but the probe could not be deleted: {probePath}",
                     "Deletion rights are required — CPMigrate replaces files in place during "
                         + "migration. Delete the probe file and check directory ACLs.");
             }
 
-            return new DoctorCheck("Write", DoctorStatus.Ok, "Workspace directory is writable");
+            return new DoctorCheck("Workspace", DoctorStatus.Ok, "Workspace directory is writable");
         }
         catch (UnauthorizedAccessException)
         {
-            return new DoctorCheck("Write", DoctorStatus.Error,
+            return new DoctorCheck("Workspace", DoctorStatus.Error,
                 "Workspace directory is not writable",
                 "CPMigrate rewrites project files and writes backups during migration — it cannot run against a read-only workspace.");
         }
         catch (Exception ex)
         {
-            return new DoctorCheck("Write", DoctorStatus.Info,
+            return new DoctorCheck("Workspace", DoctorStatus.Info,
                 $"Could not verify write access: {ex.Message}");
         }
     }
@@ -311,7 +325,7 @@ internal sealed class DoctorService
         if (string.Equals(resolvedTrimmed, workspaceTrimmed, StringComparison.Ordinal))
         {
             return new DoctorCheck("Backup", DoctorStatus.Info,
-                "Backups go to the workspace directory (covered by the Write check)");
+                "Backups go to the workspace directory (covered by the Workspace check)");
         }
 
         var parent = Path.GetDirectoryName(resolvedTrimmed);
@@ -335,7 +349,7 @@ internal sealed class DoctorService
         {
             // Already covered by the workspace write probe; a second identical line says nothing.
             return new DoctorCheck("Backup", DoctorStatus.Info,
-                "Backups go to the workspace directory (covered by the Write check)");
+                "Backups go to the workspace directory (covered by the Workspace check)");
         }
 
         var check = ProbeWriteAccess(resolved);

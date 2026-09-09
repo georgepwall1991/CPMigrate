@@ -26,6 +26,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **Every rule's SARIF identity is now pinned.** Rule entries only rendered when a fixture produced them, so a catalog entry with an empty description or broken help link shipped unnoticed. A theory renders one issue per rule and checks `ruleId`, entry `id`/`name`, non-empty descriptions, and the docs help link.
 - **Fish and PowerShell completions are now pinned end to end.** Only Bash and Zsh had dispatch-level purity tests; the other two shells rode the same path untested. A theory asserts each emits only its script.
 - **EOL framework set is now a named, sourced list.** The end-of-life majors lived inline in a pattern match with no pointer to the lifecycle policy they track. No behavior change; the existing suite (including net9-flagged, net8/net10-silent) guards the extraction.
+- **Doctor report shape is now pinned.** The "Write" check is renamed "Workspace" to match the docs, the check collection is extracted for testability (no behavior change), and a test pins the full check-name set, order, and the rule that every Error/Warning carries a remediation hint.
 
 ## [3.65.0] - 2026-09-08
 
