@@ -13,6 +13,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **`--status` narration is now pinned by tests.** A new `StatusServiceTests` suite locks the exit-0 contract and every narration branch: the missing-CPM and missing-config guidance, the centrally-managed package count, the project/solution census, and file-path resolution to the parent directory.
 - **`--init` scaffolding is now pinned by tests.** A new `InitServiceTests` suite locks default-config creation, the refuse-to-clobber path without `--force` (including that the existing file is byte-identical afterwards), forced overwrite, and file-path resolution to the parent directory.
 - **Dependency-tree shape is now pinned by tests.** The per-project tree builder was extracted as a pure function (`DependencyTreeService.BuildProjectTree`, no behavior change) and covered by golden tests: direct-before-transitive ordering, alphabetical grouping, the 20-item transitive cap with remainder, the `(central)` placeholder, the empty state, and markup-heavy names rendering literally.
+- **Fixer failure paths are now pinned by tests.** `FixWriteException` (the line between "nothing to change" and "could not change it") has contract tests for its file-naming message, and `FixService` has a test proving a locked-file failure surfaces the cause instead of a generic error.
 
 ## [3.65.0] - 2026-09-08
 

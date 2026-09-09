@@ -380,6 +380,29 @@ public class FixServiceTests
         console.OutputMessages.Should().NotContainMatch("*Fixed*");
     }
 
+    [Fact]
+    public void ApplyFixes_FixerThrowsFixWriteException_ReportsTheCause()
+    {
+        // A file that could not be changed must be reported with its cause — "access denied" —
+        // not as a generic fixing error and never as "no changes needed".
+        var issue = new AnalysisIssue("Pkg", "desc", new[] { "Project.csproj" }, AnalysisIssueCode.VersionInconsistency);
+        var report = new AnalysisReport(
+            ProjectsScanned: 1,
+            TotalPackageReferences: 1,
+            Results: new[] { new AnalyzerResult("Test", new[] { issue }) });
+        var console = new FakeConsoleService();
+        var lockedFixer = new StubFixer(canFix: _ => true, fix: (_, _, _) => throw new FixWriteException(
+            Path.Combine("some", "dir", "App.csproj"),
+            new UnauthorizedAccessException("Access to the path is denied.")));
+        var fixService = new FixService(console, new[] { lockedFixer });
+
+        var fixReport = fixService.ApplyFixes(report, new ProjectPackageInfo(Array.Empty<PackageReference>()), new FixRequest("props.props", ConflictStrategy.Highest, false));
+
+        fixReport.Results.Should().ContainSingle(r => !r.Success);
+        fixReport.Results.Should().ContainSingle(r => r.Description.Contains("Could not modify App.csproj"));
+        console.ErrorMessages.Should().ContainMatch("*Could not fix Pkg*Access to the path is denied*");
+    }
+
     private sealed class StubFixer : IFixer
     {
         private readonly Func<AnalysisIssue, bool> _canFix;
