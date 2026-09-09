@@ -28,7 +28,7 @@ public class PackageOriginJsonWriterTests
         root.GetProperty("operation").GetString().Should().Be("why");
         root.GetProperty("packageId").GetString().Should().Be(PackageId);
         root.GetProperty("status").GetString().Should().Be("found");
-        root.GetProperty("outputSchemaVersion").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("outputSchemaVersion").GetString().Should().Be(OutputMetadata.SchemaVersion);
         root.GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
 
         var app = Project(root, "src/App/App.csproj");
@@ -277,7 +277,7 @@ public class PackageOriginJsonWriterTests
         var root = Parse(SerializeMany(found, missing));
 
         root.GetProperty("operation").GetString().Should().Be("why-many");
-        root.GetProperty("outputSchemaVersion").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("outputSchemaVersion").GetString().Should().Be(OutputMetadata.SchemaVersion);
         root.GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
         root.GetProperty("packageIds").EnumerateArray()
             .Select(id => id.GetString())
