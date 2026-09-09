@@ -79,6 +79,7 @@ internal static class CliArgumentParser
             'a' => "analyze",
             'i' => "interactive",
             'q' => "quiet",
+            'v' => "verbose",
             _ => null
         };
     }
