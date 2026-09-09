@@ -168,11 +168,8 @@ public class DoctorServiceTests : IDisposable
         var discovery = new Mock<ISolutionDiscovery>();
         discovery.Setup(d => d.GetSolutionFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
         var service = new DoctorService(new FakeConsoleService(), discovery.Object);
-
-        var checks = service.CollectChecks(
-            _testDirectory,
-            backupDir: null,
-            new DoctorCheck("NuGet", DoctorStatus.Ok, "nuget.org reachable"));
+        var checks = service.CollectChecks(_testDirectory, backupDir: null);
+        checks.Insert(3, new DoctorCheck("NuGet", DoctorStatus.Ok, "nuget.org reachable"));
 
         checks.Select(c => c.Name).Should().Equal(
             "SDK", "Tool", "Runtime", "NuGet", "Solutions", "CPM", "Disk",

@@ -30,7 +30,8 @@ internal sealed class DoctorService
         // established row position.
         var nuGetTask = CheckNuGetConnectivityAsync();
 
-        var checks = CollectChecks(searchPath, backupDir, await nuGetTask);
+        var checks = CollectChecks(searchPath, backupDir);
+        checks.Insert(3, await nuGetTask);
         RenderReport(theme, checks);
 
         var failures = checks.Count(c => c.Status == DoctorStatus.Error);
@@ -56,18 +57,19 @@ internal sealed class DoctorService
     }
 
     /// <summary>
-    /// Every check doctor reports, in report order. Separated from <see cref="RunAsync"/> so the
-    /// check-name set is assertable without the network probe or the console render — both would
-    /// make the test about something else.
+    /// Every local check doctor reports, in report order, without the network probe: the probe
+    /// runs concurrently while these execute, and the caller inserts its result at the
+    /// established position. Separated from <see cref="RunAsync"/> so the check-name set is
+    /// assertable without the network or the console render — both would make the test about
+    /// something else.
     /// </summary>
-    internal List<DoctorCheck> CollectChecks(string searchPath, string? backupDir, DoctorCheck nuGet)
+    internal List<DoctorCheck> CollectChecks(string searchPath, string? backupDir)
     {
         var checks = new List<DoctorCheck>
         {
             CheckDotNetSdk(),
             CheckCpmigrateVersion(),
             CheckRuntime(),
-            nuGet,
         };
         checks.AddRange(CheckWorkspace(searchPath));
         checks.Add(CheckDiskSpace(searchPath));
