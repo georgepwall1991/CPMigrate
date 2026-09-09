@@ -96,7 +96,10 @@ if the package is transitive, pin a patched version explicitly.
 
 - Requires `--audit`
 - Default severity: mirrors the advisory (`Low` … `Critical`)
-- Fixable: no — review the advisory before changing versions
+- Fixable: not by `--fix`, which only rewrites what it can prove safe without building. Use
+  `cpmigrate --remediate` instead: it moves the package to the **lowest** version that clears every
+  advisory against it, runs `dotnet test`, rolls back on red, and re-scans to confirm the advisory is
+  actually gone. `cpmigrate --remediate --dry-run` shows the plan first.
 
 ## RedundantDirectReference
 

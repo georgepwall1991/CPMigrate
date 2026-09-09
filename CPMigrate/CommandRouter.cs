@@ -1,5 +1,6 @@
 using CPMigrate.Models;
 using CPMigrate.Services;
+using CPMigrate.Services.Remediation;
 using CPMigrate.Services.Verify;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -239,6 +240,11 @@ internal static class CommandRouter
             c => RunUpdatePackagesModeAsync(c.Options, c.ExecutionConsole, c.Services)
         ),
         new(
+            o => o.Remediate,
+            "remediate",
+            c => RunRemediateModeAsync(c.Options, c.ExecutionConsole, c.Services)
+        ),
+        new(
             o => o.Interactive,
             "interactive",
             c =>
@@ -386,6 +392,65 @@ internal static class CommandRouter
             await WriteErrorJsonOutputIfRequested(
                 options,
                 "update-packages",
+                ExitCodes.UnexpectedError,
+                ex.Message
+            );
+            return ExitCodes.UnexpectedError;
+        }
+    }
+
+    /// <summary>
+    /// Executes remediation mode: clears known advisories with the smallest version bump that does
+    /// it, verifies with tests, and re-scans to confirm.
+    /// </summary>
+    private static async Task<int> RunRemediateModeAsync(
+        Options options,
+        IConsoleService consoleService,
+        ApplicationServices services
+    )
+    {
+        if (!ValidateOptions(options, consoleService, out var validationError))
+        {
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                "remediate",
+                ExitCodes.ValidationError,
+                validationError ?? "Validation failed."
+            );
+            return ExitCodes.ValidationError;
+        }
+
+        if (!ShouldSuppressHeadersAndBanners(options))
+        {
+            consoleService.WriteHeader();
+            consoleService.Banner("REMEDIATE");
+            consoleService.WriteLine();
+        }
+
+        try
+        {
+            using var remediationService = services.CreateRemediationService();
+            var result = await remediationService.RemediateAsync(RemediateRequest.FromOptions(options));
+            await WriteJsonOutputForRemediation(options, result, consoleService);
+            return result.ExitCode;
+        }
+        catch (IOException ex)
+        {
+            consoleService.Error($"\nFile operation error: {ex.Message}");
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                "remediate",
+                ExitCodes.FileOperationError,
+                ex.Message
+            );
+            return ExitCodes.FileOperationError;
+        }
+        catch (Exception ex)
+        {
+            consoleService.Error($"\nUnexpected error: {ex.Message}");
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                "remediate",
                 ExitCodes.UnexpectedError,
                 ex.Message
             );
@@ -1367,6 +1432,87 @@ internal static class CommandRouter
         var output = formatter.Format(operationResult);
 
         await JsonOutputWriter.EmitAsync(output, options, consoleService);
+    }
+
+    private static async Task WriteJsonOutputForRemediation(
+        Options options,
+        RemediationResult result,
+        IConsoleService consoleService
+    )
+    {
+        if (options.Output != OutputFormat.Json)
+        {
+            return;
+        }
+
+        var formatter = new JsonFormatter();
+        var operationResult = new OperationResult
+        {
+            Operation = "remediate",
+            Success = result.ExitCode == ExitCodes.Success,
+            ExitCode = result.ExitCode,
+            Summary = new OperationSummary
+            {
+                PackagesUpdated = result.Remediated.Count,
+                PackagesHeldBack = result.HeldBack.Count,
+                VerificationRuns = result.VerificationRuns,
+                BisectBudgetExhausted = result.BisectBudgetExhausted,
+                WasRolledBack = result.WasRolledBack,
+            },
+            Remediation = new RemediationInfo
+            {
+                AdvisoriesBefore = result.AdvisoriesBefore,
+                AdvisoriesAfter = result.AdvisoriesAfter,
+                ReVerified = result.ReVerified,
+                Remediated = [.. result.Remediated],
+                HeldBack = [.. result.HeldBack],
+                Actions = result
+                    .Actions.Select(action => new RemediationActionInfo
+                    {
+                        Package = action.PackageName,
+                        CurrentVersion = action.CurrentVersion,
+                        TargetVersion = action.TargetVersion,
+                        Outcome = ToJsonOutcome(action.Outcome),
+                        Transitive = action.IsTransitive,
+                        MajorBump = action.IsMajorBump,
+                        Severity = action.Severity,
+                        Advisories = [.. action.AdvisoryIds],
+                        Cves = [.. action.Cves],
+                        Projects = [.. action.AffectedProjects],
+                        Reason = action.Reason,
+                    })
+                    .ToList(),
+            },
+            Warnings = result.Warnings?.ToList() ?? [],
+            Errors = result.Errors?.ToList() ?? [],
+            DryRun = result.DryRun,
+            Timestamp = DateTime.UtcNow.ToString("o"),
+        };
+
+        var output = formatter.Format(operationResult);
+
+        await JsonOutputWriter.EmitAsync(output, options, consoleService);
+    }
+
+    /// <summary>
+    /// Renders a remediation outcome as the camelCase token the published schema documents. Spelled
+    /// out rather than derived from the enum name, so renaming the enum cannot silently change a
+    /// contract CI branches on.
+    /// </summary>
+    private static string ToJsonOutcome(RemediationOutcome outcome)
+    {
+        return outcome switch
+        {
+            RemediationOutcome.Planned => "planned",
+            RemediationOutcome.WithheldMajor => "withheldMajor",
+            RemediationOutcome.NoFixAvailable => "noFixAvailable",
+            RemediationOutcome.AdvisoryDataUnavailable => "advisoryDataUnavailable",
+            RemediationOutcome.AdvisoryNotInDatabase => "advisoryNotInDatabase",
+            RemediationOutcome.TransitivePinningDisabled => "transitivePinningDisabled",
+            RemediationOutcome.AdvisoryDoesNotCoverResolvedVersion =>
+                "advisoryDoesNotCoverResolvedVersion",
+            _ => "unknown",
+        };
     }
 
     private static async Task WriteErrorJsonOutputIfRequested(

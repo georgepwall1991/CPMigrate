@@ -122,6 +122,12 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
         return filtered.FirstOrDefault();
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<NuGetVersion>?> GetAllVersionsAsync(string packageId)
+    {
+        return await FetchVersionsAsync(packageId);
+    }
+
     private async Task<List<NuGetVersion>?> FetchVersionsAsync(string packageId)
     {
         var lookup = _cache.GetOrAdd(packageId, FetchWithRetryAsync);

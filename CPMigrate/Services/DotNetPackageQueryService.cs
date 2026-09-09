@@ -373,14 +373,16 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
                     "topLevelPackages",
                     projectName,
                     projectFilePath,
-                    vulnerabilities
+                    vulnerabilities,
+                    isTransitive: false
                 );
                 AddVulnerabilities(
                     framework,
                     "transitivePackages",
                     projectName,
                     projectFilePath,
-                    vulnerabilities
+                    vulnerabilities,
+                    isTransitive: true
                 );
             }
         }
@@ -503,7 +505,8 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         string propertyName,
         string projectName,
         string projectFilePath,
-        List<VulnerabilityInfo> vulnerabilities)
+        List<VulnerabilityInfo> vulnerabilities,
+        bool isTransitive)
     {
         if (!TryGetPropertyCaseInsensitive(framework, propertyName, out var packagesNode) || packagesNode.ValueKind != JsonValueKind.Array)
         {
@@ -538,7 +541,8 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
                     resolvedVersion,
                     fixedVersion,
                     projectName,
-                    projectFilePath));
+                    projectFilePath,
+                    isTransitive));
             }
         }
     }

@@ -102,10 +102,120 @@ public class OperationResult
     public VerificationInfo? Verification { get; init; }
 
     /// <summary>
+    /// The security-remediation receipt, when <c>--remediate</c> was passed.
+    /// </summary>
+    /// <remarks>
+    /// Absent otherwise, so a run that never remediated stays distinguishable from one that
+    /// remediated and cleared nothing. Present since output schema 1.10.0.
+    /// </remarks>
+    [JsonPropertyName("remediation")]
+    public RemediationInfo? Remediation { get; init; }
+
+    /// <summary>
     /// Timestamp when the operation completed.
     /// </summary>
     [JsonPropertyName("timestamp")]
     public string Timestamp { get; init; } = DateTime.UtcNow.ToString("o");
+}
+
+/// <summary>
+/// What <c>--remediate</c> did, in the machine-readable payload.
+/// </summary>
+/// <remarks>
+/// <see cref="AdvisoriesAfter"/> is the field that matters to a gate. It comes from a second
+/// vulnerability scan run after verification passed, not from subtracting what was applied, so a
+/// consumer can distinguish "we changed these versions" from "the advisories are actually gone".
+/// It is absent when no re-scan happened — a dry run, or a run where nothing was applied.
+/// </remarks>
+public class RemediationInfo
+{
+    /// <summary>Distinct advisory findings reported before remediation ran.</summary>
+    [JsonPropertyName("advisoriesBefore")]
+    public int AdvisoriesBefore { get; init; }
+
+    /// <summary>
+    /// Distinct advisory findings a fresh scan reported afterwards. Absent when no re-scan happened.
+    /// </summary>
+    [JsonPropertyName("advisoriesAfter")]
+    public int? AdvisoriesAfter { get; init; }
+
+    /// <summary>
+    /// Whether the confirming scan completed. False means fixes were written but nothing has been
+    /// proven, which is not the same as fixes having failed.
+    /// </summary>
+    [JsonPropertyName("reVerified")]
+    public bool ReVerified { get; init; }
+
+    /// <summary>Packages whose fix was written and survived verification.</summary>
+    [JsonPropertyName("remediated")]
+    public List<string> Remediated { get; init; } = new();
+
+    /// <summary>Packages whose fix was reverted because verification went red.</summary>
+    [JsonPropertyName("heldBack")]
+    public List<string> HeldBack { get; init; } = new();
+
+    /// <summary>Every package the plan considered, with its outcome.</summary>
+    [JsonPropertyName("actions")]
+    public List<RemediationActionInfo> Actions { get; init; } = new();
+}
+
+/// <summary>
+/// One package's remediation outcome, in the machine-readable payload.
+/// </summary>
+public class RemediationActionInfo
+{
+    /// <summary>The vulnerable package.</summary>
+    [JsonPropertyName("package")]
+    public string Package { get; init; } = string.Empty;
+
+    /// <summary>The version the graph resolved to before remediation.</summary>
+    [JsonPropertyName("currentVersion")]
+    public string CurrentVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The version chosen to move to: the lowest published version that clears every advisory
+    /// against this package, not the newest. Absent when none was found.
+    /// </summary>
+    [JsonPropertyName("targetVersion")]
+    public string? TargetVersion { get; init; }
+
+    /// <summary>
+    /// <c>planned</c>, <c>withheldMajor</c>, <c>noFixAvailable</c>, <c>advisoryDataUnavailable</c>, or
+    /// <c>advisoryDoesNotCoverResolvedVersion</c>.
+    /// </summary>
+    [JsonPropertyName("outcome")]
+    public string Outcome { get; init; } = string.Empty;
+
+    /// <summary>Whether the package is reached only through the dependency graph.</summary>
+    [JsonPropertyName("transitive")]
+    public bool Transitive { get; init; }
+
+    /// <summary>Whether the target crosses a major version boundary.</summary>
+    [JsonPropertyName("majorBump")]
+    public bool MajorBump { get; init; }
+
+    /// <summary>The worst severity reported for this package.</summary>
+    [JsonPropertyName("severity")]
+    public string Severity { get; init; } = string.Empty;
+
+    /// <summary>Advisory identifiers as the SDK reported them.</summary>
+    [JsonPropertyName("advisories")]
+    public List<string> Advisories { get; init; } = new();
+
+    /// <summary>
+    /// CVE identifiers for those advisories. The SDK reports only an advisory URL, so these come from
+    /// the advisory database and are the first CVE numbers CPMigrate is able to publish.
+    /// </summary>
+    [JsonPropertyName("cves")]
+    public List<string> Cves { get; init; } = new();
+
+    /// <summary>Projects the advisories were reported in.</summary>
+    [JsonPropertyName("projects")]
+    public List<string> Projects { get; init; } = new();
+
+    /// <summary>Why nothing was applied. Absent when the outcome is <c>planned</c>.</summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
 }
 
 /// <summary>

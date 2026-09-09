@@ -12,18 +12,18 @@
     <Company>George Wall</Company>
     <Product>CPMigrate</Product>
     <Title>CPMigrate — NuGet Central Package Management Migration &amp; Dependency Analysis CLI</Title>
-    <Description>Migrate .NET solutions to NuGet Central Package Management (CPM). Generate Directory.Packages.props, analyze dependency health (version drift, transitive conflicts, vulnerabilities), auto-fix package issues, unify Directory.Build.props, and update NuGet packages with test verification and rollback — including --bisect to keep the largest green subset.</Description>
-    <PackageReleaseNotes>3.64.0 hardens the trust paths and pays down latency. Auto-fixers can no longer corrupt project files: the transitive-conflict pin lands in exactly one unconditional, namespace-correct ItemGroup instead of every group in the file. --verify clears stale assets graphs before each capture, so a redirected build's leftover project.assets.json can no longer produce a false "unchanged" verdict; drift attribution considers every recorded decision and rejects contradictory ones. Rollback verifies SHA-256 integrity before restoring anything. Baselines report their own rot - stale entries and renamed rule IDs - across console, JSON and Markdown. --why accepts comma-separated package IDs (one scan, all answers, console or a new why-many JSON document under output schema 1.9.0), analysis output is byte-stable regardless of scan interleaving, and a grouped scan scheduler plus benchmarks/ harness guard the concurrency and cache wins with deterministic tests.</PackageReleaseNotes>
+    <Description>Migrate .NET solutions to NuGet Central Package Management (CPM). Generate Directory.Packages.props, analyze dependency health (version drift, transitive conflicts, vulnerabilities), auto-fix package issues, unify Directory.Build.props, and update NuGet packages with test verification and rollback — including --bisect to keep the largest green subset. --remediate clears CVEs with the smallest version bump that fixes them, test-verified and re-scanned to prove it.</Description>
+    <PackageReleaseNotes>3.65.0 closes the loop on security findings. New --remediate clears known advisories by moving each vulnerable package to the LOWEST version that fixes it - not the newest - then runs dotnet test, rolls back on red, honours --bisect to keep the largest green subset, and re-scans afterwards so the receipt reports what a fresh scan found rather than what the plan intended. Findings still come from dotnet list package --vulnerable; the fix version comes from looking that exact advisory up at OSV.dev, which is also why the receipt can finally print a CVE number instead of an advisory URL. Major-version fixes are reported and withheld unless --allow-major is passed, and an unreachable advisory database exits 8 rather than falling back to a latest-version bump. New exit code 10 (RemediationIncomplete) marks a run where an advisory survived; output schema 1.10.0 adds the additive remediation receipt with its measured advisoriesAfter.</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://georgepwall1991.github.io/CPMigrate/</PackageProjectUrl>
     <TargetFramework>net10.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
-    <Version>3.64.0</Version>
+    <Version>3.65.0</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/georgepwall1991/CPMigrate</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <ApplicationIcon>cpmigrate.ico</ApplicationIcon>
-    <PackageTags>nuget;central-package-management;CPM;CentralPackageManagement;directory-packages-props;Directory.Build.props;dotnet-tool;cli;dependency-analysis;package-updates;rollback;bisect;monorepo;slnx;dotnet;package-management;migrator;version-drift;vulnerability;centralised</PackageTags>
+    <PackageTags>nuget;central-package-management;CPM;CentralPackageManagement;directory-packages-props;Directory.Build.props;dotnet-tool;cli;dependency-analysis;package-updates;rollback;bisect;monorepo;slnx;dotnet;package-management;migrator;version-drift;vulnerability;centralised;remediation;cve;security;advisory;osv</PackageTags>
     <PackageIcon>nuget-icon.png</PackageIcon>
     <!-- Static Analysis -->
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
