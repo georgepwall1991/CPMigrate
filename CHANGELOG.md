@@ -18,6 +18,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **`--update-packages` without `-s` no longer crashes on the documented default.** The request mapping passed the raw empty `SolutionFileDir` through while `--remediate` already applied the "current directory when omitted" default; `Path.GetFullPath("")` then threw downstream. The mapping now uses `EffectiveWorkspacePath`, pinned by tests for the omitted and explicit cases.
 - **Site man page covers exit codes 9 and 10.** It stopped at 8 while the tool grew `GraphDrift` and `RemediationIncomplete`, silently, because only the README table was drift-guarded. The rows are added and a new `DocumentationDriftTests` case pins every code and name in the site page.
 - **README catches table covers every rule.** It silently dropped `RedundantDirectReference`, `CpmNotEnabled`, `MissingPackageVersion`, and `OrphanedPackageVersion` (one row even claimed a neighbor covered them). The four rows are added and a new drift case requires every catalog rule to appear in the table.
+- **Explicit `-v` counts as explicit again.** The hand-maintained short-flag map never learned `verbose`, so `-v` lost to the config file under CLI-over-config precedence without a word. The entry is added and new `CliArgumentParserTests` hold the map to the option definitions in both directions.
 
 ## [3.65.0] - 2026-09-08
 
