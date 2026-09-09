@@ -16,6 +16,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **Fixer failure paths are now pinned by tests.** `FixWriteException` (the line between "nothing to change" and "could not change it") has contract tests for its file-naming message, and `FixService` has a test proving a locked-file failure surfaces the cause instead of a generic error.
 - **`--explain` now guides the lifting rule.** `RedundantDirectReference` fell through both guidance switches, so its page ended where the actionable part should start. It now has an example invocation and a manual fix hint (the finding is not auto-fixable), pinned by a dedicated test.
 - **`--update-packages` without `-s` no longer crashes on the documented default.** The request mapping passed the raw empty `SolutionFileDir` through while `--remediate` already applied the "current directory when omitted" default; `Path.GetFullPath("")` then threw downstream. The mapping now uses `EffectiveWorkspacePath`, pinned by tests for the omitted and explicit cases.
+- **Site man page covers exit codes 9 and 10.** It stopped at 8 while the tool grew `GraphDrift` and `RemediationIncomplete`, silently, because only the README table was drift-guarded. The rows are added and a new `DocumentationDriftTests` case pins every code and name in the site page.
 
 ## [3.65.0] - 2026-09-08
 
