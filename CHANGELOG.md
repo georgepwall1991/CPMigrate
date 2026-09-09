@@ -9,6 +9,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 ### Fixed
 - **CSV reports now quote fields containing a bare carriage return.** The escaper quoted values with a comma, quote, or `\n`, but a lone `\r` passed through unquoted and silently broke row parsing in strict CSV readers. `\r` now triggers quoting exactly like `\n`, pinned by a new `CsvFormatterTests` contract suite (header shape, column order, quoting/escaping, multi-project joins, empty report).
 - **Error output is now pinned by tests.** Each `ErrorFormatter` failure class (invalid arguments, file failure, permission denied, unexpected error) has contract tests locking its title, hint, and issue-tracker/docs pointers, plus a guard that bracket-heavy details render literally instead of parsing as Spectre markup.
+- **Opt-in telemetry no longer touches the working directory when home is unresolvable.** With `HOME` unset or pointing nowhere (containers, service accounts), the profile lookup resolves empty and the event file path collapsed to a relative `./.cpmigrate/telemetry/events.ndjson`, scattering telemetry into whatever the working directory happened to be. An opted-in run with no resolvable home now records nothing, pinned by a `TelemetryServiceTests` suite that also locks the opt-in values, the failure category, and the no-repository-content payload contract.
 
 ## [3.65.0] - 2026-09-08
 

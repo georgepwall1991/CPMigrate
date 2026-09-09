@@ -19,40 +19,7 @@ public static class TelemetryService
 
         try
         {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var telemetryDir = Path.Combine(home, ".cpmigrate", "telemetry");
-            Directory.CreateDirectory(telemetryDir);
-
-            var payload = new
-            {
-                timestamp = DateTimeOffset.UtcNow.ToString("o"),
-                operation = GetOperation(options),
-                success = exitCode == ExitCodes.Success,
-                exitCode,
-                exitCodeCategory = GetExitCodeCategory(exitCode),
-                durationMs = (long)duration.TotalMilliseconds,
-                flags = new
-                {
-                    options.DryRun,
-                    options.Quiet,
-                    json = options.Output == OutputFormat.Json,
-                    options.Analyze,
-                    options.AuditSecurity,
-                    options.AnalyzeOutdated,
-                    options.AnalyzeDeprecated,
-                    options.AnalyzeLicenses,
-                    options.Fix,
-                    options.FixDryRun,
-                    options.IncludeTransitive,
-                    options.UpdatePackages,
-                    options.Rollback,
-                    batch = !string.IsNullOrWhiteSpace(options.BatchDir)
-                }
-            };
-
-            var json = JsonSerializer.Serialize(payload);
-            var file = Path.Combine(telemetryDir, "events.ndjson");
-            File.AppendAllText(file, json + Environment.NewLine);
+            RecordEvent(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), options, exitCode, duration);
         }
         catch
         {
@@ -60,7 +27,55 @@ public static class TelemetryService
         }
     }
 
-    private static bool IsEnabled()
+    /// <summary>
+    /// Writes one telemetry event under <paramref name="userProfileDir"/>. Internal so tests can
+    /// isolate the destination without depending on how each OS resolves the user profile
+    /// (<c>HOME</c> on Unix, the profile lookup on Windows). An empty directory means home is
+    /// unresolvable (containers, service accounts): record nothing rather than scattering a
+    /// <c>.cpmigrate</c> directory into the working folder.
+    /// </summary>
+    internal static void RecordEvent(string? userProfileDir, Options options, int exitCode, TimeSpan duration)
+    {
+        if (string.IsNullOrWhiteSpace(userProfileDir))
+        {
+            return;
+        }
+
+        var telemetryDir = Path.Combine(userProfileDir, ".cpmigrate", "telemetry");
+        Directory.CreateDirectory(telemetryDir);
+        var payload = new
+        {
+            timestamp = DateTimeOffset.UtcNow.ToString("o"),
+            operation = GetOperation(options),
+            success = exitCode == ExitCodes.Success,
+            exitCode,
+            exitCodeCategory = GetExitCodeCategory(exitCode),
+            durationMs = (long)duration.TotalMilliseconds,
+            flags = new
+            {
+                options.DryRun,
+                options.Quiet,
+                json = options.Output == OutputFormat.Json,
+                options.Analyze,
+                options.AuditSecurity,
+                options.AnalyzeOutdated,
+                options.AnalyzeDeprecated,
+                options.AnalyzeLicenses,
+                options.Fix,
+                options.FixDryRun,
+                options.IncludeTransitive,
+                options.UpdatePackages,
+                options.Rollback,
+                batch = !string.IsNullOrWhiteSpace(options.BatchDir)
+            }
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        var file = Path.Combine(telemetryDir, "events.ndjson");
+        File.AppendAllText(file, json + Environment.NewLine);
+    }
+
+    internal static bool IsEnabled()
     {
         var value = Environment.GetEnvironmentVariable(OptInEnvironmentVariable);
         if (string.IsNullOrWhiteSpace(value))
