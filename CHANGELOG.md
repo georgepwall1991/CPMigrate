@@ -20,6 +20,7 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 - **README catches table covers every rule.** It silently dropped `RedundantDirectReference`, `CpmNotEnabled`, `MissingPackageVersion`, and `OrphanedPackageVersion` (one row even claimed a neighbor covered them). The four rows are added and a new drift case requires every catalog rule to appear in the table.
 - **Explicit `-v` counts as explicit again.** The hand-maintained short-flag map never learned `verbose`, so `-v` lost to the config file under CLI-over-config precedence without a word. The entry is added and new `CliArgumentParserTests` hold the map to the option definitions in both directions.
 - **`--why` not-found verdicts are now pinned by tests.** The clean-miss, half-read-workspace, and near-miss branches of the answer renderer each name the token and say what to do next; three new tests lock the prose and the distinct exit codes.
+- **`--explain` exit codes are now pinned end to end.** Both entry points returned 1 for an unknown rule ID, but nothing tested it — a mistyped ID in a workflow file could have gone green. Two runner tests lock 0 for a known rule and 1 for an unknown one.
 
 ## [3.65.0] - 2026-09-08
 

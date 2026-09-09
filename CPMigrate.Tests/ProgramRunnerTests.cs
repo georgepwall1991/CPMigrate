@@ -109,6 +109,28 @@ public class ProgramRunnerTests
         fakeConsole.ErrorMessages.Should().Contain(m => m.Contains("--output Sarif"));
     }
 
+    [Fact]
+    public async Task RunAsync_ExplainKnownRule_ExitsSuccess()
+    {
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--explain", "VersionInconsistency" },
+            new FakeConsoleService()
+        );
+
+        exitCode.Should().Be(ExitCodes.Success);
+    }
+
+    [Fact]
+    public async Task RunAsync_ExplainUnknownRule_ExitsValidationError()
+    {
+        // A mistyped rule ID in a workflow file must fail the step, not print a page and go green.
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--explain", "NoSuchRule" },
+            new FakeConsoleService()
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+    }
 
     [Fact]
     public async Task RunAsync_WhyWithEmptySlotBetweenCommas_IsRejectedInsteadOfAnsweringFewerQuestions()
