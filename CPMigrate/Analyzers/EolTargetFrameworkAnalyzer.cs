@@ -63,6 +63,20 @@ public class EolTargetFrameworkAnalyzer : IAnalyzer
     }
 
     /// <summary>
+    /// End-of-life .NET (Core) major versions. Reconcile against the Microsoft support lifecycle
+    /// (https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core) whenever a new
+    /// major ships or an STS leaves support — .NET 9 STS support ended May 2026, which is why
+    /// "9" is here while "8" (LTS) and "10" are not.
+    /// </summary>
+    private static readonly HashSet<string> EndOfLifeMajorVersions = new(StringComparer.Ordinal)
+    {
+        "5",
+        "6",
+        "7",
+        "9",
+    };
+
+    /// <summary>
     /// Whether a declared target is an end-of-life runtime.
     ///
     /// Scope is runtime targets only: <c>netstandard</c> is a compile-time surface rather than a
@@ -84,6 +98,6 @@ public class EolTargetFrameworkAnalyzer : IAnalyzer
         }
 
         var major = normalized["net".Length..].Split('.')[0];
-        return major is "5" or "6" or "7" or "9";
+        return EndOfLifeMajorVersions.Contains(major);
     }
 }
