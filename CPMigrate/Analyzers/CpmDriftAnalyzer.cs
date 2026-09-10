@@ -803,7 +803,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                     Array.Empty<string>(),
                     AnalysisIssueCode.OrphanedPackageVersion,
                     AnalysisSeverity.Low,
-                    Fixable: false,
+                    Fixable: true,
                     // Names which file to edit when a repository has several, and keeps two files
                     // orphaning the same package from sharing one identity — a baseline would
                     // otherwise record one and suppress both.
