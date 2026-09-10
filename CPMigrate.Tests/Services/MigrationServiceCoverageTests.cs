@@ -807,9 +807,10 @@ public class MigrationServiceCoverageTests
     [Fact]
     public async Task ExecuteListBackupsAsync_NoBackups_ShowsInfo()
     {
-        // Arrange
+        // Arrange — an existing-but-empty backup directory: the sets live in the
+        // .cpmigrate_backup child of --backup-dir, so the "no backups" branch needs it present.
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(tempDir);
+        Directory.CreateDirectory(Path.Combine(tempDir, ".cpmigrate_backup"));
         var options = new Options { ListBackups = true, BackupDir = tempDir };
 
         try

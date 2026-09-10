@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Seven payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, and the --doctor environment report. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Eight payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, and the --list-backups history report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -24,6 +24,9 @@
     },
     {
       "$ref": "#/definitions/doctorReport"
+    },
+    {
+      "$ref": "#/definitions/listBackupsReport"
     }
   ],
   "definitions": {
@@ -1296,6 +1299,83 @@
         "total": { "type": "integer", "description": "Checks that ran" },
         "errors": { "type": "integer", "description": "Checks with status error" },
         "warnings": { "type": "integer", "description": "Checks with status warning" }
+      },
+      "additionalProperties": false
+    },
+    "listBackupsReport": {
+      "type": "object",
+      "description": "The document `--list-backups --output Json` prints instead of the console table: the backup history — sets, files, sizes — plus `directoryExists`, carrying the console path's missing-directory warning as data.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "exitCode",
+        "backupDir",
+        "directoryExists",
+        "backups",
+        "summary"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["list-backups"],
+          "description": "Always 'list-backups'; distinguishes this shape from the other documents"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run"
+        },
+        "backupDir": {
+          "type": "string",
+          "description": "The directory the history was read from, as resolved"
+        },
+        "directoryExists": {
+          "type": "boolean",
+          "description": "Whether the backup directory exists at all — the console path's missing-directory warning, as data"
+        },
+        "backups": {
+          "type": "array",
+          "description": "Every backup set found, newest first — the table's row order",
+          "items": { "$ref": "#/definitions/backupSet" }
+        },
+        "summary": { "$ref": "#/definitions/listBackupsSummary" }
+      },
+      "additionalProperties": false
+    },
+    "backupSet": {
+      "type": "object",
+      "description": "One backup set as data.",
+      "required": ["timestamp", "files", "sizeBytes", "fileNames"],
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "description": "The backup set's directory name — the value --rollback takes"
+        },
+        "files": {
+          "type": "integer",
+          "description": "How many files the set holds"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "description": "Total size of the files that still exist on disk"
+        },
+        "fileNames": {
+          "type": "array",
+          "description": "The backed-up file paths",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "listBackupsSummary": {
+      "type": "object",
+      "description": "The totals the console prints below the table.",
+      "required": ["sets", "files", "sizeBytes"],
+      "properties": {
+        "sets": { "type": "integer", "description": "Backup sets found" },
+        "files": { "type": "integer", "description": "Files across every set" },
+        "sizeBytes": { "type": "integer", "description": "Bytes across every set" }
       },
       "additionalProperties": false
     }

@@ -582,9 +582,26 @@ internal static class CommandRouter
         {
             if (options.ListBackups)
             {
-                var migrationService = services.CreateMigrationService(options.Quiet);
-                var migrationResult = await migrationService.ExecuteAsync(options);
-                return migrationResult.ExitCode;
+                try
+                {
+                    var migrationService = services.CreateMigrationService(options.Quiet);
+                    var migrationResult = await migrationService.ExecuteAsync(options);
+                    return migrationResult.ExitCode;
+                }
+                catch (Exception ex)
+                {
+                    // A failed --output-file write lands here: report it as a failure payload
+                    // rather than aborting with no document at all — same contract the
+                    // migration path keeps.
+                    consoleService.Error($"Failed to list backups: {ex.Message}");
+                    await WriteErrorJsonOutputIfRequested(
+                        options,
+                        "list-backups",
+                        ExitCodes.UnexpectedError,
+                        ex.Message
+                    );
+                    return ExitCodes.UnexpectedError;
+                }
             }
 
             return await RunPruneModeAsync(options, consoleService, backupManager);
@@ -1231,6 +1248,13 @@ internal static class CommandRouter
         }
 
         if (options.Output != OutputFormat.Json)
+        {
+            return;
+        }
+
+        // --list-backups emits its own document from the handler — the backup history is not an
+        // operation result, and writing one here would put a second document on stdout.
+        if (options.ListBackups)
         {
             return;
         }

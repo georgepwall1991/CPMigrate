@@ -19,13 +19,43 @@ internal sealed class ListBackupsHandler
 
     public async Task<MigrationResult> ExecuteAsync(Options options)
     {
+        // The same resolution --prune-backups and --rollback use: --backup-dir names the
+        // container, and the sets live in its .cpmigrate_backup child. Scanning BackupDir
+        // directly meant the default invocation never found the backups a migration just made.
+        var backupPath = BackupManager.GetBackupDirectoryPath(options);
+
+        // Under --output Json the stdout contract is one parseable document, so the banner, the
+        // missing-directory warning, and the table must not leak into it. The document carries
+        // the missing-directory verdict as `directoryExists` — the same answer the console gives
+        // as a warning, as data a consumer can read.
+        if (options.Output == OutputFormat.Json)
+        {
+            var directoryExists = Directory.Exists(backupPath);
+            var backups = directoryExists
+                ? _backupManager.GetBackupHistory(backupPath)
+                : new List<BackupSetInfo>();
+
+            // EmitAsync, not EmitFailureAsync: a document that could not reach its --output-file
+            // must not fall back to stdout and exit 0 — a CI job expecting the file would pass
+            // with a missing artifact.
+            await JsonOutputWriter.EmitAsync(
+                ListBackupsJsonWriter.Serialize(
+                    backupPath,
+                    directoryExists,
+                    backups,
+                    ExitCodes.Success
+                ),
+                options,
+                _consoleService
+            );
+            return new MigrationResult { ExitCode = ExitCodes.Success };
+        }
+
         if (!_quietMode)
         {
             _consoleService.Banner("BACKUP HISTORY");
             _consoleService.WriteLine();
         }
-
-        var backupPath = Path.GetFullPath(options.BackupDir);
 
         if (!Directory.Exists(backupPath))
         {
@@ -33,9 +63,9 @@ internal sealed class ListBackupsHandler
             return new MigrationResult { ExitCode = ExitCodes.Success };
         }
 
-        var backups = _backupManager.GetBackupHistory(backupPath);
+        var history = _backupManager.GetBackupHistory(backupPath);
 
-        if (backups.Count == 0)
+        if (history.Count == 0)
         {
             _consoleService.Info("No backups found.");
             return new MigrationResult { ExitCode = ExitCodes.Success };
@@ -51,7 +81,7 @@ internal sealed class ListBackupsHandler
             .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]Files[/]").RightAligned())
             .AddColumn(new TableColumn($"[bold {SpectrePalette.Ink.Text}]Size[/]").RightAligned());
 
-        var (totalSize, totalFiles) = PopulateBackupTable(table, backups);
+        var (totalSize, totalFiles) = PopulateBackupTable(table, history);
 
         AnsiConsole.Write(table);
         if (!_quietMode)
@@ -59,7 +89,7 @@ internal sealed class ListBackupsHandler
             _consoleService.WriteLine();
         }
 
-        _consoleService.Info($"Total: {backups.Count} backup set(s), {totalFiles} file(s), {FormatFileSize(totalSize)}");
+        _consoleService.Info($"Total: {history.Count} backup set(s), {totalFiles} file(s), {FormatFileSize(totalSize)}");
         _consoleService.Dim($"Backup directory: {backupPath}");
 
         return await Task.FromResult(new MigrationResult { ExitCode = ExitCodes.Success });
