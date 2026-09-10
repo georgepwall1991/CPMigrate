@@ -111,11 +111,17 @@ public static class OutputMetadata
     /// <c>--prune-backups --output Json</c> and <c>--prune-all-backups --output Json</c> print,
     /// distinguished by <c>operation: "prune-backups"</c> or <c>"prune-all-backups"</c>. The
     /// outcome as a single <c>status</c> token — <c>pruned</c>, <c>noBackups</c>,
-    /// <c>nothingToPrune</c>, <c>refused</c> (a machine-readable run without <c>--force</c>),
-    /// or <c>failed</c> — plus the totals the console prints and every deletion error.
+    /// <c>nothingToPrune</c>, or <c>failed</c> — plus the totals the console prints and every
+    /// deletion error.
+    /// </para>
+    /// <para>
+    /// 1.16.0 additively introduced the tenth top-level shape: the document
+    /// <c>--init --output Json</c> prints, distinguished by <c>operation: "init"</c>. Whether the
+    /// config file was written, and where — <c>created</c>, <c>overwritten</c>, or <c>exists</c>
+    /// (the refusal the console prints as a warning, carried as data).
     /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.15.0";
+    public const string SchemaVersion = "1.16.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

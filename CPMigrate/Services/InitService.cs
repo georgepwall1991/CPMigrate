@@ -21,6 +21,16 @@ internal sealed class InitService
 
     public Task<int> RunAsync(string directory, bool force)
     {
+        return RunAsync(directory, force, null);
+    }
+
+    /// <summary>
+    /// Runs the init. Under <c>--output Json</c> the same outcome is emitted as the
+    /// <c>init</c> document instead — one parseable payload on stdout, so a CI script can tell
+    /// "wrote it" apart from "wrote nothing because it was already there".
+    /// </summary>
+    public async Task<int> RunAsync(string directory, bool force, Options? options)
+    {
         var targetDir = Directory.Exists(directory) ? directory : Path.GetDirectoryName(Path.GetFullPath(directory)) ?? ".";
         var configPath = Path.Combine(targetDir, ConfigFileName);
 
@@ -32,9 +42,19 @@ internal sealed class InitService
         {
             _console.Warning($"A {ConfigFileName} already exists at: {configPath}");
             _console.Info("Run with --force to overwrite it.");
-            return Task.FromResult(ExitCodes.FileOperationError);
+            if (options?.Output == OutputFormat.Json)
+            {
+                await JsonOutputWriter.EmitAsync(
+                    InitJsonWriter.Serialize(configPath, "exists", forced: false, ExitCodes.FileOperationError),
+                    options,
+                    _console
+                );
+            }
+
+            return ExitCodes.FileOperationError;
         }
 
+        var existed = File.Exists(configPath);
         var config = _console.IsInteractive
             ? BuildConfigInteractively()
             : BuildDefaultConfig();
@@ -46,7 +66,16 @@ internal sealed class InitService
         _console.Dim("Commit this file so your team shares the same defaults.");
         _console.Dim("CLI flags always override config values.");
 
-        return Task.FromResult(ExitCodes.Success);
+        if (options?.Output == OutputFormat.Json)
+        {
+            await JsonOutputWriter.EmitAsync(
+                InitJsonWriter.Serialize(configPath, existed ? "overwritten" : "created", force, ExitCodes.Success),
+                options,
+                _console
+            );
+        }
+
+        return ExitCodes.Success;
     }
 
     private ConfigModel BuildDefaultConfig()

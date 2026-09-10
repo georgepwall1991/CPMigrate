@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Nine payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, the --list-backups history report, and the --prune-backups outcome report. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Ten payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, the --list-backups history report, the --prune-backups outcome report, and the --init scaffolding report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -30,6 +30,9 @@
     },
     {
       "$ref": "#/definitions/pruneBackupsReport"
+    },
+    {
+      "$ref": "#/definitions/initReport"
     }
   ],
   "definitions": {
@@ -72,7 +75,8 @@
             "remediate",
             "tree",
             "status",
-            "doctor"
+            "doctor",
+            "init"
           ],
           "description": "Which command produced the payload"
         },
@@ -1434,6 +1438,44 @@
         "kept": { "type": "integer", "description": "Backup sets left in place" },
         "filesRemoved": { "type": "integer", "description": "Files deleted across the removed sets" },
         "bytesFreed": { "type": "integer", "description": "Bytes the removed sets held" }
+      },
+      "additionalProperties": false
+    },
+    "initReport": {
+      "type": "object",
+      "description": "The document `--init --output Json` prints instead of the console banner: whether the config file was written, and where.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "exitCode",
+        "configPath",
+        "status",
+        "forced"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["init"],
+          "description": "Always 'init'; distinguishes this shape from the other documents"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run"
+        },
+        "configPath": {
+          "type": "string",
+          "description": "The file the run resolved to write, as resolved"
+        },
+        "status": {
+          "enum": ["created", "overwritten", "exists"],
+          "description": "The outcome as a single token: created (the file was written where none existed), overwritten (--force replaced an existing file), or exists (a file was already there and --force was not passed — the refusal the console prints as a warning, carried as data)"
+        },
+        "forced": {
+          "type": "boolean",
+          "description": "Whether --force was passed — what distinguishes an overwrite from a refusal"
+        }
       },
       "additionalProperties": false
     }
