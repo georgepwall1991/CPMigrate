@@ -185,4 +185,65 @@ public class DoctorServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Config File
+
+    [Fact]
+    public void CollectChecks_MalformedConfig_ReportsError()
+    {
+        // A .cpmigrate.json that does not parse is a broken workspace, not a found one — the
+        // check must say so, because every other run reads the same file.
+        File.WriteAllText(Path.Combine(_testDirectory, ".cpmigrate.json"), "{\"analyze\": true,");
+
+        var discovery = new Mock<ISolutionDiscovery>();
+        discovery.Setup(d => d.GetSolutionFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+        var service = new DoctorService(new FakeConsoleService(), discovery.Object);
+        var config = service.CollectChecks(_testDirectory, backupDir: null).Single(c => c.Name == "Config");
+
+        config.Status.Should().Be(DoctorStatus.Error);
+        config.Details.Should().Contain("Invalid JSON");
+        config.Hint.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void CollectChecks_ConfigWithWarnings_ReportsWarning()
+    {
+        File.WriteAllText(Path.Combine(_testDirectory, ".cpmigrate.json"), "{\"analyze\": true, \"unknownKey\": true}");
+
+        var discovery = new Mock<ISolutionDiscovery>();
+        discovery.Setup(d => d.GetSolutionFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+        var service = new DoctorService(new FakeConsoleService(), discovery.Object);
+        var config = service.CollectChecks(_testDirectory, backupDir: null).Single(c => c.Name == "Config");
+
+        config.Status.Should().Be(DoctorStatus.Warning);
+        config.Details.Should().Contain("warning");
+    }
+
+    [Fact]
+    public void CollectChecks_ValidConfig_ReportsOk()
+    {
+        File.WriteAllText(Path.Combine(_testDirectory, ".cpmigrate.json"), "{\"analyze\": true}");
+
+        var discovery = new Mock<ISolutionDiscovery>();
+        discovery.Setup(d => d.GetSolutionFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+        var service = new DoctorService(new FakeConsoleService(), discovery.Object);
+        var config = service.CollectChecks(_testDirectory, backupDir: null).Single(c => c.Name == "Config");
+
+        config.Status.Should().Be(DoctorStatus.Ok);
+        config.Details.Should().Contain("valid");
+    }
+
+    [Fact]
+    public void CollectChecks_NoConfig_ReportsInfo()
+    {
+        var discovery = new Mock<ISolutionDiscovery>();
+        discovery.Setup(d => d.GetSolutionFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+        var service = new DoctorService(new FakeConsoleService(), discovery.Object);
+        var config = service.CollectChecks(_testDirectory, backupDir: null).Single(c => c.Name == "Config");
+
+        config.Status.Should().Be(DoctorStatus.Info);
+        config.Details.Should().Contain("--init");
+    }
+
+    #endregion
 }

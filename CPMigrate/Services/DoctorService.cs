@@ -388,15 +388,31 @@ internal sealed class DoctorService
     private static DoctorCheck CheckConfigFile(string searchPath)
     {
         var dir = Directory.Exists(searchPath) ? searchPath : Path.GetDirectoryName(Path.GetFullPath(searchPath)) ?? ".";
-        var configPath = Path.Combine(dir, ".cpmigrate.json");
 
-        if (File.Exists(configPath))
+        // LoadConfigDetailed already parses the file and reports malformed JSON as an
+        // ErrorMessage and contradictory settings or unknown keys as Warnings — the check's job
+        // is to carry those verdicts, not to re-derive them.
+        var (_, configPath, errorMessage, warnings) = new ConfigService().LoadConfigDetailed(dir);
+
+        if (configPath is null)
         {
-            return new DoctorCheck("Config", DoctorStatus.Ok, ".cpmigrate.json found");
+            return new DoctorCheck("Config", DoctorStatus.Info,
+                "No .cpmigrate.json — using defaults (run 'cpmigrate --init' to create one)");
         }
 
-        return new DoctorCheck("Config", DoctorStatus.Info,
-            "No .cpmigrate.json — using defaults (run 'cpmigrate --init' to create one)");
+        if (errorMessage is not null)
+        {
+            return new DoctorCheck("Config", DoctorStatus.Error, errorMessage,
+                "Fix the JSON or delete the file — every run reads it.");
+        }
+
+        if (warnings.Count > 0)
+        {
+            return new DoctorCheck("Config", DoctorStatus.Warning,
+                $".cpmigrate.json parsed with {warnings.Count} warning(s): {string.Join(" ", warnings)}");
+        }
+
+        return new DoctorCheck("Config", DoctorStatus.Ok, ".cpmigrate.json found and valid");
     }
 
     private static DoctorCheck CheckGitStatus(string searchPath)
