@@ -557,6 +557,14 @@ public class FixInfo
     [JsonPropertyName("type")]
     public string Type { get; init; } = string.Empty;
 
+    /// <summary>
+    /// The rule the fix addressed — the field a consumer joins on to correlate a fix back to the
+    /// <c>analysisIssues</c> entry it resolved. Absent on results the fixer could not identify
+    /// (a fix result constructed before the service stamped it).
+    /// </summary>
+    [JsonPropertyName("issueCode")]
+    public string? IssueCode { get; init; }
+
     [JsonPropertyName("package")]
     public string Package { get; init; } = string.Empty;
 

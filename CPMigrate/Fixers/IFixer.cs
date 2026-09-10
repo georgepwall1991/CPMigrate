@@ -29,6 +29,20 @@ public record FixResult(
 )
 {
     /// <summary>
+    /// The rule the fix addressed, stamped by the fix service after the fixer returns —
+    /// the fixer itself does not know which finding it was dispatched against. A consumer reading
+    /// the JSON document needs it to correlate a fix back to the <c>analysisIssues</c> entry it
+    /// resolved; without it the fix report is a list of file edits with no identity.
+    /// </summary>
+    public string? IssueCode { get; init; }
+
+    /// <summary>
+    /// The package the fix addressed, stamped alongside <see cref="IssueCode"/>. Empty on a
+    /// fixer-constructed result; the service fills it before the result reaches the report.
+    /// </summary>
+    public string? PackageName { get; init; }
+
+    /// <summary>
     /// Creates a successful fix result.
     /// </summary>
     public static FixResult Succeeded(string description, IReadOnlyList<FileChange> changes)

@@ -439,6 +439,42 @@ public class FixServiceTests
         fixReport.Results.Should().NotContain(r => r.Description.Contains("PkgB"));
     }
 
+    [Fact]
+    public void ApplyFixes_StampsIssueIdentityOnResult()
+    {
+        // A consumer reading the JSON document needs the rule ID and package to correlate a fix
+        // back to the analysisIssues entry it resolved — the fixer does not know which finding it
+        // was dispatched against, so the service stamps both before the result reaches the report.
+        var console = new FakeConsoleService();
+        var fixer = new StubFixer(
+            _ => true,
+            (issue, _, _) => FixResult.Succeeded($"fixed {issue.PackageName}", [])
+        );
+        var fixService = new FixService(console, new[] { fixer });
+
+        var report = new AnalysisReport(
+            ProjectsScanned: 1,
+            TotalPackageReferences: 1,
+            Results: new List<AnalyzerResult>
+            {
+                new("Test", new List<AnalysisIssue>
+                {
+                    new("Serilog", "orphaned", new[] { "App.csproj" }, AnalysisIssueCode.OrphanedPackageVersion, AnalysisSeverity.Low, Fixable: true),
+                })
+            }
+        );
+
+        var fixReport = fixService.ApplyFixes(
+            report,
+            new ProjectPackageInfo(Array.Empty<PackageReference>()),
+            new FixRequest("props.props", ConflictStrategy.Highest, false)
+        );
+
+        fixReport.Results.Should().ContainSingle();
+        fixReport.Results[0].IssueCode.Should().Be("OrphanedPackageVersion");
+        fixReport.Results[0].PackageName.Should().Be("Serilog");
+    }
+
     private sealed class StubFixer : IFixer
     {
         private readonly Func<AnalysisIssue, bool> _canFix;
