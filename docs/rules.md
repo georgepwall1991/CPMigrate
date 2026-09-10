@@ -111,8 +111,10 @@ genuinely needs to control that version.
 
 - Requires `--transitive`
 - Default severity: `Low`
-- Fixable: no — removing a direct reference can change the resolved version, so review it yourself.
-  `cpmigrate -s ./Solution.sln --verify` will tell you whether it did
+- Fixable: yes, under central package management — the central pin governs the transitive version,
+  so removing the direct reference is graph-neutral. Without a props file the fixer refuses: the
+  direct reference may be the only thing holding the package at its version, and removing it would
+  silently downgrade. `cpmigrate -s ./Solution.sln --verify` will tell you whether it did
 
 ## FrameworkAlignment
 
