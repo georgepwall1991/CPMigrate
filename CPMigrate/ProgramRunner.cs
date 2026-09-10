@@ -106,10 +106,18 @@ public static class ProgramRunner
 
                     if (options.Init)
                     {
-                        var initService = new InitService(services.ConsoleService);
+                        // Under --output Json the stdout contract is one parseable document, so
+                        // the service's own narration must not leak into it — same swap
+                        // CommandRouter makes for its own machine-readable modes.
+                        var initConsole =
+                            options.Output == OutputFormat.Json
+                                ? SilentConsoleService.Instance
+                                : services.ConsoleService;
+                        var initService = new InitService(initConsole);
                         return await initService.RunAsync(
                             options.GetDiscoveryTargetPath(),
-                            options.Force
+                            options.Force,
+                            options
                         );
                     }
 

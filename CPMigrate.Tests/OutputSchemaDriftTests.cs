@@ -83,6 +83,8 @@ public class OutputSchemaDriftTests
         // as a status token, the totals the console prints, and every deletion error.
         (typeof(PruneBackupsReportPayload), "pruneBackupsReport"),
         (typeof(PruneBackupsSummaryPayload), "pruneBackupsSummary"),
+        // --init serializes its own document too — whether the config file was written, and where.
+        (typeof(InitReportPayload), "initReport"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -137,7 +139,8 @@ public class OutputSchemaDriftTests
             typeof(StatusReportPayload),
             typeof(DoctorReportPayload),
             typeof(ListBackupsReportPayload),
-            typeof(PruneBackupsReportPayload)
+            typeof(PruneBackupsReportPayload),
+            typeof(InitReportPayload)
         );
 
         ModelDefinitions
@@ -255,13 +258,13 @@ public class OutputSchemaDriftTests
                     // --status and --doctor emit their own document roots too; same reasoning.
                     "status",
                     "doctor",
-                    // --list-backups emits its own document root too; its failure payloads use the
-                    // standard operation shape.
+                    // --list-backups, --prune-backups, --prune-all-backups, and --init emit their
+                    // own document roots too; their failure payloads use the standard operation
+                    // shape.
                     "list-backups",
-                    // --prune-backups and --prune-all-backups emit their own document root too;
-                    // their failure payloads use the standard operation shape.
                     "prune-backups",
                     "prune-all-backups",
+                    "init",
                     "batch-analyze",
                     "batch-migrate",
                 }
@@ -313,7 +316,8 @@ public class OutputSchemaDriftTests
             .And.Contain("#/definitions/statusReport")
             .And.Contain("#/definitions/doctorReport")
             .And.Contain("#/definitions/listBackupsReport")
-            .And.Contain("#/definitions/pruneBackupsReport");
+            .And.Contain("#/definitions/pruneBackupsReport")
+            .And.Contain("#/definitions/initReport");
     }
 
     [Fact]
