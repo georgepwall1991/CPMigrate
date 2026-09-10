@@ -163,7 +163,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | 🩺 **`--doctor`** | Environment diagnostics: SDK, NuGet, disk space, write access, backup dir, workspace, config, git |
 |  **`--init`** | Scaffold `.cpmigrate.json` with team defaults |
 | 📟 **`--status`** | One-shot workspace health dashboard |
-| 🌳 **`--tree`** | ASCII dependency tree, direct + transitive |
+| 🌳 **`--tree`** | Dependency tree, direct + transitive — ASCII, or `--output Json` for CI |
 | 🕵️ **`--why`** | Trace one or more packages (`--why A,B,C` shares one workspace scan): who declares each, who inherits it, version drift — as text or `--output Json` (one JSON document per run; multi-ID runs emit a `why-many` document) for CI |
 | 🔀 **`--diff`** | Unified diff preview on `--dry-run`; capture it with `--diff-file` for CI |
 
@@ -198,6 +198,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 cpmigrate --doctor                 # SDK, NuGet reachability, disk, write access, backup dir, workspace, config, git — one table
 cpmigrate --status                 # repo-context dashboard, no wizard
 cpmigrate --tree --transitive      # ASCII dependency tree per project
+cpmigrate --tree --output Json    # the same scan as one JSON document for CI
 cpmigrate --why Newtonsoft.Json    # who declares it, who inherits it, do versions drift
 cpmigrate --why A,B,C              # same answers for a deny-list of packages, one scan
 cpmigrate --why Newtonsoft.Json --output Json   # the same answer, as one JSON document for CI
@@ -259,7 +260,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--doctor` | `false` | Diagnose the environment: SDK, NuGet, disk space, workspace writability, backup directory access, config, git |
 | `--init` | `false` | Scaffold a `.cpmigrate.json` (interactive, or CI-safe defaults) |
 | `--status` | `false` | One-shot workspace health dashboard |
-| `--tree` | `false` | ASCII dependency tree per project (add `--transitive` for the full graph) |
+| `--tree` | `false` | Dependency tree per project (add `--transitive` for the full graph). With `--output Json`, emits a `tree` document instead of the ASCII rendering: every discovered project's direct and transitive packages, each project carrying a `scanned` flag so an unread project is never mistaken for an empty one |
 | `--why` | — | Explain where one or more comma-separated packages come from (`--why A,B,C`): direct declarations (inline vs central pin), update-only amendments, transitive introducers, and version drift across projects — each package's answer rendered under its own banner from one workspace scan. The exit code is the worst of the per-package answers: any incomplete scan → 8, else any not-found → 1, else 0. With `--output Json`, one ID emits the single-package `whyReport` document; several IDs emit a `why-many` document with one entry per package under `results` and the same folded exit code mirrored at the top |
 
 </details>
@@ -406,7 +407,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 | Option | Short | Default | Description |
 |--------|:-----:|:-------:|-------------|
 | `--output` | | `Terminal` | `Terminal` · `Json` · `Sarif` · `Markdown` · `Csv` (`Sarif`/`Csv` need `--analyze`; `Markdown` needs `--analyze` or `--verify`) |
-| `--output-file` | | | Write `Json`/`Sarif`/`Markdown` to a file |
+| `--output-file` | | | Write `Json`/`Sarif`/`Markdown`/`Csv` to a file |
 | `--diff-file` | | | Append every `--dry-run` migration unified diff to a file; created empty when nothing changes, missing when the run crashed; rejected for every other command |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Diagnostic logging to `cpmigrate.log` |

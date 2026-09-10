@@ -190,15 +190,73 @@ public static class ProgramRunner
             );
     }
 
+    /// <summary>
+    /// Renders the dependency tree. Under <c>--output Json</c> the same scan is emitted as the
+    /// <c>tree</c> document instead — one parseable payload on stdout, with every discovered
+    /// project present so an unread one is never mistaken for an empty one. The other
+    /// machine-readable formats are rejected: they carry analyzer findings, and a tree has none.
+    /// </summary>
     private static async Task<int> RunTreeModeAsync(Options options, ApplicationServices services)
     {
+        // SARIF, Markdown, and CSV all carry analyzer findings, and --tree produces none — running
+        // the scan anyway would emit a console tree after a caller explicitly asked for a document.
+        if (options.Output is OutputFormat.Sarif or OutputFormat.Markdown or OutputFormat.Csv)
+        {
+            services.ConsoleService.Error(
+                $"--output {options.Output} cannot be combined with --tree; that format reports "
+                    + "analyzer findings only."
+            );
+            return ExitCodes.ValidationError;
+        }
+
+        var userConsole = services.ConsoleService;
+        var executionConsole =
+            options.Output == OutputFormat.Json
+                ? SilentConsoleService.Instance
+                : services.ConsoleService;
+
+        // Under --output Json the stdout contract is one parseable document, so discovery notices
+        // ("Found project: …") must not leak into it — same swap CommandRouter makes for its own
+        // machine-readable modes.
+        if (!ReferenceEquals(executionConsole, services.ConsoleService))
+        {
+            services = services.WithConsole(executionConsole);
+        }
+
         try
         {
             var projectAnalyzer = services.ProjectAnalyzer;
             var targetPath = options.GetDiscoveryTargetPath();
-            var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(
-                targetPath
-            );
+            var discovery = await projectAnalyzer.DiscoverProjectsDetailedAsync(targetPath);
+            var (basePath, projectPaths) = (discovery.BasePath, discovery.ProjectPaths);
+
+            // Projects the solution names but the filesystem does not have. Under a
+            // machine-readable format the discovery console was silenced, so the warning it
+            // emitted went nowhere — replay it on the caller's console (stderr) and carry the
+            // projects into the document as unread, or the run reports a complete scan over a
+            // workspace that is not.
+            if (discovery.MissingProjects.Count > 0 && options.Output == OutputFormat.Json)
+            {
+                foreach (var missing in discovery.MissingProjects)
+                {
+                    userConsole.Warning(
+                        $"Project found in solution but file missing: {missing}"
+                    );
+                }
+            }
+
+            // Discovery found nothing — no solution where one was asked for, or one it could not
+            // read. The terminal path has already said so in prose; the JSON path must not dress
+            // that up as an empty workspace, so it emits the standard failure payload instead.
+            if (projectPaths.Count == 0 && discovery.MissingProjects.Count == 0 && options.Output == OutputFormat.Json)
+            {
+                return await EmitTreeFailureAsync(
+                    options,
+                    ExitCodes.NoProjectsFound,
+                    $"No projects discovered at '{targetPath}'; nothing was scanned.",
+                    userConsole
+                );
+            }
 
             // The restores run concurrently, scheduled by the shared scan pattern (see
             // ScanResolvedPackagesConcurrentlyAsync below); the merge afterwards walks discovery
@@ -211,28 +269,93 @@ public static class ProgramRunner
                 includeTransitive: options.IncludeTransitive
             );
             var allReferences = new List<Models.PackageReference>();
-            foreach (var result in resolved)
+            var projectOutcomes = new List<(string Path, bool Scanned)>(projectPaths.Count);
+            for (var index = 0; index < projectPaths.Count; index++)
             {
-                foreach (var warning in result.Warnings)
+                // Warnings go to the caller's console (stderr), not the execution console: under
+                // --output Json the execution console is silent, and a dropped warning is how a
+                // scanned:false project ends up unexplained.
+                foreach (var warning in resolved[index].Warnings)
                 {
-                    services.ConsoleService.Warning(warning);
+                    userConsole.Warning(warning);
                 }
 
-                if (result.Success)
+                projectOutcomes.Add((projectPaths[index], resolved[index].Success));
+                if (resolved[index].Success)
                 {
-                    allReferences.AddRange(result.References);
+                    allReferences.AddRange(resolved[index].References);
                 }
             }
 
+            // A project the solution names but the filesystem lacks was never scanned — it belongs
+            // in the document as unread, not absent.
+            foreach (var missing in discovery.MissingProjects)
+            {
+                projectOutcomes.Add((missing, false));
+            }
+
             var packageInfo = new Models.ProjectPackageInfo(allReferences, BasePath: basePath);
-            var treeService = new DependencyTreeService(services.ConsoleService);
+
+            if (options.Output == OutputFormat.Json)
+            {
+                // EmitAsync, not EmitFailureAsync: a success document that could not reach its
+                // --output-file must not fall back to stdout and exit 0 — a CI job expecting the
+                // file would pass with a missing artifact. The write failure throws into the catch
+                // below, which reports it as a failure payload instead.
+                await JsonOutputWriter.EmitAsync(
+                    DependencyTreeJsonWriter.Serialize(
+                        packageInfo,
+                        projectOutcomes,
+                        ExitCodes.Success
+                    ),
+                    options,
+                    userConsole
+                );
+                return ExitCodes.Success;
+            }
+            var treeService = new DependencyTreeService(executionConsole);
             return await treeService.RunAsync(packageInfo);
         }
         catch (Exception ex)
         {
-            services.ConsoleService.Error($"Failed to build dependency tree: {ex.Message}");
-            return ExitCodes.UnexpectedError;
+            return await EmitTreeFailureAsync(
+                options,
+                ExitCodes.UnexpectedError,
+                $"Failed to build dependency tree: {ex.Message}",
+                userConsole
+            );
         }
+    }
+
+    /// <summary>
+    /// Reports a <c>--tree</c> run that cannot produce a document and settles its exit code.
+    /// Mirrors <see cref="EmitWhyFailureAsync"/>: under <c>--output Json</c> the prose goes to the
+    /// caller's own console and the standard failure payload goes out through
+    /// <see cref="JsonOutputWriter.EmitFailureAsync"/>.
+    /// </summary>
+    private static async Task<int> EmitTreeFailureAsync(
+        Options options,
+        int exitCode,
+        string errorMessage,
+        IConsoleService consoleService
+    )
+    {
+        consoleService.Error(errorMessage);
+
+        if (options.Output == OutputFormat.Json)
+        {
+            var formatter = new JsonFormatter();
+            var operationResult = new OperationResult
+            {
+                Operation = "tree",
+                Success = false,
+                ExitCode = exitCode,
+                Errors = [errorMessage],
+            };
+            await JsonOutputWriter.EmitFailureAsync(formatter.Format(operationResult), options);
+        }
+
+        return exitCode;
     }
 
     /// <summary>
@@ -306,15 +429,29 @@ public static class ProgramRunner
         {
             var projectAnalyzer = services.ProjectAnalyzer;
             var targetPath = options.GetDiscoveryTargetPath();
-            var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(
-                targetPath
-            );
+            var discovery = await projectAnalyzer.DiscoverProjectsDetailedAsync(targetPath);
+            var (basePath, projectPaths) = (discovery.BasePath, discovery.ProjectPaths);
+
+            // Projects the solution names but the filesystem does not have. Under a
+            // machine-readable format the discovery console was silenced, so the warning it
+            // emitted went nowhere — replay it on the caller's console (stderr) and carry the
+            // projects into the report as unread, or the run reports a complete scan over a
+            // workspace that is not.
+            if (discovery.MissingProjects.Count > 0 && options.Output == OutputFormat.Json)
+            {
+                foreach (var missing in discovery.MissingProjects)
+                {
+                    userConsole.Warning(
+                        $"Project found in solution but file missing: {missing}"
+                    );
+                }
+            }
 
             // Discovery found nothing — no solution where one was asked for, or one it could not
             // read. The terminal path has already said so in prose; the JSON path must not dress
             // that up as a not-found verdict about the package, so it emits the router's standard
             // failure payload instead.
-            if (projectPaths.Count == 0 && options.Output == OutputFormat.Json)
+            if (projectPaths.Count == 0 && discovery.MissingProjects.Count == 0 && options.Output == OutputFormat.Json)
             {
                 return await EmitWhyFailureAsync(
                     options,
@@ -355,9 +492,12 @@ public static class ProgramRunner
             for (var index = 0; index < projectPaths.Count; index++)
             {
                 var projectPath = projectPaths[index];
+                // Warnings go to the caller's console (stderr), not the execution console: under
+                // --output Json the execution console is silent, and a dropped warning is how an
+                // unreadable project ends up unexplained.
                 foreach (var warning in resolved[index].Warnings)
                 {
-                    executionConsole.Warning(warning);
+                    userConsole.Warning(warning);
                 }
 
                 var (references, success) = (resolved[index].References, resolved[index].Success);
@@ -392,6 +532,23 @@ public static class ProgramRunner
                     resolvedGraphs.Add(graph);
                 }
             }
+
+            // A project the solution names but the filesystem lacks was never scanned — it belongs
+            // in the report as unreadable, not absent, and it counts toward the failed-scan total
+            // that drives exit code 8.
+            foreach (var missing in discovery.MissingProjects)
+            {
+                failedScans++;
+                scanOutcomes.Add(
+                    new PackageOriginProjectScan(
+                        missing,
+                        ResolvedRead: false,
+                        DeclarationsRead: false
+                    )
+                );
+            }
+
+            var allProjectPaths = projectPaths.Concat(discovery.MissingProjects).ToList();
             var packageInfo = new Models.ProjectPackageInfo(
                 allReferences,
                 BasePath: basePath,
@@ -406,11 +563,11 @@ public static class ProgramRunner
                     packageId,
                     packageInfo,
                     resolvedGraphs,
-                    projectPaths.Count,
+                    allProjectPaths.Count,
                     failedScans,
                     // Every discovered project, including ones whose scans produced no rows —
                     // "this project does not have the package" is part of the answer.
-                    projectPaths,
+                    allProjectPaths,
                     scanOutcomes
                 ))
                 .ToList();
@@ -438,10 +595,11 @@ public static class ProgramRunner
                         [.. answers.Select(answer => answer.answerExitCode)]
                     );
 
-                // EmitFailureAsync rather than EmitAsync: when --output-file cannot be written the
-                // document falls back to stdout instead of dying on an exception whose message the
-                // silent scan console would swallow.
-                await JsonOutputWriter.EmitFailureAsync(
+                // EmitAsync, not EmitFailureAsync: a success document that could not reach its
+                // --output-file must not fall back to stdout and exit 0 — a CI job expecting the
+                // file would pass with a missing artifact. The write failure throws into the catch
+                // below, which reports it as a failure payload instead.
+                await JsonOutputWriter.EmitAsync(
                     answers.Count == 1
                         ? PackageOriginJsonWriter.Serialize(
                             answers[0].request,
@@ -449,7 +607,8 @@ public static class ProgramRunner
                             answers[0].answerExitCode
                         )
                         : PackageOriginJsonWriter.SerializeMany(answers, exitCode),
-                    options
+                    options,
+                    userConsole
                 );
 
                 return exitCode;

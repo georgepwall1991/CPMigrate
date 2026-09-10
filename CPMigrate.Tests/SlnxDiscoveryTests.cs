@@ -76,4 +76,33 @@ public class SlnxDiscoveryTests : IDisposable
         projectPaths.Should().ContainSingle();
         Path.GetFullPath(projectPaths[0]).Should().Be(Path.GetFullPath(projectPath));
     }
+
+    [Fact]
+    public async Task DiscoverProjectsDetailedAsync_ReportsMissingProjectsAsData()
+    {
+        // A project the solution names but the filesystem lacks must surface as data, not only as
+        // a console warning — a machine-readable run silences that console, and a missing project
+        // that vanishes entirely reads as "scanned, absent" about a project nobody opened.
+        var projectDir = Path.Combine(_testDirectory, "Present");
+        Directory.CreateDirectory(projectDir);
+        File.WriteAllText(
+            Path.Combine(projectDir, "Present.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>"
+        );
+
+        var slnxPath = Path.Combine(_testDirectory, "Partial.slnx");
+        File.WriteAllText(
+            slnxPath,
+            @"<Solution>
+  <Project Path=""Present/Present.csproj"" />
+  <Project Path=""Gone/Gone.csproj"" />
+</Solution>"
+        );
+
+        var result = await _analyzer.DiscoverProjectsDetailedAsync(slnxPath);
+
+        result.ProjectPaths.Should().ContainSingle();
+        result.MissingProjects.Should().ContainSingle()
+            .Which.Should().EndWith(Path.Combine("Gone", "Gone.csproj"));
+    }
 }

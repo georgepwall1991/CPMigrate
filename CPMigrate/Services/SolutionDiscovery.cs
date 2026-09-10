@@ -1,3 +1,4 @@
+using CPMigrate.Models;
 using Microsoft.VisualStudio.SolutionPersistence.Serializer;
 
 namespace CPMigrate.Services;
@@ -13,7 +14,14 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
 
     public async Task<(string BasePath, List<string> ProjectPaths)> DiscoverProjectsFromSolutionAsync(string solutionPath)
     {
+        var result = await DiscoverProjectsDetailedAsync(solutionPath);
+        return (result.BasePath, result.ProjectPaths);
+    }
+
+    public async Task<DiscoveryResult> DiscoverProjectsDetailedAsync(string solutionPath)
+    {
         var projectPaths = new List<string>();
+        var missingProjects = new List<string>();
         var fullPath = ResolveSolutionFilePath(solutionPath);
 
         if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath))
@@ -22,21 +30,21 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
                 ? "No solution file found in the specified directory."
                 : "Solution file not found.";
             _consoleService.Info(message);
-            return (string.Empty, projectPaths);
+            return new DiscoveryResult(string.Empty, projectPaths, missingProjects);
         }
 
         var basePath = Path.GetDirectoryName(fullPath);
         if (string.IsNullOrEmpty(basePath))
         {
             _consoleService.Error("Invalid solution path: cannot determine directory.");
-            return (string.Empty, projectPaths);
+            return new DiscoveryResult(string.Empty, projectPaths, missingProjects);
         }
 
         try
         {
-            if (!await DiscoverProjectsInSolutionAsync(fullPath, basePath, projectPaths))
+            if (!await DiscoverProjectsInSolutionAsync(fullPath, basePath, projectPaths, missingProjects))
             {
-                return (string.Empty, projectPaths);
+                return new DiscoveryResult(string.Empty, projectPaths, missingProjects);
             }
         }
         catch (Exception ex)
@@ -47,7 +55,7 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
 #pragma warning restore S2139
         }
 
-        return (basePath, projectPaths);
+        return new DiscoveryResult(basePath, projectPaths, missingProjects);
     }
 
     public (string BasePath, List<string> ProjectPaths) DiscoverProjectsFromSolution(string solutionPath)
@@ -126,7 +134,7 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
         return selected != null && File.Exists(selected) ? selected : null;
     }
 
-    private async Task<bool> DiscoverProjectsInSolutionAsync(string solutionFullPath, string basePath, List<string> projectPaths)
+    private async Task<bool> DiscoverProjectsInSolutionAsync(string solutionFullPath, string basePath, List<string> projectPaths, List<string> missingProjects)
     {
         var serializer = SolutionSerializers.GetSerializerByMoniker(solutionFullPath);
         if (serializer == null)
@@ -152,6 +160,10 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
             }
             else
             {
+                // Carried as data as well as warned: a machine-readable run silences this console,
+                // and a missing project that vanishes entirely reads as "scanned, absent" about a
+                // project nobody opened.
+                missingProjects.Add(absolutePath);
                 _consoleService.Warning($"Project found in solution but file missing: {absolutePath}");
             }
         }

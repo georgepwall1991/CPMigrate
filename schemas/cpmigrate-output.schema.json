@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Four payload shapes exist: a single operation, the aggregate --batch writes, and the two --why package-origin reports — one package per document, or several under operation why-many. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Five payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — and the --tree dependency report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -15,6 +15,9 @@
     },
     {
       "$ref": "#/definitions/whyManyReport"
+    },
+    {
+      "$ref": "#/definitions/treeReport"
     }
   ],
   "definitions": {
@@ -53,7 +56,8 @@
             "why-many",
             "batch-analyze",
             "batch-migrate",
-            "remediate"
+            "remediate",
+            "tree"
           ],
           "description": "Which command produced the payload"
         },
@@ -1034,6 +1038,116 @@
         "failedScans": {
           "type": "integer",
           "description": "How many scans failed — the number behind exit code 8"
+        }
+      },
+      "additionalProperties": false
+    },
+    "treeReport": {
+      "type": "object",
+      "description": "The document `--tree --output Json` prints instead of the console tree: every discovered project's direct and transitive packages. exitCode mirrors the process exit code, so parsing stdout alone gives the same verdict as reading $?.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "exitCode",
+        "projects",
+        "summary"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["tree"],
+          "description": "Always 'tree'; distinguishes this shape from singleOperation, batchOperation, and the why reports"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run: 0 on success, 4 when no projects were discovered, 6 on an unexpected failure"
+        },
+        "projects": {
+          "type": "array",
+          "description": "Every discovered project, in path order — including ones whose scan failed or that declare no packages",
+          "items": { "$ref": "#/definitions/treeProject" }
+        },
+        "summary": { "$ref": "#/definitions/treeSummary" }
+      },
+      "additionalProperties": false
+    },
+    "treeProject": {
+      "type": "object",
+      "required": [
+        "projectPath",
+        "relativePath",
+        "scanned",
+        "direct",
+        "transitive"
+      ],
+      "properties": {
+        "projectPath": {
+          "type": "string",
+          "description": "Full path to the project file, as scanned"
+        },
+        "relativePath": {
+          "type": "string",
+          "description": "Path relative to the scan root, forward-slashed; a bare file name when no scan root is known"
+        },
+        "scanned": {
+          "type": "boolean",
+          "description": "Whether this project's resolved packages could be read. False means the lists are empty because the project could not be examined, not because it declares nothing"
+        },
+        "direct": {
+          "type": "array",
+          "description": "Packages the project declares itself, in name order",
+          "items": { "$ref": "#/definitions/treePackage" }
+        },
+        "transitive": {
+          "type": "array",
+          "description": "Packages arriving only through another package's closure, in name order",
+          "items": { "$ref": "#/definitions/treePackage" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "treePackage": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The package ID"
+        },
+        "version": {
+          "type": "string",
+          "description": "The version string as scanned; absent when the declaration carries none, which under central package management is the normal case"
+        }
+      },
+      "additionalProperties": false
+    },
+    "treeSummary": {
+      "type": "object",
+      "description": "Workspace counts for the run",
+      "required": [
+        "projectCount",
+        "direct",
+        "transitive",
+        "failedScans"
+      ],
+      "properties": {
+        "projectCount": {
+          "type": "integer",
+          "description": "Projects workspace discovery found"
+        },
+        "direct": {
+          "type": "integer",
+          "description": "Direct package references across every scanned project"
+        },
+        "transitive": {
+          "type": "integer",
+          "description": "Transitive package references across every scanned project"
+        },
+        "failedScans": {
+          "type": "integer",
+          "description": "How many of the discovered projects could not be scanned — an unread project is not an empty one"
         }
       },
       "additionalProperties": false

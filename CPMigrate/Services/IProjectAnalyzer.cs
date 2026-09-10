@@ -18,6 +18,13 @@ public interface IProjectAnalyzer
     Task<(string BasePath, List<string> ProjectPaths)> DiscoverProjectsFromSolutionAsync(string solutionPath);
 
     /// <summary>
+    /// The same discovery <see cref="DiscoverProjectsFromSolutionAsync"/> performs, with the
+    /// projects the solution names but the filesystem does not have carried as data — a warning a
+    /// machine-readable run cannot afford to drop.
+    /// </summary>
+    Task<DiscoveryResult> DiscoverProjectsDetailedAsync(string solutionPath);
+
+    /// <summary>
     /// Discovers project path from a directory or direct file path.
     /// </summary>
     (string BasePath, List<string> ProjectPaths) DiscoverProjectFromPath(string projectPath);

@@ -59,6 +59,13 @@ public class OutputSchemaDriftTests
         // shape drift away from the schema the same way its single-package sibling once could.
         (typeof(MultiWhyPayload), "whyManyReport"),
         (typeof(WhyAnswerPayload), "whyAnswer"),
+        // --tree serializes its own document too. The scanned flag is what separates "declared
+        // nothing" from "could not be read", so a schema missing it would let a consumer gate on
+        // a field that does not exist.
+        (typeof(TreeReportPayload), "treeReport"),
+        (typeof(TreeProjectPayload), "treeProject"),
+        (typeof(TreePackagePayload), "treePackage"),
+        (typeof(TreeSummaryPayload), "treeSummary"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -101,13 +108,15 @@ public class OutputSchemaDriftTests
     [Fact]
     public void Schema_GuardsEveryModelReachableFromPayloadRoots()
     {
-        // --why emits its own document roots, so its models are reachable from there, just as the
-        // operation and batch models are reachable from OperationResult and BatchResult.
+        // --why and --tree emit their own document roots, so their models are reachable from
+        // there, just as the operation and batch models are reachable from OperationResult and
+        // BatchResult.
         var reachable = PayloadModelTypes(
             typeof(OperationResult),
             typeof(BatchResult),
             typeof(PackageOriginPayload),
-            typeof(MultiWhyPayload)
+            typeof(MultiWhyPayload),
+            typeof(TreeReportPayload)
         );
 
         ModelDefinitions
@@ -219,6 +228,9 @@ public class OutputSchemaDriftTests
                     // multi-package request keeps the why-many discriminator, so both names appear.
                     "why",
                     "why-many",
+                    // --tree emits its own document root, but its failure payloads use the standard
+                    // operation shape — so "tree" belongs in this enum too.
+                    "tree",
                     "batch-analyze",
                     "batch-migrate",
                 }
@@ -265,7 +277,33 @@ public class OutputSchemaDriftTests
             .Contain("#/definitions/whyReport")
             .And.Contain("#/definitions/whyManyReport")
             .And.Contain("#/definitions/singleOperation")
-            .And.Contain("#/definitions/batchOperation");
+            .And.Contain("#/definitions/batchOperation")
+            .And.Contain("#/definitions/treeReport");
+    }
+
+    [Fact]
+    public void Schema_RequiresTheFieldsEveryTreeDocumentCarries()
+    {
+        var required = Definition("treeReport")
+            .GetProperty("required")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToList();
+
+        required
+            .Should()
+            .Contain(
+                new[]
+                {
+                    "outputSchemaVersion",
+                    "version",
+                    "operation",
+                    "exitCode",
+                    "projects",
+                    "summary",
+                },
+                "these are set on every tree document"
+            );
     }
 
     [Fact]

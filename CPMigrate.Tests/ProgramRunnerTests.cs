@@ -500,6 +500,34 @@ public class ProgramRunnerTests
         }
     }
 
+    [Theory]
+    [InlineData("Sarif")]
+    [InlineData("Markdown")]
+    [InlineData("Csv")]
+    public async Task RunAsync_TreeWithAFindingsFormat_IsRejectedBeforeScanning(string format)
+    {
+        // Those formats carry analyzer findings and --tree produces none — running the scan anyway
+        // would print a console tree after a caller explicitly asked for a document.
+        var fakeConsole = new FakeConsoleService();
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateTree_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "--tree", "--output", format, "-s", directory },
+                fakeConsole
+            );
+
+            exitCode.Should().Be(ExitCodes.ValidationError);
+            fakeConsole.ErrorMessages.Should().Contain(m => m.Contains(format));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public void Examples_ProjectExample_DoesNotCarryDefaultSolutionPath()
     {

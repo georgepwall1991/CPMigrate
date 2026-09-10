@@ -80,8 +80,15 @@ public static class OutputMetadata
     /// verification passed, not derived by subtracting what was applied, so "these versions changed"
     /// and "the advisories are gone" remain separate claims. It is absent when no re-scan happened.
     /// </para>
+    /// <para>
+    /// 1.11.0 additively introduced the fifth top-level shape: the document
+    /// <c>--tree --output Json</c> prints, distinguished by <c>operation: "tree"</c>. Each project
+    /// entry carries its own <c>scanned</c> flag, so a consumer can tell a project that declared
+    /// nothing from one the scan could not read — the distinction the console tree only reports as
+    /// warnings.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.10.0";
+    public const string SchemaVersion = "1.11.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.
