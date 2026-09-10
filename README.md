@@ -41,7 +41,7 @@ CPMigrate replaces both with three things that actually hold up:
 |:--:|------|---------------|:--:|
 | 🟥 | **SecurityVulnerability** | Known CVEs in direct *and* transitive deps (`--audit`) | Critical |
 | 🟧 | **InlineVersionUnderCpm** | Inline `Version` overriding the central pin (auto-fixable; `VersionOverride` stays — it is deliberate) | High |
-| 🟧 | **CpmNotEnabled** | Props file exists but central management is switched off | High |
+| 🟧 | **CpmNotEnabled** | Props file exists but central management is switched off (auto-fixable — refused while projects still declare `Version` inline, since that is `--migrate`'s job) | High |
 | 🟧 | **MissingPackageVersion** | A reference with no version, inline or central — restore fails | High |
 | 🟧 | **LicenseRisk** | Copyleft (GPL/AGPL) & proprietary licenses (`--licenses`) | High |
 | 🟨 | **VersionInconsistency** | Same package, different versions across projects (auto-fixable) | Moderate |

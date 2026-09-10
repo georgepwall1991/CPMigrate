@@ -530,6 +530,10 @@ public class CpmDriftAnalyzer : IAnalyzer
                 Array.Empty<string>(),
                 AnalysisIssueCode.CpmNotEnabled,
                 AnalysisSeverity.High,
+                // Fixable in the common case — the props file parses and only needs the property
+                // set. The fixer refuses when projects still declare Version inline, because
+                // enabling CPM over them turns each into NU1008; that is --migrate's job.
+                Fixable: true,
                 Metadata: PropsMetadata(propsFile)
             )
         );
