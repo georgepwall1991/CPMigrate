@@ -1135,6 +1135,12 @@ internal static class CommandRouter
         await JsonOutputWriter.EmitAsync(markdown, options, consoleService);
     }
 
+    /// <summary>
+    /// Emits the analysis as CSV through <see cref="CsvFormatter"/>, the same renderer the contract
+    /// tests pin. This path used to carry a second, inline escaper that drifted from the tested one —
+    /// it never learned to quote a bare carriage return, so a description containing \r shipped a row
+    /// strict CSV readers split. One renderer means the fix and the tests cover the output users get.
+    /// </summary>
     private static async Task WriteCsvOutputAsync(
         Options options,
         MigrationResult result,
@@ -1145,35 +1151,13 @@ internal static class CommandRouter
             result.PostFixAnalysisReport
             ?? result.AnalysisReport
             ?? new AnalysisReport(0, 0, Array.Empty<AnalyzerResult>());
+        var packageInfo =
+            result.PackageInfo ?? new ProjectPackageInfo(Array.Empty<PackageReference>());
 
-        var rows = report
-            .Results.SelectMany(r =>
-                r.Issues.Select(issue =>
-                    string.Join(
-                        ",",
-                        CsvField(r.AnalyzerName),
-                        CsvField(issue.Severity.ToString()),
-                        CsvField(issue.PackageName),
-                        CsvField(issue.Description),
-                        CsvField(string.Join("; ", issue.AffectedProjects)),
-                        issue.Fixable ? "true" : "false"
-                    )
-                )
-            )
-            .ToList();
-
-        var csv =
-            "Rule,Severity,Package,Description,AffectedProjects,Fixable\n"
-            + string.Join("\n", rows)
-            + "\n";
+        var csv = CsvFormatter.Format(report, packageInfo);
 
         await JsonOutputWriter.EmitAsync(csv, options, consoleService);
     }
-
-    private static string CsvField(string value) =>
-        value.Contains(',') || value.Contains('"') || value.Contains('\n')
-            ? $"\"{value.Replace("\"", "\"\"")}\""
-            : value;
 
     /// <summary>
     /// Decides whether the scan behind a result can be trusted. An empty finding list from a scan
