@@ -198,7 +198,9 @@ four CPM rules.
 
 - Reported once per props file, not once per project beneath it
 - Default severity: `High`
-- Fixable: no — add `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>`
+- Fixable: yes — `--fix` sets `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>`.
+  It refuses while any project still declares `Version` inline, because enabling central
+  management over inline versions turns each into NU1008; that case is `--migrate`'s job.
 
 ## InlineVersionUnderCpm
 
