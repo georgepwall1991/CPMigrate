@@ -176,7 +176,9 @@ public class CpmNotEnabledFixerTests : IDisposable
         new(
             new List<PackageReference>
             {
-                new("Serilog", "4.2.0", Path.Combine(_testDirectory, "App.csproj"), "App.csproj"),
+                // Empty Version: under CPM-off a reference with no inline version declares none —
+                // the version lives nowhere, which is exactly the state the finding describes.
+                new("Serilog", "", Path.Combine(_testDirectory, "App.csproj"), "App.csproj"),
             },
             BasePath: _testDirectory
         );

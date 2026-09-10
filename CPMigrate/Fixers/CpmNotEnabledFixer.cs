@@ -40,10 +40,13 @@ public class CpmNotEnabledFixer : IFixer
 
         // Enabling CPM over a project that still declares Version inline turns every one into
         // NU1008 — the finding is real but the fix is --migrate, which strips them as it moves
-        // the versions central. Refuse rather than break the restore.
+        // the versions central. Refuse rather than break the restore. Version is the inline
+        // declared version only — empty when absent — so a reference carrying only a
+        // VersionOverride does not refuse: the override is the supported mechanism, and enabling
+        // CPM is what activates it.
         var inlineVersions = packageInfo
             .GetDeclaredReferences()
-            .Where(reference => reference.HasVersionMetadata)
+            .Where(reference => !string.IsNullOrEmpty(reference.Version))
             .Select(reference => reference.ProjectName)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
