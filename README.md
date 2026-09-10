@@ -407,7 +407,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 | Option | Short | Default | Description |
 |--------|:-----:|:-------:|-------------|
 | `--output` | | `Terminal` | `Terminal` · `Json` · `Sarif` · `Markdown` · `Csv` (`Sarif`/`Csv` need `--analyze`; `Markdown` needs `--analyze` or `--verify`) |
-| `--output-file` | | | Write `Json`/`Sarif`/`Markdown` to a file |
+| `--output-file` | | | Write `Json`/`Sarif`/`Markdown`/`Csv` to a file |
 | `--diff-file` | | | Append every `--dry-run` migration unified diff to a file; created empty when nothing changes, missing when the run crashed; rejected for every other command |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Diagnostic logging to `cpmigrate.log` |
