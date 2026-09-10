@@ -33,7 +33,7 @@ public class LiftingAnalyzer : IAnalyzer
                     [projectId],
                     AnalysisIssueCode.RedundantDirectReference,
                     AnalysisSeverity.Low,
-                    Fixable: false
+                    Fixable: true
                 ));
             }
         }

@@ -13,7 +13,8 @@ internal static class FixerCatalog
             new RedundantReferenceFixer(),
             new TransitiveConflictFixer(versionResolver),
             new OrphanedPackageVersionFixer(),
-            new InlineVersionFixer()
+            new InlineVersionFixer(),
+            new RedundantDirectReferenceFixer()
         ];
     }
 }

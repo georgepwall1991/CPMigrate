@@ -52,7 +52,7 @@ CPMigrate replaces both with three things that actually hold up:
 | 🟦 | **RedundantReference** | The same `PackageReference` twice in one project | Low |
 | 🟦 | **OutdatedPackage** / **DeprecatedPackage** | Behind the feed / abandoned packages | Low |
 | 🟦 | **OrphanedPackageVersion** | Central pins no project references anymore (auto-fixable) | Low |
-| 🟦 | **RedundantDirectReference** | A direct reference already provided transitively | Low |
+| 🟦 | **RedundantDirectReference** | A direct reference already provided transitively (auto-fixable under CPM — refused without it, since the direct reference may be the only thing holding the version) | Low |
 | ⬜ | **FrameworkAlignment** | Projects drifting across `TargetFramework` values | Info |
 
 Every finding carries a stable rule ID — paste it straight into `cpmigrate --explain <RuleId>` for the why and the fix. Full reference: [`docs/rules.md`](docs/rules.md).
