@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Eleven payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, the --list-backups history report, the --prune-backups outcome report, the --init scaffolding report, and the --explain rule report. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Twelve payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, the --list-backups history report, the --prune-backups outcome report, the --init scaffolding report, the --explain rule report, and the --unify-props consensus report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -36,6 +36,9 @@
     },
     {
       "$ref": "#/definitions/explainReport"
+    },
+    {
+      "$ref": "#/definitions/unifyPropsReport"
     }
   ],
   "definitions": {
@@ -1554,6 +1557,113 @@
           "type": "string",
           "description": "Anchor into the published rule documentation"
         }
+      },
+      "additionalProperties": false
+    },
+    "unifyPropsReport": {
+      "type": "object",
+      "description": "The document `--unify-props --output Json` prints instead of the console table: the candidates that met the consensus threshold and what was done about them — unified, dryRun, noCandidates, refused, or failed — so a CI script can gate on the outcome without parsing prose.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "exitCode",
+        "propsFilePath",
+        "status",
+        "forced",
+        "candidates",
+        "summary"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["unify-props"],
+          "description": "Always 'unify-props'; distinguishes this shape from the other documents"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run"
+        },
+        "propsFilePath": {
+          "type": "string",
+          "description": "The Directory.Build.props the run resolved to write, as resolved"
+        },
+        "status": {
+          "enum": ["unified", "dryRun", "noCandidates", "refused", "failed"],
+          "description": "The outcome as a single token"
+        },
+        "forced": {
+          "type": "boolean",
+          "description": "Whether --force was passed — what distinguishes a write from a refusal"
+        },
+        "candidates": { "$ref": "#/definitions/unifyPropsCandidates" },
+        "summary": { "$ref": "#/definitions/unifyPropsSummary" }
+      },
+      "additionalProperties": false
+    },
+    "unifyPropsCandidates": {
+      "type": "object",
+      "description": "The properties and items that met the consensus threshold, grouped by kind.",
+      "required": ["properties", "items"],
+      "properties": {
+        "properties": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/unifyPropsProperty" }
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/unifyPropsItem" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "unifyPropsProperty": {
+      "type": "object",
+      "description": "A property that met the consensus threshold.",
+      "required": ["name", "value", "count", "projects"],
+      "properties": {
+        "name": { "type": "string", "description": "The MSBuild property name" },
+        "value": { "type": "string", "description": "The value the consensus projects share" },
+        "count": { "type": "integer", "description": "How many projects declare it" },
+        "projects": {
+          "type": "array",
+          "description": "The projects that declare it, relative to the scan root",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "unifyPropsItem": {
+      "type": "object",
+      "description": "An item that met the consensus threshold.",
+      "required": ["itemType", "include", "count", "projects"],
+      "properties": {
+        "itemType": { "type": "string", "description": "The MSBuild item type" },
+        "include": { "type": "string", "description": "The item's Include value" },
+        "count": { "type": "integer", "description": "How many projects declare it" },
+        "projects": {
+          "type": "array",
+          "description": "The projects that declare it, relative to the scan root",
+          "items": { "type": "string" }
+        },
+        "metadata": {
+          "type": "object",
+          "description": "The item's metadata, when it carries any",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "unifyPropsSummary": {
+      "type": "object",
+      "description": "Totals a gate can read without walking the candidate list.",
+      "required": ["totalProjects", "propertiesUnified", "itemsUnified", "filesModified"],
+      "properties": {
+        "totalProjects": { "type": "integer", "description": "Projects scanned" },
+        "propertiesUnified": { "type": "integer", "description": "Properties that met the threshold" },
+        "itemsUnified": { "type": "integer", "description": "Items that met the threshold" },
+        "filesModified": { "type": "integer", "description": "Files the run wrote — the props file plus every stripped project" }
       },
       "additionalProperties": false
     }
