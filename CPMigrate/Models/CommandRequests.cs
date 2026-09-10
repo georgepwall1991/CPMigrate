@@ -89,15 +89,21 @@ public sealed record AnalysisRequest(
             Output: CommandOutput.FromOptions(options));
 }
 
+/// <param name="OnlyRules">
+/// Rule IDs the run is restricted to, or null for every fixable finding. A user who wants
+/// only <c>OrphanedPackageVersion</c> fixed should not have to accept every other fixable
+/// finding's edit in the same pass.
+/// </param>
 public sealed record FixRequest(
     string PropsFilePath,
     ConflictStrategy ConflictStrategy,
-    bool DryRun)
+    bool DryRun,
+    IReadOnlySet<string>? OnlyRules = null)
 {
     public static FixRequest FromOptions(Options options)
     {
         var (_, propsPath) = MigrationValidator.GetOutputPaths(options);
-        return new(propsPath, options.ConflictStrategy, options.FixDryRun);
+        return new(propsPath, options.ConflictStrategy, options.FixDryRun, options.ParseFixRules());
     }
 }
 

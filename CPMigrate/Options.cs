@@ -591,6 +591,28 @@ public class Options
     [Option("only", HelpText = "Comma-separated package IDs to restrict --update-packages or --remediate to.")]
     public string? Only { get; set; }
 
+    [Option("fix-rule", HelpText = "Comma-separated rule IDs to restrict --fix to (e.g. OrphanedPackageVersion,InlineVersionUnderCpm).")]
+    public string? FixRule { get; set; }
+
+    /// <summary>
+    /// Splits <see cref="FixRule"/> into rule IDs, or returns null when every fixable finding is in play.
+    /// </summary>
+    public IReadOnlySet<string>? ParseFixRules()
+    {
+        if (string.IsNullOrWhiteSpace(FixRule))
+        {
+            return null;
+        }
+
+        var names = FixRule.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            )
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return names.Count > 0 ? names : null;
+    }
+
     /// <summary>
     /// Splits <see cref="Only"/> into package IDs, or returns null when the whole set is in play.
     /// </summary>
@@ -1515,6 +1537,25 @@ public class Options
         if (Fix && FixDryRun)
         {
             throw new ArgumentException("--fix and --fix-dry-run cannot be used together.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(FixRule))
+        {
+            if (!Fix && !FixDryRun)
+            {
+                throw new ArgumentException("--fix-rule requires --fix or --fix-dry-run.");
+            }
+
+            var unknown = ParseFixRules()!
+                .Where(id => !Analyzers.AnalysisRuleCatalog.IsKnown(id))
+                .ToList();
+            if (unknown.Count > 0)
+            {
+                throw new ArgumentException(
+                    $"--fix-rule names no known rule: {string.Join(", ", unknown)}. "
+                        + "Run 'cpmigrate --explain all' for the current rule IDs."
+                );
+            }
         }
     }
 

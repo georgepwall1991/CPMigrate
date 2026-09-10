@@ -33,7 +33,7 @@ public class FixService : IFixService
         return ApplyFixes(
             report,
             packageInfo,
-            new FixRequest(MigrationValidator.GetOutputPaths(options).PropsPath, options.ConflictStrategy, dryRun));
+            new FixRequest(MigrationValidator.GetOutputPaths(options).PropsPath, options.ConflictStrategy, dryRun, options.ParseFixRules()));
     }
 
     /// <param name="request">Mode-specific fix settings.</param>
@@ -43,12 +43,22 @@ public class FixService : IFixService
         var fixReport = new FixReport();
 
         var allIssues = CollectIssues(report);
+
+        // A --fix-rule restriction narrows the pass to the named rules — a user who wants only
+        // OrphanedPackageVersion fixed should not have to accept every other fixable finding's
+        // edit in the same pass.
+        if (request.OnlyRules is { Count: > 0 } onlyRules)
+        {
+            allIssues = allIssues
+                .Where(issue => onlyRules.Contains(issue.IssueCode.ToString()))
+                .ToList();
+        }
+
         if (allIssues.Count == 0)
         {
             _console.Success("No issues to fix.");
             return fixReport;
         }
-
         _console.Info($"Found {allIssues.Count} issue(s) to fix{(request.DryRun ? " (dry run)" : "")}...");
 
         foreach (var issue in allIssues)

@@ -200,4 +200,13 @@ public static class AnalysisRuleCatalog
     {
         return Rules.TryGetValue(code, out var rule) ? rule : Rules[AnalysisIssueCode.Unknown];
     }
+
+    /// <summary>
+    /// Whether the ID names a rule the catalog publishes — the check <c>--fix-rule</c> and
+    /// <c>--rules</c> need before they accept a name.
+    /// </summary>
+    public static bool IsKnown(string id)
+    {
+        return Rules.Values.Any(rule => rule.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+    }
 }
