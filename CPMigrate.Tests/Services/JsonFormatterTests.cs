@@ -256,4 +256,35 @@ public class JsonFormatterTests
         json.Should().NotContain("verificationRuns");
         json.Should().NotContain("bisectBudgetExhausted");
     }
+
+    [Fact]
+    public void Format_FixInfo_SerializesIssueCodeAndPackage()
+    {
+        // A consumer reading the JSON document needs the rule ID and package to correlate a fix
+        // back to the analysisIssues entry it resolved — the fix report used to carry file edits
+        // with no identity.
+        var formatter = new JsonFormatter();
+        var result = new OperationResult
+        {
+            Fixes = new List<FixInfo>
+            {
+                new()
+                {
+                    Type = "Removed orphaned PackageVersion",
+                    IssueCode = "OrphanedPackageVersion",
+                    Package = "Unused.Package",
+                    File = "Directory.Packages.props",
+                    From = "1 PackageVersion entry",
+                    To = "removed",
+                    Applied = true,
+                }
+            }
+        };
+
+        var json = formatter.Format(result);
+
+        json.Should().Contain("\"issueCode\": \"OrphanedPackageVersion\"");
+        json.Should().Contain("\"package\": \"Unused.Package\"");
+    }
+
 }

@@ -1422,7 +1422,8 @@ internal static class CommandRouter
                 fixResult.Changes.Select(change => new FixInfo
                 {
                     Type = fixResult.Description,
-                    Package = string.Empty,
+                    IssueCode = fixResult.IssueCode,
+                    Package = fixResult.PackageName ?? string.Empty,
                     File = change.FilePath,
                     From = change.Before,
                     To = change.After,

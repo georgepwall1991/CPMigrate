@@ -126,8 +126,14 @@ public static class OutputMetadata
     /// matched rule, every rule for <c>--explain all</c>, or the near-miss suggestions for an
     /// unmatched ID — the catalog as fields a consumer can read without parsing prose.
     /// </para>
+    /// <para>
+    /// 1.18.0 additively introduced <c>fixes[].issueCode</c> and populated
+    /// <c>fixes[].package</c>: the fix report used to carry file edits with no identity, so a
+    /// consumer could not correlate a fix back to the <c>analysisIssues</c> entry it resolved.
+    /// <c>issueCode</c> is absent on results the fixer could not identify.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.17.0";
+    public const string SchemaVersion = "1.18.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

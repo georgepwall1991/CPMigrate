@@ -93,7 +93,11 @@ public class FixService : IFixService
 
         try
         {
-            var result = fixer.Fix(issue, packageInfo, request);
+            var result = fixer.Fix(issue, packageInfo, request) with
+            {
+                IssueCode = issue.IssueCode.ToString(),
+                PackageName = issue.PackageName,
+            };
             if (!result.Success)
             {
                 _console.Error($"Failed to fix {issue.PackageName}: {result.Description}");
@@ -117,12 +121,12 @@ public class FixService : IFixService
             // because "access to the path is denied" is the whole answer and a stack-trace-flavoured prefix
             // just buries it.
             _console.Error($"Could not fix {issue.PackageName}: {ex.Message}");
-            return FixResult.Failed(ex.Message);
+            return FixResult.Failed(ex.Message) with { IssueCode = issue.IssueCode.ToString(), PackageName = issue.PackageName };
         }
         catch (Exception ex)
         {
             _console.Error($"Error fixing {issue.PackageName}: {ex.Message}");
-            return FixResult.Failed($"{issue.PackageName}: {ex.Message}");
+            return FixResult.Failed($"{issue.PackageName}: {ex.Message}") with { IssueCode = issue.IssueCode.ToString(), PackageName = issue.PackageName };
         }
     }
 

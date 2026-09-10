@@ -404,6 +404,10 @@
           "type": "string",
           "description": "What the fixer did"
         },
+        "issueCode": {
+          "type": "string",
+          "description": "The rule the fix addressed — the field a consumer joins on to correlate a fix back to the analysisIssues entry it resolved. Absent on results the fixer could not identify."
+        },
         "package": {
           "type": "string"
         },
