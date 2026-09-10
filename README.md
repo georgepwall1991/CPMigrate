@@ -158,7 +158,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | 🚑 **`--remediate`** | Clears CVEs with the *smallest* version bump that fixes them — test-verified, rolled back on red, then re-scanned to prove it. Names the CVE, not just the advisory URL |
 | 🧱 **`Directory.Build.props`** | Unify repeated properties across projects |
 | 🏢 **Batch / monorepo** | Sequential or parallel multi-solution runs, with a `--report` Markdown rollup |
-| 💾 **Backup & rollback** | Timestamped on-disk backups for every destructive path |
+| 💾 **Backup & rollback** | Timestamped on-disk backups for every destructive path — `--list-backups --output Json` for CI |
 | 📄 **`.sln` + `.slnx`** | Classic solutions and Visual Studio 17.10+ `.slnx` |
 | 🩺 **`--doctor`** | Environment diagnostics: SDK, NuGet, disk space, write access, backup dir, workspace, config, git — or `--output Json` for CI |
 |  **`--init`** | Scaffold `.cpmigrate.json` with team defaults |
@@ -397,7 +397,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 | `--rollback` | `-r` | `false` | Restore the most recent backup |
 | `--no-backup` | `-n` | `false` | Disable backup creation |
 | `--backup-dir` | | `.` | Backup directory location |
-| `--list-backups` | | `false` | List backups with timestamps & file counts |
+| `--list-backups` | | `false` | List backups with timestamps & file counts — `--output Json` prints the same history as one JSON document |
 | `--prune-backups` | | `false` | Delete old backups per `--retention` |
 | `--prune-all` | | `false` | Delete all backups |
 | `--retention` | | `5` | Backups to keep when pruning |

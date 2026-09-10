@@ -74,6 +74,11 @@ public class OutputSchemaDriftTests
         (typeof(DoctorReportPayload), "doctorReport"),
         (typeof(DoctorCheckPayload), "doctorCheck"),
         (typeof(DoctorSummaryPayload), "doctorSummary"),
+        // --list-backups serializes its own document too — the backup history the table renders,
+        // plus directoryExists carrying the console path's missing-directory warning as data.
+        (typeof(ListBackupsReportPayload), "listBackupsReport"),
+        (typeof(BackupSetPayload), "backupSet"),
+        (typeof(ListBackupsSummaryPayload), "listBackupsSummary"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -116,9 +121,9 @@ public class OutputSchemaDriftTests
     [Fact]
     public void Schema_GuardsEveryModelReachableFromPayloadRoots()
     {
-        // --why, --tree, --status, and --doctor emit their own document roots, so their models are
-        // reachable from there, just as the operation and batch models are reachable from
-        // OperationResult and BatchResult.
+        // --why, --tree, --status, --doctor, and --list-backups emit their own document roots, so
+        // their models are reachable from there, just as the operation and batch models are
+        // reachable from OperationResult and BatchResult.
         var reachable = PayloadModelTypes(
             typeof(OperationResult),
             typeof(BatchResult),
@@ -126,7 +131,8 @@ public class OutputSchemaDriftTests
             typeof(MultiWhyPayload),
             typeof(TreeReportPayload),
             typeof(StatusReportPayload),
-            typeof(DoctorReportPayload)
+            typeof(DoctorReportPayload),
+            typeof(ListBackupsReportPayload)
         );
 
         ModelDefinitions
@@ -244,6 +250,9 @@ public class OutputSchemaDriftTests
                     // --status and --doctor emit their own document roots too; same reasoning.
                     "status",
                     "doctor",
+                    // --list-backups emits its own document root too; its failure payloads use the
+                    // standard operation shape.
+                    "list-backups",
                     "batch-analyze",
                     "batch-migrate",
                 }
@@ -293,7 +302,8 @@ public class OutputSchemaDriftTests
             .And.Contain("#/definitions/batchOperation")
             .And.Contain("#/definitions/treeReport")
             .And.Contain("#/definitions/statusReport")
-            .And.Contain("#/definitions/doctorReport");
+            .And.Contain("#/definitions/doctorReport")
+            .And.Contain("#/definitions/listBackupsReport");
     }
 
     [Fact]

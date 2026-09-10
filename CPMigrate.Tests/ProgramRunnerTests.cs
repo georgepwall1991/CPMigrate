@@ -648,6 +648,61 @@ public class ProgramRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_ListBackupsJson_EmitsTheDocumentAndNothingElse()
+    {
+        var fakeConsole = new FakeConsoleService();
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateBackups_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var backupDir = Path.Combine(directory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupDir);
+        File.WriteAllText(Path.Combine(backupDir, "App.csproj.backup_20240101_000000"), "x");
+        var outputFile = Path.Combine(directory, "report.json");
+
+        try
+        {
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "--list-backups", "--output", "Json", "--output-file", outputFile, "--backup-dir", directory },
+                fakeConsole
+            );
+
+            exitCode.Should().Be(ExitCodes.Success);
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
+            document.RootElement.GetProperty("operation").GetString().Should().Be("list-backups");
+            document.RootElement.GetProperty("directoryExists").GetBoolean().Should().BeTrue();
+            document.RootElement.GetProperty("summary").GetProperty("sets").GetInt32().Should().Be(1);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_ListBackupsJson_MissingDirectory_ReportsItAsData()
+    {
+        var fakeConsole = new FakeConsoleService();
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateBackups_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var outputFile = Path.Combine(directory, "report.json");
+
+        try
+        {
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "--list-backups", "--output", "Json", "--output-file", outputFile, "--backup-dir", directory },
+                fakeConsole
+            );
+
+            exitCode.Should().Be(ExitCodes.Success);
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
+            document.RootElement.GetProperty("directoryExists").GetBoolean().Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Examples_ProjectExample_DoesNotCarryDefaultSolutionPath()
     {
         var projectExample = Options.Examples.Single(example =>
