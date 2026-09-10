@@ -700,7 +700,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                         new[] { projectId },
                         AnalysisIssueCode.InlineVersionUnderCpm,
                         AnalysisSeverity.Moderate,
-                        Fixable: false
+                        Fixable: true
                     )
                 );
 
