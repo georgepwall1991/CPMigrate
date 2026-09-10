@@ -122,11 +122,7 @@ public static class ProgramRunner
 
                     if (options.Status)
                     {
-                        var statusService = new StatusService(
-                            services.ConsoleService,
-                            new SolutionDiscovery(services.ConsoleService)
-                        );
-                        return await statusService.RunAsync(options.GetDiscoveryTargetPath());
+                        return await RunStatusModeAsync(options, services);
                     }
 
                     if (options.Tree)
@@ -188,6 +184,39 @@ public static class ProgramRunner
                     return Task.FromResult(ExitCodes.ValidationError);
                 }
             );
+    }
+
+    /// <summary>
+    /// Renders the workspace dashboard. Under <c>--output Json</c> the same collected status is
+    /// emitted as the <c>status</c> document instead — one parseable payload on stdout. The other
+    /// machine-readable formats are rejected: they carry analyzer findings, and a status has none.
+    /// </summary>
+    private static async Task<int> RunStatusModeAsync(Options options, ApplicationServices services)
+    {
+        // SARIF, Markdown, and CSV all carry analyzer findings, and --status produces none —
+        // collecting anyway would print a dashboard after a caller explicitly asked for a document.
+        if (options.Output is OutputFormat.Sarif or OutputFormat.Markdown or OutputFormat.Csv)
+        {
+            services.ConsoleService.Error(
+                $"--output {options.Output} cannot be combined with --status; that format reports "
+                    + "analyzer findings only."
+            );
+            return ExitCodes.ValidationError;
+        }
+
+        // Under --output Json the stdout contract is one parseable document, so the service's own
+        // narration must not leak into it — same swap CommandRouter makes for its own
+        // machine-readable modes.
+        var executionConsole =
+            options.Output == OutputFormat.Json
+                ? SilentConsoleService.Instance
+                : services.ConsoleService;
+
+        var statusService = new StatusService(
+            executionConsole,
+            new SolutionDiscovery(executionConsole)
+        );
+        return await statusService.RunAsync(options.GetDiscoveryTargetPath(), options);
     }
 
     /// <summary>
