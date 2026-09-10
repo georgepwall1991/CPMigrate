@@ -21,7 +21,19 @@ internal sealed class DoctorService
         _solutionDiscovery = solutionDiscovery;
     }
 
-    public async Task<int> RunAsync(string searchPath, string? backupDir = null)
+    /// <summary>
+    /// Renders the report. Kept for callers that only ever want the terminal form.
+    /// </summary>
+    public Task<int> RunAsync(string searchPath, string? backupDir = null)
+    {
+        return RunAsync(searchPath, new Options(), backupDir);
+    }
+
+    /// <summary>
+    /// Runs every check once, then renders them: the console table normally, the
+    /// <c>doctor</c> JSON document under <c>--output Json</c> — same checks, never two runs.
+    /// </summary>
+    public async Task<int> RunAsync(string searchPath, Options options, string? backupDir = null)
     {
         var theme = SpectreTheme.For(AnsiConsole.Console);
 
@@ -32,10 +44,25 @@ internal sealed class DoctorService
 
         var checks = CollectChecks(searchPath, backupDir);
         checks.Insert(3, await nuGetTask);
-        RenderReport(theme, checks);
 
         var failures = checks.Count(c => c.Status == DoctorStatus.Error);
         var warnings = checks.Count(c => c.Status == DoctorStatus.Warning);
+        var exitCode = failures > 0 ? ExitCodes.UnexpectedError : ExitCodes.Success;
+
+        if (options.Output == OutputFormat.Json)
+        {
+            // EmitAsync, not EmitFailureAsync: a report that could not reach its --output-file
+            // must not fall back to stdout and exit 0 — a CI job expecting the file would pass
+            // with a missing artifact.
+            await JsonOutputWriter.EmitAsync(
+                DoctorJsonWriter.Serialize(checks, exitCode),
+                options,
+                _console
+            );
+            return exitCode;
+        }
+
+        RenderReport(theme, checks);
 
         _console.WriteLine();
         if (failures > 0)
@@ -59,7 +86,7 @@ internal sealed class DoctorService
     /// <summary>
     /// Every local check doctor reports, in report order, without the network probe: the probe
     /// runs concurrently while these execute, and the caller inserts its result at the
-    /// established position. Separated from <see cref="RunAsync"/> so the check-name set is
+    /// established position. Separated from the run entry point so the check-name set is
     /// assertable without the network or the console render — both would make the test about
     /// something else.
     /// </summary>

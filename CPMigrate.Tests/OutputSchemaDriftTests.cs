@@ -69,6 +69,11 @@ public class OutputSchemaDriftTests
         // --status serializes its own document too — the workspace facts the dashboard renders,
         // as fields a CI script can read without parsing prose.
         (typeof(StatusReportPayload), "statusReport"),
+        // --doctor serializes its own document too — the check list the console table renders,
+        // plus the counts the exit code folds, so a CI gate can read which check failed.
+        (typeof(DoctorReportPayload), "doctorReport"),
+        (typeof(DoctorCheckPayload), "doctorCheck"),
+        (typeof(DoctorSummaryPayload), "doctorSummary"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -111,16 +116,17 @@ public class OutputSchemaDriftTests
     [Fact]
     public void Schema_GuardsEveryModelReachableFromPayloadRoots()
     {
-        // --why, --tree, and --status emit their own document roots, so their models are reachable
-        // from there, just as the operation and batch models are reachable from OperationResult and
-        // BatchResult.
+        // --why, --tree, --status, and --doctor emit their own document roots, so their models are
+        // reachable from there, just as the operation and batch models are reachable from
+        // OperationResult and BatchResult.
         var reachable = PayloadModelTypes(
             typeof(OperationResult),
             typeof(BatchResult),
             typeof(PackageOriginPayload),
             typeof(MultiWhyPayload),
             typeof(TreeReportPayload),
-            typeof(StatusReportPayload)
+            typeof(StatusReportPayload),
+            typeof(DoctorReportPayload)
         );
 
         ModelDefinitions
@@ -235,8 +241,9 @@ public class OutputSchemaDriftTests
                     // --tree emits its own document root, but its failure payloads use the standard
                     // operation shape — so "tree" belongs in this enum too.
                     "tree",
-                    // --status emits its own document root too; same reasoning as --tree.
+                    // --status and --doctor emit their own document roots too; same reasoning.
                     "status",
+                    "doctor",
                     "batch-analyze",
                     "batch-migrate",
                 }
@@ -285,7 +292,8 @@ public class OutputSchemaDriftTests
             .And.Contain("#/definitions/singleOperation")
             .And.Contain("#/definitions/batchOperation")
             .And.Contain("#/definitions/treeReport")
-            .And.Contain("#/definitions/statusReport");
+            .And.Contain("#/definitions/statusReport")
+            .And.Contain("#/definitions/doctorReport");
     }
 
     [Fact]

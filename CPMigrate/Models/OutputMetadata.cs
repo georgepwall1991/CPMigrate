@@ -93,8 +93,14 @@ public static class OutputMetadata
     /// workspace facts the dashboard renders — solutions, project count, CPM state, config, git,
     /// backups, target frameworks — as fields a CI script can read without parsing prose.
     /// </para>
+    /// <para>
+    /// 1.13.0 additively introduced the seventh top-level shape: the document
+    /// <c>--doctor --output Json</c> prints, distinguished by <c>operation: "doctor"</c>. Every
+    /// environment check the console table renders — name, status, details, hint — plus the
+    /// error/warning counts the exit code folds, so a CI gate can read which check failed.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.12.0";
+    public const string SchemaVersion = "1.13.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

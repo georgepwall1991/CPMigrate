@@ -160,7 +160,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | 🏢 **Batch / monorepo** | Sequential or parallel multi-solution runs, with a `--report` Markdown rollup |
 | 💾 **Backup & rollback** | Timestamped on-disk backups for every destructive path |
 | 📄 **`.sln` + `.slnx`** | Classic solutions and Visual Studio 17.10+ `.slnx` |
-| 🩺 **`--doctor`** | Environment diagnostics: SDK, NuGet, disk space, write access, backup dir, workspace, config, git |
+| 🩺 **`--doctor`** | Environment diagnostics: SDK, NuGet, disk space, write access, backup dir, workspace, config, git — or `--output Json` for CI |
 |  **`--init`** | Scaffold `.cpmigrate.json` with team defaults |
 | 📟 **`--status`** | One-shot workspace health dashboard — or `--output Json` for CI |
 | 🌳 **`--tree`** | Dependency tree, direct + transitive — ASCII, or `--output Json` for CI |
@@ -196,6 +196,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 
 ```bash
 cpmigrate --doctor                 # SDK, NuGet reachability, disk, write access, backup dir, workspace, config, git — one table
+cpmigrate --doctor --output Json   # the same checks as one JSON document for CI
 cpmigrate --status                 # repo-context dashboard, no wizard
 cpmigrate --status --output Json   # the same facts as one JSON document for CI
 cpmigrate --tree --transitive      # ASCII dependency tree per project
@@ -258,7 +259,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 
 | Option | Default | Description |
 |--------|:-------:|-------------|
-| `--doctor` | `false` | Diagnose the environment: SDK, NuGet, disk space, workspace writability, backup directory access, config, git |
+| `--doctor` | `false` | Diagnose the environment: SDK, NuGet, disk space, workspace writability, backup directory access, config, git — `--output Json` prints the same checks as one JSON document |
 | `--init` | `false` | Scaffold a `.cpmigrate.json` (interactive, or CI-safe defaults) |
 | `--status` | | Print a workspace health dashboard (solutions, projects, CPM, config, git, backups, frameworks) and exit — `--output Json` prints the same facts as one JSON document |
 | `--tree` | `false` | Dependency tree per project (add `--transitive` for the full graph). With `--output Json`, emits a `tree` document instead of the ASCII rendering: every discovered project's direct and transitive packages, each project carrying a `scanned` flag so an unread project is never mistaken for an empty one |

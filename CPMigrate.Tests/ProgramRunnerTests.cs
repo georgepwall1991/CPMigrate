@@ -587,6 +587,66 @@ public class ProgramRunnerTests
         }
     }
 
+    [Theory]
+    [InlineData("Sarif")]
+    [InlineData("Markdown")]
+    [InlineData("Csv")]
+    public async Task RunAsync_DoctorWithAFindingsFormat_IsRejectedBeforeChecking(string format)
+    {
+        // Those formats carry analyzer findings and --doctor produces none — running the checks
+        // anyway would print a table after a caller explicitly asked for a document.
+        var fakeConsole = new FakeConsoleService();
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateDoctor_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "--doctor", "--output", format, "-s", directory },
+                fakeConsole
+            );
+
+            exitCode.Should().Be(ExitCodes.ValidationError);
+            fakeConsole.ErrorMessages.Should().Contain(m => m.Contains(format));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_DoctorJson_EmitsTheDocumentAndNothingElse()
+    {
+        var fakeConsole = new FakeConsoleService();
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateDoctor_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+
+        var original = Console.Out;
+        using var stdout = new StringWriter();
+        try
+        {
+            Console.SetOut(stdout);
+
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "--doctor", "--output", "Json", "-s", directory },
+                fakeConsole
+            );
+
+            // Doctor's exit code is the environment verdict, not the document's health: the
+            // document exists either way, so assert the shape rather than a specific code.
+            using var document = JsonDocument.Parse(stdout.ToString());
+            document.RootElement.GetProperty("operation").GetString().Should().Be("doctor");
+            document.RootElement.GetProperty("checks").GetArrayLength().Should().BeGreaterThan(0);
+            document.RootElement.GetProperty("exitCode").GetInt32().Should().Be(exitCode);
+        }
+        finally
+        {
+            Console.SetOut(original);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public void Examples_ProjectExample_DoesNotCarryDefaultSolutionPath()
     {
