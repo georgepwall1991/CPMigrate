@@ -88,6 +88,13 @@ public class OutputSchemaDriftTests
         // --explain serializes its own document too — the catalog as fields a consumer can read.
         (typeof(ExplainReportPayload), "explainReport"),
         (typeof(ExplainRulePayload), "explainRule"),
+        // --unify-props serializes its own document too — the candidates that met the consensus
+        // threshold and what was done about them, so a CI script can gate on the outcome.
+        (typeof(UnifyPropsReportPayload), "unifyPropsReport"),
+        (typeof(UnifyPropsCandidatesPayload), "unifyPropsCandidates"),
+        (typeof(UnifyPropsPropertyPayload), "unifyPropsProperty"),
+        (typeof(UnifyPropsItemPayload), "unifyPropsItem"),
+        (typeof(UnifyPropsSummaryPayload), "unifyPropsSummary"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -144,7 +151,8 @@ public class OutputSchemaDriftTests
             typeof(ListBackupsReportPayload),
             typeof(PruneBackupsReportPayload),
             typeof(InitReportPayload),
-            typeof(ExplainReportPayload)
+            typeof(ExplainReportPayload),
+            typeof(UnifyPropsReportPayload)
         );
 
         ModelDefinitions
@@ -323,7 +331,8 @@ public class OutputSchemaDriftTests
             .And.Contain("#/definitions/listBackupsReport")
             .And.Contain("#/definitions/pruneBackupsReport")
             .And.Contain("#/definitions/initReport")
-            .And.Contain("#/definitions/explainReport");
+            .And.Contain("#/definitions/explainReport")
+            .And.Contain("#/definitions/unifyPropsReport");
     }
 
     [Fact]

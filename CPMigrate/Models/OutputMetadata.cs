@@ -132,8 +132,15 @@ public static class OutputMetadata
     /// consumer could not correlate a fix back to the <c>analysisIssues</c> entry it resolved.
     /// <c>issueCode</c> is absent on results the fixer could not identify.
     /// </para>
+    /// <para>
+    /// 1.19.0 additively introduced the twelfth top-level shape: the document
+    /// <c>--unify-props --output Json</c> prints, distinguished by
+    /// <c>operation: "unify-props"</c>. The candidates that met the consensus threshold and what
+    /// was done about them — <c>unified</c>, <c>dryRun</c>, <c>noCandidates</c>, <c>refused</c>,
+    /// or <c>failed</c> — so a CI script can gate on the outcome without parsing prose.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.18.0";
+    public const string SchemaVersion = "1.19.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

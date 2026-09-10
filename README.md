@@ -379,7 +379,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 
 | Option | Default | Description |
 |--------|:-------:|-------------|
-| `--unify-props` | `false` | Promote common properties to `Directory.Build.props` |
+| `--unify-props` | `false` | Promote common properties to `Directory.Build.props` (`--output Json` emits the candidates and outcome as a document) |
 | `--force` | `false` | Skip confirmation prompts |
 
 **Batch processing**

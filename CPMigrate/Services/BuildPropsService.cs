@@ -31,6 +31,10 @@ public class BuildPropsService
         if (projectPaths.Count == 0)
         {
             _consoleService.Error("No projects found to analyze.");
+            if (options.Output == OutputFormat.Json)
+            {
+                await EmitJsonAsync(options, basePath, "failed", ExitCodes.UnexpectedError, [], [], new PropertyAnalysisResult { TotalProjects = 0 }, 0);
+            }
             return ExitCodes.UnexpectedError;
         }
 
@@ -44,6 +48,10 @@ public class BuildPropsService
         if (propertyCandidates.Count == 0 && itemCandidates.Count == 0)
         {
             _consoleService.Info($"No common properties or items found (checked for >{ConsensusThresholdPercent:P0} consensus).");
+            if (options.Output == OutputFormat.Json)
+            {
+                await EmitJsonAsync(options, basePath, "noCandidates", ExitCodes.Success, [], [], analysis, 0);
+            }
             return ExitCodes.Success;
         }
 
@@ -53,6 +61,10 @@ public class BuildPropsService
         {
             _consoleService.DryRun("Would create/update Directory.Build.props with these items.");
             _consoleService.DryRun("Would remove these items from matching project files.");
+            if (options.Output == OutputFormat.Json)
+            {
+                await EmitJsonAsync(options, basePath, "dryRun", ExitCodes.Success, propertyCandidates, itemCandidates, analysis, 0);
+            }
             return ExitCodes.Success;
         }
 
@@ -64,11 +76,19 @@ public class BuildPropsService
             {
                 _consoleService.Warning("Cannot prompt for confirmation on a non-interactive terminal.");
                 _consoleService.Info("Re-run with --force to unify these, or --dry-run to preview them.");
+                if (options.Output == OutputFormat.Json)
+                {
+                    await EmitJsonAsync(options, basePath, "refused", ExitCodes.Success, propertyCandidates, itemCandidates, analysis, 0);
+                }
                 return ExitCodes.Success;
             }
 
             if (!_consoleService.AskConfirmation("Do you want to move these to Directory.Build.props?"))
             {
+                if (options.Output == OutputFormat.Json)
+                {
+                    await EmitJsonAsync(options, basePath, "refused", ExitCodes.Success, propertyCandidates, itemCandidates, analysis, 0);
+                }
                 return ExitCodes.Success;
             }
         }
@@ -82,7 +102,69 @@ public class BuildPropsService
         await RemoveItemsFromProjects(projectPaths, itemsList);
 
         _consoleService.Success($"Successfully unified {propertyCandidates.Count} properties and {itemCandidates.Count} items.");
+        if (options.Output == OutputFormat.Json)
+        {
+            await EmitJsonAsync(options, basePath, "unified", ExitCodes.Success, propertyCandidates, itemCandidates, analysis, projectPaths.Count + 1);
+        }
         return ExitCodes.Success;
+    }
+
+    /// <summary>
+    /// Emits the machine-readable document. The candidates are the same list the console printed —
+    /// a consumer reading the document alone gets the same verdict a shell script would.
+    /// </summary>
+    private async Task EmitJsonAsync(
+        Options options,
+        string basePath,
+        string status,
+        int exitCode,
+        List<PropertyCandidate> propertyCandidates,
+        List<ItemCandidate> itemCandidates,
+        PropertyAnalysisResult analysis,
+        int filesModified
+    )
+    {
+        var candidates = new UnifyPropsCandidatesPayload(
+            propertyCandidates.Select(c => new UnifyPropsPropertyPayload(
+                c.Property.Name,
+                c.Property.Value,
+                c.Count,
+                analysis.PropertyOccurrences
+                    .Where(kv => kv.Value[0].Name == c.Property.Name && kv.Value[0].Value == c.Property.Value)
+                    .SelectMany(kv => kv.Value)
+                    .Select(p => p.ProjectPath)
+                    .ToList()
+            )).ToList(),
+            itemCandidates.Select(c => new UnifyPropsItemPayload(
+                c.Item.ItemType,
+                c.Item.Include,
+                c.Count,
+                analysis.ItemOccurrences
+                    .Where(kv => kv.Value[0].ItemType == c.Item.ItemType && kv.Value[0].Include == c.Item.Include)
+                    .SelectMany(kv => kv.Value)
+                    .Select(i => i.ProjectPath)
+                    .ToList(),
+                c.Item.Metadata
+            )).ToList()
+        );
+        var summary = new UnifyPropsSummaryPayload(
+            analysis.TotalProjects,
+            propertyCandidates.Count,
+            itemCandidates.Count,
+            filesModified
+        );
+        await JsonOutputWriter.EmitAsync(
+            UnifyPropsJsonWriter.Serialize(
+                Path.Combine(basePath, "Directory.Build.props"),
+                status,
+                options.Force,
+                exitCode,
+                candidates,
+                summary
+            ),
+            options,
+            _consoleService
+        );
     }
 
     private static double GetConsensusThreshold(int totalProjects) =>
