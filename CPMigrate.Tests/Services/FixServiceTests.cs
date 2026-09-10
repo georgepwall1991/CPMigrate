@@ -403,6 +403,42 @@ public class FixServiceTests
         console.ErrorMessages.Should().ContainMatch("*Could not fix Pkg*Access to the path is denied*");
     }
 
+    [Fact]
+    public void ApplyFixes_OnlyRules_SkipsOtherRules()
+    {
+        // A --fix-rule restriction narrows the pass to the named rules — a user who wants only
+        // OrphanedPackageVersion fixed should not have to accept every other fixable finding's
+        // edit in the same pass.
+        var console = new FakeConsoleService();
+        var fixer = new StubFixer(
+            _ => true,
+            (issue, _, _) => FixResult.Succeeded($"fixed {issue.PackageName}", [])
+        );
+        var fixService = new FixService(console, new[] { fixer });
+
+        var report = new AnalysisReport(
+            ProjectsScanned: 1,
+            TotalPackageReferences: 2,
+            Results: new List<AnalyzerResult>
+            {
+                new("Test", new List<AnalysisIssue>
+                {
+                    new("PkgA", "orphaned", new[] { "App.csproj" }, AnalysisIssueCode.OrphanedPackageVersion, AnalysisSeverity.Low, Fixable: true),
+                    new("PkgB", "inline version", new[] { "App.csproj" }, AnalysisIssueCode.InlineVersionUnderCpm, AnalysisSeverity.Moderate, Fixable: true),
+                })
+            }
+        );
+
+        var fixReport = fixService.ApplyFixes(
+            report,
+            new ProjectPackageInfo(Array.Empty<PackageReference>()),
+            new FixRequest("props.props", ConflictStrategy.Highest, false, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "OrphanedPackageVersion" })
+        );
+
+        fixReport.Results.Should().ContainSingle(r => r.Description.Contains("PkgA"));
+        fixReport.Results.Should().NotContain(r => r.Description.Contains("PkgB"));
+    }
+
     private sealed class StubFixer : IFixer
     {
         private readonly Func<AnalysisIssue, bool> _canFix;

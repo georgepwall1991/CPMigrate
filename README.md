@@ -300,6 +300,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--licenses` | | `false` | Flag copyleft / proprietary / unknown licenses from restored nuspecs |
 | `--fix` | | `false` | Apply auto-fixes (with `--analyze`) |
 | `--fix-dry-run` | | `false` | Preview auto-fixes |
+| `--fix-rule` | | | Comma-separated rule IDs to restrict `--fix`/`--fix-dry-run` to (e.g. `OrphanedPackageVersion,InlineVersionUnderCpm`) |
 | `--fail-on` | | `Info` | Lowest severity that fails: `Info`·`Low`·`Moderate`·`High`·`Critical`·`Never` |
 | `--rules` | | | Per-rule policy: `Rule=Severity` pairs, or `Rule=none` to switch a rule off |
 | `--max-parallelism` | | procs (≤8) | Projects scanned at once for `--audit`/`--outdated`/`--deprecated`, and for the concurrent per-project scans behind `--tree`/`--why` |
