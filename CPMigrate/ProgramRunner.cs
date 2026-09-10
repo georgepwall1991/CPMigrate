@@ -190,8 +190,39 @@ public static class ProgramRunner
             );
     }
 
+    /// <summary>
+    /// Renders the dependency tree. Under <c>--output Json</c> the same scan is emitted as the
+    /// <c>tree</c> document instead — one parseable payload on stdout, with every discovered
+    /// project present so an unread one is never mistaken for an empty one. The other
+    /// machine-readable formats are rejected: they carry analyzer findings, and a tree has none.
+    /// </summary>
     private static async Task<int> RunTreeModeAsync(Options options, ApplicationServices services)
     {
+        // SARIF, Markdown, and CSV all carry analyzer findings, and --tree produces none — running
+        // the scan anyway would emit a console tree after a caller explicitly asked for a document.
+        if (options.Output is OutputFormat.Sarif or OutputFormat.Markdown or OutputFormat.Csv)
+        {
+            services.ConsoleService.Error(
+                $"--output {options.Output} cannot be combined with --tree; that format reports "
+                    + "analyzer findings only."
+            );
+            return ExitCodes.ValidationError;
+        }
+
+        var userConsole = services.ConsoleService;
+        var executionConsole =
+            options.Output == OutputFormat.Json
+                ? SilentConsoleService.Instance
+                : services.ConsoleService;
+
+        // Under --output Json the stdout contract is one parseable document, so discovery notices
+        // ("Found project: …") must not leak into it — same swap CommandRouter makes for its own
+        // machine-readable modes.
+        if (!ReferenceEquals(executionConsole, services.ConsoleService))
+        {
+            services = services.WithConsole(executionConsole);
+        }
+
         try
         {
             var projectAnalyzer = services.ProjectAnalyzer;
@@ -199,6 +230,19 @@ public static class ProgramRunner
             var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(
                 targetPath
             );
+
+            // Discovery found nothing — no solution where one was asked for, or one it could not
+            // read. The terminal path has already said so in prose; the JSON path must not dress
+            // that up as an empty workspace, so it emits the standard failure payload instead.
+            if (projectPaths.Count == 0 && options.Output == OutputFormat.Json)
+            {
+                return await EmitTreeFailureAsync(
+                    options,
+                    ExitCodes.NoProjectsFound,
+                    $"No projects discovered at '{targetPath}'; nothing was scanned.",
+                    userConsole
+                );
+            }
 
             // The restores run concurrently, scheduled by the shared scan pattern (see
             // ScanResolvedPackagesConcurrentlyAsync below); the merge afterwards walks discovery
@@ -211,28 +255,82 @@ public static class ProgramRunner
                 includeTransitive: options.IncludeTransitive
             );
             var allReferences = new List<Models.PackageReference>();
-            foreach (var result in resolved)
+            var projectOutcomes = new List<(string Path, bool Scanned)>(projectPaths.Count);
+            for (var index = 0; index < projectPaths.Count; index++)
             {
-                foreach (var warning in result.Warnings)
+                foreach (var warning in resolved[index].Warnings)
                 {
-                    services.ConsoleService.Warning(warning);
+                    executionConsole.Warning(warning);
                 }
 
-                if (result.Success)
+                projectOutcomes.Add((projectPaths[index], resolved[index].Success));
+                if (resolved[index].Success)
                 {
-                    allReferences.AddRange(result.References);
+                    allReferences.AddRange(resolved[index].References);
                 }
             }
 
             var packageInfo = new Models.ProjectPackageInfo(allReferences, BasePath: basePath);
-            var treeService = new DependencyTreeService(services.ConsoleService);
+
+            if (options.Output == OutputFormat.Json)
+            {
+                // EmitFailureAsync rather than EmitAsync: when --output-file cannot be written the
+                // document falls back to stdout instead of dying on an exception whose message the
+                // silent scan console would swallow.
+                await JsonOutputWriter.EmitFailureAsync(
+                    DependencyTreeJsonWriter.Serialize(
+                        packageInfo,
+                        projectOutcomes,
+                        ExitCodes.Success
+                    ),
+                    options
+                );
+                return ExitCodes.Success;
+            }
+
+            var treeService = new DependencyTreeService(executionConsole);
             return await treeService.RunAsync(packageInfo);
         }
         catch (Exception ex)
         {
-            services.ConsoleService.Error($"Failed to build dependency tree: {ex.Message}");
-            return ExitCodes.UnexpectedError;
+            return await EmitTreeFailureAsync(
+                options,
+                ExitCodes.UnexpectedError,
+                $"Failed to build dependency tree: {ex.Message}",
+                userConsole
+            );
         }
+    }
+
+    /// <summary>
+    /// Reports a <c>--tree</c> run that cannot produce a document and settles its exit code.
+    /// Mirrors <see cref="EmitWhyFailureAsync"/>: under <c>--output Json</c> the prose goes to the
+    /// caller's own console and the standard failure payload goes out through
+    /// <see cref="JsonOutputWriter.EmitFailureAsync"/>.
+    /// </summary>
+    private static async Task<int> EmitTreeFailureAsync(
+        Options options,
+        int exitCode,
+        string errorMessage,
+        IConsoleService consoleService
+    )
+    {
+        consoleService.Error(errorMessage);
+
+        if (options.Output == OutputFormat.Json)
+        {
+            var formatter = new JsonFormatter();
+            var operationResult = new OperationResult
+            {
+                Operation = "tree",
+                Success = false,
+                ExitCode = exitCode,
+                Errors = [errorMessage],
+            };
+            await JsonOutputWriter.EmitFailureAsync(formatter.Format(operationResult), options);
+        }
+
+        return exitCode;
     }
 
     /// <summary>

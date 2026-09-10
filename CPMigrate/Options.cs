@@ -479,7 +479,8 @@ public class Options
     [Option(
         "tree",
         Default = false,
-        HelpText = "Render an ASCII dependency tree per project: direct and transitive packages with versions."
+        HelpText = "Render a dependency tree per project: direct and transitive packages with "
+            + "versions. With --output Json, emits the same scan as one JSON document for CI."
     )]
     public bool Tree { get; set; }
 
