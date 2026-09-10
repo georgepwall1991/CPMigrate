@@ -51,7 +51,7 @@ CPMigrate replaces both with three things that actually hold up:
 | 🟦 | **DuplicatePackageCasing** | `Newtonsoft.Json` vs `newtonsoft.json` | Low |
 | 🟦 | **RedundantReference** | The same `PackageReference` twice in one project | Low |
 | 🟦 | **OutdatedPackage** / **DeprecatedPackage** | Behind the feed / abandoned packages | Low |
-| 🟦 | **OrphanedPackageVersion** | Central pins no project references anymore | Low |
+| 🟦 | **OrphanedPackageVersion** | Central pins no project references anymore (auto-fixable) | Low |
 | 🟦 | **RedundantDirectReference** | A direct reference already provided transitively | Low |
 | ⬜ | **FrameworkAlignment** | Projects drifting across `TargetFramework` values | Info |
 
