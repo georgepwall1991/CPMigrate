@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Six payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, and the --status workspace report. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Seven payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, and the --doctor environment report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -21,6 +21,9 @@
     },
     {
       "$ref": "#/definitions/statusReport"
+    },
+    {
+      "$ref": "#/definitions/doctorReport"
     }
   ],
   "definitions": {
@@ -61,7 +64,8 @@
             "batch-migrate",
             "remediate",
             "tree",
-            "status"
+            "status",
+            "doctor"
           ],
           "description": "Which command produced the payload"
         },
@@ -1226,6 +1230,72 @@
           "description": "Target framework to project count, over top-level project files",
           "additionalProperties": { "type": "integer" }
         }
+      },
+      "additionalProperties": false
+    },
+    "doctorReport": {
+      "type": "object",
+      "description": "The document `--doctor --output Json` prints instead of the console table: every environment check that ran — name, status, details, hint — plus the error/warning counts the exit code folds, so a CI gate can read which check failed rather than only the exit code.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "exitCode",
+        "checks",
+        "summary"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["doctor"],
+          "description": "Always 'doctor'; distinguishes this shape from the other documents"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run — non-zero when any check errored"
+        },
+        "checks": {
+          "type": "array",
+          "description": "Every check that ran, in report order",
+          "items": { "$ref": "#/definitions/doctorCheck" }
+        },
+        "summary": { "$ref": "#/definitions/doctorSummary" }
+      },
+      "additionalProperties": false
+    },
+    "doctorCheck": {
+      "type": "object",
+      "description": "One doctor check as data.",
+      "required": ["name", "status", "details"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The check's stable name (SDK, NuGet, Workspace, …)"
+        },
+        "status": {
+          "enum": ["ok", "info", "warning", "error"],
+          "description": "The check's verdict"
+        },
+        "details": {
+          "type": "string",
+          "description": "What the check found, as the console table would render it"
+        },
+        "hint": {
+          "type": "string",
+          "description": "What to do about a non-ok verdict; absent when the check has none"
+        }
+      },
+      "additionalProperties": false
+    },
+    "doctorSummary": {
+      "type": "object",
+      "description": "The counts the exit code folds: any error means the run exits non-zero, warnings alone do not.",
+      "required": ["total", "errors", "warnings"],
+      "properties": {
+        "total": { "type": "integer", "description": "Checks that ran" },
+        "errors": { "type": "integer", "description": "Checks with status error" },
+        "warnings": { "type": "integer", "description": "Checks with status warning" }
       },
       "additionalProperties": false
     }
