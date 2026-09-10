@@ -695,6 +695,12 @@ internal static class CommandRouter
         string backupPath
     )
     {
+        if (!ShouldSuppressHeadersAndBanners(options))
+        {
+            consoleService.Banner("PRUNE ALL BACKUPS");
+            consoleService.WriteLine();
+        }
+
         var history = backupManager.GetBackupHistory(backupPath);
         if (history.Count == 0)
         {
