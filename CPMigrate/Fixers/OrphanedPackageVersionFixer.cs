@@ -45,7 +45,9 @@ public class OrphanedPackageVersionFixer : IFixer
             var doc = XDocument.Parse(originalContent);
 
             // PackageVersion entries declare the pin two ways — Include for a new pin, Update for
-            // amending an existing one — and either can be the orphaned entry.
+            // amending an existing one — and either can be the orphaned entry. Conditional entries
+            // are not candidates: the analyzer keeps them out of the set it reports orphans from,
+            // so removing one here would delete a pin the finding never named.
             var entries = doc
                 .Descendants("PackageVersion")
                 .Where(e =>
@@ -55,6 +57,7 @@ public class OrphanedPackageVersionFixer : IFixer
                         StringComparison.OrdinalIgnoreCase
                     )
                 )
+                .Where(e => !IsConditional(e))
                 .ToList();
 
             if (entries.Count == 0)
@@ -93,5 +96,30 @@ public class OrphanedPackageVersionFixer : IFixer
             // a failure with a cause, not "nothing to change".
             throw new FixWriteException(propsPath, ex);
         }
+    }
+
+    /// <summary>
+    /// Whether a declaration sits under any <c>Condition</c>. The whole ancestor chain, because a
+    /// declaration inside <c>&lt;Choose&gt;&lt;When Condition=…&gt;</c> has none on itself or its
+    /// group — same semantics <see cref="RedundantReferenceFixer"/> keeps.
+    /// </summary>
+    private static bool IsConditional(XElement element)
+    {
+        for (var current = element; current is not null; current = current.Parent)
+        {
+            if (!string.IsNullOrEmpty(current.Attribute("Condition")?.Value))
+            {
+                return true;
+            }
+
+            // <Otherwise> carries no Condition attribute but is conditional by definition — it
+            // applies exactly when none of its sibling <When> branches did.
+            if (current.Name.LocalName == "Otherwise")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

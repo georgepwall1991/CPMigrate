@@ -182,6 +182,30 @@ public class OrphanedPackageVersionFixerTests : IDisposable
         File.ReadAllText(nestedProps).Should().NotContain("Orphaned.Package");
     }
 
+    [Fact]
+    public void Fix_ConditionalEntry_IsNotRemoved()
+    {
+        // The analyzer keeps conditional pins out of the set it reports orphans from, so the
+        // fixer must not delete one the finding never named — a conditional pin may exist in only
+        // some evaluated configurations.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+                <PackageVersion Include="Orphaned.Package" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var before = File.ReadAllText(propsPath);
+
+        var result = _fixer.Fix(Issue("Orphaned.Package"), PackageInfo(), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        result.Changes.Should().BeEmpty();
+        File.ReadAllText(propsPath).Should().Be(before);
+    }
+
     private string WriteProps(string content)
     {
         var path = Path.Combine(_testDirectory, "Directory.Packages.props");
