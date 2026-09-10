@@ -97,7 +97,7 @@ public class StatusJsonWriterTests
             ConfigPresent: true,
             gitRepository,
             gitDirty,
-            BackupSets: 1,
+            BackupSets: [new BackupSetInfo { Timestamp = "20240101_000000", Files = [] }],
             targetFrameworks ?? new Dictionary<string, int> { ["net10.0"] = 2 }
         );
 

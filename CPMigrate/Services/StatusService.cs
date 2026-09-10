@@ -15,7 +15,7 @@ internal sealed record WorkspaceStatus(
     bool ConfigPresent,
     bool GitRepository,
     bool GitDirty,
-    int BackupSets,
+    IReadOnlyList<BackupSetInfo> BackupSets,
     IReadOnlyDictionary<string, int> TargetFrameworks
 );
 
@@ -88,7 +88,7 @@ internal sealed class StatusService
             File.Exists(Path.Combine(dir, ".cpmigrate.json")),
             isGitRepo,
             hasUnstaged,
-            backups.Count,
+            backups,
             targetFrameworks
         );
     }
@@ -99,18 +99,20 @@ internal sealed class StatusService
         _console.Banner("WORKSPACE STATUS");
         _console.WriteLine();
 
+        // Everything below renders what Collect already read — re-walking the tree here would
+        // double the I/O and could disagree with the document the JSON path just emitted.
         _console.WriteStatusDashboard(
             status.Directory,
             [.. status.Solutions],
-            GetBackupInfo(status.Directory),
+            [.. status.BackupSets],
             status.GitRepository,
             status.GitDirty,
             new Dictionary<string, int>(status.TargetFrameworks)
         );
 
-        WriteCpmDetails(status.Directory);
-        WriteConfigDetails(status.Directory);
-        WriteQuickStats(status.Directory, [.. status.Solutions]);
+        WriteCpmDetails(status);
+        WriteConfigDetails(status);
+        WriteQuickStats(status);
 
         _console.WriteLine();
     }
@@ -152,31 +154,27 @@ internal sealed class StatusService
             : 0;
     }
 
-    private void WriteCpmDetails(string dir)
+    private void WriteCpmDetails(WorkspaceStatus status)
     {
-        var propsPath = Path.Combine(dir, "Directory.Packages.props");
-        if (!File.Exists(propsPath))
+        if (!status.CpmEnabled)
         {
             _console.Dim("  No Directory.Packages.props — run 'cpmigrate' to create one.");
             return;
         }
 
-        try
+        if (status.CentralPackageCount is { } packageCount)
         {
-            var content = File.ReadAllText(propsPath);
-            var packageCount = content.Split("<PackageVersion", StringSplitOptions.None).Length - 1;
             _console.Success($"  CPM active: {packageCount} package version(s) managed centrally.");
         }
-        catch
+        else
         {
             _console.Warning("  CPM file exists but could not be read.");
         }
     }
 
-    private void WriteConfigDetails(string dir)
+    private void WriteConfigDetails(WorkspaceStatus status)
     {
-        var configPath = Path.Combine(dir, ".cpmigrate.json");
-        if (File.Exists(configPath))
+        if (status.ConfigPresent)
         {
             _console.Dim("  Team config: .cpmigrate.json found.");
         }
@@ -186,19 +184,11 @@ internal sealed class StatusService
         }
     }
 
-    private void WriteQuickStats(string dir, List<string> solutions)
+    private void WriteQuickStats(WorkspaceStatus status)
     {
-        var projectFiles = Directory.Exists(dir)
-            ? Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
-                .Concat(Directory.GetFiles(dir, "*.fsproj", SearchOption.AllDirectories))
-                .Concat(Directory.GetFiles(dir, "*.vbproj", SearchOption.AllDirectories))
-                .Where(p => !p.Contains(Path.Combine("bin", "")) && !p.Contains(Path.Combine("obj", "")))
-                .ToList()
-            : new List<string>();
-
-        if (projectFiles.Count > 0)
+        if (status.ProjectCount > 0)
         {
-            _console.Dim($"  {projectFiles.Count} project(s) across {solutions.Count} solution(s).");
+            _console.Dim($"  {status.ProjectCount} project(s) across {status.Solutions.Count} solution(s).");
         }
     }
 

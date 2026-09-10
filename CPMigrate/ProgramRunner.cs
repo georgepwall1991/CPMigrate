@@ -207,6 +207,7 @@ public static class ProgramRunner
         // Under --output Json the stdout contract is one parseable document, so the service's own
         // narration must not leak into it — same swap CommandRouter makes for its own
         // machine-readable modes.
+        var userConsole = services.ConsoleService;
         var executionConsole =
             options.Output == OutputFormat.Json
                 ? SilentConsoleService.Instance
@@ -216,7 +217,53 @@ public static class ProgramRunner
             executionConsole,
             new SolutionDiscovery(executionConsole)
         );
-        return await statusService.RunAsync(options.GetDiscoveryTargetPath(), options);
+
+        try
+        {
+            return await statusService.RunAsync(options.GetDiscoveryTargetPath(), options);
+        }
+        catch (Exception ex)
+        {
+            // A failed --output-file write lands here: report it as a failure payload rather than
+            // aborting with no document at all — same contract --tree keeps.
+            return await EmitStatusFailureAsync(
+                options,
+                ExitCodes.UnexpectedError,
+                $"Failed to collect workspace status: {ex.Message}",
+                userConsole
+            );
+        }
+    }
+
+    /// <summary>
+    /// Reports a <c>--status</c> run that cannot produce a document and settles its exit code.
+    /// Mirrors <see cref="EmitTreeFailureAsync"/>: under <c>--output Json</c> the prose goes to the
+    /// caller's own console and the standard failure payload goes out through
+    /// <see cref="JsonOutputWriter.EmitFailureAsync"/>.
+    /// </summary>
+    private static async Task<int> EmitStatusFailureAsync(
+        Options options,
+        int exitCode,
+        string errorMessage,
+        IConsoleService consoleService
+    )
+    {
+        consoleService.Error(errorMessage);
+
+        if (options.Output == OutputFormat.Json)
+        {
+            var formatter = new JsonFormatter();
+            var operationResult = new OperationResult
+            {
+                Operation = "status",
+                Success = false,
+                ExitCode = exitCode,
+                Errors = [errorMessage],
+            };
+            await JsonOutputWriter.EmitFailureAsync(formatter.Format(operationResult), options);
+        }
+
+        return exitCode;
     }
 
     /// <summary>

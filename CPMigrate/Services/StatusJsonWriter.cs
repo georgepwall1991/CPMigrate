@@ -77,7 +77,7 @@ internal static class StatusJsonWriter
             status.ConfigPresent,
             status.GitRepository,
             status.GitRepository ? status.GitDirty : null,
-            status.BackupSets,
+            status.BackupSets.Count,
             status.TargetFrameworks
         );
 
