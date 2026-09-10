@@ -171,6 +171,37 @@ public class RollbackHandlerTests : IDisposable
         _console.OutputMessages.Should().Contain(m => m.Contains("Backup files retained for manual recovery"));
     }
 
+    [Fact]
+    public async Task ExecuteAsync_RestoreFailure_CarriesTheFailedFileInErrors()
+    {
+        // A partial rollback reports exit 2 — but a CI consumer reading the document alone needs
+        // the file that failed, not just the count. The name travels in Errors.
+        var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");
+        Directory.CreateDirectory(backupPath);
+        var propsFilePath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        var projectPath = Path.Combine(_testDirectory, "Test.csproj");
+        const string backupFileName = "Test.csproj.backup_20240101010101000";
+        await BackupManager.WriteManifestAsync(backupPath, new BackupManifest
+        {
+            Timestamp = "20240101010101000",
+            PropsFilePath = propsFilePath,
+            PropsFileExisted = false,
+            Backups = new List<BackupEntry>
+            {
+                new() { OriginalPath = projectPath, BackupFileName = backupFileName },
+            },
+        });
+
+        var options = new Options { Rollback = true, SolutionFileDir = _testDirectory, BackupDir = _testDirectory };
+        var sut = new RollbackHandler(_console, quietMode: true);
+
+        var result = await sut.ExecuteAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.FileOperationError);
+        result.Errors.Should().ContainSingle(e => e.Contains(projectPath));
+    }
+
+
     private async Task<(string ProjectPath, string PropsFilePath, string BackupPath)> WriteManifestWithOneBackupAsync(bool propsFileExisted)
     {
         var backupPath = Path.Combine(_testDirectory, ".cpmigrate_backup");

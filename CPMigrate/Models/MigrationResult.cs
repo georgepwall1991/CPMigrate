@@ -133,6 +133,13 @@ public class MigrationResult
     public IReadOnlyList<string>? Warnings { get; init; }
 
     /// <summary>
+    /// Failures the operation recorded — a rollback that could not restore every file, for
+    /// example. Never serialized directly — CommandRouter maps these into OperationResult.Errors,
+    /// so a CI consumer reading the document alone gets the same verdict a shell script would.
+    /// </summary>
+    public IReadOnlyList<string>? Errors { get; init; }
+
+    /// <summary>
     /// Findings that reached the <c>--fail-on</c> threshold — the subset <see cref="ExitCode"/>
     /// reflects. Recorded here rather than re-derived by reporters: the gate has exceptions (a
     /// successful <c>--fix</c> run does not gate on findings it just repaired), and a second
