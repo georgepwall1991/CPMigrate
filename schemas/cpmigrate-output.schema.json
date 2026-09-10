@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Five payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — and the --tree dependency report. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Six payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, and the --status workspace report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -18,6 +18,9 @@
     },
     {
       "$ref": "#/definitions/treeReport"
+    },
+    {
+      "$ref": "#/definitions/statusReport"
     }
   ],
   "definitions": {
@@ -57,7 +60,8 @@
             "batch-analyze",
             "batch-migrate",
             "remediate",
-            "tree"
+            "tree",
+            "status"
           ],
           "description": "Which command produced the payload"
         },
@@ -1148,6 +1152,79 @@
         "failedScans": {
           "type": "integer",
           "description": "How many of the discovered projects could not be scanned — an unread project is not an empty one"
+        }
+      },
+      "additionalProperties": false
+    },
+    "statusReport": {
+      "type": "object",
+      "description": "The document `--status --output Json` prints instead of the console dashboard: the workspace facts — solutions, project count, CPM state, config, git, backups, target frameworks — as fields a CI script can read without parsing prose. exitCode mirrors the process exit code.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "exitCode",
+        "directory",
+        "solutions",
+        "projectCount",
+        "cpmEnabled",
+        "configPresent",
+        "gitRepository",
+        "backupSets",
+        "targetFrameworks"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["status"],
+          "description": "Always 'status'; distinguishes this shape from singleOperation, batchOperation, the why reports, and the tree report"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run"
+        },
+        "directory": {
+          "type": "string",
+          "description": "The directory the status describes, as resolved"
+        },
+        "solutions": {
+          "type": "array",
+          "description": "Solution file names found in that directory",
+          "items": { "type": "string" }
+        },
+        "projectCount": {
+          "type": "integer",
+          "description": "Project files found recursively, excluding bin/obj output"
+        },
+        "cpmEnabled": {
+          "type": "boolean",
+          "description": "Whether a Directory.Packages.props exists"
+        },
+        "centralPackageCount": {
+          "type": "integer",
+          "description": "PackageVersion entries in the props file; absent when CPM is not enabled or the file could not be read"
+        },
+        "configPresent": {
+          "type": "boolean",
+          "description": "Whether a .cpmigrate.json exists"
+        },
+        "gitRepository": {
+          "type": "boolean",
+          "description": "Whether the directory is a git repository"
+        },
+        "gitDirty": {
+          "type": "boolean",
+          "description": "Whether the repository has unstaged changes; absent when not a repo"
+        },
+        "backupSets": {
+          "type": "integer",
+          "description": "Backup sets under .cpmigrate_backup"
+        },
+        "targetFrameworks": {
+          "type": "object",
+          "description": "Target framework to project count, over top-level project files",
+          "additionalProperties": { "type": "integer" }
         }
       },
       "additionalProperties": false

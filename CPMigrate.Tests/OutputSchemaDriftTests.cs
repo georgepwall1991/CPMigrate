@@ -66,6 +66,9 @@ public class OutputSchemaDriftTests
         (typeof(TreeProjectPayload), "treeProject"),
         (typeof(TreePackagePayload), "treePackage"),
         (typeof(TreeSummaryPayload), "treeSummary"),
+        // --status serializes its own document too — the workspace facts the dashboard renders,
+        // as fields a CI script can read without parsing prose.
+        (typeof(StatusReportPayload), "statusReport"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -108,15 +111,16 @@ public class OutputSchemaDriftTests
     [Fact]
     public void Schema_GuardsEveryModelReachableFromPayloadRoots()
     {
-        // --why and --tree emit their own document roots, so their models are reachable from
-        // there, just as the operation and batch models are reachable from OperationResult and
+        // --why, --tree, and --status emit their own document roots, so their models are reachable
+        // from there, just as the operation and batch models are reachable from OperationResult and
         // BatchResult.
         var reachable = PayloadModelTypes(
             typeof(OperationResult),
             typeof(BatchResult),
             typeof(PackageOriginPayload),
             typeof(MultiWhyPayload),
-            typeof(TreeReportPayload)
+            typeof(TreeReportPayload),
+            typeof(StatusReportPayload)
         );
 
         ModelDefinitions
@@ -231,6 +235,8 @@ public class OutputSchemaDriftTests
                     // --tree emits its own document root, but its failure payloads use the standard
                     // operation shape — so "tree" belongs in this enum too.
                     "tree",
+                    // --status emits its own document root too; same reasoning as --tree.
+                    "status",
                     "batch-analyze",
                     "batch-migrate",
                 }
@@ -278,7 +284,8 @@ public class OutputSchemaDriftTests
             .And.Contain("#/definitions/whyManyReport")
             .And.Contain("#/definitions/singleOperation")
             .And.Contain("#/definitions/batchOperation")
-            .And.Contain("#/definitions/treeReport");
+            .And.Contain("#/definitions/treeReport")
+            .And.Contain("#/definitions/statusReport");
     }
 
     [Fact]

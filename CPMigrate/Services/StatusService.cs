@@ -2,6 +2,23 @@ using CPMigrate.Models;
 
 namespace CPMigrate.Services;
 
+/// <summary>
+/// The workspace facts <c>--status</c> reports, collected once so the console dashboard and the
+/// JSON document can never disagree about what the run found.
+/// </summary>
+internal sealed record WorkspaceStatus(
+    string Directory,
+    IReadOnlyList<string> Solutions,
+    int ProjectCount,
+    bool CpmEnabled,
+    int? CentralPackageCount,
+    bool ConfigPresent,
+    bool GitRepository,
+    bool GitDirty,
+    IReadOnlyList<BackupSetInfo> BackupSets,
+    IReadOnlyDictionary<string, int> TargetFrameworks
+);
+
 internal sealed class StatusService
 {
     private readonly IConsoleService _console;
@@ -13,13 +30,48 @@ internal sealed class StatusService
         _solutionDiscovery = solutionDiscovery;
     }
 
+    /// <summary>
+    /// Renders the dashboard. Kept for callers that only ever want the terminal form.
+    /// </summary>
     public Task<int> RunAsync(string searchPath)
     {
-        var dir = Directory.Exists(searchPath) ? searchPath : Path.GetDirectoryName(Path.GetFullPath(searchPath)) ?? ".";
+        return RunAsync(searchPath, new Options());
+    }
 
-        _console.WriteHeader();
-        _console.Banner("WORKSPACE STATUS");
-        _console.WriteLine();
+    /// <summary>
+    /// Collects the workspace status once, then renders it: the console dashboard normally, the
+    /// <c>status</c> JSON document under <c>--output Json</c> — same facts, never two readings.
+    /// </summary>
+    public async Task<int> RunAsync(string searchPath, Options options)
+    {
+        var status = Collect(searchPath);
+
+        if (options.Output == OutputFormat.Json)
+        {
+            // EmitAsync, not EmitFailureAsync: a success document that could not reach its
+            // --output-file must not fall back to stdout and exit 0 — a CI job expecting the file
+            // would pass with a missing artifact.
+            await JsonOutputWriter.EmitAsync(
+                StatusJsonWriter.Serialize(status, ExitCodes.Success),
+                options,
+                _console
+            );
+            return ExitCodes.Success;
+        }
+
+        Render(status);
+        return ExitCodes.Success;
+    }
+
+    /// <summary>
+    /// Reads the workspace once. Everything the dashboard or the document reports comes from here,
+    /// so the two renderings cannot drift into two different answers.
+    /// </summary>
+    internal WorkspaceStatus Collect(string searchPath)
+    {
+        var dir = Directory.Exists(searchPath)
+            ? searchPath
+            : Path.GetDirectoryName(Path.GetFullPath(searchPath)) ?? ".";
 
         var solutions = _solutionDiscovery.GetSolutionFiles(dir).ToList();
         var backups = GetBackupInfo(dir);
@@ -27,41 +79,102 @@ internal sealed class StatusService
         var hasUnstaged = isGitRepo && HasUnstagedChanges(dir);
         var targetFrameworks = DiscoverTargetFrameworks(dir);
 
-        _console.WriteStatusDashboard(dir, solutions, backups, isGitRepo, hasUnstaged, targetFrameworks);
-
-        WriteCpmDetails(dir);
-        WriteConfigDetails(dir);
-        WriteQuickStats(dir, solutions);
-
-        _console.WriteLine();
-        return Task.FromResult(ExitCodes.Success);
+        return new WorkspaceStatus(
+            dir,
+            solutions,
+            CountProjects(dir),
+            CpmPackageCount(dir, out var packageCount),
+            packageCount,
+            File.Exists(Path.Combine(dir, ".cpmigrate.json")),
+            isGitRepo,
+            hasUnstaged,
+            backups,
+            targetFrameworks
+        );
     }
 
-    private void WriteCpmDetails(string dir)
+    private void Render(WorkspaceStatus status)
     {
+        _console.WriteHeader();
+        _console.Banner("WORKSPACE STATUS");
+        _console.WriteLine();
+
+        // Everything below renders what Collect already read — re-walking the tree here would
+        // double the I/O and could disagree with the document the JSON path just emitted.
+        _console.WriteStatusDashboard(
+            status.Directory,
+            [.. status.Solutions],
+            [.. status.BackupSets],
+            status.GitRepository,
+            status.GitDirty,
+            new Dictionary<string, int>(status.TargetFrameworks)
+        );
+
+        WriteCpmDetails(status);
+        WriteConfigDetails(status);
+        WriteQuickStats(status);
+
+        _console.WriteLine();
+    }
+
+    /// <summary>
+    /// Whether a Directory.Packages.props exists, with its PackageVersion count when it could be
+    /// read. A file that exists but cannot be read still counts as enabled — the dashboard says
+    /// YES either way — but the count stays absent so the document does not invent a number.
+    /// </summary>
+    private static bool CpmPackageCount(string dir, out int? packageCount)
+    {
+        packageCount = null;
         var propsPath = Path.Combine(dir, "Directory.Packages.props");
         if (!File.Exists(propsPath))
         {
-            _console.Dim("  No Directory.Packages.props — run 'cpmigrate' to create one.");
-            return;
+            return false;
         }
 
         try
         {
             var content = File.ReadAllText(propsPath);
-            var packageCount = content.Split("<PackageVersion", StringSplitOptions.None).Length - 1;
-            _console.Success($"  CPM active: {packageCount} package version(s) managed centrally.");
+            packageCount = content.Split("<PackageVersion", StringSplitOptions.None).Length - 1;
         }
         catch
+        {
+            // Exists but unreadable: enabled, count unknown.
+        }
+
+        return true;
+    }
+
+    private static int CountProjects(string dir)
+    {
+        return Directory.Exists(dir)
+            ? Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
+                .Concat(Directory.GetFiles(dir, "*.fsproj", SearchOption.AllDirectories))
+                .Concat(Directory.GetFiles(dir, "*.vbproj", SearchOption.AllDirectories))
+                .Count(p => !p.Contains(Path.Combine("bin", "")) && !p.Contains(Path.Combine("obj", "")))
+            : 0;
+    }
+
+    private void WriteCpmDetails(WorkspaceStatus status)
+    {
+        if (!status.CpmEnabled)
+        {
+            _console.Dim("  No Directory.Packages.props — run 'cpmigrate' to create one.");
+            return;
+        }
+
+        if (status.CentralPackageCount is { } packageCount)
+        {
+            _console.Success($"  CPM active: {packageCount} package version(s) managed centrally.");
+        }
+        else
         {
             _console.Warning("  CPM file exists but could not be read.");
         }
     }
 
-    private void WriteConfigDetails(string dir)
+    private void WriteConfigDetails(WorkspaceStatus status)
     {
-        var configPath = Path.Combine(dir, ".cpmigrate.json");
-        if (File.Exists(configPath))
+        if (status.ConfigPresent)
         {
             _console.Dim("  Team config: .cpmigrate.json found.");
         }
@@ -71,19 +184,11 @@ internal sealed class StatusService
         }
     }
 
-    private void WriteQuickStats(string dir, List<string> solutions)
+    private void WriteQuickStats(WorkspaceStatus status)
     {
-        var projectFiles = Directory.Exists(dir)
-            ? Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
-                .Concat(Directory.GetFiles(dir, "*.fsproj", SearchOption.AllDirectories))
-                .Concat(Directory.GetFiles(dir, "*.vbproj", SearchOption.AllDirectories))
-                .Where(p => !p.Contains(Path.Combine("bin", "")) && !p.Contains(Path.Combine("obj", "")))
-                .ToList()
-            : new List<string>();
-
-        if (projectFiles.Count > 0)
+        if (status.ProjectCount > 0)
         {
-            _console.Dim($"  {projectFiles.Count} project(s) across {solutions.Count} solution(s).");
+            _console.Dim($"  {status.ProjectCount} project(s) across {status.Solutions.Count} solution(s).");
         }
     }
 

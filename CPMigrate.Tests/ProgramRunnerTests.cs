@@ -528,6 +528,65 @@ public class ProgramRunnerTests
         }
     }
 
+    [Theory]
+    [InlineData("Sarif")]
+    [InlineData("Markdown")]
+    [InlineData("Csv")]
+    public async Task RunAsync_StatusWithAFindingsFormat_IsRejectedBeforeCollecting(string format)
+    {
+        // Those formats carry analyzer findings and --status produces none — collecting anyway
+        // would print a dashboard after a caller explicitly asked for a document.
+        var fakeConsole = new FakeConsoleService();
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateStatus_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "--status", "--output", format, "-s", directory },
+                fakeConsole
+            );
+
+            exitCode.Should().Be(ExitCodes.ValidationError);
+            fakeConsole.ErrorMessages.Should().Contain(m => m.Contains(format));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_StatusJson_EmitsTheDocumentAndNothingElse()
+    {
+        var fakeConsole = new FakeConsoleService();
+        var directory = Path.Combine(Path.GetTempPath(), $"CPMigrateStatus_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "App.csproj"), "<Project />");
+
+        var original = Console.Out;
+        using var stdout = new StringWriter();
+        try
+        {
+            Console.SetOut(stdout);
+
+            var exitCode = await ProgramRunner.RunAsync(
+                new[] { "--status", "--output", "Json", "-s", directory },
+                fakeConsole
+            );
+
+            exitCode.Should().Be(ExitCodes.Success);
+            using var document = JsonDocument.Parse(stdout.ToString());
+            document.RootElement.GetProperty("operation").GetString().Should().Be("status");
+            document.RootElement.GetProperty("projectCount").GetInt32().Should().Be(1);
+        }
+        finally
+        {
+            Console.SetOut(original);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public void Examples_ProjectExample_DoesNotCarryDefaultSolutionPath()
     {

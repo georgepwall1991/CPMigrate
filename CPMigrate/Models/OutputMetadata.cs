@@ -87,8 +87,14 @@ public static class OutputMetadata
     /// nothing from one the scan could not read — the distinction the console tree only reports as
     /// warnings.
     /// </para>
+    /// <para>
+    /// 1.12.0 additively introduced the sixth top-level shape: the document
+    /// <c>--status --output Json</c> prints, distinguished by <c>operation: "status"</c>. The
+    /// workspace facts the dashboard renders — solutions, project count, CPM state, config, git,
+    /// backups, target frameworks — as fields a CI script can read without parsing prose.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.11.0";
+    public const string SchemaVersion = "1.12.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.
