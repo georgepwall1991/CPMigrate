@@ -27,6 +27,14 @@ internal static class JsonOutputWriter
     {
         if (!string.IsNullOrEmpty(options.OutputFile))
         {
+            // A CI script writing to artifacts/report.json should not have to mkdir -p first —
+            // the file's parent is part of the path the caller named, so create it.
+            var parent = Path.GetDirectoryName(Path.GetFullPath(options.OutputFile));
+            if (!string.IsNullOrEmpty(parent))
+            {
+                Directory.CreateDirectory(parent);
+            }
+
             await File.WriteAllTextAsync(options.OutputFile, json);
             if (announceFile && !options.Quiet && consoleService is not null)
             {
