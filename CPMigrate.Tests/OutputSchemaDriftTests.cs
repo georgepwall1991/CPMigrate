@@ -79,6 +79,10 @@ public class OutputSchemaDriftTests
         (typeof(ListBackupsReportPayload), "listBackupsReport"),
         (typeof(BackupSetPayload), "backupSet"),
         (typeof(ListBackupsSummaryPayload), "listBackupsSummary"),
+        // --prune-backups and --prune-all-backups serialize their own document too — the outcome
+        // as a status token, the totals the console prints, and every deletion error.
+        (typeof(PruneBackupsReportPayload), "pruneBackupsReport"),
+        (typeof(PruneBackupsSummaryPayload), "pruneBackupsSummary"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -132,7 +136,8 @@ public class OutputSchemaDriftTests
             typeof(TreeReportPayload),
             typeof(StatusReportPayload),
             typeof(DoctorReportPayload),
-            typeof(ListBackupsReportPayload)
+            typeof(ListBackupsReportPayload),
+            typeof(PruneBackupsReportPayload)
         );
 
         ModelDefinitions
@@ -253,6 +258,10 @@ public class OutputSchemaDriftTests
                     // --list-backups emits its own document root too; its failure payloads use the
                     // standard operation shape.
                     "list-backups",
+                    // --prune-backups and --prune-all-backups emit their own document root too;
+                    // their failure payloads use the standard operation shape.
+                    "prune-backups",
+                    "prune-all-backups",
                     "batch-analyze",
                     "batch-migrate",
                 }
@@ -303,7 +312,8 @@ public class OutputSchemaDriftTests
             .And.Contain("#/definitions/treeReport")
             .And.Contain("#/definitions/statusReport")
             .And.Contain("#/definitions/doctorReport")
-            .And.Contain("#/definitions/listBackupsReport");
+            .And.Contain("#/definitions/listBackupsReport")
+            .And.Contain("#/definitions/pruneBackupsReport");
     }
 
     [Fact]

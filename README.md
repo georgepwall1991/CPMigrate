@@ -398,8 +398,8 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 | `--no-backup` | `-n` | `false` | Disable backup creation |
 | `--backup-dir` | | `.` | Backup directory location |
 | `--list-backups` | | `false` | List backups with timestamps & file counts — `--output Json` prints the same history as one JSON document |
-| `--prune-backups` | | `false` | Delete old backups per `--retention` |
-| `--prune-all` | | `false` | Delete all backups |
+| `--prune-backups` | | `false` | Delete old backups per `--retention` — `--output Json` prints the outcome as one JSON document (`status`: `pruned`/`noBackups`/`nothingToPrune`/`failed`) |
+| `--prune-all` | | `false` | Delete all backups — `--output Json` prints the outcome as one JSON document |
 | `--retention` | | `5` | Backups to keep when pruning |
 | `--add-gitignore` | | `false` | Add the backup dir to `.gitignore` |
 | `--gitignore-dir` | | `.` | Where to create `.gitignore` if missing |
