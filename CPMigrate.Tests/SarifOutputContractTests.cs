@@ -159,7 +159,10 @@ public class SarifOutputContractTests : IDisposable
     public async Task Analyze_SarifWithUnwritableOutputFile_FallsBackToStdoutInsteadOfCrashing()
     {
         CreateFixture();
-        var unwritable = Path.Combine(_testDirectory, "does", "not", "exist", "out.sarif");
+        // A path that is a directory is unwritable as a file — the parent-directory creation in
+        // JsonOutputWriter cannot rescue it, so the fallback contract is what this still pins.
+        var unwritable = Path.Combine(_testDirectory, "a-directory");
+        Directory.CreateDirectory(unwritable);
 
         var stdout = await CaptureStdoutAsync(() =>
             RunAnalyzeAsync(OutputFormat.Sarif, unwritable)
