@@ -500,6 +500,35 @@ public class ConfigService
             "retention",
             (o, c) => o.Retention = c.Retention?.MaxBackups ?? 0
         ),
+        // The analysis toggles are team policy the same way failOn and rules are: which checks
+        // the default scan runs is a decision about the codebase, not about the invocation.
+        new(c => c.Analyze.HasValue, "analyze", (o, c) => o.Analyze = c.Analyze.GetValueOrDefault()),
+        new(
+            c => c.Transitive.HasValue,
+            "transitive",
+            (o, c) => o.IncludeTransitive = c.Transitive.GetValueOrDefault()
+        ),
+        new(c => c.Audit.HasValue, "audit", (o, c) => o.AuditSecurity = c.Audit.GetValueOrDefault()),
+        new(
+            c => c.Outdated.HasValue,
+            "outdated",
+            (o, c) => o.AnalyzeOutdated = c.Outdated.GetValueOrDefault()
+        ),
+        new(
+            c => c.Deprecated.HasValue,
+            "deprecated",
+            (o, c) => o.AnalyzeDeprecated = c.Deprecated.GetValueOrDefault()
+        ),
+        new(
+            c => c.Licenses.HasValue,
+            "licenses",
+            (o, c) => o.AnalyzeLicenses = c.Licenses.GetValueOrDefault()
+        ),
+        new(
+            c => c.MaxParallelism.HasValue,
+            "max-parallelism",
+            (o, c) => o.MaxParallelism = c.MaxParallelism
+        ),
     };
 
     private sealed record ConfigMergeRule(

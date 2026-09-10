@@ -609,11 +609,17 @@ The tool targets .NET 10 with `LatestMajor` roll-forward and runs on any machine
   "addGitignore": true,
   "failOn": "High",
   "baseline": ".cpmigrate-baseline.json",
-  "retention": { "enabled": true, "maxBackups": 5 }
+  "retention": { "enabled": true, "maxBackups": 5 },
+  "analyze": true,
+  "audit": true,
+  "outdated": true,
+  "deprecated": true,
+  "licenses": true,
+  "transitive": false,
+  "maxParallelism": 4
 }
 ```
-
-Discovered by walking up from the solution/project path (or cwd). Contradictory settings warn; malformed JSON reports the exact line and column. Unknown keys are **named, not ignored** — a typo like `fialOn` warns `did you mean 'failOn'?` instead of silently leaving the setting unset (nested keys too, e.g. inside `retention`). Keys that differ only in case still deserialize normally and are not flagged. The run itself never fails on an unknown key.
+Discovered by walking up from the solution/project path (or cwd). Contradictory settings warn; malformed JSON reports the exact line and column. Unknown keys are **named, not ignored** — a typo like `fialOn` warns `did you mean 'failOn'?` instead of silently leaving the setting unset (nested keys too, e.g. inside `retention`). Keys that differ only in case still deserialize normally and are not flagged. The run itself never fails on an unknown key. The analysis toggles — `analyze`, `transitive`, `audit`, `outdated`, `deprecated`, `licenses`, `maxParallelism` — are team policy the same way `failOn` and `rules` are: which checks the default scan runs is a decision about the codebase, not about the invocation.
 
 ---
 

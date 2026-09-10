@@ -662,6 +662,70 @@ public class ConfigServiceTests : IDisposable
         options.Retention.Should().Be(42);
     }
 
+    [Theory]
+    [InlineData("analyze")]
+    [InlineData("transitive")]
+    [InlineData("audit")]
+    [InlineData("outdated")]
+    [InlineData("deprecated")]
+    [InlineData("licenses")]
+    public void MergeConfig_AnalysisToggleFromConfig_WhenCliNotProvided(string key)
+    {
+        // The analysis toggles are team policy the same way failOn and rules are: which checks
+        // the default scan runs is a decision about the codebase, not about the invocation.
+        var options = new Options();
+        var config = new ConfigModel();
+        typeof(ConfigModel)
+            .GetProperty(char.ToUpperInvariant(key[0]) + key[1..])!
+            .SetValue(config, true);
+
+        ConfigService.MergeConfig(options, config, new HashSet<string>());
+
+        var optionProperty = key switch
+        {
+            "transitive" => nameof(Options.IncludeTransitive),
+            "audit" => nameof(Options.AuditSecurity),
+            "outdated" => nameof(Options.AnalyzeOutdated),
+            "deprecated" => nameof(Options.AnalyzeDeprecated),
+            "licenses" => nameof(Options.AnalyzeLicenses),
+            _ => nameof(Options.Analyze),
+        };
+        typeof(Options).GetProperty(optionProperty)!.GetValue(options).Should().Be(true);
+    }
+
+    [Fact]
+    public void MergeConfig_AnalysisToggle_DoesNotOverrideCliProvidedValue()
+    {
+        var options = new Options();
+        var config = new ConfigModel { Audit = true };
+
+        ConfigService.MergeConfig(options, config, new HashSet<string> { "audit" });
+
+        options.AuditSecurity.Should().BeFalse();
+    }
+
+    [Fact]
+    public void MergeConfig_MaxParallelismFromConfig_WhenCliNotProvided()
+    {
+        var options = new Options();
+        var config = new ConfigModel { MaxParallelism = 4 };
+
+        ConfigService.MergeConfig(options, config, new HashSet<string>());
+
+        options.MaxParallelism.Should().Be(4);
+    }
+
+    [Fact]
+    public void MergeConfig_MaxParallelism_DoesNotOverrideCliProvidedValue()
+    {
+        var options = new Options { MaxParallelism = 2 };
+        var config = new ConfigModel { MaxParallelism = 8 };
+
+        ConfigService.MergeConfig(options, config, new HashSet<string> { "max-parallelism" });
+
+        options.MaxParallelism.Should().Be(2);
+    }
+
     [Fact]
     public void MergeConfig_AllCliArgsProvided_BlockAllConfigValues()
     {

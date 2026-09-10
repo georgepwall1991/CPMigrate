@@ -116,6 +116,41 @@
       },
       "default": ["node_modules", "bin", "obj", ".git", "packages"],
       "description": "Directories to exclude when scanning for solutions in batch mode"
+    },
+    "analyze": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether every run analyzes instead of migrating. Team-wide for the same reason failOn is: 'this repo is under CPM already; check it, don't convert it' is a policy, and a policy that has to be remembered as a flag is one that gets forgotten."
+    },
+    "transitive": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether analysis includes transitive dependencies. Costs a restore per project, so it is a team decision about how deep the default scan goes."
+    },
+    "audit": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether analysis includes the security audit. Costs network lookups, so it is a team decision about what the default scan covers."
+    },
+    "outdated": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether analysis includes outdated-package checks."
+    },
+    "deprecated": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether analysis includes deprecated-package checks."
+    },
+    "licenses": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether analysis includes license checks."
+    },
+    "maxParallelism": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum projects scanned at once. A team decision about how hard the scan pushes the machine — CI runners and developer laptops want different answers."
     }
   },
   "definitions": {
