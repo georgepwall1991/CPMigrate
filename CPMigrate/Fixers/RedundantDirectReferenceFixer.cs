@@ -105,8 +105,10 @@ public class RedundantDirectReferenceFixer : IFixer
             var removed = 0;
             foreach (var reference in doc.Descendants("PackageReference").ToList())
             {
-                var name = reference.Attribute("Include")?.Value
-                    ?? reference.Attribute("Update")?.Value;
+                // Include only: an Update reference modifies a transitive reference's metadata
+                // (PrivateAssets and friends) — it is not a direct reference, and removing it
+                // would silently drop that metadata.
+                var name = reference.Attribute("Include")?.Value;
                 if (!string.Equals(name, packageName, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;

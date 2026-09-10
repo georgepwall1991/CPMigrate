@@ -140,6 +140,30 @@ public class RedundantDirectReferenceFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_UpdateReference_Stays()
+    {
+        // An Update reference modifies a transitive reference's metadata — it is not a direct
+        // reference, and removing it would silently drop PrivateAssets and friends.
+        var projectPath = WriteProject(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Serilog.AspNetCore" />
+                <PackageReference Update="Serilog" PrivateAssets="all" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteProps();
+
+        var result = _fixer.Fix(Issue("Serilog"), PackageInfo(projectPath), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        result.Changes.Should().BeEmpty();
+        File.ReadAllText(projectPath).Should().Contain("Update=\"Serilog\"");
+    }
+
+    [Fact]
     public void Fix_ReferenceNotPresent_NoFixNeeded()
     {
         var projectPath = WriteProject(
