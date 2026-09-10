@@ -272,9 +272,12 @@ public static class ProgramRunner
             var projectOutcomes = new List<(string Path, bool Scanned)>(projectPaths.Count);
             for (var index = 0; index < projectPaths.Count; index++)
             {
+                // Warnings go to the caller's console (stderr), not the execution console: under
+                // --output Json the execution console is silent, and a dropped warning is how a
+                // scanned:false project ends up unexplained.
                 foreach (var warning in resolved[index].Warnings)
                 {
-                    executionConsole.Warning(warning);
+                    userConsole.Warning(warning);
                 }
 
                 projectOutcomes.Add((projectPaths[index], resolved[index].Success));
@@ -295,20 +298,21 @@ public static class ProgramRunner
 
             if (options.Output == OutputFormat.Json)
             {
-                // EmitFailureAsync rather than EmitAsync: when --output-file cannot be written the
-                // document falls back to stdout instead of dying on an exception whose message the
-                // silent scan console would swallow.
-                await JsonOutputWriter.EmitFailureAsync(
+                // EmitAsync, not EmitFailureAsync: a success document that could not reach its
+                // --output-file must not fall back to stdout and exit 0 — a CI job expecting the
+                // file would pass with a missing artifact. The write failure throws into the catch
+                // below, which reports it as a failure payload instead.
+                await JsonOutputWriter.EmitAsync(
                     DependencyTreeJsonWriter.Serialize(
                         packageInfo,
                         projectOutcomes,
                         ExitCodes.Success
                     ),
-                    options
+                    options,
+                    userConsole
                 );
                 return ExitCodes.Success;
             }
-
             var treeService = new DependencyTreeService(executionConsole);
             return await treeService.RunAsync(packageInfo);
         }
@@ -488,9 +492,12 @@ public static class ProgramRunner
             for (var index = 0; index < projectPaths.Count; index++)
             {
                 var projectPath = projectPaths[index];
+                // Warnings go to the caller's console (stderr), not the execution console: under
+                // --output Json the execution console is silent, and a dropped warning is how an
+                // unreadable project ends up unexplained.
                 foreach (var warning in resolved[index].Warnings)
                 {
-                    executionConsole.Warning(warning);
+                    userConsole.Warning(warning);
                 }
 
                 var (references, success) = (resolved[index].References, resolved[index].Success);
@@ -588,10 +595,11 @@ public static class ProgramRunner
                         [.. answers.Select(answer => answer.answerExitCode)]
                     );
 
-                // EmitFailureAsync rather than EmitAsync: when --output-file cannot be written the
-                // document falls back to stdout instead of dying on an exception whose message the
-                // silent scan console would swallow.
-                await JsonOutputWriter.EmitFailureAsync(
+                // EmitAsync, not EmitFailureAsync: a success document that could not reach its
+                // --output-file must not fall back to stdout and exit 0 — a CI job expecting the
+                // file would pass with a missing artifact. The write failure throws into the catch
+                // below, which reports it as a failure payload instead.
+                await JsonOutputWriter.EmitAsync(
                     answers.Count == 1
                         ? PackageOriginJsonWriter.Serialize(
                             answers[0].request,
@@ -599,7 +607,8 @@ public static class ProgramRunner
                             answers[0].answerExitCode
                         )
                         : PackageOriginJsonWriter.SerializeMany(answers, exitCode),
-                    options
+                    options,
+                    userConsole
                 );
 
                 return exitCode;
