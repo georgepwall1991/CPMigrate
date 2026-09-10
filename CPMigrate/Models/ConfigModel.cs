@@ -107,6 +107,53 @@ public class ConfigModel
     /// </summary>
     [JsonPropertyName("rules")]
     public Dictionary<string, string>? Rules { get; set; }
+
+    /// <summary>
+    /// Whether every run analyzes instead of migrating. Team-wide for the same reason
+    /// <see cref="FailOn"/> is: "this repo is under CPM already; check it, don't convert it" is a
+    /// policy, and a policy that has to be remembered as a flag is one that gets forgotten.
+    /// </summary>
+    [JsonPropertyName("analyze")]
+    public bool? Analyze { get; set; }
+
+    /// <summary>
+    /// Whether analysis includes transitive dependencies. Costs a restore per project, so it is a
+    /// team decision about how deep the default scan goes.
+    /// </summary>
+    [JsonPropertyName("transitive")]
+    public bool? Transitive { get; set; }
+
+    /// <summary>
+    /// Whether analysis includes the security audit. Costs network lookups, so it is a team
+    /// decision about what the default scan covers.
+    /// </summary>
+    [JsonPropertyName("audit")]
+    public bool? Audit { get; set; }
+
+    /// <summary>
+    /// Whether analysis includes outdated-package checks.
+    /// </summary>
+    [JsonPropertyName("outdated")]
+    public bool? Outdated { get; set; }
+
+    /// <summary>
+    /// Whether analysis includes deprecated-package checks.
+    /// </summary>
+    [JsonPropertyName("deprecated")]
+    public bool? Deprecated { get; set; }
+
+    /// <summary>
+    /// Whether analysis includes license checks.
+    /// </summary>
+    [JsonPropertyName("licenses")]
+    public bool? Licenses { get; set; }
+
+    /// <summary>
+    /// Maximum projects scanned at once. A team decision about how hard the scan pushes the
+    /// machine — CI runners and developer laptops want different answers.
+    /// </summary>
+    [JsonPropertyName("maxParallelism")]
+    public int? MaxParallelism { get; set; }
 }
 
 /// <summary>
