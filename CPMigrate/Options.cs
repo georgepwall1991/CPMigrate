@@ -328,7 +328,7 @@ public class Options
 
     [Option(
         "output-file",
-        HelpText = "Write output to file instead of stdout (only applies to Json and Sarif output)."
+        HelpText = "Write output to file instead of stdout (applies to Json, Sarif, Markdown, and Csv output)."
     )]
     public string? OutputFile { get; set; }
 
@@ -1018,6 +1018,7 @@ public class Options
         ValidateVerifyOptions();
         ValidateSarifOptions();
         ValidateMarkdownOptions();
+        ValidateCsvOptions();
         ValidateBaselineOptions();
         ValidateDiffFileOptions();
     }
@@ -1110,6 +1111,47 @@ public class Options
         {
             throw new ArgumentException(
                 $"--output Markdown cannot be combined with {conflictingMode}, which runs instead "
+                    + "of an analysis."
+            );
+        }
+    }
+
+    /// <summary>
+    /// CSV reports analyzer findings, so like SARIF and Markdown it only makes sense for a command
+    /// that produces them. Without this check <c>--output Csv</c> on a plain migration emitted a
+    /// header-only document — which a spreadsheet or CI consumer reads as "no findings" from a run
+    /// that never analyzed anything.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when CSV is requested for an unsupported mode.</exception>
+    public void ValidateCsvOptions()
+    {
+        if (Output != OutputFormat.Csv)
+        {
+            return;
+        }
+
+        if (!Analyze)
+        {
+            throw new ArgumentException(
+                "--output Csv requires --analyze; CSV only carries analyzer findings."
+            );
+        }
+
+        if (!string.IsNullOrEmpty(BatchDir))
+        {
+            // Batch aggregates into a BatchResult this report has no shape for — the command would
+            // emit nothing at all.
+            throw new ArgumentException(
+                "--output Csv cannot be used with --batch; run one solution at a time, or use "
+                    + "--output Json."
+            );
+        }
+
+        var conflictingMode = FindModeInsteadOfAnalysis();
+        if (conflictingMode is not null)
+        {
+            throw new ArgumentException(
+                $"--output Csv cannot be combined with {conflictingMode}, which runs instead "
                     + "of an analysis."
             );
         }
