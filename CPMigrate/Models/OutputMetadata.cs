@@ -120,8 +120,14 @@ public static class OutputMetadata
     /// config file was written, and where — <c>created</c>, <c>overwritten</c>, or <c>exists</c>
     /// (the refusal the console prints as a warning, carried as data).
     /// </para>
+    /// <para>
+    /// 1.17.0 additively introduced the eleventh top-level shape: the document
+    /// <c>--explain --output Json</c> prints, distinguished by <c>operation: "explain"</c>. The
+    /// matched rule, every rule for <c>--explain all</c>, or the near-miss suggestions for an
+    /// unmatched ID — the catalog as fields a consumer can read without parsing prose.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.16.0";
+    public const string SchemaVersion = "1.17.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

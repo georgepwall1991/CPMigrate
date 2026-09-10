@@ -57,9 +57,7 @@ public static class ProgramRunner
 
                     if (options.Explain is not null)
                     {
-                        var (explanation, found) = RuleExplainer.Explain(options.Explain);
-                        Console.WriteLine(explanation);
-                        return found ? ExitCodes.Success : ExitCodes.ValidationError;
+                        return await RunExplainModeAsync(options, services.ConsoleService);
                     }
 
                     if (RejectsValuelessWhy(options, args, services.ConsoleService))
@@ -185,6 +183,36 @@ public static class ProgramRunner
                     return Task.FromResult(ExitCodes.ValidationError);
                 }
             );
+    }
+
+    /// <summary>
+    /// Renders the rule explanation. Under <c>--output Json</c> the same catalog entry is emitted
+    /// as the <c>explain</c> document instead — one parseable payload on stdout, so an IDE
+    /// extension or CI script can read rule metadata without parsing prose.
+    /// </summary>
+    private static async Task<int> RunExplainModeAsync(Options options, IConsoleService console)
+    {
+        if (options.Output == OutputFormat.Json)
+        {
+            var (rule, allRules, suggestions) = RuleExplainer.Resolve(options.Explain!);
+            var found = rule is not null || allRules is not null;
+            await JsonOutputWriter.EmitAsync(
+                ExplainJsonWriter.Serialize(
+                    options.Explain!,
+                    rule,
+                    allRules,
+                    suggestions,
+                    found ? ExitCodes.Success : ExitCodes.ValidationError
+                ),
+                options,
+                console
+            );
+            return found ? ExitCodes.Success : ExitCodes.ValidationError;
+        }
+
+        var (explanation, foundText) = RuleExplainer.Explain(options.Explain!);
+        Console.WriteLine(explanation);
+        return foundText ? ExitCodes.Success : ExitCodes.ValidationError;
     }
 
     /// <summary>

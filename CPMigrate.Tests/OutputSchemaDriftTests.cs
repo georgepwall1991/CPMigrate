@@ -85,6 +85,9 @@ public class OutputSchemaDriftTests
         (typeof(PruneBackupsSummaryPayload), "pruneBackupsSummary"),
         // --init serializes its own document too — whether the config file was written, and where.
         (typeof(InitReportPayload), "initReport"),
+        // --explain serializes its own document too — the catalog as fields a consumer can read.
+        (typeof(ExplainReportPayload), "explainReport"),
+        (typeof(ExplainRulePayload), "explainRule"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -140,7 +143,8 @@ public class OutputSchemaDriftTests
             typeof(DoctorReportPayload),
             typeof(ListBackupsReportPayload),
             typeof(PruneBackupsReportPayload),
-            typeof(InitReportPayload)
+            typeof(InitReportPayload),
+            typeof(ExplainReportPayload)
         );
 
         ModelDefinitions
@@ -258,13 +262,14 @@ public class OutputSchemaDriftTests
                     // --status and --doctor emit their own document roots too; same reasoning.
                     "status",
                     "doctor",
-                    // --list-backups, --prune-backups, --prune-all-backups, and --init emit their
-                    // own document roots too; their failure payloads use the standard operation
-                    // shape.
+                    // --list-backups, --prune-backups, --prune-all-backups, --init, and --explain
+                    // emit their own document roots too; their failure payloads use the standard
+                    // operation shape.
                     "list-backups",
                     "prune-backups",
                     "prune-all-backups",
                     "init",
+                    "explain",
                     "batch-analyze",
                     "batch-migrate",
                 }
@@ -317,7 +322,8 @@ public class OutputSchemaDriftTests
             .And.Contain("#/definitions/doctorReport")
             .And.Contain("#/definitions/listBackupsReport")
             .And.Contain("#/definitions/pruneBackupsReport")
-            .And.Contain("#/definitions/initReport");
+            .And.Contain("#/definitions/initReport")
+            .And.Contain("#/definitions/explainReport");
     }
 
     [Fact]

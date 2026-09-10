@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Ten payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, the --list-backups history report, the --prune-backups outcome report, and the --init scaffolding report. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Eleven payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, the --list-backups history report, the --prune-backups outcome report, the --init scaffolding report, and the --explain rule report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -33,6 +33,9 @@
     },
     {
       "$ref": "#/definitions/initReport"
+    },
+    {
+      "$ref": "#/definitions/explainReport"
     }
   ],
   "definitions": {
@@ -76,7 +79,8 @@
             "tree",
             "status",
             "doctor",
-            "init"
+            "init",
+            "explain"
           ],
           "description": "Which command produced the payload"
         },
@@ -1475,6 +1479,76 @@
         "forced": {
           "type": "boolean",
           "description": "Whether --force was passed — what distinguishes an overwrite from a refusal"
+        }
+      },
+      "additionalProperties": false
+    },
+    "explainReport": {
+      "type": "object",
+      "description": "The document `--explain --output Json` prints instead of the console text: the matched rule, every rule for `--explain all`, or the near-miss suggestions for an unmatched ID.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "exitCode",
+        "query",
+        "found"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["explain"],
+          "description": "Always 'explain'; distinguishes this shape from the other documents"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run"
+        },
+        "query": {
+          "type": "string",
+          "description": "The rule ID or 'all' the run was asked about, verbatim"
+        },
+        "found": {
+          "type": "boolean",
+          "description": "Whether the query matched a rule — false carries suggestions"
+        },
+        "rule": {
+          "$ref": "#/definitions/explainRule",
+          "description": "The matched rule — absent when the query named nothing or named all"
+        },
+        "rules": {
+          "type": "array",
+          "description": "Every rule, for --explain all — absent for a single-rule query",
+          "items": { "$ref": "#/definitions/explainRule" }
+        },
+        "suggestions": {
+          "type": "array",
+          "description": "Near-miss rule IDs for an unmatched query — absent when the query matched",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "explainRule": {
+      "type": "object",
+      "description": "One rule as data — the fields the console describes.",
+      "required": ["id", "shortDescription", "fullDescription", "tags", "helpUri"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The stable rule identifier — the value issueCode carries in JSON findings and ruleId carries in SARIF"
+        },
+        "shortDescription": { "type": "string", "description": "The one-line summary" },
+        "fullDescription": { "type": "string", "description": "The full explanation" },
+        "tags": {
+          "type": "array",
+          "description": "Classification tags, as SARIF consumers see them",
+          "items": { "type": "string" }
+        },
+        "helpUri": {
+          "type": "string",
+          "description": "Anchor into the published rule documentation"
         }
       },
       "additionalProperties": false

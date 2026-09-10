@@ -418,7 +418,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 
 | Option | Description |
 |--------|-------------|
-| `--explain <RuleId>` | What a rule means, why it matters, how to fix it (`--explain all` lists every rule) |
+| `--explain <RuleId>` | What a rule means, why it matters, how to fix it (`--explain all` lists every rule) — `--output Json` prints the rule as one JSON document |
 | `--completions <Shell>` | Emit a completion script and exit: `Bash` · `Zsh` · `Fish` · `PowerShell` |
 | `--update` | Check for and install the latest CPMigrate |
 
