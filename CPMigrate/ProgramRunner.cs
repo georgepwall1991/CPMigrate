@@ -227,14 +227,28 @@ public static class ProgramRunner
         {
             var projectAnalyzer = services.ProjectAnalyzer;
             var targetPath = options.GetDiscoveryTargetPath();
-            var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(
-                targetPath
-            );
+            var discovery = await projectAnalyzer.DiscoverProjectsDetailedAsync(targetPath);
+            var (basePath, projectPaths) = (discovery.BasePath, discovery.ProjectPaths);
+
+            // Projects the solution names but the filesystem does not have. Under a
+            // machine-readable format the discovery console was silenced, so the warning it
+            // emitted went nowhere — replay it on the caller's console (stderr) and carry the
+            // projects into the document as unread, or the run reports a complete scan over a
+            // workspace that is not.
+            if (discovery.MissingProjects.Count > 0 && options.Output == OutputFormat.Json)
+            {
+                foreach (var missing in discovery.MissingProjects)
+                {
+                    userConsole.Warning(
+                        $"Project found in solution but file missing: {missing}"
+                    );
+                }
+            }
 
             // Discovery found nothing — no solution where one was asked for, or one it could not
             // read. The terminal path has already said so in prose; the JSON path must not dress
             // that up as an empty workspace, so it emits the standard failure payload instead.
-            if (projectPaths.Count == 0 && options.Output == OutputFormat.Json)
+            if (projectPaths.Count == 0 && discovery.MissingProjects.Count == 0 && options.Output == OutputFormat.Json)
             {
                 return await EmitTreeFailureAsync(
                     options,
@@ -268,6 +282,13 @@ public static class ProgramRunner
                 {
                     allReferences.AddRange(resolved[index].References);
                 }
+            }
+
+            // A project the solution names but the filesystem lacks was never scanned — it belongs
+            // in the document as unread, not absent.
+            foreach (var missing in discovery.MissingProjects)
+            {
+                projectOutcomes.Add((missing, false));
             }
 
             var packageInfo = new Models.ProjectPackageInfo(allReferences, BasePath: basePath);
@@ -404,15 +425,29 @@ public static class ProgramRunner
         {
             var projectAnalyzer = services.ProjectAnalyzer;
             var targetPath = options.GetDiscoveryTargetPath();
-            var (basePath, projectPaths) = await projectAnalyzer.DiscoverProjectsFromSolutionAsync(
-                targetPath
-            );
+            var discovery = await projectAnalyzer.DiscoverProjectsDetailedAsync(targetPath);
+            var (basePath, projectPaths) = (discovery.BasePath, discovery.ProjectPaths);
+
+            // Projects the solution names but the filesystem does not have. Under a
+            // machine-readable format the discovery console was silenced, so the warning it
+            // emitted went nowhere — replay it on the caller's console (stderr) and carry the
+            // projects into the report as unread, or the run reports a complete scan over a
+            // workspace that is not.
+            if (discovery.MissingProjects.Count > 0 && options.Output == OutputFormat.Json)
+            {
+                foreach (var missing in discovery.MissingProjects)
+                {
+                    userConsole.Warning(
+                        $"Project found in solution but file missing: {missing}"
+                    );
+                }
+            }
 
             // Discovery found nothing — no solution where one was asked for, or one it could not
             // read. The terminal path has already said so in prose; the JSON path must not dress
             // that up as a not-found verdict about the package, so it emits the router's standard
             // failure payload instead.
-            if (projectPaths.Count == 0 && options.Output == OutputFormat.Json)
+            if (projectPaths.Count == 0 && discovery.MissingProjects.Count == 0 && options.Output == OutputFormat.Json)
             {
                 return await EmitWhyFailureAsync(
                     options,
@@ -490,6 +525,23 @@ public static class ProgramRunner
                     resolvedGraphs.Add(graph);
                 }
             }
+
+            // A project the solution names but the filesystem lacks was never scanned — it belongs
+            // in the report as unreadable, not absent, and it counts toward the failed-scan total
+            // that drives exit code 8.
+            foreach (var missing in discovery.MissingProjects)
+            {
+                failedScans++;
+                scanOutcomes.Add(
+                    new PackageOriginProjectScan(
+                        missing,
+                        ResolvedRead: false,
+                        DeclarationsRead: false
+                    )
+                );
+            }
+
+            var allProjectPaths = projectPaths.Concat(discovery.MissingProjects).ToList();
             var packageInfo = new Models.ProjectPackageInfo(
                 allReferences,
                 BasePath: basePath,
@@ -504,11 +556,11 @@ public static class ProgramRunner
                     packageId,
                     packageInfo,
                     resolvedGraphs,
-                    projectPaths.Count,
+                    allProjectPaths.Count,
                     failedScans,
                     // Every discovered project, including ones whose scans produced no rows —
                     // "this project does not have the package" is part of the answer.
-                    projectPaths,
+                    allProjectPaths,
                     scanOutcomes
                 ))
                 .ToList();

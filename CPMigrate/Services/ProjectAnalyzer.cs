@@ -44,6 +44,11 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
         return _solutionDiscovery.DiscoverProjectsFromSolutionAsync(solutionPath);
     }
 
+    public Task<DiscoveryResult> DiscoverProjectsDetailedAsync(string solutionPath)
+    {
+        return _solutionDiscovery.DiscoverProjectsDetailedAsync(solutionPath);
+    }
+
     public (string BasePath, List<string> ProjectPaths) DiscoverProjectsFromSolution(string solutionPath)
     {
         return _solutionDiscovery.DiscoverProjectsFromSolution(solutionPath);

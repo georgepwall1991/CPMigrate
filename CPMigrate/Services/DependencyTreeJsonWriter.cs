@@ -109,11 +109,14 @@ internal static class DependencyTreeJsonWriter
     )
     {
         var referencesByProject = packageInfo
-            .References.GroupBy(r => r.ProjectPath, StringComparer.OrdinalIgnoreCase)
+            .References.GroupBy(r => r.ProjectPath, StringComparer.Ordinal)
             .ToDictionary(
                 g => g.Key,
                 g => (IReadOnlyList<PackageReference>)[.. g],
-                StringComparer.OrdinalIgnoreCase
+                // Ordinal, not OrdinalIgnoreCase: on a case-sensitive filesystem
+                // tools/App.csproj and Tools/App.csproj are different projects, and a
+                // case-folding comparer would merge their package lists into both entries.
+                StringComparer.Ordinal
             );
 
         var projectPayloads = projects
