@@ -43,7 +43,7 @@ internal sealed class RollbackHandler
 
         _consoleService.WriteLine();
 
-        var (restoredCount, failedCount) = await RestoreFilesWithProgress(backupPath, manifest);
+        var (restoredCount, failedCount, failedFiles) = await RestoreFilesWithProgress(backupPath, manifest);
         if (!_quietMode)
         {
             _consoleService.WriteLine();
@@ -67,6 +67,11 @@ internal sealed class RollbackHandler
         {
             ProjectsProcessed = restoredCount,
             Warnings = guidanceWarnings,
+            // The failed file names are the actionable part of a partial rollback — a CI consumer
+            // reading the document alone needs them, not just the count.
+            Errors = failedFiles.Count > 0
+                ? failedFiles.Select(f => $"Failed to restore {f}").ToList()
+                : null,
             ExitCode = failedCount == 0 ? ExitCodes.Success : ExitCodes.FileOperationError
         };
     }
@@ -131,12 +136,13 @@ internal sealed class RollbackHandler
         return _consoleService.AskConfirmation("Proceed with rollback?");
     }
 
-    private async Task<(int RestoredCount, int FailedCount)> RestoreFilesWithProgress(
+    private async Task<(int RestoredCount, int FailedCount, IReadOnlyList<string> FailedFiles)> RestoreFilesWithProgress(
         string backupPath,
         BackupManifest manifest)
     {
         var restoredCount = 0;
         var failedCount = 0;
+        List<string> failedFiles = [];
 
         // Manifests written before integrity verification carry no hashes; say so once instead
         // of per file.
@@ -159,10 +165,11 @@ internal sealed class RollbackHandler
                 else
                 {
                     failedCount++;
+                    failedFiles.Add(entry.OriginalPath);
                 }
             }
 
-            return (restoredCount, failedCount);
+            return (restoredCount, failedCount, failedFiles);
         }
 
         await AnsiConsole.Progress()
@@ -190,6 +197,7 @@ internal sealed class RollbackHandler
                     else
                     {
                         failedCount++;
+                        failedFiles.Add(entry.OriginalPath);
                     }
 
                     task.Increment(1);
@@ -199,7 +207,7 @@ internal sealed class RollbackHandler
                 task.Description = "[green]Restore complete[/]";
             });
 
-        return (restoredCount, failedCount);
+        return (restoredCount, failedCount, failedFiles);
     }
 
     private bool TryRestoreFile(string backupPath, BackupEntry entry, string fileName)

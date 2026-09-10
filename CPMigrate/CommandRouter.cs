@@ -1363,6 +1363,7 @@ internal static class CommandRouter
             Verification = VerificationPayload.From(result.Verification, options.VerifyStrict),
             DryRun = result.WasDryRun,
             Warnings = result.Warnings?.ToList() ?? [],
+            Errors = MapErrors(result),
             Timestamp = DateTime.UtcNow.ToString("o"),
         };
 
@@ -1370,6 +1371,14 @@ internal static class CommandRouter
 
         await JsonOutputWriter.EmitAsync(output, options, consoleService);
     }
+
+    /// <summary>
+    /// The failures the operation recorded, or an empty list when it recorded none — a rollback
+    /// that could not restore every file names them here, so a CI consumer reading the document
+    /// alone gets the same verdict a shell script would.
+    /// </summary>
+    private static List<string> MapErrors(MigrationResult result) =>
+        result.Errors?.ToList() ?? [];
 
     /// <summary>
     /// The baseline-staleness fields a JSON summary carries, or nulls when no baseline was used —
