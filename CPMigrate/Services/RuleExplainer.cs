@@ -24,19 +24,50 @@ public static class RuleExplainer
     /// <returns>The text to print, and whether the query matched anything.</returns>
     public static (string Output, bool Found) Explain(string query)
     {
+        var (rule, allRules, suggestions) = Resolve(query);
+
+        if (allRules is not null)
+        {
+            return (DescribeAll(), true);
+        }
+
+        return rule is null ? (DescribeUnknown(query, suggestions), false) : (Describe(rule), true);
+    }
+
+    /// <summary>
+    /// Resolves a query to the rule it names, every rule for <c>all</c>, or the near-miss
+    /// suggestions for an unmatched ID — the structured form <c>--output Json</c> needs, so the
+    /// document carries the catalog rather than the rendered text.
+    /// </summary>
+    public static (AnalysisRule? Rule, IReadOnlyList<AnalysisRule>? All, IReadOnlyList<string>? Suggestions) Resolve(string query)
+    {
         if (
             string.IsNullOrWhiteSpace(query)
             || query.Equals(AllRules, StringComparison.OrdinalIgnoreCase)
         )
         {
-            return (DescribeAll(), true);
+            return (null, AnalysisRuleCatalog.All, null);
         }
 
         var rule = AnalysisRuleCatalog.All.FirstOrDefault(candidate =>
             candidate.Id.Equals(query.Trim(), StringComparison.OrdinalIgnoreCase)
         );
 
-        return rule is null ? (DescribeUnknown(query), false) : (Describe(rule), true);
+        if (rule is not null)
+        {
+            return (rule, null, null);
+        }
+
+        var suggestions = AnalysisRuleCatalog.All
+            .Where(candidate => candidate.Code != AnalysisIssueCode.Unknown)
+            .Select(candidate => candidate.Id)
+            .Where(id => Similarity(query.Trim(), id) <= MaxSuggestionDistance(query.Trim()))
+            .OrderBy(id => Similarity(query.Trim(), id))
+            .ThenBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToList();
+
+        return (null, null, suggestions);
     }
 
     private static string Describe(AnalysisRule rule)
@@ -140,24 +171,15 @@ public static class RuleExplainer
     /// Reports an unrecognised ID, suggesting close matches. A bare "unknown rule" leaves someone who
     /// mistyped a capital letter with nothing to go on.
     /// </summary>
-    private static string DescribeUnknown(string query)
+    private static string DescribeUnknown(string query, IReadOnlyList<string>? suggestions)
     {
         var text = new StringBuilder();
         text.AppendLine($"Unknown rule: {query}");
 
-        // Substring matching alone misses the case this exists for: an ordinary typo, where one
-        // letter is wrong and neither string contains the other. Edit distance catches those.
-        var suggestions = AnalysisRuleCatalog
-            .All.Where(rule => rule.Code != AnalysisIssueCode.Unknown)
-            .Select(rule => (rule.Id, Distance: Similarity(query.Trim(), rule.Id)))
-            .Where(candidate => candidate.Distance <= MaxSuggestionDistance(query.Trim()))
-            .OrderBy(candidate => candidate.Distance)
-            .ThenBy(candidate => candidate.Id, StringComparer.OrdinalIgnoreCase)
-            .Select(candidate => candidate.Id)
-            .Take(3)
-            .ToList();
-
-        if (suggestions.Count > 0)
+        // Resolve already computed the near-misses — substring matching alone misses the case this
+        // exists for: an ordinary typo, where one letter is wrong and neither string contains the
+        // other. Edit distance catches those.
+        if (suggestions is { Count: > 0 })
         {
             text.AppendLine();
             text.AppendLine($"Did you mean: {string.Join(", ", suggestions)}");
