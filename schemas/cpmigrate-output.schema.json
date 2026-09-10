@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Eight payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, and the --list-backups history report. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Nine payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, the --list-backups history report, and the --prune-backups outcome report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -27,6 +27,9 @@
     },
     {
       "$ref": "#/definitions/listBackupsReport"
+    },
+    {
+      "$ref": "#/definitions/pruneBackupsReport"
     }
   ],
   "definitions": {
@@ -61,6 +64,7 @@
             "interactive",
             "list-backups",
             "prune-backups",
+            "prune-all-backups",
             "why",
             "why-many",
             "batch-analyze",
@@ -1376,6 +1380,60 @@
         "sets": { "type": "integer", "description": "Backup sets found" },
         "files": { "type": "integer", "description": "Files across every set" },
         "sizeBytes": { "type": "integer", "description": "Bytes across every set" }
+      },
+      "additionalProperties": false
+    },
+    "pruneBackupsReport": {
+      "type": "object",
+      "description": "The document `--prune-backups --output Json` and `--prune-all-backups --output Json` print instead of the console banner: the outcome as a single status token, the totals the console prints below it, and every deletion error.",
+      "required": [
+        "outputSchemaVersion",
+        "version",
+        "operation",
+        "exitCode",
+        "backupDir",
+        "status",
+        "summary",
+        "errors"
+      ],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["prune-backups", "prune-all-backups"],
+          "description": "Which prune command produced the document"
+        },
+        "exitCode": {
+          "type": "integer",
+          "description": "Process exit code, mirrored from the run"
+        },
+        "backupDir": {
+          "type": "string",
+          "description": "The directory the history was read from, as resolved"
+        },
+        "status": {
+          "enum": ["pruned", "noBackups", "nothingToPrune", "failed"],
+          "description": "The outcome as a single token: pruned (sets removed), noBackups (nothing to delete), nothingToPrune (every set inside the retention window), or failed (errors during deletion). A machine-readable run without --force is rejected before the handler runs, so 'refused' is not a status this document can carry."
+        },
+        "summary": { "$ref": "#/definitions/pruneBackupsSummary" },
+        "errors": {
+          "type": "array",
+          "description": "Every deletion error the prune recorded — empty when none",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "pruneBackupsSummary": {
+      "type": "object",
+      "description": "The totals the console prints below the banner.",
+      "required": ["found", "removed", "kept", "filesRemoved", "bytesFreed"],
+      "properties": {
+        "found": { "type": "integer", "description": "Backup sets present before the prune" },
+        "removed": { "type": "integer", "description": "Backup sets deleted" },
+        "kept": { "type": "integer", "description": "Backup sets left in place" },
+        "filesRemoved": { "type": "integer", "description": "Files deleted across the removed sets" },
+        "bytesFreed": { "type": "integer", "description": "Bytes the removed sets held" }
       },
       "additionalProperties": false
     }

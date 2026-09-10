@@ -640,6 +640,12 @@ internal static class CommandRouter
         if (!Directory.Exists(backupPath))
         {
             consoleService.Error($"No backup directory found at: {backupPath}");
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                options.PruneAll ? "prune-all-backups" : "prune-backups",
+                ExitCodes.FileOperationError,
+                $"No backup directory found at: {backupPath}"
+            );
             return ExitCodes.FileOperationError;
         }
 
@@ -682,7 +688,7 @@ internal static class CommandRouter
     /// <summary>
     /// Prunes all backups from the backup directory.
     /// </summary>
-    private static Task<int> PruneAllBackupsAsync(
+    private static async Task<int> PruneAllBackupsAsync(
         Options options,
         IConsoleService consoleService,
         IBackupManager backupManager,
@@ -699,7 +705,16 @@ internal static class CommandRouter
         if (history.Count == 0)
         {
             consoleService.Info("No backups found to delete.");
-            return Task.FromResult(ExitCodes.Success);
+            if (options.Output == OutputFormat.Json)
+            {
+                await JsonOutputWriter.EmitAsync(
+                    PruneBackupsJsonWriter.Serialize("prune-all-backups", backupPath, "noBackups", 0, null, 0, ExitCodes.Success),
+                    options,
+                    consoleService
+                );
+            }
+
+            return ExitCodes.Success;
         }
 
         consoleService.Warning($"This will delete ALL {history.Count} backup set(s).");
@@ -714,11 +729,13 @@ internal static class CommandRouter
         {
             if (options.Output.IsMachineReadable())
             {
-                return Task.FromResult(ExitCodes.ValidationError);
+                // Validation already rejected a machine-readable run without --force, so this is
+                // unreachable under Json — the refusal is the validation error, not a status.
+                return ExitCodes.ValidationError;
             }
 
             consoleService.Info("Prune cancelled.");
-            return Task.FromResult(ExitCodes.Success);
+            return ExitCodes.Success;
         }
 
         var result = backupManager.PruneAllBackups(backupPath);
@@ -734,13 +751,23 @@ internal static class CommandRouter
             }
         }
 
-        return Task.FromResult(result.Success ? ExitCodes.Success : ExitCodes.FileOperationError);
+        var exitCode = result.Success ? ExitCodes.Success : ExitCodes.FileOperationError;
+        if (options.Output == OutputFormat.Json)
+        {
+            await JsonOutputWriter.EmitAsync(
+                PruneBackupsJsonWriter.Serialize("prune-all-backups", backupPath, result.Success ? "pruned" : "failed", history.Count, result, 0, exitCode),
+                options,
+                consoleService
+            );
+        }
+
+        return exitCode;
     }
 
     /// <summary>
     /// Prunes old backups keeping the specified retention count.
     /// </summary>
-    private static Task<int> PruneOldBackupsAsync(
+    private static async Task<int> PruneOldBackupsAsync(
         Options options,
         IConsoleService consoleService,
         IBackupManager backupManager,
@@ -757,7 +784,16 @@ internal static class CommandRouter
         if (history.Count == 0)
         {
             consoleService.Info("No backups found to prune.");
-            return Task.FromResult(ExitCodes.Success);
+            if (options.Output == OutputFormat.Json)
+            {
+                await JsonOutputWriter.EmitAsync(
+                    PruneBackupsJsonWriter.Serialize("prune-backups", backupPath, "noBackups", 0, null, 0, ExitCodes.Success),
+                    options,
+                    consoleService
+                );
+            }
+
+            return ExitCodes.Success;
         }
 
         consoleService.Info($"Found {history.Count} backup set(s).");
@@ -767,7 +803,16 @@ internal static class CommandRouter
             consoleService.Info(
                 $"All backups are within retention period (keeping {options.Retention}). Nothing to prune."
             );
-            return Task.FromResult(ExitCodes.Success);
+            if (options.Output == OutputFormat.Json)
+            {
+                await JsonOutputWriter.EmitAsync(
+                    PruneBackupsJsonWriter.Serialize("prune-backups", backupPath, "nothingToPrune", history.Count, null, history.Count, ExitCodes.Success),
+                    options,
+                    consoleService
+                );
+            }
+
+            return ExitCodes.Success;
         }
 
         var toRemove = history.Count - options.Retention;
@@ -777,11 +822,13 @@ internal static class CommandRouter
         {
             if (options.Output.IsMachineReadable())
             {
-                return Task.FromResult(ExitCodes.ValidationError);
+                // Validation already rejected a machine-readable run without --force, so this is
+                // unreachable under Json — the refusal is the validation error, not a status.
+                return ExitCodes.ValidationError;
             }
 
             consoleService.Info("Prune cancelled.");
-            return Task.FromResult(ExitCodes.Success);
+            return ExitCodes.Success;
         }
 
         var result = backupManager.PruneBackups(backupPath, options.Retention);
@@ -797,7 +844,17 @@ internal static class CommandRouter
             }
         }
 
-        return Task.FromResult(result.Success ? ExitCodes.Success : ExitCodes.FileOperationError);
+        var exitCode = result.Success ? ExitCodes.Success : ExitCodes.FileOperationError;
+        if (options.Output == OutputFormat.Json)
+        {
+            await JsonOutputWriter.EmitAsync(
+                PruneBackupsJsonWriter.Serialize("prune-backups", backupPath, result.Success ? "pruned" : "failed", history.Count, result, result.KeptCount, exitCode),
+                options,
+                consoleService
+            );
+        }
+
+        return exitCode;
     }
 
     /// <summary>

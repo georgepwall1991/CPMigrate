@@ -106,8 +106,16 @@ public static class OutputMetadata
     /// files, sizes — plus <c>directoryExists</c>, carrying the console path's missing-directory
     /// warning as data.
     /// </para>
+    /// <para>
+    /// 1.15.0 additively introduced the ninth top-level shape: the document
+    /// <c>--prune-backups --output Json</c> and <c>--prune-all-backups --output Json</c> print,
+    /// distinguished by <c>operation: "prune-backups"</c> or <c>"prune-all-backups"</c>. The
+    /// outcome as a single <c>status</c> token — <c>pruned</c>, <c>noBackups</c>,
+    /// <c>nothingToPrune</c>, <c>refused</c> (a machine-readable run without <c>--force</c>),
+    /// or <c>failed</c> — plus the totals the console prints and every deletion error.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.14.0";
+    public const string SchemaVersion = "1.15.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.
