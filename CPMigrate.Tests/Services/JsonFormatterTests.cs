@@ -287,4 +287,35 @@ public class JsonFormatterTests
         json.Should().Contain("\"package\": \"Unused.Package\"");
     }
 
+    [Fact]
+    public void Format_FixInfo_AppliedIsFalseUnderDryRun()
+    {
+        // applied means "the change was written", not "the fixer would have succeeded" — under
+        // --fix-dry-run every result reports Success but nothing touched disk, so the flag has to
+        // come from the run mode, not the result.
+        var formatter = new JsonFormatter();
+        var result = new OperationResult
+        {
+            DryRun = true,
+            Fixes = new List<FixInfo>
+            {
+                new()
+                {
+                    Type = "Removed orphaned PackageVersion",
+                    IssueCode = "OrphanedPackageVersion",
+                    Package = "Unused.Package",
+                    File = "Directory.Packages.props",
+                    From = "1 PackageVersion entry",
+                    To = "removed",
+                    Applied = false,
+                }
+            }
+        };
+
+        var json = formatter.Format(result);
+
+        json.Should().Contain("\"applied\": false");
+    }
+
+
 }

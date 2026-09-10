@@ -144,6 +144,37 @@ public class JsonContractTests : IDisposable
             .BeFalse("the single-package document must not grow a results array");
     }
 
+    [Fact]
+    public async Task AnalyzeFixDryRun_JsonQuiet_AppliedIsFalse()
+    {
+        // applied means "the change was written", not "the fixer would have succeeded" — under
+        // --fix-dry-run every result reports Success but nothing touched disk, so the flag has to
+        // come from the run mode, not the result.
+        CreateFixture();
+        var stdout = await CaptureStdoutAsync(() =>
+            CommandRouter.RouteCommand(
+                new Options
+                {
+                    Analyze = true,
+                    FixDryRun = true,
+                    Output = OutputFormat.Json,
+                    Quiet = true,
+                    SolutionFileDir = _testDirectory,
+                },
+                new SpectreConsoleService(_versionResolver),
+                new InteractiveService(SilentConsoleService.Instance),
+                _versionResolver,
+                new ConfigService(SilentConsoleService.Instance),
+                new BackupManager()));
+
+        var doc = JsonDocument.Parse(stdout);
+        doc.RootElement.GetProperty("dryRun").GetBoolean().Should().BeTrue();
+        foreach (var fix in doc.RootElement.GetProperty("fixes").EnumerateArray())
+        {
+            fix.GetProperty("applied").GetBoolean().Should().BeFalse();
+        }
+    }
+
     private void CreateFixture()
     {
         // Two projects with the same package at different versions — produces an

@@ -706,6 +706,7 @@ internal sealed class AnalysisHandler
                     ScanFailures = postFixScanFailures,
                     DeepScanFailures = postFixDeepScanFailures,
                     ProjectsDiscovered = projectsDiscovered,
+                    WasDryRun = options.FixDryRun,
                     GatedIssueCount = CountGatedIssues(postFixReport, options.FailOn),
                     ExitCode = ResolveExitCodeAfterFixes(
                         postFixReport,
@@ -730,8 +731,9 @@ internal sealed class AnalysisHandler
                 PackagesCentralized = packageInfo.TotalReferences,
                 AnalysisReport = report,
                 PackageInfo = packageInfo,
-                BasePath = basePath,
                 FixReport = fixReport,
+                BasePath = basePath,
+                WasDryRun = options.FixDryRun,
                 GatedIssueCount = CountGatedIssues(report, options.FailOn),
                 BaselineStaleEntries = nonFixVerdict.StaleEntries,
                 BaselineUnknownRuleCodes = nonFixVerdict.UnknownRuleCodes,

@@ -1417,6 +1417,11 @@ internal static class CommandRouter
             return [];
         }
 
+        // applied means "the change was written", not "the fixer would have succeeded" — under
+        // --fix-dry-run every result reports Success but nothing touched disk, so the flag has to
+        // come from the run mode, not the result.
+        var applied = !result.WasDryRun;
+
         return result
             .FixReport.Results.SelectMany(fixResult =>
                 fixResult.Changes.Select(change => new FixInfo
@@ -1427,7 +1432,7 @@ internal static class CommandRouter
                     File = change.FilePath,
                     From = change.Before,
                     To = change.After,
-                    Applied = fixResult.Success,
+                    Applied = applied && fixResult.Success,
                 })
             )
             .ToList();
