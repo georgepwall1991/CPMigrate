@@ -643,6 +643,11 @@ public class Options
     /// Splits <see cref="Exclude"/> into directory names, or returns null when batch discovery
     /// should use only the built-in exclusion set.
     /// </summary>
+    /// <remarks>
+    /// Discovery matches on the directory's own name, so a trailing separator — natural to
+    /// write in a JSON list — would never match. It is trimmed here rather than documented as
+    /// unsupported, since the only honest reading of <c>tools/</c> is <c>tools</c>.
+    /// </remarks>
     public IReadOnlyList<string>? ParseExcludedDirectories()
     {
         if (string.IsNullOrWhiteSpace(Exclude))
@@ -654,6 +659,8 @@ public class Options
                 ',',
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
             )
+            .Select(name => name.TrimEnd('/', '\\'))
+            .Where(name => name.Length > 0)
             .ToList();
 
         return names.Count > 0 ? names : null;

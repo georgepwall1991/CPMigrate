@@ -286,6 +286,7 @@ public class OptionsValidationTests
     [InlineData("tools,scratch", new[] { "tools", "scratch" })]
     [InlineData(" tools , scratch ", new[] { "tools", "scratch" })]
     [InlineData("tools,,scratch", new[] { "tools", "scratch" })]
+    [InlineData("tools/,scratch\\", new[] { "tools", "scratch" })]
     public void ParseExcludedDirectories_SplitsAndTrims(string input, string[] expected)
     {
         new CPMigrate.Options { Exclude = input }
