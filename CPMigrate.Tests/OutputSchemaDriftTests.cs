@@ -95,6 +95,9 @@ public class OutputSchemaDriftTests
         (typeof(UnifyPropsPropertyPayload), "unifyPropsProperty"),
         (typeof(UnifyPropsItemPayload), "unifyPropsItem"),
         (typeof(UnifyPropsSummaryPayload), "unifyPropsSummary"),
+        // --update serializes its own document too — the versions involved and the outcome as a
+        // status token, so a pipeline step can self-update the tool and gate on the result.
+        (typeof(UpdateReportPayload), "updateReport"),
     ];
 
     public static TheoryData<string, string> DocumentedTypes()
@@ -152,7 +155,8 @@ public class OutputSchemaDriftTests
             typeof(PruneBackupsReportPayload),
             typeof(InitReportPayload),
             typeof(ExplainReportPayload),
-            typeof(UnifyPropsReportPayload)
+            typeof(UnifyPropsReportPayload),
+            typeof(UpdateReportPayload)
         );
 
         ModelDefinitions
@@ -332,7 +336,8 @@ public class OutputSchemaDriftTests
             .And.Contain("#/definitions/pruneBackupsReport")
             .And.Contain("#/definitions/initReport")
             .And.Contain("#/definitions/explainReport")
-            .And.Contain("#/definitions/unifyPropsReport");
+            .And.Contain("#/definitions/unifyPropsReport")
+            .And.Contain("#/definitions/updateReport");
     }
 
     [Fact]
@@ -411,6 +416,32 @@ public class OutputSchemaDriftTests
                     "suggestions",
                 },
                 "these are set on every why document, found or not"
+            );
+    }
+
+    [Fact]
+    public void Schema_RequiresTheFieldsEveryUpdateDocumentCarries()
+    {
+        var required = Definition("updateReport")
+            .GetProperty("required")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToList();
+
+        required
+            .Should()
+            .Contain(
+                new[]
+                {
+                    "outputSchemaVersion",
+                    "version",
+                    "operation",
+                    "exitCode",
+                    "status",
+                    "currentVersion",
+                    "forced",
+                },
+                "these are set on every update document"
             );
     }
 

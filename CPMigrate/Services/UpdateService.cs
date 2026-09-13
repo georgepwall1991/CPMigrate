@@ -65,7 +65,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
         return null;
     }
 
-    public async Task<bool> PerformUpdateAsync()
+    public async Task<SelfUpdateResult> PerformUpdateAsync(bool force = false, bool dryRun = false)
     {
         var currentVersion = GetCurrentVersion();
 
@@ -76,32 +76,47 @@ public sealed class UpdateService : IUpdateService, IDisposable
         if (latestVersion == null)
         {
             _consoleService.Warning("Could not fetch latest version info.");
-            return false;
+            return new SelfUpdateResult("checkFailed", currentVersion.ToString());
         }
 
         if (latestVersion <= currentVersion)
         {
             _consoleService.Success($"You are already on the latest version (v{currentVersion}).");
-            return true;
+            return new SelfUpdateResult("alreadyLatest", currentVersion.ToString(), latestVersion.ToString());
+        }
+
+        // --dry-run means what it means everywhere else: report, change nothing. Before it was
+        // honoured here the flag was parsed and ignored — a real update ran under a flag whose
+        // entire contract is that nothing changes.
+        if (dryRun)
+        {
+            _consoleService.Info($"Dry run — v{latestVersion} is available; no changes made.");
+            return new SelfUpdateResult("dryRun", currentVersion.ToString(), latestVersion.ToString());
         }
 
         _consoleService.Info($"Found new version: v{latestVersion}");
 
-        // Replacing the running tool without consent is not something to infer from a redirected
-        // stream; point at the unattended command instead.
-        if (!_consoleService.IsInteractive)
+        // --force is the consent the prompt would otherwise collect — the same contract --prune
+        // and --init already keep, and the only way this command runs unattended at all.
+        if (!force)
         {
-            _consoleService.Info("Cannot prompt on a non-interactive terminal. To update unattended, run:");
-            _consoleService.Dim("  dotnet tool update --global CPMigrate");
-            return false;
+            // Replacing the running tool without consent is not something to infer from a
+            // redirected stream; point at the unattended command instead.
+            if (!_consoleService.IsInteractive)
+            {
+                _consoleService.Info("Cannot prompt on a non-interactive terminal. To update unattended, run:");
+                _consoleService.Dim("  cpmigrate --update --force");
+                _consoleService.Dim("  dotnet tool update --global CPMigrate");
+                return new SelfUpdateResult("nonInteractive", currentVersion.ToString(), latestVersion.ToString());
+            }
+
+            if (!_consoleService.AskConfirmation("Do you want to update now?"))
+            {
+                return new SelfUpdateResult("declined", currentVersion.ToString(), latestVersion.ToString());
+            }
         }
 
-        if (!_consoleService.AskConfirmation("Do you want to update now?"))
-        {
-            return false;
-        }
-
-        return RunDotnetToolUpdate();
+        return RunDotnetToolUpdate(currentVersion, latestVersion);
     }
 
     private static NuGetVersion GetCurrentVersion()
@@ -152,47 +167,64 @@ public sealed class UpdateService : IUpdateService, IDisposable
         return null;
     }
 
-    private bool RunDotnetToolUpdate()
+    private SelfUpdateResult RunDotnetToolUpdate(NuGetVersion currentVersion, NuGetVersion latestVersion)
     {
-        // Try global update first
+        // The spinner renders through AnsiConsole itself, not the injected console — under a
+        // machine-readable format (or any non-interactive run) it would write frames onto stdout
+        // and break the document contract. Run the update plainly instead.
+        if (!_consoleService.IsInteractive)
+        {
+            return ExecuteDotnetToolUpdate(currentVersion, latestVersion);
+        }
+
         return AnsiConsole.Status()
-            .Start("Updating CPMigrate...", ctx =>
+            .Start("Updating CPMigrate...", _ => ExecuteDotnetToolUpdate(currentVersion, latestVersion));
+    }
+
+    private SelfUpdateResult ExecuteDotnetToolUpdate(NuGetVersion currentVersion, NuGetVersion latestVersion)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
             {
-                try
-                {
-                    var startInfo = new ProcessStartInfo
-                    {
 #pragma warning disable S4036 // Suppress PATH warning: CLI tool intentionally uses dotnet from PATH
-                        FileName = "dotnet",
+                FileName = "dotnet",
 #pragma warning restore S4036
-                        Arguments = $"tool update -g {PackageId}",
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
+                Arguments = $"tool update -g {PackageId}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
 
-                    var (exitCode, output, error) = _processRunner.Run(startInfo);
+            var (exitCode, output, error) = _processRunner.Run(startInfo);
 
-                    if (exitCode == 0)
-                    {
-                        _consoleService.Success("Successfully updated CPMigrate! Please restart the tool.");
-                        return true;
-                    }
-                    else
-                    {
-                        _consoleService.Error("Update failed:");
-                        _consoleService.Dim(error);
-                        _consoleService.Dim(output);
-                        return false;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _consoleService.Error($"Update failed: {ex.Message}");
-                    return false;
-                }
-            });
+            if (exitCode == 0)
+            {
+                _consoleService.Success("Successfully updated CPMigrate! Please restart the tool.");
+                return new SelfUpdateResult("updated", currentVersion.ToString(), latestVersion.ToString());
+            }
+
+            _consoleService.Error("Update failed:");
+            _consoleService.Dim(error);
+            _consoleService.Dim(output);
+            return new SelfUpdateResult("failed", currentVersion.ToString(), latestVersion.ToString(), FirstNonEmpty(error, output));
+        }
+        catch (Exception ex)
+        {
+            _consoleService.Error($"Update failed: {ex.Message}");
+            return new SelfUpdateResult("failed", currentVersion.ToString(), latestVersion.ToString(), ex.Message);
+        }
+    }
+
+    private static string? FirstNonEmpty(string? first, string? second)
+    {
+        if (!string.IsNullOrWhiteSpace(first))
+        {
+            return first.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(second) ? null : second.Trim();
     }
 
     public void Dispose()

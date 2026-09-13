@@ -421,7 +421,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 |--------|-------------|
 | `--explain <RuleId>` | What a rule means, why it matters, how to fix it (`--explain all` lists every rule) — `--output Json` prints the rule as one JSON document |
 | `--completions <Shell>` | Emit a completion script and exit: `Bash` · `Zsh` · `Fish` · `PowerShell` |
-| `--update` | Check for and install the latest CPMigrate |
+| `--update` | Check for and install the latest CPMigrate — `--dry-run` reports without installing, `--force` runs unattended; `--output Json` emits the outcome as a document (`updated` · `alreadyLatest` · `checkFailed` · `dryRun` · `nonInteractive` · `declined` · `failed`) |
 
 Completions are generated from the live option list — enums and paths complete too, so they can't drift. `--explain` IDs paste straight from build logs and SARIF (`issueCode` / `ruleId`); a near-miss suggests the real rule, an unknown ID exits non-zero so a CI typo is visible.
 

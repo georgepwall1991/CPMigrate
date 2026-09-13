@@ -139,8 +139,17 @@ public static class OutputMetadata
     /// was done about them — <c>unified</c>, <c>dryRun</c>, <c>noCandidates</c>, <c>refused</c>,
     /// or <c>failed</c> — so a CI script can gate on the outcome without parsing prose.
     /// </para>
+    /// <para>
+    /// 1.20.0 additively introduced the thirteenth top-level shape: the document
+    /// <c>--update --output Json</c> prints, distinguished by <c>operation: "update"</c>. The
+    /// versions involved and the outcome as a status token — <c>updated</c>,
+    /// <c>alreadyLatest</c>, <c>checkFailed</c>, <c>dryRun</c>, <c>nonInteractive</c>,
+    /// <c>declined</c>, or <c>failed</c> — so a pipeline step can self-update the tool and gate
+    /// on the result. <c>latestVersion</c> is absent when the check itself failed, and
+    /// <c>error</c> is present only on <c>failed</c>.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.19.0";
+    public const string SchemaVersion = "1.20.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.
