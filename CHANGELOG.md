@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.68.0] - 2026-09-13
+
 ### Fixed
 - **Live widgets no longer draw on the process-wide console.** Status spinners and progress bars
   in migration, analysis, rollback, self-update, and restore flows rendered through the static
