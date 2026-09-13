@@ -390,6 +390,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 | `--batch-parallel` | `false` | Process solutions in parallel |
 | `--batch-continue` | `false` | Continue past a failing solution |
 | `--report <PATH>` | | Write a Markdown rollup of the batch run to a file |
+| `--exclude` | | Comma-separated directory names to skip during batch discovery, in addition to the built-in set |
 
 **Backup & rollback**
 
@@ -611,6 +612,7 @@ The tool targets .NET 10 with `LatestMajor` roll-forward and runs on any machine
   "failOn": "High",
   "baseline": ".cpmigrate-baseline.json",
   "retention": { "enabled": true, "maxBackups": 5 },
+  "excludeDirectories": ["node_modules", "bin", "obj", ".git", "packages"],
   "analyze": true,
   "audit": true,
   "outdated": true,
@@ -620,7 +622,7 @@ The tool targets .NET 10 with `LatestMajor` roll-forward and runs on any machine
   "maxParallelism": 4
 }
 ```
-Discovered by walking up from the solution/project path (or cwd). Contradictory settings warn; malformed JSON reports the exact line and column. Unknown keys are **named, not ignored** — a typo like `fialOn` warns `did you mean 'failOn'?` instead of silently leaving the setting unset (nested keys too, e.g. inside `retention`). Keys that differ only in case still deserialize normally and are not flagged. The run itself never fails on an unknown key. The analysis toggles — `analyze`, `transitive`, `audit`, `outdated`, `deprecated`, `licenses`, `maxParallelism` — are team policy the same way `failOn` and `rules` are: which checks the default scan runs is a decision about the codebase, not about the invocation.
+Discovered by walking up from the solution/project path (or cwd). `excludeDirectories` adds directory names to the built-in batch-scan exclusions rather than replacing them (`--exclude` overrides it for one run). Contradictory settings warn; malformed JSON reports the exact line and column. Unknown keys are **named, not ignored** — a typo like `fialOn` warns `did you mean 'failOn'?` instead of silently leaving the setting unset (nested keys too, e.g. inside `retention`). Keys that differ only in case still deserialize normally and are not flagged. The run itself never fails on an unknown key. The analysis toggles — `analyze`, `transitive`, `audit`, `outdated`, `deprecated`, `licenses`, `maxParallelism` — are team policy the same way `failOn` and `rules` are: which checks the default scan runs is a decision about the codebase, not about the invocation.
 
 ---
 

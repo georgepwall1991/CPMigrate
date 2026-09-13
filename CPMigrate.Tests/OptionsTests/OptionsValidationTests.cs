@@ -280,4 +280,27 @@ public class OptionsValidationTests
         var action = () => options.Validate();
         action.Should().NotThrow();
     }
+
+    [Theory]
+    [InlineData("tools", new[] { "tools" })]
+    [InlineData("tools,scratch", new[] { "tools", "scratch" })]
+    [InlineData(" tools , scratch ", new[] { "tools", "scratch" })]
+    [InlineData("tools,,scratch", new[] { "tools", "scratch" })]
+    public void ParseExcludedDirectories_SplitsAndTrims(string input, string[] expected)
+    {
+        new CPMigrate.Options { Exclude = input }
+            .ParseExcludedDirectories()
+            .Should()
+            .BeEquivalentTo(expected);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(",")]
+    public void ParseExcludedDirectories_BlankInput_ReturnsNull(string? input)
+    {
+        new CPMigrate.Options { Exclude = input }.ParseExcludedDirectories().Should().BeNull();
+    }
 }

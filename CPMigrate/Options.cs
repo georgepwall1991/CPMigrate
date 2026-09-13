@@ -384,6 +384,13 @@ public class Options
     )]
     public string? ReportPath { get; set; }
 
+    [Option(
+        "exclude",
+        HelpText = "Comma-separated directory names to skip during --batch solution discovery, "
+            + "in addition to the built-in set (requires --batch)."
+    )]
+    public string? Exclude { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Backup Management
     // ═══════════════════════════════════════════════════════════════════════
@@ -624,6 +631,26 @@ public class Options
         }
 
         var names = Only.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            )
+            .ToList();
+
+        return names.Count > 0 ? names : null;
+    }
+
+    /// <summary>
+    /// Splits <see cref="Exclude"/> into directory names, or returns null when batch discovery
+    /// should use only the built-in exclusion set.
+    /// </summary>
+    public IReadOnlyList<string>? ParseExcludedDirectories()
+    {
+        if (string.IsNullOrWhiteSpace(Exclude))
+        {
+            return null;
+        }
+
+        var names = Exclude.Split(
                 ',',
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
             )

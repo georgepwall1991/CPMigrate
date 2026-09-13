@@ -139,6 +139,14 @@ public static class ProgramRunner
                     // rejected only in repositories that happen to have a .cpmigrate.json.
                     NormalizeValuelessRuleFlag(options, args);
 
+                    // Before the merge for the same reason: the check must read the command line,
+                    // not the merged options, or an excludeDirectories policy in .cpmigrate.json
+                    // would fail every non-batch run in the repository that configured it.
+                    if (RejectsExcludeWithoutBatch(options, args, services.ConsoleService))
+                    {
+                        return ExitCodes.ValidationError;
+                    }
+
                     // Merge config file with CLI args (CLI args take precedence)
                     MergeConfigWithCliArgs(
                         options,
@@ -988,6 +996,32 @@ public static class ProgramRunner
         }
 
         consoleService.Error("--why requires a package ID, e.g. --why Newtonsoft.Json.");
+        return true;
+    }
+
+    /// <summary>
+    /// Rejects an explicit <c>--exclude</c> when no <c>--batch</c> scan exists for it to shape.
+    /// Solution discovery only walks directories in batch mode — anywhere else the flag is a
+    /// caller mistake that would otherwise pass silently. Checked against the raw command line
+    /// rather than the merged options, because <c>excludeDirectories</c> in
+    /// <c>.cpmigrate.json</c> is a legitimate repository policy that non-batch runs must not be
+    /// punished for carrying.
+    /// </summary>
+    private static bool RejectsExcludeWithoutBatch(
+        Options options,
+        string[] args,
+        IConsoleService consoleService
+    )
+    {
+        if (
+            !CliArgumentParser.GetExplicitArguments(args).Contains("exclude")
+            || !string.IsNullOrEmpty(options.BatchDir)
+        )
+        {
+            return false;
+        }
+
+        consoleService.Error("--exclude only applies to --batch solution discovery.");
         return true;
     }
 

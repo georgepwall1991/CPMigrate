@@ -463,6 +463,37 @@ public class BatchServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunBatchAsync_Exclude_SkipsConfiguredDirectoriesAndKeepsDefaults()
+    {
+        // --exclude adds to the built-in set rather than replacing it: node_modules stays
+        // skipped however the caller configures the run.
+        CreateSolutionFile("Included/One.sln");
+        CreateSolutionFile("tools/Two.sln");
+        CreateSolutionFile("node_modules/Three.sln");
+
+        var processed = new List<string>();
+        var batchService = CreateBatchService(options =>
+        {
+            processed.Add(options.SolutionFileDir);
+            return Task.FromResult(
+                new MigrationResult
+                {
+                    ExitCode = ExitCodes.Success,
+                    ProjectsProcessed = 1,
+                    PackagesCentralized = 1
+                }
+            );
+        });
+
+        var options = new Options { BatchDir = _testDirectory, Exclude = "tools" };
+
+        var result = await batchService.RunBatchAsync(options);
+
+        result.Solutions.Should().ContainSingle(s => s.Path.Contains("One.sln"));
+        processed.Should().ContainSingle(s => s.Contains("Included"));
+    }
+
+    [Fact]
     public void DefaultExcludedDirectories_ContainsCommonDirectories()
     {
         // Assert
