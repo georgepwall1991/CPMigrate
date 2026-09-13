@@ -76,7 +76,8 @@ public class UpdateServiceTests
         var result = await _updateService.PerformUpdateAsync();
 
         // Assert
-        Assert.True(result);
+        result.Success.Should().BeTrue();
+        result.Status.Should().Be("updated");
         _processRunnerMock.Verify(p => p.Run(It.Is<ProcessStartInfo>(i => i.FileName == "dotnet" && i.Arguments.Contains("tool update"))), Times.Once);
         _consoleMock.Verify(c => c.Success(It.IsAny<string>()), Times.AtLeastOnce);
     }
@@ -85,16 +86,105 @@ public class UpdateServiceTests
     public async Task PerformUpdateAsync_NonInteractiveTerminal_DeclinesAndSuggestsTheUnattendedCommand()
     {
         // Replacing the running tool without consent should not be inferred from a redirected
-        // stream; the caller is pointed at `dotnet tool update` instead of being prompted.
+        // stream; the caller is pointed at the unattended paths instead of being prompted.
         SetupHttpResponse(@"{ ""versions"": [ ""100.0.0"" ] }");
         _consoleMock.SetupGet(c => c.IsInteractive).Returns(false);
 
         var result = await _updateService.PerformUpdateAsync();
 
-        Assert.False(result);
+        result.Success.Should().BeFalse();
+        result.Status.Should().Be("nonInteractive");
+        result.LatestVersion.Should().Be("100.0.0");
         _consoleMock.Verify(c => c.AskConfirmation(It.IsAny<string>()), Times.Never);
         _processRunnerMock.Verify(p => p.Run(It.IsAny<ProcessStartInfo>()), Times.Never);
         _consoleMock.Verify(c => c.Dim(It.Is<string>(s => s.Contains("dotnet tool update"))), Times.Once);
+        _consoleMock.Verify(c => c.Dim(It.Is<string>(s => s.Contains("--force"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task PerformUpdateAsync_Force_UpdatesWithoutPrompting_OnAnInteractiveTerminal()
+    {
+        // --force is the consent the prompt would otherwise collect — same contract --prune and
+        // --init already keep.
+        SetupHttpResponse(@"{ ""versions"": [ ""100.0.0"" ] }");
+        _processRunnerMock.Setup(p => p.Run(It.IsAny<ProcessStartInfo>()))
+            .Returns((0, "Updated", ""));
+
+        var result = await _updateService.PerformUpdateAsync(force: true);
+
+        result.Success.Should().BeTrue();
+        result.Status.Should().Be("updated");
+        result.LatestVersion.Should().Be("100.0.0");
+        _consoleMock.Verify(c => c.AskConfirmation(It.IsAny<string>()), Times.Never);
+        _processRunnerMock.Verify(p => p.Run(It.Is<ProcessStartInfo>(i => i.FileName == "dotnet" && i.Arguments.Contains("tool update"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task PerformUpdateAsync_Force_UpdatesOnANonInteractiveTerminal()
+    {
+        // The only unattended self-update path: before --force was honoured here, a pipeline had
+        // to shell out to `dotnet tool update` itself and lose the version check.
+        SetupHttpResponse(@"{ ""versions"": [ ""100.0.0"" ] }");
+        _consoleMock.SetupGet(c => c.IsInteractive).Returns(false);
+        _processRunnerMock.Setup(p => p.Run(It.IsAny<ProcessStartInfo>()))
+            .Returns((0, "Updated", ""));
+
+        var result = await _updateService.PerformUpdateAsync(force: true);
+
+        result.Success.Should().BeTrue();
+        result.Status.Should().Be("updated");
+        _consoleMock.Verify(c => c.AskConfirmation(It.IsAny<string>()), Times.Never);
+        _processRunnerMock.Verify(p => p.Run(It.Is<ProcessStartInfo>(i => i.FileName == "dotnet" && i.Arguments.Contains("tool update"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task PerformUpdateAsync_DryRun_ReportsWithoutInstalling()
+    {
+        // --dry-run means what it means everywhere else: report, change nothing. Before it was
+        // honoured, the flag was parsed and ignored — a real update ran under it.
+        SetupHttpResponse(@"{ ""versions"": [ ""100.0.0"" ] }");
+
+        var result = await _updateService.PerformUpdateAsync(dryRun: true);
+
+        result.Success.Should().BeTrue();
+        result.Status.Should().Be("dryRun");
+        result.LatestVersion.Should().Be("100.0.0");
+        _consoleMock.Verify(c => c.AskConfirmation(It.IsAny<string>()), Times.Never);
+        _processRunnerMock.Verify(p => p.Run(It.IsAny<ProcessStartInfo>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PerformUpdateAsync_AlreadyLatest_ReportsTheFeedAnswer()
+    {
+        SetupHttpResponse(@"{ ""versions"": [ ""0.0.1"" ] }");
+
+        var result = await _updateService.PerformUpdateAsync();
+
+        result.Success.Should().BeTrue();
+        result.Status.Should().Be("alreadyLatest");
+        result.LatestVersion.Should().Be("0.0.1");
+        _processRunnerMock.Verify(p => p.Run(It.IsAny<ProcessStartInfo>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PerformUpdateAsync_CheckFailed_LeavesLatestVersionEmpty()
+    {
+        // A consumer cannot act on a version nobody saw — checkFailed carries no latestVersion.
+        _httpHandlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            )
+            .ThrowsAsync(new HttpRequestException("feed unreachable"));
+
+        var result = await _updateService.PerformUpdateAsync();
+
+        result.Success.Should().BeFalse();
+        result.Status.Should().Be("checkFailed");
+        result.LatestVersion.Should().BeNull();
+        _processRunnerMock.Verify(p => p.Run(It.IsAny<ProcessStartInfo>()), Times.Never);
     }
 
     [Fact]
@@ -111,7 +201,8 @@ public class UpdateServiceTests
         var result = await _updateService.PerformUpdateAsync();
 
         // Assert
-        Assert.False(result);
+        result.Success.Should().BeFalse();
+        result.Status.Should().Be("declined");
         _processRunnerMock.Verify(p => p.Run(It.IsAny<ProcessStartInfo>()), Times.Never);
     }
 
@@ -132,7 +223,9 @@ public class UpdateServiceTests
         var result = await _updateService.PerformUpdateAsync();
 
         // Assert
-        Assert.False(result);
+        result.Success.Should().BeFalse();
+        result.Status.Should().Be("failed");
+        result.Error.Should().Be("Error details");
         _consoleMock.Verify(c => c.Error(It.Is<string>(s => s == "Update failed:")), Times.Once);
         _consoleMock.Verify(c => c.Dim("Error details"), Times.Once);
     }

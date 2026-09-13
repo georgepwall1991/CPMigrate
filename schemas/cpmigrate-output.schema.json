@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/georgepwall1991/CPMigrate/main/schemas/cpmigrate-output.schema.json",
   "title": "CPMigrate Output",
-  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Twelve payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, the --list-backups history report, the --prune-backups outcome report, the --init scaffolding report, the --explain rule report, and the --unify-props consensus report. They are distinguished by `operation`, or by the presence of `solutions`.",
+  "description": "The payload CPMigrate writes under --output Json. Consumers should key off outputSchemaVersion rather than the tool version: field additions bump the minor, and the only field whose meaning has ever changed is documented in the CHANGELOG. Thirteen payload shapes exist: a single operation, the aggregate --batch writes, the two --why package-origin reports — one package per document, or several under operation why-many — the --tree dependency report, the --status workspace report, the --doctor environment report, the --list-backups history report, the --prune-backups outcome report, the --init scaffolding report, the --explain rule report, the --unify-props consensus report, and the --update self-update report. They are distinguished by `operation`, or by the presence of `solutions`.",
   "oneOf": [
     {
       "$ref": "#/definitions/singleOperation"
@@ -39,6 +39,9 @@
     },
     {
       "$ref": "#/definitions/unifyPropsReport"
+    },
+    {
+      "$ref": "#/definitions/updateReport"
     }
   ],
   "definitions": {
@@ -1664,6 +1667,30 @@
         "propertiesUnified": { "type": "integer", "description": "Properties that met the threshold" },
         "itemsUnified": { "type": "integer", "description": "Items that met the threshold" },
         "filesModified": { "type": "integer", "description": "Files the run wrote — the props file plus every stripped project" }
+      },
+      "additionalProperties": false
+    },
+    "updateReport": {
+      "type": "object",
+      "description": "The document `--update --output Json` prints instead of the console narration: the versions involved and the outcome as a status token a pipeline can gate on.",
+      "required": ["outputSchemaVersion", "version", "operation", "exitCode", "status", "currentVersion", "forced", "dryRun"],
+      "properties": {
+        "outputSchemaVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "operation": {
+          "enum": ["update"],
+          "description": "Always 'update'; distinguishes this shape from the other documents"
+        },
+        "exitCode": { "type": "integer", "description": "Process exit code, mirrored from the run" },
+        "status": {
+          "enum": ["updated", "alreadyLatest", "checkFailed", "dryRun", "nonInteractive", "declined", "failed"],
+          "description": "The outcome as a single token: updated (a newer version installed), alreadyLatest (the feed answered and nothing newer exists), checkFailed (the version list could not be fetched — re-run later), dryRun (a newer version exists and --dry-run was passed — reported, not installed), nonInteractive (a newer version exists but no TTY and no --force — re-run with --force to apply it), declined (the prompt ran and the user said no), or failed (dotnet tool update ran and lost — error carries what it said)"
+        },
+        "currentVersion": { "type": "string", "description": "The version of the running binary" },
+        "latestVersion": { "type": "string", "description": "The newest stable version the feed reported. Absent when the check itself failed — a consumer cannot act on a version nobody saw" },
+        "forced": { "type": "boolean", "description": "Whether --force was passed — what distinguishes an unattended update from a run that could only report nonInteractive" },
+        "dryRun": { "type": "boolean", "description": "Whether --dry-run was passed — the check ran, nothing was installed" },
+        "error": { "type": "string", "description": "What a failed update attempt reported — dotnet tool update's stderr, or the exception message when it could not be started. Absent on every other status" }
       },
       "additionalProperties": false
     }

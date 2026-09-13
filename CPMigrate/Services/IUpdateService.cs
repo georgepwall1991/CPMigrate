@@ -1,3 +1,4 @@
+using CPMigrate.Models;
 using NuGet.Versioning;
 
 namespace CPMigrate.Services;
@@ -5,5 +6,5 @@ namespace CPMigrate.Services;
 public interface IUpdateService
 {
     Task<NuGetVersion?> CheckForUpdatesAsync();
-    Task<bool> PerformUpdateAsync();
+    Task<SelfUpdateResult> PerformUpdateAsync(bool force = false, bool dryRun = false);
 }

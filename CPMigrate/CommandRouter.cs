@@ -233,7 +233,11 @@ internal static class CommandRouter
     /// </summary>
     private static readonly IReadOnlyList<CommandMode> AlternateModes =
     [
-        new(o => o.Update, "update", c => RunUpdateModeAsync(c.ExecutionConsole, c.Services)),
+        new(
+            o => o.Update,
+            "update",
+            c => RunUpdateModeAsync(c.Options, c.ExecutionConsole, c.Services)
+        ),
         new(
             o => o.UpdatePackages,
             "update-packages",
@@ -319,9 +323,13 @@ internal static class CommandRouter
     }
 
     /// <summary>
-    /// Executes the self-update mode.
+    /// Executes the self-update mode. Under <c>--output Json</c> the outcome is emitted as the
+    /// <c>update</c> document — one parseable payload on stdout carrying the status token, both
+    /// versions, and what a failed attempt said, so a pipeline step can self-update the tool and
+    /// gate on the result without parsing prose.
     /// </summary>
     private static async Task<int> RunUpdateModeAsync(
+        Options options,
         IConsoleService consoleService,
         ApplicationServices services
     )
@@ -329,12 +337,28 @@ internal static class CommandRouter
         try
         {
             using var updateService = services.CreateUpdateService();
-            var success = await updateService.PerformUpdateAsync();
-            return success ? ExitCodes.Success : ExitCodes.UnexpectedError;
+            var result = await updateService.PerformUpdateAsync(options.Force, options.DryRun);
+            var exitCode = result.Success ? ExitCodes.Success : ExitCodes.UnexpectedError;
+            if (options.Output == OutputFormat.Json)
+            {
+                await JsonOutputWriter.EmitAsync(
+                    UpdateJsonWriter.Serialize(result, options.Force, options.DryRun, exitCode),
+                    options,
+                    consoleService
+                );
+            }
+
+            return exitCode;
         }
         catch (Exception ex)
         {
             consoleService.Error($"Update failed: {ex.Message}");
+            await WriteErrorJsonOutputIfRequested(
+                options,
+                "update",
+                ExitCodes.UnexpectedError,
+                ex.Message
+            );
             return ExitCodes.UnexpectedError;
         }
     }
