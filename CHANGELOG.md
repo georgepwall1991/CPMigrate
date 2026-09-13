@@ -6,6 +6,18 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Fixed
+- **Live widgets no longer draw on the process-wide console.** Status spinners and progress bars
+  in migration, analysis, rollback, self-update, and restore flows rendered through the static
+  `AnsiConsole` rather than the injected console service. On a redirected stream that meant
+  progress frames written into captured output; under a test host it meant a background refresh
+  thread still writing after the capture writer was disposed — `ObjectDisposedException` inside
+  `ProgressRefreshThread`, crashing the test process. `IConsoleService` now exposes `Live`, the
+  console a widget may draw on: `SpectreConsoleService` returns its console only when the profile
+  reports an interactive surface, and silent, buffered, and test consoles return none. Every
+  widget site now runs plainly when there is no live surface, so `--output Json` streams stay
+  document-only and tests stop racing a disposed writer.
+
 ## [3.67.0] - 2026-09-13
 
 ### Added

@@ -16,6 +16,9 @@ public sealed class SilentConsoleService : IConsoleService
     /// <summary>Never interactive — this implementation exists to keep the stream machine-readable.</summary>
     public bool IsInteractive => false;
 
+    /// <summary>No live surface: widget frames are exactly the output this class suppresses.</summary>
+    public Spectre.Console.IAnsiConsole? Live => null;
+
     public void Info(string message)
     {
     }

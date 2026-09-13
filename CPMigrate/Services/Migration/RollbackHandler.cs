@@ -153,7 +153,11 @@ internal sealed class RollbackHandler
             );
         }
 
-        if (_quietMode)
+        // The widget draws on the console's live surface, never the static AnsiConsole: that
+        // stream is whatever stdout the process started with — a capture writer under a test
+        // host the refresh thread can outlive, a pipe progress frames should never reach.
+        var live = _consoleService.Live;
+        if (_quietMode || live is null)
         {
             foreach (var entry in manifest.Backups)
             {
@@ -172,7 +176,7 @@ internal sealed class RollbackHandler
             return (restoredCount, failedCount, failedFiles);
         }
 
-        await AnsiConsole.Progress()
+        await new Progress(live)
             .AutoRefresh(true)
             .AutoClear(false)
             .HideCompleted(false)

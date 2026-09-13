@@ -26,7 +26,7 @@ internal sealed class MigrationRuntime
         Validator = validator;
         Display = display;
         QuietMode = quietMode;
-        ProgressReporter = new MigrationProgressReporter(quietMode);
+        ProgressReporter = new MigrationProgressReporter(quietMode, consoleService.Live);
         BackupCoordinator = new BackupCoordinator(backupManager, consoleService, quietMode);
     }
 

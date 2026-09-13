@@ -13,6 +13,7 @@ internal sealed class AnalysisHandler
     private readonly IFixService _fixService;
     private readonly IConsoleService _consoleService;
     private readonly bool _quietMode;
+    private readonly IMigrationProgressReporter _progressReporter;
     private readonly BaselineService _baselineService = new();
     private readonly Func<
         Options,
@@ -37,6 +38,7 @@ internal sealed class AnalysisHandler
         _fixService = fixService;
         _consoleService = consoleService;
         _quietMode = quietMode;
+        _progressReporter = new MigrationProgressReporter(quietMode, consoleService.Live);
         _discoverProjects = discoverProjects;
         _licenseScanService = licenseScanService ?? new LicenseScanService();
     }
@@ -171,35 +173,17 @@ internal sealed class AnalysisHandler
     {
         var results = new ProjectScanResult[projectPaths.Count];
 
-        if (_quietMode)
-        {
-            await ScanProjectsAsync(options, projectPaths, results, progress: null);
-        }
-        else
-        {
-            await AnsiConsole
-                .Progress()
-                .AutoRefresh(true)
-                .AutoClear(false)
-                .HideCompleted(false)
-                .Columns(
-                    new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
-                    new PercentageColumn(),
-                    new SpinnerColumn()
-                )
-                .StartAsync(async ctx =>
-                {
-                    var task = ctx.AddTask(
-                        $"[cyan]Scanning {projectPaths.Count} project(s)[/]",
-                        maxValue: projectPaths.Count
-                    );
-
-                    await ScanProjectsAsync(options, projectPaths, results, task);
-
-                    task.Description = "[green]Scan complete[/]";
-                });
-        }
+        // The reporter draws the bar only on a live surface; without one — quiet run, silent
+        // console, redirected stream — the scan runs plainly rather than emitting frames into it.
+        await _progressReporter.RunProgressAsync(
+            $"Scanning {projectPaths.Count} project(s)",
+            projectPaths.Count,
+            async ctx =>
+            {
+                await ScanProjectsAsync(options, projectPaths, results, ctx.Task);
+                ctx.SetDescription("[green]Scan complete[/]");
+            }
+        );
 
         var (packageInfo, deepScanFailures) = AttachLicenseScan(
             options,

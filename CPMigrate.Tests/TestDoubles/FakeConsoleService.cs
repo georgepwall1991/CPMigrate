@@ -6,6 +6,13 @@ namespace CPMigrate.Tests.TestDoubles;
 public class FakeConsoleService : IConsoleService
 {
     public bool IsInteractive { get; set; } = true;
+
+    /// <summary>
+    /// Null by default: a test that wants to exercise the widget path sets a
+    /// <c>Spectre.Console.Testing.TestConsole</c> configured interactive, so live output lands in
+    /// the test's own buffer rather than the process-wide console.
+    /// </summary>
+    public Spectre.Console.IAnsiConsole? Live { get; set; }
     public bool ConfirmationResponse { get; set; } = true;
     public Queue<string> TextResponses { get; set; } = new();
     public Queue<string> SelectionResponses { get; set; } = new();

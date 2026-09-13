@@ -5,20 +5,30 @@ namespace CPMigrate.Services.Migration;
 internal sealed class MigrationProgressReporter : IMigrationProgressReporter
 {
     private readonly bool _quietMode;
+    private readonly IAnsiConsole? _liveConsole;
 
-    public MigrationProgressReporter(bool quietMode)
+    /// <param name="quietMode">Suppresses widgets outright.</param>
+    /// <param name="liveConsole">
+    /// The surface a widget may draw on — the injected console's live surface, or null when the
+    /// run has none. Drawn on the static <c>AnsiConsole.Console</c> instead, a widget writes to
+    /// whatever stdout the process started with: under a test host that is a capture writer the
+    /// refresh thread can still be ticking at disposal, and under a pipe it is a stream progress
+    /// frames should never reach.
+    /// </param>
+    public MigrationProgressReporter(bool quietMode, IAnsiConsole? liveConsole)
     {
         _quietMode = quietMode;
+        _liveConsole = liveConsole;
     }
 
     public async Task<T> RunStatusAsync<T>(string description, Func<Task<T>> action)
     {
-        if (_quietMode)
+        if (_quietMode || _liveConsole is not { } live)
         {
             return await action();
         }
 
-        return await AnsiConsole.Status()
+        return await new Status(live)
             .Spinner(Spinner.Known.Dots12)
             .SpinnerStyle(new Style(SpectrePalette.CyberColors.Secondary))
             .StartAsync(description, async _ =>
@@ -30,13 +40,13 @@ internal sealed class MigrationProgressReporter : IMigrationProgressReporter
 
     public async Task RunProgressAsync(string description, int total, Func<IMigrationProgressContext, Task> action)
     {
-        if (_quietMode)
+        if (_quietMode || _liveConsole is not { } live)
         {
             await action(QuietProgressContext.Instance);
             return;
         }
 
-        await AnsiConsole.Progress()
+        await new Progress(live)
             .AutoRefresh(true)
             .AutoClear(false)
             .HideCompleted(false)
