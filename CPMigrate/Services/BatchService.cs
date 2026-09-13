@@ -147,8 +147,24 @@ public class BatchService
             DryRun = options.DryRun,
         };
 
-        // Discover solutions
-        var solutions = DiscoverSolutions(batchDir);
+        // Discover solutions. Configured exclusions add to the built-in set rather than
+        // replacing it: node_modules and friends are unsafe to scan however a repository
+        // asks, and a configured list that forgot them would only re-learn why they exist.
+        var excluded = new HashSet<string>(DefaultExcludedDirectories, StringComparer.OrdinalIgnoreCase);
+        var configuredExclusions = options.ParseExcludedDirectories();
+        if (configuredExclusions is not null)
+        {
+            foreach (var directory in configuredExclusions)
+            {
+                excluded.Add(directory);
+            }
+
+            _consoleService.Dim(
+                $"  Excluding additional directories: {string.Join(", ", configuredExclusions)}"
+            );
+        }
+
+        var solutions = DiscoverSolutions(batchDir, excluded);
 
         if (solutions.Count == 0)
         {

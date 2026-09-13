@@ -115,7 +115,7 @@
         "type": "string"
       },
       "default": ["node_modules", "bin", "obj", ".git", "packages"],
-      "description": "Directories to exclude when scanning for solutions in batch mode"
+      "description": "Directory names to skip when scanning for solutions in batch mode, in addition to the built-in set. --exclude overrides it for one run."
     },
     "analyze": {
       "type": "boolean",

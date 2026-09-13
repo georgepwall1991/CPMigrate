@@ -727,6 +727,47 @@ public class ConfigServiceTests : IDisposable
     }
 
     [Fact]
+    public void MergeConfig_ExcludeDirectoriesFromConfig_WhenCliNotProvided()
+    {
+        // The key existed in the model and schema for a while with no merge rule, so a
+        // configured exclusion silently did nothing — the sample config itself shipped it.
+        var options = new Options();
+        var config = new ConfigModel
+        {
+            ExcludeDirectories = new List<string> { "tools", "scratch" },
+        };
+
+        ConfigService.MergeConfig(options, config, new HashSet<string>());
+
+        options.ParseExcludedDirectories().Should().BeEquivalentTo("tools", "scratch");
+    }
+
+    [Fact]
+    public void MergeConfig_ExcludeDirectories_DoesNotOverrideCliProvidedValue()
+    {
+        var options = new Options { Exclude = "cli-dir" };
+        var config = new ConfigModel
+        {
+            ExcludeDirectories = new List<string> { "config-dir" },
+        };
+
+        ConfigService.MergeConfig(options, config, new HashSet<string> { "exclude" });
+
+        options.Exclude.Should().Be("cli-dir");
+    }
+
+    [Fact]
+    public void MergeConfig_ExcludeDirectoriesEmpty_LeavesOptionsUntouched()
+    {
+        var options = new Options();
+        var config = new ConfigModel { ExcludeDirectories = new List<string>() };
+
+        ConfigService.MergeConfig(options, config, new HashSet<string>());
+
+        options.Exclude.Should().BeNull();
+    }
+
+    [Fact]
     public void MergeConfig_AllCliArgsProvided_BlockAllConfigValues()
     {
         // Arrange

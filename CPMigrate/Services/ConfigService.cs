@@ -500,6 +500,12 @@ public class ConfigService
             "retention",
             (o, c) => o.Retention = c.Retention?.MaxBackups ?? 0
         ),
+        // Flattened to the comma-separated spec the flag takes, like rules, so one parser reads both.
+        new(
+            c => c.ExcludeDirectories is { Count: > 0 },
+            "exclude",
+            (o, c) => o.Exclude = string.Join(",", c.ExcludeDirectories!)
+        ),
         // The analysis toggles are team policy the same way failOn and rules are: which checks
         // the default scan runs is a decision about the codebase, not about the invocation.
         new(c => c.Analyze.HasValue, "analyze", (o, c) => o.Analyze = c.Analyze.GetValueOrDefault()),

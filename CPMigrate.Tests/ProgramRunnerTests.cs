@@ -80,6 +80,23 @@ public class ProgramRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_ExcludeWithoutBatch_IsRejected()
+    {
+        // Only batch discovery walks directories, so --exclude outside --batch can never apply.
+        // Checked against the command line rather than the merged options — an
+        // excludeDirectories entry in .cpmigrate.json must not fail non-batch runs.
+        var fakeConsole = new FakeConsoleService();
+
+        var exitCode = await ProgramRunner.RunAsync(
+            new[] { "--analyze", "-s", ".", "--exclude", "tools" },
+            fakeConsole
+        );
+
+        exitCode.Should().Be(ExitCodes.ValidationError);
+        fakeConsole.ErrorMessages.Should().Contain(m => m.Contains("--exclude"));
+    }
+
+    [Fact]
     public async Task RunAsync_ValuelessWhy_IsRejectedInsteadOfRunningAMigration()
     {
         // A valueless --why parses as "flag not set", and an unset --why means the default action —

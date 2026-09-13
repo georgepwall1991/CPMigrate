@@ -384,6 +384,13 @@ public class Options
     )]
     public string? ReportPath { get; set; }
 
+    [Option(
+        "exclude",
+        HelpText = "Comma-separated directory names to skip during --batch solution discovery, "
+            + "in addition to the built-in set (requires --batch)."
+    )]
+    public string? Exclude { get; set; }
+
     // ═══════════════════════════════════════════════════════════════════════
     // v2.0 Options - Backup Management
     // ═══════════════════════════════════════════════════════════════════════
@@ -627,6 +634,33 @@ public class Options
                 ',',
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
             )
+            .ToList();
+
+        return names.Count > 0 ? names : null;
+    }
+
+    /// <summary>
+    /// Splits <see cref="Exclude"/> into directory names, or returns null when batch discovery
+    /// should use only the built-in exclusion set.
+    /// </summary>
+    /// <remarks>
+    /// Discovery matches on the directory's own name, so a trailing separator — natural to
+    /// write in a JSON list — would never match. It is trimmed here rather than documented as
+    /// unsupported, since the only honest reading of <c>tools/</c> is <c>tools</c>.
+    /// </remarks>
+    public IReadOnlyList<string>? ParseExcludedDirectories()
+    {
+        if (string.IsNullOrWhiteSpace(Exclude))
+        {
+            return null;
+        }
+
+        var names = Exclude.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            )
+            .Select(name => name.TrimEnd('/', '\\'))
+            .Where(name => name.Length > 0)
             .ToList();
 
         return names.Count > 0 ? names : null;
