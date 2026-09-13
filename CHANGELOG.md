@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.67.0] - 2026-09-13
+
 ### Added
 - **`--exclude` and a live `excludeDirectories` config key: batch discovery exclusions are now configurable.** `--batch` has always skipped a built-in set (`node_modules`, `bin`, `obj`, `.git`, `packages`, …), but the set was fixed — a monorepo that also wanted `tools/` or `scratch/` left alone had no way to say so. Worse, `excludeDirectories` sat in `.cpmigrate.json`'s schema, its sample, and its model with no merge rule behind it: the file parsed, validated, and did nothing. Both paths now work — `excludeDirectories` in config or `--exclude tools,scratch` on the command line — and both *add to* the built-in set rather than replacing it, since `node_modules` and friends are unsafe to scan however a repository asks. `--exclude` without `--batch` is rejected: directory discovery only walks a tree in batch mode, so anywhere else the flag could never have applied. CLI still wins over config.
 
