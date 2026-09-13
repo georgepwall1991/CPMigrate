@@ -100,7 +100,10 @@ internal class MigrationDisplay
             )
             {
                 _consoleService.WriteLine();
-                var success = RunDotnetRestore(Path.GetDirectoryName(propsFilePath) ?? ".");
+                var success = RunDotnetRestore(
+                    Path.GetDirectoryName(propsFilePath) ?? ".",
+                    _consoleService.Live
+                );
                 if (success)
                 {
                     _consoleService.Success(
@@ -169,62 +172,60 @@ internal class MigrationDisplay
         return console.IsInteractive;
     }
 
-    private static bool RunDotnetRestore(string workingDirectory)
+    private static bool RunDotnetRestore(string workingDirectory, IAnsiConsole? live)
     {
-        return AnsiConsole
-            .Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(Style.Parse("cyan"))
-            .Start(
-                "Running dotnet restore...",
-                ctx =>
+        bool Restore()
+        {
+            try
+            {
+                using var process = new System.Diagnostics.Process();
+                // Security: Try to use the absolute path of the dotnet host to avoid PATH injection
+                var dotnetPath = "dotnet";
+                try
                 {
-                    try
+                    var mainModule = System
+                        .Diagnostics.Process.GetCurrentProcess()
+                        .MainModule?.FileName;
+                    if (
+                        !string.IsNullOrEmpty(mainModule)
+                        && (
+                            mainModule.EndsWith("dotnet", StringComparison.OrdinalIgnoreCase)
+                            || mainModule.EndsWith("dotnet.exe", StringComparison.OrdinalIgnoreCase)
+                        )
+                    )
                     {
-                        using var process = new System.Diagnostics.Process();
-                        // Security: Try to use the absolute path of the dotnet host to avoid PATH injection
-                        var dotnetPath = "dotnet";
-                        try
-                        {
-                            var mainModule = System
-                                .Diagnostics.Process.GetCurrentProcess()
-                                .MainModule?.FileName;
-                            if (
-                                !string.IsNullOrEmpty(mainModule)
-                                && (
-                                    mainModule.EndsWith(
-                                        "dotnet",
-                                        StringComparison.OrdinalIgnoreCase
-                                    )
-                                    || mainModule.EndsWith(
-                                        "dotnet.exe",
-                                        StringComparison.OrdinalIgnoreCase
-                                    )
-                                )
-                            )
-                            {
-                                dotnetPath = mainModule;
-                            }
-                        }
-                        catch
-                        {
-                            // Fallback to simpler PATH resolution if module access fails
-                        }
-                        process.StartInfo.FileName = dotnetPath;
-                        process.StartInfo.Arguments = "restore";
-                        process.StartInfo.WorkingDirectory = workingDirectory;
-                        process.StartInfo.UseShellExecute = false;
-                        process.StartInfo.CreateNoWindow = true;
-                        process.Start();
-                        process.WaitForExit();
-                        return process.ExitCode == 0;
-                    }
-                    catch
-                    {
-                        return false;
+                        dotnetPath = mainModule;
                     }
                 }
-            );
+                catch
+                {
+                    // Fallback to simpler PATH resolution if module access fails
+                }
+                process.StartInfo.FileName = dotnetPath;
+                process.StartInfo.Arguments = "restore";
+                process.StartInfo.WorkingDirectory = workingDirectory;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                process.Start();
+                process.WaitForExit();
+                return process.ExitCode == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // No live surface means no spinner — a redirected stream must not receive status frames.
+        if (live is null)
+        {
+            return Restore();
+        }
+
+        return new Status(live)
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(Style.Parse("cyan"))
+            .Start("Running dotnet restore...", _ => Restore());
     }
 
     /// <summary>

@@ -169,15 +169,15 @@ public sealed class UpdateService : IUpdateService, IDisposable
 
     private SelfUpdateResult RunDotnetToolUpdate(NuGetVersion currentVersion, NuGetVersion latestVersion)
     {
-        // The spinner renders through AnsiConsole itself, not the injected console — under a
-        // machine-readable format (or any non-interactive run) it would write frames onto stdout
-        // and break the document contract. Run the update plainly instead.
-        if (!_consoleService.IsInteractive)
+        // The spinner needs the console's live surface — a silent or non-interactive run has
+        // none, and drawing on the static AnsiConsole would put frames on stdout regardless of
+        // the injected console, breaking the document contract under --output Json.
+        if (_consoleService.Live is not { } live)
         {
             return ExecuteDotnetToolUpdate(currentVersion, latestVersion);
         }
 
-        return AnsiConsole.Status()
+        return new Status(live)
             .Start("Updating CPMigrate...", _ => ExecuteDotnetToolUpdate(currentVersion, latestVersion));
     }
 

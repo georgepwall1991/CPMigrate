@@ -41,6 +41,9 @@ public sealed class BufferingConsoleService : IConsoleService
 
     public bool IsInteractive => false;
 
+    /// <summary>No live surface: a replayed buffer can show the final frame but never animate one.</summary>
+    public Spectre.Console.IAnsiConsole? Live => null;
+
     public void Info(string message) { }
 
     public void Success(string message) { }

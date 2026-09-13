@@ -26,6 +26,7 @@ public class MigrationService
     private readonly ListBackupsHandler _listBackupsHandler;
     private readonly AnalysisHandler _analysisHandler;
     private readonly MigrationVerifier _verifier;
+    private readonly IMigrationProgressReporter _progressReporter;
     private readonly ILogger<MigrationService> _logger;
     private readonly bool _quietMode;
     private readonly DiffFileCollector _diffCollector;
@@ -82,6 +83,7 @@ public class MigrationService
             );
         _logger = logger ?? NullLogger<MigrationService>.Instance;
         _quietMode = quietMode;
+        _progressReporter = new MigrationProgressReporter(quietMode, consoleService.Live);
         _diffCollector = diffFileCollector ?? new DiffFileCollector();
     }
 
@@ -709,23 +711,10 @@ public class MigrationService
         List<string> ProjectPaths
     )> DiscoverProjectsWithSpinnerAsync(Options options)
     {
-        if (_quietMode)
-        {
-            return DiscoverProjects(options);
-        }
-
-        return await AnsiConsole
-            .Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(Style.Parse("cyan"))
-            .StartAsync(
-                "Discovering projects...",
-                async ctx =>
-                {
-                    await Task.Delay(100);
-                    return DiscoverProjects(options);
-                }
-            );
+        return await _progressReporter.RunStatusAsync(
+            "Discovering projects...",
+            () => Task.FromResult(DiscoverProjects(options))
+        );
     }
 
     /// <summary>
@@ -972,50 +961,19 @@ public class MigrationService
     {
         List<BackupEntry> backupEntries = [];
 
-        // Process without progress bar in quiet mode
-        if (_quietMode)
-        {
-            foreach (var projectFilePath in projectPaths)
+        // The reporter draws the bar only on a live surface; quiet or piped runs execute the
+        // same loop through a no-op context so a redirected stream never receives frames.
+        await _progressReporter.RunProgressAsync(
+            "Processing projects",
+            projectPaths.Count,
+            async ctx =>
             {
-                var backupEntry = await ProcessSingleProjectAsync(
-                    options,
-                    projectFilePath,
-                    packages,
-                    backupPath,
-                    backupTimestamp,
-                    null
-                );
-                if (backupEntry != null)
-                {
-                    backupEntries.Add(backupEntry);
-                }
-            }
-            return backupEntries;
-        }
-
-        await AnsiConsole
-            .Progress()
-            .AutoRefresh(true)
-            .AutoClear(false)
-            .HideCompleted(false)
-            .Columns(
-                new TaskDescriptionColumn(),
-                new ProgressBarColumn(),
-                new PercentageColumn(),
-                new SpinnerColumn()
-            )
-            .StartAsync(async ctx =>
-            {
-                var task = ctx.AddTask(
-                    "[cyan]Processing projects[/]",
-                    maxValue: projectPaths.Count
-                );
-
                 foreach (var projectFilePath in projectPaths)
                 {
                     var projectName = Path.GetFileName(projectFilePath);
-                    task.Description =
-                        $"[cyan]Processing[/] [white]{Markup.Escape(projectName)}[/]";
+                    ctx.SetDescription(
+                        $"[cyan]Processing[/] [white]{Markup.Escape(projectName)}[/]"
+                    );
 
                     var backupEntry = await ProcessSingleProjectAsync(
                         options,
@@ -1023,19 +981,20 @@ public class MigrationService
                         packages,
                         backupPath,
                         backupTimestamp,
-                        task
+                        ctx.Task
                     );
                     if (backupEntry != null)
                     {
                         backupEntries.Add(backupEntry);
                     }
 
-                    task.Increment(1);
+                    ctx.Increment(1);
                     await Task.Delay(50); // Small delay for visual smoothness
                 }
 
-                task.Description = "[green]Processing complete[/]";
-            });
+                ctx.SetDescription("[green]Processing complete[/]");
+            }
+        );
 
         _consoleService.WriteLine();
         return backupEntries;

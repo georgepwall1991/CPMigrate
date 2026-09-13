@@ -10,6 +10,16 @@ public interface IConsoleService
     /// </summary>
     bool IsInteractive { get; }
 
+    /// <summary>
+    /// The console a live widget (status spinner, progress display) may draw on, or null when
+    /// there is none — a silent, buffered, or redirected console has no live surface. Anything
+    /// that runs a Spectre widget must draw it here rather than on <c>AnsiConsole.Console</c>:
+    /// the static console writes to whatever stdout the process started with, which under a
+    /// test host is a capture writer that can be disposed mid-refresh, and under a pipe is a
+    /// stream progress frames should never reach.
+    /// </summary>
+    Spectre.Console.IAnsiConsole? Live { get; }
+
     void Info(string message);
     void Success(string message);
     void Warning(string message);

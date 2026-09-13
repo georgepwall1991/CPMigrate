@@ -43,6 +43,14 @@ public class SpectreConsoleService : IConsoleService
 
     public bool IsInteractive => _console.Profile.Capabilities.Interactive;
 
+    /// <summary>
+    /// The live surface, but only when it can actually take a widget. On a redirected stream the
+    /// widgets would not animate — they would emit plain frames into someone's captured output,
+    /// so the property reports nothing rather than a console that writes them anyway.
+    /// </summary>
+    public IAnsiConsole? Live =>
+        _console.Profile.Capabilities.Interactive ? _console : null;
+
     public void Info(string message)
     {
         _console.MarkupLine($"[{Ink.Dim}]{Glyphs.Info}[/] [dim]{EscapeMarkup(message)}[/]");
