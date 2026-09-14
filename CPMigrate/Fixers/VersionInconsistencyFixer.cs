@@ -85,7 +85,7 @@ public class VersionInconsistencyFixer : IFixer
                     group.Key,
                     issue.PackageName,
                     targetVersion,
-                    request.DryRun);
+                    request);
 
                 if (result != null)
                 {
@@ -213,7 +213,7 @@ public class VersionInconsistencyFixer : IFixer
             .FirstOrDefault(metadata => !HasConditionalScope(metadata));
     }
 
-    private static FileChange? UpdateProjectVersions(string projectPath, string packageName, string targetVersion, bool dryRun)
+    private static FileChange? UpdateProjectVersions(string projectPath, string packageName, string targetVersion, FixRequest request)
     {
         if (!File.Exists(projectPath))
         {
@@ -307,10 +307,7 @@ public class VersionInconsistencyFixer : IFixer
 
             var newContent = doc.ToString();
 
-            if (!dryRun)
-            {
-                File.WriteAllText(projectPath, newContent);
-            }
+            request.WriteFile(projectPath, newContent);
 
             return new FileChange(
                 projectPath,
@@ -319,7 +316,7 @@ public class VersionInconsistencyFixer : IFixer
                 $"Version: {targetVersion}"
             );
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not FixWriteException)
         {
             // Swallowed, this returned null — which the caller could only read as "nothing to change", so
             // a project file that was read-only, locked, or malformed produced "No changes were needed"

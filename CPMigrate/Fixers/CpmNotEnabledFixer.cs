@@ -91,10 +91,7 @@ public class CpmNotEnabledFixer : IFixer
             }
 
             var newContent = doc.ToString();
-            if (!request.DryRun)
-            {
-                File.WriteAllText(propsPath, newContent);
-            }
+            request.WriteFile(propsPath, newContent);
 
             return FixResult.Succeeded(
                 $"Enabled central package management in {Path.GetFileName(propsPath)}",
@@ -104,7 +101,7 @@ public class CpmNotEnabledFixer : IFixer
                 }
             );
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not FixWriteException)
         {
             throw new FixWriteException(propsPath, ex);
         }

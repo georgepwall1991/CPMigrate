@@ -1381,9 +1381,7 @@ internal static class CommandRouter
             PropsFile = string.IsNullOrWhiteSpace(result.PropsFilePath)
                 ? null
                 : new PropsFileInfo { Path = result.PropsFilePath },
-            Backup = string.IsNullOrWhiteSpace(result.BackupPath)
-                ? null
-                : new BackupInfo { Path = result.BackupPath, FilesBackedUp = 0 },
+            Backup = BuildBackupInfo(result),
             Verification = VerificationPayload.From(result.Verification, options.VerifyStrict),
             DryRun = result.WasDryRun,
             Warnings = result.Warnings?.ToList() ?? [],
@@ -1408,6 +1406,26 @@ internal static class CommandRouter
     /// The baseline-staleness fields a JSON summary carries, or nulls when no baseline was used —
     /// the same "absence is meaningful" contract <c>issuesBaselined</c> keeps.
     /// </summary>
+
+    /// <summary>
+    /// Where the run's undo lives — a migration's backup directory, or the one a fix pass created.
+    /// Null when nothing was backed up; the JSON consumer needs the path, not a terminal line it
+    /// never saw.
+    /// </summary>
+    private static BackupInfo? BuildBackupInfo(MigrationResult result)
+    {
+        var path = result.BackupPath ?? result.FixReport?.BackupPath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        return new BackupInfo
+        {
+            Path = path,
+            FilesBackedUp = result.FixReport?.FilesBackedUp ?? 0,
+        };
+    }
 
     private static List<AnalysisIssueInfo> BuildAnalysisIssues(MigrationResult result)
     {

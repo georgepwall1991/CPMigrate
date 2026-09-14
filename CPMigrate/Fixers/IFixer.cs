@@ -90,6 +90,15 @@ public class FixReport
     public bool HasChanges => TotalFileChanges > 0;
 
     /// <summary>
+    /// Where the pass's backups landed, when any file was backed up. Machine-readable output never
+    /// sees the terminal's "Backed up N file(s)" line — this is how a JSON consumer finds the undo.
+    /// </summary>
+    public string? BackupPath { get; set; }
+
+    /// <summary>How many files were snapshotted before their first write.</summary>
+    public int FilesBackedUp { get; set; }
+
+    /// <summary>
     /// Gets the failed fix results.
     /// </summary>
     public IReadOnlyList<FixResult> GetFailedFixes() => Results.Where(r => !r.Success).ToList();

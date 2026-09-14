@@ -115,7 +115,7 @@ public class FixServiceTests
                 new("Newtonsoft.Json", "13.0.1", project2Path, "Project2.csproj")
             });
 
-            var options = new Options { ConflictStrategy = ConflictStrategy.Highest };
+            var options = new Options { ConflictStrategy = ConflictStrategy.Highest, BackupDir = testDir };
 
             // Act
             var fixReport = _fixService.ApplyFixes(report, packageInfo, options, dryRun: false);
@@ -278,7 +278,7 @@ public class FixServiceTests
                 new("Serilog", "2.11.0", project2Path, "Project2.csproj")
             });
 
-            var options = new Options { ConflictStrategy = ConflictStrategy.Highest };
+            var options = new Options { ConflictStrategy = ConflictStrategy.Highest, BackupDir = testDir };
 
             // Act
             var fixReport = _fixService.ApplyFixes(report, packageInfo, options, dryRun: false);
@@ -473,6 +473,213 @@ public class FixServiceTests
         fixReport.Results.Should().ContainSingle();
         fixReport.Results[0].IssueCode.Should().Be("OrphanedPackageVersion");
         fixReport.Results[0].PackageName.Should().Be("Serilog");
+    }
+
+    [Fact]
+    public async Task ApplyFixes_WritesAreBackedUpAndManifested()
+    {
+        // A fix pass rewrites files exactly like a migration does, so it owes the same undo path:
+        // every file lands in .cpmigrate_backup before its first write, and the manifest is the one
+        // --rollback already restores from.
+        var testDir = Path.Combine(Path.GetTempPath(), $"CPMigrateFixBackup_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDir);
+        try
+        {
+            var target = Path.Combine(testDir, "App.csproj");
+            const string original = "<Project />";
+            File.WriteAllText(target, original);
+
+            var propsPath = Path.Combine(testDir, "Directory.Packages.props");
+            var fixReport = RunWritingPass(
+                testDir,
+                propsPath,
+                request =>
+                {
+                    request.WriteFile(target, "<Project><ItemGroup /></Project>");
+                    return FixResult.Succeeded("fixed", [new FileChange(target, "Modified", "a", "b")]);
+                },
+                backupDir: ".");
+
+            fixReport.TotalFixesApplied.Should().Be(1);
+
+            // The default backup dir anchored at the props file's directory, not the test host cwd.
+            var backupDir = Path.Combine(testDir, ".cpmigrate_backup");
+            Directory.Exists(backupDir).Should().BeTrue();
+
+            var manifest = await BackupManager.ReadManifestAsync(backupDir);
+            manifest.Should().NotBeNull();
+            manifest!.PropsFilePath.Should().Be(propsPath);
+            manifest.PropsFileExisted.Should().BeFalse();
+            manifest.Backups.Should().ContainSingle(e => e.OriginalPath == Path.GetFullPath(target));
+
+            var backupCopy = await File.ReadAllTextAsync(
+                Path.Combine(backupDir, manifest.Backups[0].BackupFileName));
+            backupCopy.Should().Be(original);
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ApplyFixes_SameFileWrittenTwice_IsBackedUpOnce()
+    {
+        var testDir = Path.Combine(Path.GetTempPath(), $"CPMigrateFixBackup_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDir);
+        try
+        {
+            var target = Path.Combine(testDir, "App.csproj");
+            const string original = "<Project />";
+            File.WriteAllText(target, original);
+
+            RunWritingPass(
+                testDir,
+                Path.Combine(testDir, "Directory.Packages.props"),
+                request =>
+                {
+                    request.WriteFile(target, File.ReadAllText(target) + " ");
+                    return FixResult.Succeeded("fixed", [new FileChange(target, "Modified", "a", "b")]);
+                },
+                issueCount: 2);
+
+            var backupDir = Path.Combine(testDir, ".cpmigrate_backup");
+            var manifest = await BackupManager.ReadManifestAsync(backupDir);
+            manifest!.Backups.Should().ContainSingle();
+            (await File.ReadAllTextAsync(Path.Combine(backupDir, manifest.Backups[0].BackupFileName)))
+                .Should().Be(original);
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyFixes_DryRun_CreatesNoBackupDirectory()
+    {
+        var testDir = Path.Combine(Path.GetTempPath(), $"CPMigrateFixBackup_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDir);
+        try
+        {
+            var target = Path.Combine(testDir, "App.csproj");
+            const string original = "<Project />";
+            File.WriteAllText(target, original);
+
+            RunWritingPass(
+                testDir,
+                Path.Combine(testDir, "Directory.Packages.props"),
+                request =>
+                {
+                    request.WriteFile(target, "changed");
+                    return FixResult.Succeeded("fixed", [new FileChange(target, "Modified", "a", "b")]);
+                },
+                dryRun: true);
+
+            Directory.Exists(Path.Combine(testDir, ".cpmigrate_backup")).Should().BeFalse();
+            File.ReadAllText(target).Should().Be(original);
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyFixes_BackupDisabled_CreatesNoBackupDirectory()
+    {
+        var testDir = Path.Combine(Path.GetTempPath(), $"CPMigrateFixBackup_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDir);
+        try
+        {
+            var target = Path.Combine(testDir, "App.csproj");
+            File.WriteAllText(target, "<Project />");
+
+            RunWritingPass(
+                testDir,
+                Path.Combine(testDir, "Directory.Packages.props"),
+                request =>
+                {
+                    request.WriteFile(target, "changed");
+                    return FixResult.Succeeded("fixed", [new FileChange(target, "Modified", "a", "b")]);
+                },
+                backupEnabled: false);
+
+            File.ReadAllText(target).Should().Be("changed");
+            Directory.Exists(Path.Combine(testDir, ".cpmigrate_backup")).Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyFixes_NewFileCreation_DoesNotFailBackup()
+    {
+        // A fixer may create a file that did not exist (e.g. the props file itself). There is
+        // nothing to back up — the manifest's PropsFileExisted=false is what makes --rollback
+        // delete it again — and the write must go through rather than die on a missing source.
+        var testDir = Path.Combine(Path.GetTempPath(), $"CPMigrateFixBackup_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDir);
+        try
+        {
+            var propsPath = Path.Combine(testDir, "Directory.Packages.props");
+
+            var fixReport = RunWritingPass(
+                testDir,
+                propsPath,
+                request =>
+                {
+                    request.WriteFile(propsPath, "<Project />");
+                    return FixResult.Succeeded("created", [new FileChange(propsPath, "Created", "", "x")]);
+                });
+
+            fixReport.TotalFixesApplied.Should().Be(1);
+            File.Exists(propsPath).Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Runs a one-analyzer fix pass whose fixer writes through <see cref="FixRequest.WriteFile"/>,
+    /// the way the real fixers now do. Backup settings default to enabled with the backup anchored
+    /// inside the fixture directory.
+    /// </summary>
+    private FixReport RunWritingPass(
+        string testDir,
+        string propsPath,
+        Func<FixRequest, FixResult> fix,
+        int issueCount = 1,
+        bool dryRun = false,
+        bool backupEnabled = true,
+        string? backupDir = null)
+    {
+        var issues = Enumerable
+            .Range(0, issueCount)
+            .Select(i => new AnalysisIssue(
+                $"Pkg{i}", "d", new[] { "App.csproj" }, AnalysisIssueCode.VersionInconsistency))
+            .Cast<AnalysisIssue>()
+            .ToList();
+        var report = new AnalysisReport(
+            ProjectsScanned: 1,
+            TotalPackageReferences: issueCount,
+            Results: new[] { new AnalyzerResult("Test", issues) });
+
+        var writingFixer = new StubFixer(_ => true, (_, _, request) => fix(request));
+        var fixService = new FixService(_console, new[] { writingFixer });
+
+        return fixService.ApplyFixes(
+            report,
+            new ProjectPackageInfo(Array.Empty<PackageReference>()),
+            new FixRequest(
+                propsPath,
+                ConflictStrategy.Highest,
+                DryRun: dryRun,
+                Backup: new BackupSettings(backupEnabled, backupDir ?? testDir, false, testDir)));
     }
 
     private sealed class StubFixer : IFixer

@@ -43,7 +43,7 @@ public class InlineVersionFixer : IFixer
 
             try
             {
-                var result = RemoveInlineVersion(projectPath, issue.PackageName, request.DryRun);
+                var result = RemoveInlineVersion(projectPath, issue.PackageName, request);
                 if (result != null)
                 {
                     changes.Add(result);
@@ -83,7 +83,7 @@ public class InlineVersionFixer : IFixer
     /// <c>VersionOverride</c> finding names the same package but carries no inline version to
     /// remove.
     /// </summary>
-    private static FileChange? RemoveInlineVersion(string projectPath, string packageName, bool dryRun)
+    private static FileChange? RemoveInlineVersion(string projectPath, string packageName, FixRequest request)
     {
         try
         {
@@ -120,10 +120,7 @@ public class InlineVersionFixer : IFixer
             }
 
             var newContent = doc.ToString();
-            if (!dryRun)
-            {
-                File.WriteAllText(projectPath, newContent);
-            }
+            request.WriteFile(projectPath, newContent);
 
             return new FileChange(
                 projectPath,
@@ -132,7 +129,7 @@ public class InlineVersionFixer : IFixer
                 "central pin applies"
             );
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not FixWriteException)
         {
             // Same contract the other fixers keep: a read-only, locked, or malformed project file is
             // a failure with a cause, not "nothing to change".

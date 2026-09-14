@@ -6,6 +6,15 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Added
+- **`--analyze --fix` runs are now backed up and rollbackable.** Fixers rewrote project and props
+  files with no safety net — a migration gets a timestamped backup and `--rollback`, while a fix
+  pass that mangled a file left nothing to restore. Every file a fix pass overwrites now lands in
+  `.cpmigrate_backup` before its first write, under the same manifest `--rollback` already reads;
+  `--no-backup`, `--backup-dir`, and `--add-gitignore` apply, and a pass that writes nothing leaves
+  nothing behind. Fixer writes also funnel through a single `FixRequest.WriteFile` chokepoint, so a
+  future fixer cannot bypass the backup hook.
+
 ## [3.71.0] - 2026-09-14
 
 ### Changed

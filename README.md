@@ -229,7 +229,7 @@ cpmigrate -s ./MySolution.sln --verify --output Markdown # the receipt, for the 
 
 ```bash
 cpmigrate --analyze --audit --outdated --deprecated --licenses --transitive
-cpmigrate --analyze --fix                       # apply every auto-fixable finding
+cpmigrate --analyze --fix                       # apply every auto-fixable finding (backed up first — undo with --rollback)
 cpmigrate --analyze --fix-dry-run               # preview the fixes
 cpmigrate --analyze --fail-on High              # gate CI without failing on old debt
 cpmigrate --analyze --write-baseline            # accept today's debt; fail only on new
@@ -299,7 +299,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--outdated` | | `false` | Outdated package checks |
 | `--deprecated` | | `false` | Deprecated package checks |
 | `--licenses` | | `false` | Flag copyleft / proprietary / unknown licenses from restored nuspecs |
-| `--fix` | | `false` | Apply auto-fixes (with `--analyze`) |
+| `--fix` | | `false` | Apply auto-fixes (with `--analyze`) — every file lands in `.cpmigrate_backup` before its first write, so `--rollback` undoes a fix run too |
 | `--fix-dry-run` | | `false` | Preview auto-fixes |
 | `--fix-rule` | | | Comma-separated rule IDs to restrict `--fix`/`--fix-dry-run` to (e.g. `OrphanedPackageVersion,InlineVersionUnderCpm`) |
 | `--fail-on` | | `Info` | Lowest severity that fails: `Info`·`Low`·`Moderate`·`High`·`Critical`·`Never` |

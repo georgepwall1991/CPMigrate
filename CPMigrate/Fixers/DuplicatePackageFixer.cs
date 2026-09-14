@@ -54,7 +54,7 @@ public class DuplicatePackageFixer : IFixer
             .GroupBy(r => r.ProjectPath);
 
         var changes = nonStandardRefs
-            .Select(group => StandardizePackageCasing(group.Key, issue.PackageName, standardCasing, request.DryRun))
+            .Select(group => StandardizePackageCasing(group.Key, issue.PackageName, standardCasing, request))
             .Where(result => result != null)
             .Cast<FileChange>()
             .ToList();
@@ -70,7 +70,7 @@ public class DuplicatePackageFixer : IFixer
         );
     }
 
-    private static FileChange? StandardizePackageCasing(string projectPath, string packageNameInsensitive, string standardCasing, bool dryRun)
+    private static FileChange? StandardizePackageCasing(string projectPath, string packageNameInsensitive, string standardCasing, FixRequest request)
     {
         if (!File.Exists(projectPath))
         {
@@ -124,10 +124,7 @@ public class DuplicatePackageFixer : IFixer
 
             var newContent = doc.ToString();
 
-            if (!dryRun)
-            {
-                File.WriteAllText(projectPath, newContent);
-            }
+            request.WriteFile(projectPath, newContent);
 
             return new FileChange(
                 projectPath,
