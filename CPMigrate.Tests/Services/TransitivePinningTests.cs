@@ -118,6 +118,77 @@ public class TransitivePinningTests : IDisposable
         TransitivePinning.IsEnabled(_propsPath, nested).Should().BeTrue();
     }
 
+    [Fact]
+    public void IsEnabled_PropsFalseBeatsBuildPropsTrue_ReturnsFalse()
+    {
+        // MSBuild imports Directory.Build.props before Directory.Packages.props, so an explicit
+        // assignment in the props file wins over the earlier build-props one.
+        File.WriteAllText(
+            Path.Combine(_directory, "Directory.Build.props"),
+            """
+            <Project>
+              <PropertyGroup>
+                <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+              </PropertyGroup>
+            </Project>
+            """);
+        WritePropsProperty("false");
+
+        TransitivePinning.IsEnabled(_propsPath, _directory).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsEnabled_BuildPropsBesidePropsFile_NoScanRoot_ReturnsTrue()
+    {
+        // With no scan root to walk from, the props file's own directory is still checked — the
+        // build props that sits next to it governs the same projects.
+        File.WriteAllText(
+            Path.Combine(_directory, "Directory.Build.props"),
+            """
+            <Project>
+              <PropertyGroup>
+                <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+              </PropertyGroup>
+            </Project>
+            """);
+
+        TransitivePinning.IsEnabled(_propsPath, null).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TryRead_PropertyAbsent_ReturnsNull()
+    {
+        TransitivePinning.TryRead(_propsPath).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryRead_PropertyFalse_ReturnsFalseNotNull()
+    {
+        // "explicitly off" is a different answer from "never set" — migration only needs to act on
+        // the latter.
+        WritePropsProperty("false");
+
+        TransitivePinning.TryRead(_propsPath).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryRead_WhitespaceValue_ReturnsFalseNotNull()
+    {
+        // An empty assignment is not "true" under MSBuild semantics, so it reads as off rather than
+        // unset — the caller must not mistake it for a missing setting.
+        WritePropsProperty("   ");
+
+        TransitivePinning.TryRead(_propsPath).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryRead_CaseInsensitiveTrue_ReturnsTrue()
+    {
+        WritePropsProperty("TRUE");
+
+        TransitivePinning.TryRead(_propsPath).Should().BeTrue();
+    }
+
     private void WritePropsProperty(string value)
     {
         File.WriteAllText(_propsPath,

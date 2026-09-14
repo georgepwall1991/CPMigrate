@@ -4,6 +4,20 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **`--transitive` migration now switches on the setting that makes its pins live.** A
+  `PackageVersion` for a package only reached transitively governs nothing without
+  `CentralPackageTransitivePinningEnabled`, so a migration that introduced such pins was
+  writing dead entries from the start. When a transitive scan adds packages no project
+  references directly, the generated or merged `Directory.Packages.props` now carries the
+  property — unless the workspace already sets it (in the props file or a governing
+  `Directory.Build.props`), in which case nothing is duplicated. An explicit `false` is
+  preserved untouched and named in a warning: it is the workspace's own choice, not ours
+  to flip. The setting is written only when transitive-only pins exist — a run where every
+  pin is directly referenced somewhere leaves the property out.
+
 ## [3.81.0] - 2026-09-14
 
 ### Fixed

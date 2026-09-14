@@ -14,36 +14,47 @@ internal static class TransitivePinning
     private const string BuildPropsFileName = "Directory.Build.props";
 
     /// <summary>
-    /// True when the property resolves to <c>true</c> in the central props file or in the nearest
-    /// <c>Directory.Build.props</c> MSBuild would import for the workspace. The property is a build
-    /// property like any other, so a repo that sets it in build props rather than the packages file
-    /// has opted in just the same — checking only <paramref name="propsPath"/> would report a live
-    /// workspace as unopted and withhold pins that would have worked.
+    /// The workspace's effective setting, resolved the way MSBuild does: the packages props file
+    /// is imported after <c>Directory.Build.props</c>, so a value set there wins over the build
+    /// props value; the build props value applies only when the props file is silent.
     /// </summary>
     /// <param name="propsPath">Path to the governing <c>Directory.Packages.props</c>.</param>
     /// <param name="basePath">The scan root the run was pointed at; the build-props walk starts here.</param>
-    public static bool IsEnabled(string propsPath, string? basePath)
+    public static bool IsEnabled(string propsPath, string? basePath) =>
+        Resolve(propsPath, basePath) == true;
+
+    /// <summary>
+    /// The three-state answer <see cref="IsEnabled"/> flattens: <c>true</c> opted in,
+    /// <c>false</c> explicitly opted out somewhere that governs, <c>null</c> never set. Callers
+    /// deciding whether to *write* the property need the distinction — an explicit
+    /// <c>false</c> in <c>Directory.Build.props</c> is still the workspace's own choice, even
+    /// though a value written into the packages props file would silently outrank it.
+    /// </summary>
+    public static bool? Resolve(string propsPath, string? basePath)
     {
-        if (IsPropertyTrue(propsPath))
+        var inProps = TryRead(propsPath);
+        if (inProps.HasValue)
         {
-            return true;
+            return inProps.Value;
         }
 
         var buildProps = FindNearestBuildProps(basePath)
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(propsPath))!, BuildPropsFileName);
 
-        return IsPropertyTrue(buildProps);
+        return TryRead(buildProps);
     }
 
     /// <summary>
-    /// Last-wins value of the property in one file, matching how MSBuild resolves a repeated
-    /// assignment — an earlier <c>true</c> overridden by a later <c>false</c> is off.
+    /// The last-wins value of the property in one file — <c>null</c> when the file is missing,
+    /// unreadable, or never sets it. Callers distinguishing "explicitly off" from "unset" need the
+    /// three states: an absent value can be filled in, an explicit <c>false</c> is the workspace's
+    /// own choice and is not ours to flip.
     /// </summary>
-    private static bool IsPropertyTrue(string path)
+    public static bool? TryRead(string path)
     {
         if (!File.Exists(path))
         {
-            return false;
+            return null;
         }
 
         try
@@ -55,12 +66,14 @@ internal static class TransitivePinning
                 .Select(e => e.Value.Trim())
                 .LastOrDefault();
 
-            return string.Equals(effective, "true", StringComparison.OrdinalIgnoreCase);
+            return effective is null
+                ? null
+                : string.Equals(effective, "true", StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex) when (ex is IOException or System.Xml.XmlException)
         {
             // Unreadable means unproven, and an unproven pin is one that might do nothing.
-            return false;
+            return null;
         }
     }
 

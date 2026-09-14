@@ -47,16 +47,23 @@ public class PropsGenerator
     /// </summary>
     /// <param name="packageVersions">Dictionary mapping package names to their version sets.</param>
     /// <param name="strategy">Strategy for resolving version conflicts.</param>
+    /// <param name="enableTransitivePinning">
+    /// When true, emit <c>CentralPackageTransitivePinningEnabled</c> — required for the pins the
+    /// file carries for packages nothing references directly to actually govern the graph.
+    /// </param>
     /// <returns>Complete XML content for Directory.Packages.props file.</returns>
     public string Generate(
         Dictionary<string, HashSet<string>> packageVersions,
-        ConflictStrategy strategy = ConflictStrategy.Highest
+        ConflictStrategy strategy = ConflictStrategy.Highest,
+        bool enableTransitivePinning = false
     )
     {
-        var header = """
+        var header = $"""
             <Project>
               <PropertyGroup>
-                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>{(enableTransitivePinning
+                    ? "\n    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>"
+                    : "")}
               </PropertyGroup>
               <ItemGroup>
             """;
@@ -154,7 +161,8 @@ public class PropsGenerator
     ) MergeExisting(
         string propsFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
-        ConflictStrategy strategy = ConflictStrategy.Highest
+        ConflictStrategy strategy = ConflictStrategy.Highest,
+        bool ensureTransitivePinning = false
     )
     {
         if (!File.Exists(propsFilePath))
@@ -170,6 +178,10 @@ public class PropsGenerator
         var (itemsByPackage, hasConditionalPackageVersions) = BuildExistingItemsMap(projectRoot);
 
         EnsureManagePackageVersionsCentrally(projectRoot);
+        if (ensureTransitivePinning)
+        {
+            EnsureTransitivePinning(projectRoot);
+        }
 
         var targetItemGroup = GetOrCreateTargetItemGroup(projectRoot);
         var documentedByComment = FindCommentedItems(targetItemGroup, propsFilePath);
@@ -631,6 +643,29 @@ public class PropsGenerator
             ) ?? projectRoot.AddPropertyGroup();
 
         propertyGroup.AddProperty("ManagePackageVersionsCentrally", "true");
+    }
+
+    /// <summary>
+    /// Adds <c>CentralPackageTransitivePinningEnabled</c> only when the file never names it — an
+    /// explicit value, <c>true</c> or <c>false</c>, is the workspace's own choice and not ours to
+    /// repeat or override.
+    /// </summary>
+    private static void EnsureTransitivePinning(ProjectRootElement projectRoot)
+    {
+        var hasProperty = projectRoot.Properties.Any(p =>
+            string.Equals(p.Name, "CentralPackageTransitivePinningEnabled", StringComparison.OrdinalIgnoreCase)
+        );
+        if (hasProperty)
+        {
+            return;
+        }
+
+        var propertyGroup =
+            projectRoot.PropertyGroups.FirstOrDefault(group =>
+                string.IsNullOrEmpty(group.Condition)
+            ) ?? projectRoot.AddPropertyGroup();
+
+        propertyGroup.AddProperty("CentralPackageTransitivePinningEnabled", "true");
     }
 
     private static string? GetMetadataValue(ProjectItemElement item, string name)

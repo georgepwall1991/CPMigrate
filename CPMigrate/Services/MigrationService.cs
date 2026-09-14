@@ -36,6 +36,12 @@ public class MigrationService
     /// </summary>
     private Dictionary<string, List<PackageReference>>? _cachedProjectScans;
 
+    /// <summary>Packages every scanned project references directly — a pin for one of these is never inert.</summary>
+    private readonly HashSet<string> _directlyReferenced = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Package names a transitive scan introduced to the pin set.</summary>
+    private readonly HashSet<string> _transitivelyPinned = new(StringComparer.OrdinalIgnoreCase);
+
     public MigrationService(
         IConsoleService consoleService,
         IProjectAnalyzer? projectAnalyzer = null,
@@ -137,6 +143,11 @@ public class MigrationService
     /// </summary>
     private async Task<MigrationResult> ExecuteMigrationAsync(Options options)
     {
+        // Per-run state: a second run on one instance (batch mode, tests) must not inherit the
+        // previous run's view of what is direct or transitive-only.
+        _directlyReferenced.Clear();
+        _transitivelyPinned.Clear();
+
         if (!string.IsNullOrEmpty(options.DiffFile))
         {
             // Created before anything can fail: an absent artifact must mean the run crashed,
@@ -1009,25 +1020,76 @@ public class MigrationService
     {
         var (_, propsFilePath) = MigrationValidator.GetOutputPaths(options);
         var shouldMerge = options.MergeExisting && File.Exists(propsFilePath);
+        var enablePinning = ComputeTransitivePinning(options, propsFilePath);
 
         if (shouldMerge)
         {
-            return await MergeAndWritePropsFileAsync(options, propsFilePath, packages);
+            return await MergeAndWritePropsFileAsync(options, propsFilePath, packages, enablePinning);
         }
 
-        return await CreateNewPropsFileAsync(options, propsFilePath, packages);
+        return await CreateNewPropsFileAsync(options, propsFilePath, packages, enablePinning);
+    }
+
+    /// <summary>
+    /// Pins a transitive scan introduced for packages nothing references directly are inert unless
+    /// the workspace opts into central transitive pinning — the flag the user passed asked for live
+    /// transitive pins, so the file we produce has to contain the switch that makes them work.
+    /// Returns true when the generated file should carry the property: some transitive-only pins
+    /// exist, the setting resolves to on nowhere (an explicit <c>false</c> — in the props file or
+    /// a governing <c>Directory.Build.props</c> — is the workspace's own choice: named in a
+    /// warning, never flipped), and nothing already supplies it.
+    /// </summary>
+    private bool ComputeTransitivePinning(Options options, string propsFilePath)
+    {
+        if (!options.IncludeTransitive)
+        {
+            return false;
+        }
+
+        var inertPins = _transitivelyPinned.Count(n => !_directlyReferenced.Contains(n));
+        if (inertPins == 0)
+        {
+            return false;
+        }
+
+        var propsDir = Path.GetDirectoryName(Path.GetFullPath(propsFilePath));
+        var setting = TransitivePinning.Resolve(propsFilePath, propsDir);
+        if (setting == true)
+        {
+            // Already on — here or in a governing Directory.Build.props. Writing it again is noise.
+            return false;
+        }
+
+        if (setting == false)
+        {
+            _consoleService.Warning(
+                $"{inertPins} transitive pin(s) were collected, but "
+                    + "CentralPackageTransitivePinningEnabled is explicitly false in the workspace's "
+                    + "build configuration — they will not govern the resolved graph until it is set."
+            );
+            return false;
+        }
+
+        _consoleService.Info(
+            options.DryRun
+                ? $"Would set CentralPackageTransitivePinningEnabled so the {inertPins} transitive pin(s) collected actually govern the graph."
+                : $"Setting CentralPackageTransitivePinningEnabled so the {inertPins} transitive pin(s) collected actually govern the graph."
+        );
+        return true;
     }
 
     private async Task<string> MergeAndWritePropsFileAsync(
         Options options,
         string propsFilePath,
-        Dictionary<string, HashSet<string>> packages
+        Dictionary<string, HashSet<string>> packages,
+        bool enablePinning
     )
     {
         var (mergedContent, addedCount, updatedCount, _) = _propsGenerator.MergeExisting(
             propsFilePath,
             packages,
-            options.ConflictStrategy
+            options.ConflictStrategy,
+            ensureTransitivePinning: enablePinning
         );
 
         if (options.DryRun)
@@ -1080,12 +1142,14 @@ public class MigrationService
     private async Task<string> CreateNewPropsFileAsync(
         Options options,
         string propsFilePath,
-        Dictionary<string, HashSet<string>> packages
+        Dictionary<string, HashSet<string>> packages,
+        bool enablePinning
     )
     {
         var updatedPackagePropsContent = _propsGenerator.Generate(
             packages,
-            options.ConflictStrategy
+            options.ConflictStrategy,
+            enableTransitivePinning: enablePinning
         );
 
         if (options.DryRun)
@@ -1384,6 +1448,10 @@ public class MigrationService
             StringComparer.OrdinalIgnoreCase
         );
         _cachedProjectScans[projectFilePath] = scannedRefs;
+        foreach (var reference in scannedRefs ?? [])
+        {
+            _directlyReferenced.Add(reference.PackageName);
+        }
 
         // Process project file
         var projectFileContent = ProjectAnalyzer.ProcessProject(
@@ -1438,6 +1506,7 @@ public class MigrationService
             else
             {
                 packages.Add(tr.PackageName, new HashSet<string> { tr.Version });
+                _transitivelyPinned.Add(tr.PackageName);
             }
         }
     }
