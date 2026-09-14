@@ -4,6 +4,17 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Added
+- **`--doctor` now detects shadowed `Directory.Packages.props` files.** When one props file's
+  directory is an ancestor of another's — inside the workspace or above it — a new "CPM layout"
+  check warns that NuGet evaluates only the nearest file per project, so projects beneath the
+  deeper file silently lose every pin the shallower one holds. Restore emits no diagnostic for
+  this; the check names both files and explains when the split is legitimate. Props files under
+  `bin`/`obj`/`node_modules` and other excluded directories don't count, and files in sibling
+  subtrees — which never share a project's ancestry — are correctly not a finding.
+
 ## [3.88.0] - 2026-09-14
 
 ### Fixed

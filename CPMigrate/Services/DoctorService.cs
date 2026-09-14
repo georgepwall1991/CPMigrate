@@ -217,7 +217,43 @@ internal sealed class DoctorService
                 "No Directory.Packages.props — run 'cpmigrate' to create one"));
         }
 
+        var shadowing = CheckPropsShadowing(dir);
+        if (shadowing is not null)
+        {
+            checks.Add(shadowing);
+        }
+
         return checks;
+    }
+
+    /// <summary>
+    /// NuGet evaluates only the nearest <c>Directory.Packages.props</c> per project — when one
+    /// file's directory is an ancestor of another's, projects beneath the deeper file silently
+    /// lose every pin the shallower one holds, with no diagnostic from restore. Doctor owes the
+    /// workspace that finding: the split is sometimes deliberate, but it is never invisible to
+    /// NuGet. Returns null when fewer than two conventional files are in scope — the CPM check
+    /// already says what governs then.
+    /// </summary>
+    internal static DoctorCheck? CheckPropsShadowing(string dir)
+    {
+        var conflicting = GoverningFiles.FindConflictingPropsFiles(dir);
+        if (conflicting.Count == 0)
+        {
+            return null;
+        }
+
+        var names = string.Join(", ", conflicting.Select(p =>
+            Path.GetRelativePath(dir, p) is { } rel && !rel.StartsWith("..", StringComparison.Ordinal)
+                ? rel
+                : p));
+
+        return new DoctorCheck(
+            "CPM layout",
+            DoctorStatus.Warning,
+            $"{conflicting.Count} Directory.Packages.props files share one ancestry — only the "
+                + $"nearest applies per project: {names}",
+            "NuGet ignores the shallower file's pins for projects under the deeper one. "
+                + "Consolidate into a single file unless the subtree split is deliberate.");
     }
 
     internal static DoctorCheck CheckDiskSpace(string searchPath)
