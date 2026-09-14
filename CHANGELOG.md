@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.70.0] - 2026-09-14
+
 ### Changed
 - **`DevelopmentDependencyLeak` now reads the nuspec, not just the name.** The rule's dev-only
   detection was convention-based — analyzer suffixes, test SDKs, coverage ids — which missed
