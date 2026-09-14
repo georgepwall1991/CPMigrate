@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.82.0] - 2026-09-14
 
 ### Fixed
 - **`--transitive` migration now switches on the setting that makes its pins live.** A
