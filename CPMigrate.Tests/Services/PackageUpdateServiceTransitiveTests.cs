@@ -217,7 +217,7 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
         _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("System.Text.Encodings.Web", false))
             .ReturnsAsync(NuGetVersion.Parse("7.0.1"));
 
-        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<BackupSettings>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = propsPath, BackupFileName = "backup" });
 
         _dotNetCliMock.Setup(d => d.RunRestoreAsync(It.IsAny<string>()))
@@ -409,7 +409,7 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
 
     private void SetupBackupAndBuild()
     {
-        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<BackupSettings>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry
             {
                 OriginalPath = Path.Combine(_testDirectory, "Directory.Packages.props"),

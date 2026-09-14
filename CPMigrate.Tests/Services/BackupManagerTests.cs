@@ -576,4 +576,36 @@ public class BackupManagerTests : IDisposable
     {
         (await BackupManager.ReadManifestAsync(string.Empty)).Should().BeNull();
     }
+
+    [Fact]
+    public void CreateBackupForProject_EmptyBackupPath_WritesNothing()
+    {
+        // Enabled settings with an empty path still mean "no backup directory" — Path.Combine
+        // would resolve the *.backup_* name against the process working directory.
+        var projectFile = Path.Combine(_testDirectory, "Test.csproj");
+        File.WriteAllText(projectFile, "<Project />");
+        var settings = new BackupSettings(
+            Enabled: true,
+            BackupDir: _testDirectory,
+            AddBackupToGitignore: false,
+            GitignoreDir: _testDirectory);
+        var cwd = Directory.GetCurrentDirectory();
+
+        var before = Directory.GetFiles(cwd, "*.backup_*");
+
+        var entry = _backupManager.CreateBackupForProject(settings, projectFile, string.Empty);
+
+        entry.Should().BeNull();
+        Directory.GetFiles(cwd, "*.backup_*").Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public void RestoreFile_EmptyBackupPath_ThrowsWithoutProbingCwd()
+    {
+        var entry = new BackupEntry { OriginalPath = "/x", BackupFileName = "Test.csproj.backup_1" };
+
+        var action = () => BackupManager.RestoreFile(string.Empty, entry);
+
+        action.Should().Throw<FileNotFoundException>();
+    }
 }

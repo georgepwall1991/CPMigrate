@@ -93,7 +93,10 @@ public class BackupManager : IBackupManager
         string? timestampOverride = null
     )
     {
-        if (!backupSettings.Enabled)
+        // An empty backupPath can only mean there is no backup directory — Path.Combine would
+        // resolve the backup file name against the process working directory and write a stray
+        // *.backup_* file there. Treat it the same as backups being disabled.
+        if (!backupSettings.Enabled || string.IsNullOrEmpty(backupPath))
         {
             return null;
         }
@@ -322,6 +325,13 @@ public class BackupManager : IBackupManager
     /// match the SHA-256 recorded at backup time; nothing is copied in that case.</exception>
     public static void RestoreFile(string backupPath, BackupEntry entry)
     {
+        // An empty path means there is no backup directory — never probe the working directory
+        // for a coincidentally named *.backup_* file.
+        if (string.IsNullOrEmpty(backupPath))
+        {
+            throw new FileNotFoundException($"Backup file not found: {entry.BackupFileName}");
+        }
+
         var backupFilePath = Path.Combine(backupPath, entry.BackupFileName);
 
         if (!File.Exists(backupFilePath))
