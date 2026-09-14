@@ -6,6 +6,15 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Added
+- **`--unify-props` runs are now backed up and rollbackable.** The last mutating mode with no
+  undo: a unify pass rewrites every consensus project file and creates `Directory.Build.props`,
+  and a bad run left nothing to restore. Each file now lands in `.cpmigrate_backup` before its
+  first write under the manifest `--rollback` already reads — which also removes the props file
+  the run created. `--no-backup`, `--backup-dir`, and `--add-gitignore` apply; dry runs, refused
+  confirmations, and no-candidate runs leave nothing behind. The JSON document carries
+  `backup.path` and `backup.filesBackedUp` (output schema 1.22.0).
+
 ## [3.73.0] - 2026-09-14
 
 ### Added

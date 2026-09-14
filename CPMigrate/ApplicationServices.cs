@@ -176,6 +176,6 @@ internal sealed class ApplicationServices
 
     public BuildPropsService CreateBuildPropsService()
     {
-        return new BuildPropsService(ConsoleService, ProjectAnalyzer);
+        return new BuildPropsService(ConsoleService, ProjectAnalyzer, BackupManager);
     }
 }

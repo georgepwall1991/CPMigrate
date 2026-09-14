@@ -15,12 +15,17 @@ public class BuildPropsService
     private readonly IConsoleService _consoleService;
     private readonly BuildPropsAnalyzer _analyzer;
     private readonly IProjectAnalyzer _projectAnalyzer;
+    private readonly IBackupManager _backupManager;
 
-    public BuildPropsService(IConsoleService consoleService, IProjectAnalyzer projectAnalyzer)
+    public BuildPropsService(
+        IConsoleService consoleService,
+        IProjectAnalyzer projectAnalyzer,
+        IBackupManager? backupManager = null)
     {
         _consoleService = consoleService;
         _projectAnalyzer = projectAnalyzer;
         _analyzer = new BuildPropsAnalyzer(consoleService);
+        _backupManager = backupManager ?? new BackupManager();
     }
 
     public async Task<int> UnifyPropertiesAsync(Options options)
@@ -97,14 +102,32 @@ public class BuildPropsService
         var itemsList = itemCandidates.Select(c => c.Item).ToList();
         var buildPropsPath = Path.Combine(basePath, "Directory.Build.props");
 
-        await CreateOrUpdateBuildProps(buildPropsPath, propsList, itemsList);
-        await RemovePropertiesFromProjects(projectPaths, propsList);
-        await RemoveItemsFromProjects(projectPaths, itemsList);
+        // The pass rewrites every consensus project file exactly like a migration does, so it owes
+        // the same undo path: each file lands in .cpmigrate_backup before its first write, under the
+        // manifest --rollback already reads.
+        var backupSession = FixBackupSession.TryCreate(
+            BackupSettings.FromOptions(options),
+            buildPropsPath,
+            options.DryRun,
+            _backupManager);
+
+        await CreateOrUpdateBuildProps(buildPropsPath, propsList, itemsList, backupSession);
+        await RemovePropertiesFromProjects(projectPaths, propsList, backupSession);
+        await RemoveItemsFromProjects(projectPaths, itemsList, backupSession);
+
+        backupSession?.WriteManifest();
+        if (backupSession is { FileCount: > 0 })
+        {
+            _consoleService.Dim(
+                $"Backed up {backupSession.FileCount} file(s) to {backupSession.BackupPath} "
+                    + "- undo with --rollback."
+            );
+        }
 
         _consoleService.Success($"Successfully unified {propertyCandidates.Count} properties and {itemCandidates.Count} items.");
         if (options.Output == OutputFormat.Json)
         {
-            await EmitJsonAsync(options, basePath, "unified", ExitCodes.Success, propertyCandidates, itemCandidates, analysis, projectPaths.Count + 1);
+            await EmitJsonAsync(options, basePath, "unified", ExitCodes.Success, propertyCandidates, itemCandidates, analysis, projectPaths.Count + 1, backupSession);
         }
         return ExitCodes.Success;
     }
@@ -121,7 +144,8 @@ public class BuildPropsService
         List<PropertyCandidate> propertyCandidates,
         List<ItemCandidate> itemCandidates,
         PropertyAnalysisResult analysis,
-        int filesModified
+        int filesModified,
+        FixBackupSession? backupSession = null
     )
     {
         var candidates = new UnifyPropsCandidatesPayload(
@@ -153,6 +177,9 @@ public class BuildPropsService
             itemCandidates.Count,
             filesModified
         );
+        BackupInfo? backup = backupSession is { ManifestWritten: true }
+            ? new BackupInfo { Path = backupSession.BackupPath!, FilesBackedUp = backupSession.FileCount }
+            : null;
         await JsonOutputWriter.EmitAsync(
             UnifyPropsJsonWriter.Serialize(
                 Path.Combine(basePath, "Directory.Build.props"),
@@ -160,7 +187,8 @@ public class BuildPropsService
                 options.Force,
                 exitCode,
                 candidates,
-                summary
+                summary,
+                backup
             ),
             options,
             _consoleService
@@ -230,10 +258,12 @@ public class BuildPropsService
 
     private async Task CreateOrUpdateBuildProps(string path,
         List<CPMigrate.Models.ProjectProperty> properties,
-        List<CPMigrate.Models.ProjectItem> items)
+        List<CPMigrate.Models.ProjectItem> items,
+        FixBackupSession? backupSession)
     {
         using var collection = new ProjectCollection();
         ProjectRootElement root;
+        backupSession?.BeforeWrite(path);
         if (File.Exists(path))
         {
             _consoleService.Info($"Updating existing {Path.GetFileName(path)}...");
@@ -301,7 +331,7 @@ public class BuildPropsService
         root.Save(path);
     }
 
-    private async Task RemoveItemsFromProjects(List<string> projectPaths, List<CPMigrate.Models.ProjectItem> itemsToRemove)
+    private async Task RemoveItemsFromProjects(List<string> projectPaths, List<CPMigrate.Models.ProjectItem> itemsToRemove, FixBackupSession? backupSession)
     {
         if (itemsToRemove.Count == 0)
         {
@@ -316,7 +346,7 @@ public class BuildPropsService
 
         foreach (var projectPath in projectPaths)
         {
-            var modified = ProcessProjectForItemRemoval(projectPath, targetItems);
+            var modified = ProcessProjectForItemRemoval(projectPath, targetItems, backupSession);
 
             if (modified)
             {
@@ -327,7 +357,8 @@ public class BuildPropsService
 
     private bool ProcessProjectForItemRemoval(
         string projectPath,
-        Dictionary<string, Dictionary<string, string>?> targetItems)
+        Dictionary<string, Dictionary<string, string>?> targetItems,
+        FixBackupSession? backupSession)
     {
         using var collection = new ProjectCollection();
         var root = ProjectRootElement.Open(projectPath, collection);
@@ -350,6 +381,7 @@ public class BuildPropsService
 
         if (modified)
         {
+            backupSession?.BeforeWrite(projectPath);
             root.Save(projectPath);
         }
 
@@ -412,7 +444,7 @@ public class BuildPropsService
         return emptyGroups.Count > 0;
     }
 
-    private async Task RemovePropertiesFromProjects(List<string> projectPaths, List<CPMigrate.Models.ProjectProperty> propertiesToRemove)
+    private async Task RemovePropertiesFromProjects(List<string> projectPaths, List<CPMigrate.Models.ProjectProperty> propertiesToRemove, FixBackupSession? backupSession)
     {
         if (propertiesToRemove.Count == 0)
         {
@@ -461,6 +493,7 @@ public class BuildPropsService
 
             if (modified)
             {
+                backupSession?.BeforeWrite(projectPath);
                 root.Save(projectPath);
                 _consoleService.Dim($"Updated {Path.GetFileName(projectPath)}");
             }

@@ -88,8 +88,11 @@ public class FixService : IFixService
         if (backupSession is not null)
         {
             backupSession.WriteManifest();
-            fixReport.BackupPath = backupSession.BackupPath;
-            fixReport.FilesBackedUp = backupSession.FileCount;
+            if (backupSession.ManifestWritten)
+            {
+                fixReport.BackupPath = backupSession.BackupPath;
+                fixReport.FilesBackedUp = backupSession.FileCount;
+            }
             if (backupSession.FileCount > 0)
             {
                 _console.Dim(

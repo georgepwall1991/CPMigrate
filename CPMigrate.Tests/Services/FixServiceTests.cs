@@ -615,7 +615,7 @@ public class FixServiceTests
     }
 
     [Fact]
-    public void ApplyFixes_NewFileCreation_DoesNotFailBackup()
+    public async Task ApplyFixes_NewFileCreation_DoesNotFailBackup()
     {
         // A fixer may create a file that did not exist (e.g. the props file itself). There is
         // nothing to back up — the manifest's PropsFileExisted=false is what makes --rollback
@@ -637,6 +637,16 @@ public class FixServiceTests
 
             fixReport.TotalFixesApplied.Should().Be(1);
             File.Exists(propsPath).Should().BeTrue();
+
+            // Nothing existed to back up, but the created file still has to be undoable: the
+            // manifest is written so --rollback can delete what the pass created.
+            var manifest = await BackupManager.ReadManifestAsync(
+                Path.Combine(testDir, ".cpmigrate_backup"));
+            manifest.Should().NotBeNull(
+                "a created anchor file with zero backups is still a change --rollback owes"
+            );
+            manifest!.PropsFileExisted.Should().BeFalse();
+            manifest.Backups.Should().BeEmpty();
         }
         finally
         {

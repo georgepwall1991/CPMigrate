@@ -442,7 +442,8 @@ public class Options
     [Option(
         "unify-props",
         Default = false,
-        HelpText = "Migrate common properties from projects to Directory.Build.props."
+        HelpText = "Migrate common properties from projects to Directory.Build.props. Backs up "
+            + "every file before writing; undo with --rollback."
     )]
     public bool UnifyProps { get; set; }
 
