@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.76.0] - 2026-09-14
+
 ### Added
 - **`--verify` now covers `--unify-props`, and the pass names what it injects.** Unifying a
   property or item below full consensus hoists it into `Directory.Build.props` — where every
