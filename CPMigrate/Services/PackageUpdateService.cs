@@ -87,6 +87,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
         var acceptedUpdates = RunMajorVersionWizard(availableUpdates, request);
         var updatesToApply = acceptedUpdates.Where(u => u.Accepted).ToList();
+        var transitiveWithheld = WithholdInertTransitivePins(load, updatesToApply, acceptedUpdates);
         if (updatesToApply.Count == 0)
         {
             _consoleService.Info("No updates selected.");
@@ -96,6 +97,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 PackagesChecked = load.CurrentVersions.Count,
                 PackagesSkipped = load.CurrentVersions.Count,
                 TransitivePackagesFound = transitiveFound,
+                TransitivePackagesWithheld = transitiveWithheld,
                 Updates = acceptedUpdates
             };
         }
@@ -103,7 +105,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         if (request.DryRun)
         {
             return BuildDryRunResult(
-                load.CurrentVersions.Count, transitiveFound, updatesToApply, acceptedUpdates, load, request);
+                load.CurrentVersions.Count, transitiveFound, updatesToApply, acceptedUpdates, load, request, transitiveWithheld);
         }
 
         var backup = await CreateBackupAsync(request, load.PropsPath);
@@ -133,12 +135,53 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             // The props file may be half-written; get the user back to a known state before surfacing this.
             _consoleService.Error($"Update failed while writing Directory.Packages.props: {ex.Message}");
             return await RecoverFromWriteFailureAsync(
-                transaction, backup.Path, backup.Manifest, load.CurrentVersions.Count, acceptedUpdates, transitiveFound);
+                transaction, backup.Path, backup.Manifest, load.CurrentVersions.Count,
+                acceptedUpdates, transitiveFound, transitiveWithheld);
         }
 
         return FinalizeSearch(
             search, backup.Path, backup.Manifest, load.CurrentVersions.Count,
-            acceptedUpdates, transitiveFound, request);
+            acceptedUpdates, transitiveFound, request, transitiveWithheld);
+    }
+
+    /// <summary>
+    /// Transitive-only updates only move the graph when the workspace opts into central transitive
+    /// pinning; without it a <c>PackageVersion</c> for a package nothing references directly is an
+    /// inert line restore ignores. Writing it would claim coverage that does not exist — the same
+    /// reason remediation reports rather than writes — so these are withheld, named, and excluded
+    /// from the set any verification or dry-run preview sees.
+    /// </summary>
+    /// <returns>How many accepted updates were withheld.</returns>
+    private int WithholdInertTransitivePins(
+        UpdateLoadContext load,
+        List<PackageUpdateEntry> updatesToApply,
+        List<PackageUpdateEntry> acceptedUpdates)
+    {
+        var transitive = updatesToApply.Where(u => u.IsTransitive).ToList();
+        if (transitive.Count == 0 || TransitivePinning.IsEnabled(load.PropsPath, load.BasePath))
+        {
+            return 0;
+        }
+
+        for (var i = 0; i < acceptedUpdates.Count; i++)
+        {
+            if (acceptedUpdates[i] is { Accepted: true, IsTransitive: true })
+            {
+                acceptedUpdates[i] = acceptedUpdates[i] with { Withheld = true };
+            }
+        }
+
+        updatesToApply.RemoveAll(u => u.IsTransitive);
+
+        _consoleService.Warning(
+            $"{transitive.Count} transitive update(s) withheld: a central pin for a package nothing "
+                + "references directly does not move the resolved graph unless "
+                + "CentralPackageTransitivePinningEnabled is true. Set it in "
+                + "Directory.Packages.props or Directory.Build.props to let these apply: "
+                + string.Join(", ", transitive.Select(u => u.PackageName).Order(StringComparer.OrdinalIgnoreCase))
+        );
+
+        return transitive.Count;
     }
 
     private IUpdateSearchStrategy CreateSearchStrategy(PackageUpdateRequest request)
@@ -246,7 +289,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
     private PackageUpdateResult BuildDryRunResult(
         int packagesChecked, int transitiveFound,
         List<PackageUpdateEntry> updatesToApply, List<PackageUpdateEntry> acceptedUpdates,
-        UpdateLoadContext load, PackageUpdateRequest request)
+        UpdateLoadContext load, PackageUpdateRequest request, int transitiveWithheld)
     {
         var directDryRun = updatesToApply.Where(u => !u.IsTransitive).ToList();
         var transitiveDryRun = updatesToApply.Where(u => u.IsTransitive).ToList();
@@ -262,6 +305,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             PackagesSkipped = packagesChecked - directDryRun.Count,
             TransitivePackagesFound = transitiveFound,
             TransitivePackagesUpdated = transitiveDryRun.Count,
+            TransitivePackagesWithheld = transitiveWithheld,
             Updates = acceptedUpdates
         };
     }
@@ -320,7 +364,8 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         int packagesChecked,
         List<PackageUpdateEntry> acceptedUpdates,
         int transitiveFound,
-        PackageUpdateRequest request)
+        PackageUpdateRequest request,
+        int transitiveWithheld = 0)
     {
         ReportSearchOutcome(search, request);
         BackupManager.CleanupBackups(backupPath, manifest);
@@ -351,6 +396,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             PackagesSkipped = packagesChecked - directApplied,
             TransitivePackagesFound = transitiveFound,
             TransitivePackagesUpdated = transitiveApplied,
+            TransitivePackagesWithheld = transitiveWithheld,
             PackagesHeldBack = search.HeldBack.Count,
             VerificationRuns = search.VerificationRuns,
             BisectBudgetExhausted = search.BudgetExhausted,
@@ -460,7 +506,8 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         BackupManifest manifest,
         int packagesChecked,
         List<PackageUpdateEntry> acceptedUpdates,
-        int transitiveFound)
+        int transitiveFound,
+        int transitiveWithheld = 0)
     {
         try
         {
@@ -474,6 +521,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 ExitCode = ExitCodes.FileOperationError,
                 PackagesChecked = packagesChecked,
                 TransitivePackagesFound = transitiveFound,
+                TransitivePackagesWithheld = transitiveWithheld,
                 TestsPassed = false,
                 WasRolledBack = true,
                 Warnings = [StaleAssetsGuidance],
@@ -490,6 +538,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
                 ExitCode = ExitCodes.FileOperationError,
                 PackagesChecked = packagesChecked,
                 TransitivePackagesFound = transitiveFound,
+                TransitivePackagesWithheld = transitiveWithheld,
                 TestsPassed = false,
                 WasRolledBack = false,
                 Updates = acceptedUpdates

@@ -169,8 +169,16 @@ public static class OutputMetadata
     /// newly receive it through <c>Directory.Build.props</c> — for a <c>PackageReference</c> that is
     /// the resolved-graph change verification attributes.
     /// </para>
+    /// <para>
+    /// 1.24.0 additively introduced <c>summary.transitivePackagesWithheld</c> and
+    /// <c>packageUpdates[].withheld</c>: transitive-only updates a <c>--update-packages</c> run
+    /// reported rather than wrote because the workspace does not set
+    /// <c>CentralPackageTransitivePinningEnabled</c>, under which the pin is inert. Distinct from
+    /// <c>heldBack</c> — nothing was attempted, so no verification failure is implied. Absent/zero
+    /// when every transitive update could apply or none was found.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.23.0";
+    public const string SchemaVersion = "1.24.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

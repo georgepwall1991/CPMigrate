@@ -65,6 +65,13 @@ public class PackageUpdateResult
     public int PackagesHeldBack { get; init; }
 
     /// <summary>
+    /// Number of transitive-only updates reported rather than written because the workspace does not
+    /// set <c>CentralPackageTransitivePinningEnabled</c> — a pin nothing references directly is inert
+    /// without it, so counting these as applied would claim coverage the graph does not have.
+    /// </summary>
+    public int TransitivePackagesWithheld { get; init; }
+
+    /// <summary>
     /// Number of restore+test cycles executed. Zero when verification never ran (dry-run, no updates).
     /// </summary>
     public int VerificationRuns { get; init; }
@@ -88,6 +95,10 @@ public class PackageUpdateResult
 /// Whether this accepted update was excluded because keeping it broke verification. Under <c>--bisect</c>
 /// this marks the isolated culprits; without it, every accepted update is marked when the run rolls back.
 /// </param>
+/// <param name="Withheld">
+/// Whether this transitive-only update was reported rather than written because the workspace does not
+/// opt into central transitive pinning — the pin would be inert, so nothing was attempted.
+/// </param>
 public record PackageUpdateEntry(
     string PackageName,
     string CurrentVersion,
@@ -95,4 +106,5 @@ public record PackageUpdateEntry(
     bool IsMajorUpdate,
     bool Accepted,
     bool IsTransitive = false,
-    bool HeldBack = false);
+    bool HeldBack = false,
+    bool Withheld = false);
