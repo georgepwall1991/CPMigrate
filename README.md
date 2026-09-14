@@ -166,7 +166,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | 📟 **`--status`** | One-shot workspace health dashboard — or `--output Json` for CI |
 | 🌳 **`--tree`** | Dependency tree, direct + transitive — ASCII, or `--output Json` for CI |
 | 🕵️ **`--why`** | Trace one or more packages (`--why A,B,C` shares one workspace scan): who declares each, who inherits it, version drift — as text or `--output Json` (one JSON document per run; multi-ID runs emit a `why-many` document) for CI |
-| 🔀 **`--diff`** | Unified diff preview on `--dry-run`/`--fix-dry-run`; capture it with `--diff-file` for CI |
+| 🔀 **`--diff`** | Unified diff preview on every dry run — migration, `--unify-props`, fix, update, remediate; capture it with `--diff-file` for CI |
 
 ### Why not just do it by hand?
 
@@ -280,7 +280,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--project` | `-p` | | A specific project file, or a directory holding one |
 | `--output-dir` | `-o` | `.` | Where `Directory.Packages.props` is written |
 | `--dry-run` | `-d` | `false` | Preview changes without modifying files |
-| `--diff` | | `false` | Render a unified diff during `--dry-run` or `--fix-dry-run` (migration, `--unify-props`, or fix preview) |
+| `--diff` | | `false` | Render a unified diff during `--dry-run` or `--fix-dry-run` (migration, `--unify-props`, fix, `--update-packages`, or `--remediate` preview) |
 | `--merge` | | `false` | Merge into an existing props file instead of failing |
 | `--conflict-strategy` | | `Highest` | `Highest` · `Lowest` · `Fail` |
 | `--interactive-conflicts` | | `false` | Prompt for each version conflict |
@@ -337,7 +337,7 @@ Baselines rot as the debt gets paid down, and a run that reads one now says so: 
 
 | Option | Default | Description |
 |--------|:-------:|-------------|
-| `--update-packages` | `false` | Update all packages, test, rollback on failure |
+| `--update-packages` | `false` | Update all packages, test, rollback on failure; `--dry-run [--diff|--diff-file]` previews the exact props edits |
 | `--include-prerelease` | `false` | Include pre-release versions |
 | `--bisect` | `false` | Keep the largest green subset instead of reverting all |
 | `--bisect-budget` | `16` | Max restore+test cycles a bisection may spend |
@@ -356,7 +356,7 @@ Baselines rot as the debt gets paid down, and a run that reads one now says so: 
 | `--remediate` | `false` | Clear known advisories: move each vulnerable package to the **lowest** version that fixes it, run `dotnet test`, roll back on red, then re-scan to prove the CVEs are gone |
 | `--allow-major` | `false` | Let `--remediate` apply a fix that crosses a major version. Withheld and reported by default |
 
-`--remediate` also honours `--bisect`, `--bisect-budget`, `--bisect-test-filter`, `--only`, `--dry-run`, `--include-prerelease`, `--no-backup` and `--output Json`.
+`--remediate` also honours `--bisect`, `--bisect-budget`, `--bisect-test-filter`, `--only`, `--dry-run` (with `--diff`/`--diff-file` for the exact props edit), `--include-prerelease`, `--no-backup` and `--output Json`.
 
 **Why "lowest" and not "latest".** `--update-packages` asks what is newest, which is right for staying current and wrong for clearing a CVE: it turns a one-patch security fix into an unrelated feature upgrade and drags in every behaviour change since. A remediation diff should be the smallest change that makes the advisory go away, so a reviewer can see it *is* a security fix and nothing else.
 
@@ -416,7 +416,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 |--------|:-----:|:-------:|-------------|
 | `--output` | | `Terminal` | `Terminal` · `Json` · `Sarif` · `Markdown` · `Csv` (`Sarif`/`Csv` need `--analyze`; `Markdown` needs `--analyze` or `--verify`) |
 | `--output-file` | | | Write `Json`/`Sarif`/`Markdown`/`Csv` to a file |
-| `--diff-file` | | | Append every dry-run unified diff — migration, `--unify-props`, or `--fix-dry-run` — to a file; created empty when nothing changes, missing when the run crashed; rejected for every other command |
+| `--diff-file` | | | Append every dry-run unified diff — migration, `--unify-props`, `--fix-dry-run`, `--update-packages`, or `--remediate` — to a file; created empty when nothing changes, missing when the run crashed; rejected for every other command |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Diagnostic logging to `cpmigrate.log` |
 

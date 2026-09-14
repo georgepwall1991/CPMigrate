@@ -156,14 +156,15 @@ public sealed class RemediationServiceTests : IDisposable
         );
     }
 
-    private RemediateRequest Request(bool dryRun = false, bool allowMajor = false) =>
+    private RemediateRequest Request(bool dryRun = false, bool allowMajor = false, string? diffFile = null) =>
         new(
             SolutionPath: _root,
             AllowMajor: allowMajor,
             IncludePrerelease: false,
             DryRun: dryRun,
             Backup: new BackupSettings(true, Path.Combine(_root, ".backup"), false, _root),
-            Output: new CommandOutput(OutputFormat.Json, Quiet: true, Force: true, OutputFile: null)
+            Output: new CommandOutput(OutputFormat.Json, Quiet: true, Force: true, OutputFile: null),
+            DiffFilePath: diffFile
         );
 
     [Fact]
@@ -419,6 +420,29 @@ public sealed class RemediationServiceTests : IDisposable
         result.ExitCode.Should().Be(ExitCodes.Success);
         result.Actions[0].TargetVersion.Should().Be("1.2.0");
         File.ReadAllText(_propsPath).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task ADryRunWithDiffFile_CapturesThePropsEditItWouldMake()
+    {
+        var before = File.ReadAllText(_propsPath);
+        var diffPath = Path.Combine(_root, "remediate.patch");
+
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            _ => ([Finding()], true)
+        );
+
+        var result = await service.RemediateAsync(Request(dryRun: true, diffFile: diffPath));
+
+        result.DryRun.Should().BeTrue();
+        File.ReadAllText(_propsPath).Should().Be(before, "a dry run never writes");
+
+        var artifact = File.ReadAllText(diffPath);
+        artifact.Should().Contain("--- a/Directory.Packages.props");
+        artifact.Should().Contain("@@ ");
+        artifact.Should().Contain("1.2.0", "the pin the pass would write appears in the patch");
     }
 
     [Fact]

@@ -171,6 +171,42 @@ public class CommandRequestsTests
     }
 
     [Fact]
+    public void FromOptions_MapsDiffFlagsOntoThePackageUpdateRequest()
+    {
+        var options = new Options
+        {
+            UpdatePackages = true,
+            DryRun = true,
+            Diff = true,
+            DiffFile = "updates.patch",
+        };
+
+        var request = PackageUpdateRequest.FromOptions(options);
+
+        request.DryRun.Should().BeTrue();
+        request.ShowDiff.Should().BeTrue();
+        request.DiffFilePath.Should().Be("updates.patch");
+    }
+
+    [Fact]
+    public void FromOptions_MapsDiffFlagsOntoTheRemediateRequest()
+    {
+        var options = new Options
+        {
+            Remediate = true,
+            DryRun = true,
+            Diff = true,
+            DiffFile = "remediate.patch",
+        };
+
+        var request = RemediateRequest.FromOptions(options);
+
+        request.DryRun.Should().BeTrue();
+        request.ShowDiff.Should().BeTrue();
+        request.DiffFilePath.Should().Be("remediate.patch");
+    }
+
+    [Fact]
     public void FixRequest_DryRunWrite_InvokesPlannedWriteSink_WithoutTouchingDisk()
     {
         var dir = Directory.CreateTempSubdirectory("cpmigrate-fixreq").FullName;

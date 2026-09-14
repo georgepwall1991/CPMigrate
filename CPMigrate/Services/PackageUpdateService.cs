@@ -18,6 +18,7 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
     private readonly IDotNetCliService _dotNetCli;
     private readonly IBackupManager _backupManager;
     private readonly ILogger<PackageUpdateService> _logger;
+    private readonly DiffFileCollector _diffCollector = new();
 
     public PackageUpdateService(
         IConsoleService consoleService,
@@ -45,6 +46,13 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
     /// <inheritdoc />
     public async Task<PackageUpdateResult> UpdatePackagesAsync(PackageUpdateRequest request)
     {
+        // The artifact exists from the first moment of the run: empty means "no changes", absent
+        // means the run crashed before it could say so — the contract --diff-file keeps everywhere.
+        if (request.DryRun && !string.IsNullOrEmpty(request.DiffFilePath))
+        {
+            _diffCollector.Begin(request.DiffFilePath);
+        }
+
         var load = await DiscoverAndLoadCurrentVersionsAsync(request);
         if (load.EarlyResult != null)
         {
@@ -94,7 +102,8 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
         if (request.DryRun)
         {
-            return BuildDryRunResult(load.CurrentVersions.Count, transitiveFound, updatesToApply, acceptedUpdates);
+            return BuildDryRunResult(
+                load.CurrentVersions.Count, transitiveFound, updatesToApply, acceptedUpdates, load, request);
         }
 
         var backup = await CreateBackupAsync(request, load.PropsPath);
@@ -236,13 +245,15 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
     private PackageUpdateResult BuildDryRunResult(
         int packagesChecked, int transitiveFound,
-        List<PackageUpdateEntry> updatesToApply, List<PackageUpdateEntry> acceptedUpdates)
+        List<PackageUpdateEntry> updatesToApply, List<PackageUpdateEntry> acceptedUpdates,
+        UpdateLoadContext load, PackageUpdateRequest request)
     {
         var directDryRun = updatesToApply.Where(u => !u.IsTransitive).ToList();
         var transitiveDryRun = updatesToApply.Where(u => u.IsTransitive).ToList();
         _consoleService.DryRun($"Would update {directDryRun.Count} direct package(s)" +
             (transitiveDryRun.Count > 0 ? $" and pin {transitiveDryRun.Count} transitive package(s)." : "."));
         ShowDryRunSummary(updatesToApply);
+        ShowPlannedPropsDiff(load, updatesToApply, request);
         return new PackageUpdateResult
         {
             ExitCode = ExitCodes.Success,
@@ -685,6 +696,38 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             _consoleService.DryRun($"  {update.PackageName}: {update.CurrentVersion} → {update.LatestVersion}");
         }
         _consoleService.WriteLine();
+    }
+
+    /// <summary>
+    /// The dry run's real preview: the props file the pass would write, computed with the same
+    /// recipe the write path uses. Rendered whole by default and as a unified diff under
+    /// <c>--diff</c>; the <c>--diff-file</c> artifact collects the diff either way.
+    /// </summary>
+    private void ShowPlannedPropsDiff(
+        UpdateLoadContext load,
+        List<PackageUpdateEntry> updatesToApply,
+        PackageUpdateRequest request)
+    {
+        var planned = UpdatePropsPreview.PlannedContent(
+            _propsGenerator, load.PropsPath, load.CurrentVersions, updatesToApply);
+        if (planned is null)
+        {
+            return;
+        }
+
+        if (request.ShowDiff || _diffCollector.IsEnabled)
+        {
+            var diff = UnifiedDiffGenerator.Generate(
+                File.ReadAllText(load.PropsPath), planned, load.PropsPath);
+            _diffCollector.Append(diff);
+            if (request.ShowDiff)
+            {
+                _consoleService.WriteDiff(diff);
+                return;
+            }
+        }
+
+        _consoleService.WritePropsPreview(planned);
     }
 
     /// <summary>

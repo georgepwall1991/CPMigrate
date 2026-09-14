@@ -109,6 +109,99 @@ public class PackageUpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatePackagesAsync_DryRunWithDiff_RendersPropsDiffWithoutWriting()
+    {
+        // The dry run owes the same honesty the other previews owe: the props file the pass would
+        // write, rendered as a unified diff — not just "12.0.3 → 13.0.3".
+        SetupProjectAnalyzer();
+        var propsPath = CreatePropsFile(("Newtonsoft.Json", "12.0.3"));
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        var options = CreateOptions(dryRun: true);
+        options.Diff = true;
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        File.ReadAllText(propsPath).Should().Contain("12.0.3").And.NotContain("13.0.3");
+        _consoleService.OutputMessages.Should().Contain(
+            m => m.Contains("@@ ") && m.Contains("13.0.3"),
+            "--diff renders the props file the pass would produce");
+    }
+
+    [Fact]
+    public async Task UpdatePackagesAsync_DryRunWithDiffFile_CapturesArtifact_WithoutRendering()
+    {
+        SetupProjectAnalyzer();
+        var propsPath = CreatePropsFile(("Newtonsoft.Json", "12.0.3"));
+        var diffPath = Path.Combine(_testDirectory, "updates.patch");
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        var options = CreateOptions(dryRun: true);
+        options.DiffFile = diffPath;
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        File.ReadAllText(propsPath).Should().NotContain("13.0.3");
+
+        var artifact = File.ReadAllText(diffPath);
+        artifact.Should().Contain("--- a/Directory.Packages.props");
+        artifact.Should().Contain("@@ ");
+        artifact.Should().Contain("13.0.3");
+        // The artifact is collected, not rendered — the console still gets the default preview.
+        _consoleService.OutputMessages.Should().NotContain(m => m.Contains("@@ "));
+        _consoleService.PropsPreviews.Should().ContainSingle()
+            .Which.Should().Contain("13.0.3");
+    }
+
+    [Fact]
+    public async Task UpdatePackagesAsync_DryRunWithoutDiff_PreviewsThePropsItWouldWrite()
+    {
+        SetupProjectAnalyzer();
+        var propsPath = CreatePropsFile(("Newtonsoft.Json", "12.0.3"));
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        var options = CreateOptions(dryRun: true);
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        File.ReadAllText(propsPath).Should().NotContain("13.0.3");
+        _consoleService.PropsPreviews.Should().ContainSingle()
+            .Which.Should().Contain("13.0.3");
+        _consoleService.OutputMessages.Should().NotContain(m => m.Contains("@@ "));
+    }
+
+    [Fact]
+    public async Task UpdatePackagesAsync_DryRunWithDiffFile_NoUpdates_LeavesEmptyArtifact()
+    {
+        // "Created empty at the start of the run": nothing to update still owes the file — empty
+        // means no changes, while a missing one would mean the run crashed before it could say so.
+        SetupProjectAnalyzer();
+        CreatePropsFile(("Newtonsoft.Json", "13.0.3"));
+        var diffPath = Path.Combine(_testDirectory, "empty.patch");
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        var options = CreateOptions(dryRun: true);
+        options.DiffFile = diffPath;
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        File.Exists(diffPath).Should().BeTrue();
+        File.ReadAllText(diffPath).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task UpdatePackagesAsync_MinorUpdate_AutoAccepted()
     {
         // Arrange

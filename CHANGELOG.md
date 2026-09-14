@@ -4,6 +4,16 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Added
+- **`--update-packages --dry-run` and `--remediate --dry-run` show the real change, not version
+  arrows.** Both dry runs now render the `Directory.Packages.props` the pass would write,
+  computed through the same merge the write path uses — under `--diff` it prints as a unified
+  diff, and `--diff-file` captures it as a patch artifact whether or not the diff renders on
+  screen. `--remediate --diff-file` was previously accepted but silently produced nothing; the
+  artifact contract ("created empty, empty means no changes") now holds there too.
+
 ## [3.79.0] - 2026-09-14
 
 ### Added

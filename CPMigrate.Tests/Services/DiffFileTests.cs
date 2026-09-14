@@ -162,7 +162,6 @@ public class DiffFileOptionValidationTests
     [InlineData("rollback")]
     [InlineData("list-backups")]
     [InlineData("prune-backups")]
-    [InlineData("update-packages")]
     [InlineData("doctor")]
     [InlineData("update")]
     public void Validate_DiffFileOutsideMigrationDryRun_ThrowsArgumentException(string mode)
@@ -174,7 +173,6 @@ public class DiffFileOptionValidationTests
             "rollback" => new Options { Rollback = true, BackupDir = ".", DiffFile = "d.patch", DryRun = true },
             "list-backups" => new Options { ListBackups = true, BackupDir = ".", DiffFile = "d.patch", DryRun = true },
             "prune-backups" => new Options { PruneBackups = true, Force = true, DiffFile = "d.patch", DryRun = true },
-            "update-packages" => new Options { UpdatePackages = true, DiffFile = "d.patch", DryRun = true },
             "doctor" => new Options { Doctor = true, DiffFile = "d.patch", DryRun = true },
             _ => new Options { Update = true, DiffFile = "d.patch", DryRun = true },
         };
@@ -225,6 +223,45 @@ public class DiffFileOptionValidationTests
             Fix = true,
             DiffFile = "d.patch",
         };
+
+        var action = () => options.Validate();
+
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--diff-file can only be used during a dry run*");
+    }
+
+    [Fact]
+    public void Validate_DiffFileWithUpdatePackagesDryRun_DoesNotThrow()
+    {
+        // An update dry run produces the props diff — the pin moves the pass would write — so it
+        // earns the artifact like every other preview.
+        var options = new Options { UpdatePackages = true, DryRun = true, DiffFile = "d.patch" };
+
+        var action = () => options.Validate();
+
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_DiffFileWithRemediateDryRun_DoesNotThrow()
+    {
+        var options = new Options { Remediate = true, DryRun = true, DiffFile = "d.patch" };
+
+        var action = () => options.Validate();
+
+        action.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("update-packages")]
+    [InlineData("remediate")]
+    public void Validate_DiffFileWithRealUpdateOrRemediate_ThrowsArgumentException(string mode)
+    {
+        // Real writes change the props file on disk; an artifact of "what would change" would be
+        // empty while the run did real work.
+        var options = mode == "remediate"
+            ? new Options { Remediate = true, DiffFile = "d.patch" }
+            : new Options { UpdatePackages = true, DiffFile = "d.patch" };
 
         var action = () => options.Validate();
 
