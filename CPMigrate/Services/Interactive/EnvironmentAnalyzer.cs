@@ -74,9 +74,10 @@ internal class EnvironmentAnalyzer
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.CreateNoWindow = true;
             process.Start();
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            ctx.HasUnstaged = !string.IsNullOrWhiteSpace(output);
+            using var capture = new ProcessOutputCapture();
+            capture.BeginCapture(process);
+            capture.Wait(process);
+            ctx.HasUnstaged = !string.IsNullOrWhiteSpace(capture.Output);
         }
         catch
         {

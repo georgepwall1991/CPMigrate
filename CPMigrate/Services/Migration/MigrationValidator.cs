@@ -85,8 +85,10 @@ internal class MigrationValidator
             process.StartInfo.CreateNoWindow = true;
             process.Start();
 
-            var output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            using var capture = new ProcessOutputCapture();
+            capture.BeginCapture(process);
+            await capture.WaitAsync(process);
+            var output = capture.Output;
 
             if (!string.IsNullOrWhiteSpace(output))
             {
