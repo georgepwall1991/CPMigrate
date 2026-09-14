@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.84.0] - 2026-09-14
 
 ### Fixed
 - **Migration targets the `Directory.Packages.props` that already governs the workspace.**
