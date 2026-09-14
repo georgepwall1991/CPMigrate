@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.71.0] - 2026-09-14
+
 ### Changed
 - **`DevelopmentDependencyLeak` now sees import-injected references.** A `PackageReference`
   declared in `Directory.Build.props`, `Directory.Build.targets`, or `Directory.Packages.props`
