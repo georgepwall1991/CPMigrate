@@ -670,7 +670,9 @@ public class PropsGenerator
 
     private static string? GetMetadataValue(ProjectItemElement item, string name)
     {
-        var metadata = item.Metadata.FirstOrDefault(m =>
+        // Item metadata is last-wins — an item that declares the same metadata twice resolves to
+        // the LAST element, so reading the first answers a value nothing applies.
+        var metadata = item.Metadata.LastOrDefault(m =>
             string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)
         );
         return metadata?.Value;
@@ -683,14 +685,17 @@ public class PropsGenerator
         bool expressAsAttribute = true
     )
     {
-        var metadata = item.Metadata.FirstOrDefault(m =>
-            string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)
-        );
-        if (metadata != null)
+        var matching = item.Metadata
+            .Where(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (matching.Count > 0)
         {
-            // Updated in place, keeping whatever style it was written in. Rewriting an entry someone
-            // formatted deliberately would be a diff they did not ask for.
-            metadata.Value = value;
+            // Updated in place, keeping whatever style it was written in — and every declaration,
+            // since a second element left at the old value would still win over the first.
+            foreach (var metadata in matching)
+            {
+                metadata.Value = value;
+            }
             return;
         }
 

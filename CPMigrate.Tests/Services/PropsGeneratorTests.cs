@@ -349,6 +349,72 @@ public class PropsGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void MergeExisting_DuplicateVersionMetadata_UpdatesEveryDeclaration()
+    {
+        // Item metadata is last-wins: this item's effective version is 1.0.0 (the trailing
+        // element). Updating only the first would report an update while the pin stays old.
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""TestPackage""><Version>2.0.0</Version><Version>1.0.0</Version></PackageVersion>
+  </ItemGroup>
+</Project>");
+
+        var packageVersions = new Dictionary<string, HashSet<string>>
+        {
+            { "TestPackage", new HashSet<string> { "3.0.0" } }
+        };
+
+        var (content, _, updatedCount, _) = _generator.MergeExisting(propsPath, packageVersions);
+
+        updatedCount.Should().Be(1);
+        content.Should().NotContain(">1.0.0<");
+        content.Should().NotContain(">2.0.0<");
+        content.Split("<Version>", StringSplitOptions.None).Length.Should().Be(3);
+    }
+
+    [Fact]
+    public void MergeExisting_DuplicateVersionMetadata_ReadsEffectiveVersionForSkipCheck()
+    {
+        // The first element says 1.0.0 but the LAST one — the value MSBuild applies — says
+        // 0.9.0. A first-match read sees {1.0.0, 0.9.0} and wrongly concludes the 1.0.0 target
+        // is already declared, skipping the update the effective version needs.
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""TestPackage""><Version>1.0.0</Version><Version>0.9.0</Version></PackageVersion>
+    <PackageVersion Include=""TestPackage"" Version=""0.9.0"" Condition=""'$(X)' == 'Y'"" />
+  </ItemGroup>
+</Project>");
+
+        var packageVersions = new Dictionary<string, HashSet<string>>
+        {
+            { "TestPackage", new HashSet<string> { "1.0.0" } }
+        };
+
+        var (content, _, updatedCount, _) = _generator.MergeExisting(propsPath, packageVersions);
+
+        updatedCount.Should().Be(1);
+        content.Should().NotContain(">0.9.0<");
+        content.Should().NotContain("Version=\"0.9.0\"");
+    }
+
+    [Fact]
+    public void ReadExistingPackageVersions_DuplicateVersionMetadata_ReturnsEffectiveVersion()
+    {
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""TestPackage""><Version>0.9.0</Version><Version>1.0.0</Version></PackageVersion>
+  </ItemGroup>
+</Project>");
+
+        var versions = PropsGenerator.ReadExistingPackageVersions(propsPath, out _);
+
+        versions["TestPackage"].Should().BeEquivalentTo("1.0.0");
+    }
+
+    [Fact]
     public void MergeExisting_MissingManagePackageVersionsCentrally_AddsProperty()
     {
         // Arrange
