@@ -155,8 +155,14 @@ public static class OutputMetadata
     /// but a consumer validating the enum against 1.20.0 would reject it, which is why the version
     /// moved.
     /// </para>
+    /// <para>
+    /// 1.22.0 additively introduced <c>backup</c> on the <c>unify-props</c> report: where the pass's
+    /// backups landed and how many files were snapshotted. Absent on refused, dry-run, and
+    /// no-candidates outcomes — nothing was written, so there is nothing to undo — keeping a run
+    /// that backed files up distinguishable from one that could not.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.21.0";
+    public const string SchemaVersion = "1.22.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

@@ -1602,7 +1602,17 @@
           "description": "Whether --force was passed — what distinguishes a write from a refusal"
         },
         "candidates": { "$ref": "#/definitions/unifyPropsCandidates" },
-        "summary": { "$ref": "#/definitions/unifyPropsSummary" }
+        "summary": { "$ref": "#/definitions/unifyPropsSummary" },
+        "backup": {
+          "type": "object",
+          "description": "Where the pass's backups landed. Absent when nothing was backed up — refused, dry-run, and no-candidates outcomes write nothing. Added in output schema 1.22.0.",
+          "required": ["path", "filesBackedUp"],
+          "properties": {
+            "path": { "type": "string" },
+            "filesBackedUp": { "type": "integer" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

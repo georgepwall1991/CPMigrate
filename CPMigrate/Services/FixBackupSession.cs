@@ -49,9 +49,21 @@ internal sealed class FixBackupSession
     /// where <c>--rollback --backup-dir /other/tree</c> can find it — not wherever the shell stood.
     /// An explicit directory is honored as given.
     /// </remarks>
-    public static FixBackupSession? TryCreate(FixRequest request, IBackupManager backupManager)
+    public static FixBackupSession? TryCreate(FixRequest request, IBackupManager backupManager) =>
+        TryCreate(request.Backup, request.PropsFilePath, request.DryRun, backupManager);
+
+    /// <summary>
+    /// The non-fix caller: any operation that overwrites project files and owes them an undo path —
+    /// <c>--unify-props</c> rewrites every consensus project the same way a fixer does. The props
+    /// path parameter is whichever generated file the run anchors its manifest on.
+    /// </summary>
+    public static FixBackupSession? TryCreate(
+        BackupSettings? backup,
+        string propsFilePath,
+        bool dryRun,
+        IBackupManager backupManager)
     {
-        if (request.DryRun || request.Backup is not { Enabled: true } settings)
+        if (dryRun || backup is not { Enabled: true } settings)
         {
             return null;
         }
@@ -59,14 +71,14 @@ internal sealed class FixBackupSession
         if (string.IsNullOrWhiteSpace(settings.BackupDir) || settings.BackupDir == ".")
         {
             var propsDir =
-                Path.GetDirectoryName(Path.GetFullPath(request.PropsFilePath)) ?? ".";
+                Path.GetDirectoryName(Path.GetFullPath(propsFilePath)) ?? ".";
             settings = settings with { BackupDir = propsDir };
         }
 
         return new FixBackupSession(settings, backupManager)
         {
-            PropsFilePath = request.PropsFilePath,
-            PropsFileExisted = File.Exists(request.PropsFilePath),
+            PropsFilePath = propsFilePath,
+            PropsFileExisted = File.Exists(propsFilePath),
         };
     }
 
@@ -96,16 +108,27 @@ internal sealed class FixBackupSession
         }
     }
 
+    /// <summary>Whether a manifest was written — the difference between "undoable" and not.</summary>
+    public bool ManifestWritten { get; private set; }
+
     /// <summary>
     /// Writes the manifest that <c>--rollback</c> reads, then applies the same .gitignore handling a
     /// migration run would. Nothing to write means nothing happened — no manifest, no noise.
     /// </summary>
+    /// <remarks>
+    /// A pass that created its anchor file has something to undo even when no existing file needed
+    /// backing up: the manifest's <c>PropsFileExisted = false</c> is what lets rollback delete it
+    /// again. An empty-entries manifest is written in exactly that case.
+    /// </remarks>
     public void WriteManifest()
     {
-        if (_entries.Count == 0 || string.IsNullOrEmpty(_backupPath))
+        var createdAnchor = !PropsFileExisted && File.Exists(PropsFilePath);
+        if (_entries.Count == 0 && !createdAnchor)
         {
             return;
         }
+
+        _backupPath ??= BackupManager.CreateBackupDirectory(_settings);
 
         var manifest = new BackupManifest
         {
@@ -118,5 +141,6 @@ internal sealed class FixBackupSession
         // The fix pass is synchronous end to end; these two writes are tiny and local.
         BackupManager.WriteManifestAsync(_backupPath, manifest).GetAwaiter().GetResult();
         BackupManager.ManageGitIgnore(_settings, _backupPath).GetAwaiter().GetResult();
+        ManifestWritten = true;
     }
 }

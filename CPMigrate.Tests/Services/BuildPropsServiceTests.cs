@@ -685,6 +685,150 @@ public class BuildPropsServiceTests : IDisposable
         File.Exists(buildPropsPath).Should().BeFalse();
     }
 
+    // ── Backups — a unify run rewrites every consensus project; it owes the same undo path ───
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_BacksUpEveryFileItOverwrites()
+    {
+        var project1Path = CreateTestProject("Project1.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>");
+        var project2Path = CreateTestProject("Project2.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>");
+        var solutionPath = CreateTestSolution("TestSolution.sln", project1Path, project2Path);
+        var solutionDir = Path.GetDirectoryName(solutionPath)!;
+        var project1Original = await File.ReadAllTextAsync(project1Path);
+
+        var result = await _service.UnifyPropertiesAsync(new Options
+        {
+            SolutionFileDir = solutionDir,
+            Force = true,
+        });
+
+        result.Should().Be(ExitCodes.Success);
+
+        var backupDir = Path.Combine(solutionDir, ".cpmigrate_backup");
+        Directory.Exists(backupDir).Should().BeTrue("every overwritten file is recoverable");
+
+        var manifest = await BackupManager.ReadManifestAsync(backupDir);
+        manifest.Should().NotBeNull();
+        manifest!.Backups.Should().Contain(b => b.OriginalPath == project1Path);
+        manifest.Backups.Should().Contain(b => b.OriginalPath == project2Path);
+        manifest.PropsFileExisted.Should().BeFalse(
+            "the Directory.Build.props the run created is removed again by --rollback"
+        );
+
+        // The manifest is the one --rollback reads — prove the round trip, not just the file list.
+        var rollback = new CPMigrate.Services.Migration.RollbackHandler(_console, quietMode: true);
+        var rollbackResult = await rollback.ExecuteAsync(new Options
+        {
+            Rollback = true,
+            BackupDir = solutionDir,
+            Force = true,
+        });
+
+        rollbackResult.ExitCode.Should().Be(ExitCodes.Success);
+        (await File.ReadAllTextAsync(project1Path)).Should().Be(project1Original);
+        File.Exists(Path.Combine(solutionDir, "Directory.Build.props"))
+            .Should().BeFalse("a file the run created is removed by rollback");
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_DryRun_LeavesNoBackupBehind()
+    {
+        var solutionPath = CreateTestSolution("TestSolution.sln",
+            CreateTestProject("Project1.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"),
+            CreateTestProject("Project2.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"));
+
+        var result = await _service.UnifyPropertiesAsync(new Options
+        {
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
+            DryRun = true,
+        });
+
+        result.Should().Be(ExitCodes.Success);
+        Directory.Exists(Path.Combine(Path.GetDirectoryName(solutionPath)!, ".cpmigrate_backup"))
+            .Should().BeFalse("a preview that writes nothing must not leave an empty backup directory");
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_NoBackupFlag_SkipsBackups()
+    {
+        var solutionPath = CreateTestSolution("TestSolution.sln",
+            CreateTestProject("Project1.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"),
+            CreateTestProject("Project2.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"));
+
+        var result = await _service.UnifyPropertiesAsync(new Options
+        {
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
+            Force = true,
+            NoBackup = true,
+        });
+
+        result.Should().Be(ExitCodes.Success);
+        File.Exists(Path.Combine(Path.GetDirectoryName(solutionPath)!, "Directory.Build.props"))
+            .Should().BeTrue();
+        Directory.Exists(Path.Combine(Path.GetDirectoryName(solutionPath)!, ".cpmigrate_backup"))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_RefusedRun_LeavesNoBackupBehind()
+    {
+        _console.ConfirmationResponse = false;
+
+        var solutionPath = CreateTestSolution("TestSolution.sln",
+            CreateTestProject("Project1.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"),
+            CreateTestProject("Project2.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"));
+
+        var result = await _service.UnifyPropertiesAsync(new Options
+        {
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
+            Force = false,
+        });
+
+        result.Should().Be(ExitCodes.Success);
+        Directory.Exists(Path.Combine(Path.GetDirectoryName(solutionPath)!, ".cpmigrate_backup"))
+            .Should().BeFalse("a run that never wrote must not leave backup state behind");
+    }
+
     // Helper methods
 
     private string CreateTestProject(string projectName, string content)

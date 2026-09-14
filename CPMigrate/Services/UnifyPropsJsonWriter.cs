@@ -27,6 +27,11 @@ namespace CPMigrate.Services;
 /// <param name="Forced">Whether <c>--force</c> was passed — what distinguishes a write from a refusal.</param>
 /// <param name="Candidates">The properties and items that met the consensus threshold.</param>
 /// <param name="Summary">Totals a gate can read without walking the candidate list.</param>
+/// <param name="Backup">
+/// Where the pass's backups landed, when files were backed up — absent otherwise, so a consumer
+/// reading the document alone finds the undo path rather than inferring it. Added in output
+/// schema 1.22.0.
+/// </param>
 public sealed record UnifyPropsReportPayload(
     [property: JsonPropertyName("outputSchemaVersion")] string OutputSchemaVersion,
     [property: JsonPropertyName("version")] string Version,
@@ -36,7 +41,8 @@ public sealed record UnifyPropsReportPayload(
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("forced")] bool Forced,
     [property: JsonPropertyName("candidates")] UnifyPropsCandidatesPayload Candidates,
-    [property: JsonPropertyName("summary")] UnifyPropsSummaryPayload Summary
+    [property: JsonPropertyName("summary")] UnifyPropsSummaryPayload Summary,
+    [property: JsonPropertyName("backup")] BackupInfo? Backup = null
 );
 
 /// <summary>
@@ -114,7 +120,8 @@ internal static class UnifyPropsJsonWriter
         bool forced,
         int exitCode,
         UnifyPropsCandidatesPayload candidates,
-        UnifyPropsSummaryPayload summary
+        UnifyPropsSummaryPayload summary,
+        BackupInfo? backup = null
     )
     {
         var payload = new UnifyPropsReportPayload(
@@ -126,7 +133,8 @@ internal static class UnifyPropsJsonWriter
             status,
             forced,
             candidates,
-            summary
+            summary,
+            backup
         );
 
         return JsonSerializer.Serialize(payload, SerializerOptions);
