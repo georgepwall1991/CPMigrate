@@ -4,6 +4,17 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **`--no-backup` no longer writes — or deletes — a stray `backup_manifest.json` in the working
+  directory.** With backups disabled, `--update-packages` and `--remediate` still wrote the
+  manifest through an empty backup path, which `Path.Combine` resolved against the process
+  working directory; the cleanup that follows then deleted whatever `backup_manifest.json` sat
+  there — including one the run never created. Disabled backups now produce neither the
+  directory nor the manifest, and the `BackupManager` primitives no-op on an empty path so no
+  caller can resolve relative paths against the working directory again.
+
 ## [3.86.0] - 2026-09-14
 
 ### Fixed

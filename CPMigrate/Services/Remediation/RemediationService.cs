@@ -596,6 +596,14 @@ public sealed class RemediationService : IRemediationService, IDisposable
         string propsPath
     )
     {
+        // Disabled backups produce no directory and no manifest — writing one anyway would land
+        // a stray backup_manifest.json in the working directory, since an empty backup path
+        // resolves there.
+        if (!request.Backup.Enabled)
+        {
+            return (string.Empty, new BackupManifest { PropsFilePath = propsPath });
+        }
+
         string backupPath;
         try
         {
