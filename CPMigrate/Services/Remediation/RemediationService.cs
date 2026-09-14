@@ -32,6 +32,7 @@ public sealed class RemediationService : IRemediationService, IDisposable
     private readonly IDotNetCliService _dotNetCli;
     private readonly IBackupManager _backupManager;
     private readonly ILogger<RemediationService> _logger;
+    private readonly DiffFileCollector _diffCollector = new();
 
     private const string StaleAssetsGuidance =
         "obj/project.assets.json still describes the rejected fix until the next "
@@ -76,6 +77,13 @@ public sealed class RemediationService : IRemediationService, IDisposable
     public async Task<RemediationResult> RemediateAsync(RemediateRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // The artifact exists from the first moment of the run: empty means "no changes", absent
+        // means the run crashed before it could say so — the contract --diff-file keeps everywhere.
+        if (request.DryRun && !string.IsNullOrEmpty(request.DiffFilePath))
+        {
+            _diffCollector.Begin(request.DiffFilePath);
+        }
 
         var solutionDir = Path.GetFullPath(request.SolutionPath);
         var (basePath, projectPaths) = await _projectAnalyzer.DiscoverProjectsFromSolutionAsync(solutionDir);
@@ -224,6 +232,7 @@ public sealed class RemediationService : IRemediationService, IDisposable
             _consoleService.DryRun(
                 $"Would move {applicable.Count} package(s) to clear {advisoriesBefore} advisory finding(s)."
             );
+            ShowPlannedPropsDiff(request, propsPath, currentVersions, applicable);
             return new RemediationResult
             {
                 ExitCode = plan.GetNotApplied().Count > 0
@@ -402,6 +411,40 @@ public sealed class RemediationService : IRemediationService, IDisposable
             ReVerified = true,
             Warnings = heldBack.Count > 0 ? [StaleAssetsGuidance] : null,
         };
+    }
+
+    /// <summary>
+    /// The dry run's real preview: the props file the pass would write, computed with the same
+    /// recipe the write path uses (<see cref="ToUpdateEntry"/> entries over the current pins).
+    /// Rendered whole by default and as a unified diff under <c>--diff</c>; the <c>--diff-file</c>
+    /// artifact collects the diff either way.
+    /// </summary>
+    private void ShowPlannedPropsDiff(
+        RemediateRequest request,
+        string propsPath,
+        Dictionary<string, HashSet<string>> currentVersions,
+        IReadOnlyList<RemediationAction> applicable)
+    {
+        var planned = UpdatePropsPreview.PlannedContent(
+            _propsGenerator, propsPath, currentVersions, applicable.Select(ToUpdateEntry));
+        if (planned is null)
+        {
+            return;
+        }
+
+        if (request.ShowDiff || _diffCollector.IsEnabled)
+        {
+            var diff = UnifiedDiffGenerator.Generate(
+                File.ReadAllText(propsPath), planned, propsPath);
+            _diffCollector.Append(diff);
+            if (request.ShowDiff)
+            {
+                _consoleService.WriteDiff(diff);
+                return;
+            }
+        }
+
+        _consoleService.WritePropsPreview(planned);
     }
 
     /// <summary>

@@ -207,7 +207,9 @@ public sealed record PackageUpdateRequest(
     bool Bisect = false,
     int BisectBudget = BisectSearchStrategy.DefaultBudget,
     string? BisectTestFilter = null,
-    IReadOnlyList<string>? OnlyPackages = null)
+    IReadOnlyList<string>? OnlyPackages = null,
+    bool ShowDiff = false,
+    string? DiffFilePath = null)
 {
     public static PackageUpdateRequest FromOptions(Options options) =>
         new(
@@ -220,7 +222,9 @@ public sealed record PackageUpdateRequest(
             Bisect: options.Bisect,
             BisectBudget: options.EffectiveBisectBudget,
             BisectTestFilter: options.BisectTestFilter,
-            OnlyPackages: options.ParseOnlyPackages());
+            OnlyPackages: options.ParseOnlyPackages(),
+            ShowDiff: options.Diff,
+            DiffFilePath: options.DiffFile);
 }
 
 /// <summary>
@@ -247,7 +251,9 @@ public sealed record RemediateRequest(
     bool Bisect = false,
     int BisectBudget = BisectSearchStrategy.DefaultBudget,
     string? BisectTestFilter = null,
-    IReadOnlyList<string>? OnlyPackages = null)
+    IReadOnlyList<string>? OnlyPackages = null,
+    bool ShowDiff = false,
+    string? DiffFilePath = null)
 {
     public static RemediateRequest FromOptions(Options options) =>
         new(
@@ -260,7 +266,9 @@ public sealed record RemediateRequest(
             Bisect: options.Bisect,
             BisectBudget: options.EffectiveBisectBudget,
             BisectTestFilter: options.BisectTestFilter,
-            OnlyPackages: options.ParseOnlyPackages());
+            OnlyPackages: options.ParseOnlyPackages(),
+            ShowDiff: options.Diff,
+            DiffFilePath: options.DiffFile);
 }
 
 public sealed record BatchRequest(
