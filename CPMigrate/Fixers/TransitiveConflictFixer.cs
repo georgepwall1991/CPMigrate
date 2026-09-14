@@ -52,7 +52,7 @@ public class TransitiveConflictFixer : IFixer
 
         var bestVersion = _versionResolver.ResolveVersion(versions, request.ConflictStrategy);
 
-        var originalContent = File.ReadAllText(propsPath);
+        var originalContent = request.ReadFile(propsPath);
         var hasActivePackagePin = false;
         XDocument? propsDocument = null;
 

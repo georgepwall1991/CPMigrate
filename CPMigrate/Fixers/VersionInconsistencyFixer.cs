@@ -66,9 +66,9 @@ public class VersionInconsistencyFixer : IFixer
             .GroupBy(r => r.ProjectPath);
 
         var unsafePackageGroup = projectGroups.FirstOrDefault(group =>
-            HasMultiplePackageDeclaration(group.Key, issue.PackageName)
-            || HasActiveUnconditionalVersionClear(group.Key, issue.PackageName)
-            || HasConditionedPackageMetadata(group.Key, issue.PackageName)
+            HasMultiplePackageDeclaration(group.Key, issue.PackageName, request)
+            || HasActiveUnconditionalVersionClear(group.Key, issue.PackageName, request)
+            || HasConditionedPackageMetadata(group.Key, issue.PackageName, request)
         );
         if (unsafePackageGroup is not null)
         {
@@ -222,7 +222,7 @@ public class VersionInconsistencyFixer : IFixer
 
         try
         {
-            var originalContent = File.ReadAllText(projectPath);
+            var originalContent = request.ReadFile(projectPath);
             var doc = XDocument.Parse(originalContent);
 
             var allPackageRefs = doc.Descendants("PackageReference")
@@ -692,7 +692,7 @@ public class VersionInconsistencyFixer : IFixer
             .Any(name => string.Equals(name, packageName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool HasMultiplePackageDeclaration(string projectPath, string packageName)
+    private static bool HasMultiplePackageDeclaration(string projectPath, string packageName, FixRequest request)
     {
         if (!File.Exists(projectPath))
         {
@@ -701,7 +701,7 @@ public class VersionInconsistencyFixer : IFixer
 
         try
         {
-            var document = XDocument.Parse(File.ReadAllText(projectPath));
+            var document = XDocument.Parse(request.ReadFile(projectPath));
             return document
                 .Descendants("PackageReference")
                 .Where(reference =>
@@ -726,7 +726,7 @@ public class VersionInconsistencyFixer : IFixer
             || GetMetadataValues(packageReference, "VersionOverride").Any();
     }
 
-    private static bool HasConditionedPackageMetadata(string projectPath, string packageName)
+    private static bool HasConditionedPackageMetadata(string projectPath, string packageName, FixRequest request)
     {
         if (!File.Exists(projectPath))
         {
@@ -736,7 +736,7 @@ public class VersionInconsistencyFixer : IFixer
         try
         {
             var matchingReferences = XDocument
-                .Parse(File.ReadAllText(projectPath))
+                .Parse(request.ReadFile(projectPath))
                 .Descendants("PackageReference")
                 .Where(reference => IsMatchingDeclaration(reference, packageName))
                 .ToList();
@@ -752,7 +752,7 @@ public class VersionInconsistencyFixer : IFixer
         }
     }
 
-    private static bool HasActiveUnconditionalVersionClear(string projectPath, string packageName)
+    private static bool HasActiveUnconditionalVersionClear(string projectPath, string packageName, FixRequest request)
     {
         if (!File.Exists(projectPath))
         {
@@ -762,7 +762,7 @@ public class VersionInconsistencyFixer : IFixer
         try
         {
             var matchingReferences = XDocument
-                .Parse(File.ReadAllText(projectPath))
+                .Parse(request.ReadFile(projectPath))
                 .Descendants("PackageReference")
                 .Where(reference => IsMatchingDeclaration(reference, packageName))
                 .ToList();

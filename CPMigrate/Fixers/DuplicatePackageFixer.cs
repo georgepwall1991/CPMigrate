@@ -79,7 +79,7 @@ public class DuplicatePackageFixer : IFixer
 
         try
         {
-            var originalContent = File.ReadAllText(projectPath);
+            var originalContent = request.ReadFile(projectPath);
             var doc = XDocument.Parse(originalContent);
 
             // Keep the attribute selection identical to ProjectFileScanner: an empty Include means

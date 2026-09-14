@@ -4,6 +4,17 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Added
+- **`--fix-dry-run` shows the real change, not per-issue descriptions of it.** Every fixer now
+  reads and writes through the fix request, so a dry run composes sequential edits in memory
+  exactly as a real run does on disk — a second fixer touching a file an earlier fixer rewrote
+  builds on that content instead of the stale original. Under `--diff` each file the pass would
+  write prints as a unified diff, and `--diff-file` captures the pass's edits as a patch artifact
+  (previously rejected for this command), keeping the "created empty, empty means no changes"
+  contract the other previews keep.
+
 ## [3.78.0] - 2026-09-14
 
 ### Added

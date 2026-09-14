@@ -152,4 +152,94 @@ public class CommandRequestsTests
         PackageUpdateRequest.FromOptions(options).SolutionPath.Should().Be(options.SolutionFileDir);
     }
 
+    [Fact]
+    public void FromOptions_MapsDiffFlagsOntoTheFixRequest()
+    {
+        var options = new Options
+        {
+            Analyze = true,
+            FixDryRun = true,
+            Diff = true,
+            DiffFile = "diffs.patch",
+        };
+
+        var fix = FixRequest.FromOptions(options);
+
+        fix.DryRun.Should().BeTrue();
+        fix.ShowDiff.Should().BeTrue();
+        fix.DiffFilePath.Should().Be("diffs.patch");
+    }
+
+    [Fact]
+    public void FixRequest_DryRunWrite_InvokesPlannedWriteSink_WithoutTouchingDisk()
+    {
+        var dir = Directory.CreateTempSubdirectory("cpmigrate-fixreq").FullName;
+        try
+        {
+            var target = Path.Combine(dir, "App.csproj");
+            File.WriteAllText(target, "original");
+            var recorded = new List<KeyValuePair<string, string>>();
+            var request = new FixRequest("props.props", ConflictStrategy.Highest, DryRun: true) with
+            {
+                OnPlannedWrite = (path, contents) => recorded.Add(new(path, contents)),
+            };
+
+            request.WriteFile(target, "changed");
+
+            File.ReadAllText(target).Should().Be("original");
+            recorded.Should().ContainSingle();
+            recorded[0].Key.Should().Be(target);
+            recorded[0].Value.Should().Be("changed");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void FixRequest_ReadFile_ConsultsTheOverlay_AndFallsBackToDisk()
+    {
+        var dir = Directory.CreateTempSubdirectory("cpmigrate-fixreq").FullName;
+        try
+        {
+            var target = Path.Combine(dir, "App.csproj");
+            var other = Path.Combine(dir, "Lib.csproj");
+            File.WriteAllText(target, "on disk");
+            File.WriteAllText(other, "also on disk");
+            var request = new FixRequest("props.props", ConflictStrategy.Highest, DryRun: true) with
+            {
+                PlannedRead = path => path == target ? "planned" : null,
+            };
+
+            request.ReadFile(target).Should().Be("planned");
+            request.ReadFile(other).Should().Be("also on disk", "an unplanned path reads disk");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void FixRequest_ReadFile_WithoutOverlay_ReadsFromDisk()
+    {
+        var dir = Directory.CreateTempSubdirectory("cpmigrate-fixreq").FullName;
+        try
+        {
+            var target = Path.Combine(dir, "App.csproj");
+            File.WriteAllText(target, "on disk");
+
+            var dryRun = new FixRequest("props.props", ConflictStrategy.Highest, DryRun: true);
+            var realRun = new FixRequest("props.props", ConflictStrategy.Highest, DryRun: false);
+
+            dryRun.ReadFile(target).Should().Be("on disk");
+            realRun.ReadFile(target).Should().Be("on disk");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
 }

@@ -654,6 +654,122 @@ public class FixServiceTests
         }
     }
 
+    [Fact]
+    public void ApplyFixes_DryRunWithDiff_RendersUnifiedDiffOfPlannedContent()
+    {
+        var testDir = Path.Combine(Path.GetTempPath(), $"CPMigrateFixDiff_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDir);
+        try
+        {
+            var target = Path.Combine(testDir, "App.csproj");
+            const string original = "<Project />\n";
+            File.WriteAllText(target, original);
+
+            RunWritingPass(
+                testDir,
+                Path.Combine(testDir, "Directory.Packages.props"),
+                request =>
+                {
+                    request.WriteFile(target, "<Project><ItemGroup /></Project>\n");
+                    return FixResult.Succeeded("fixed", [new FileChange(target, "Modified", "a", "b")]);
+                },
+                dryRun: true,
+                showDiff: true);
+
+            File.ReadAllText(target).Should().Be(original, "a dry run never writes");
+            _console.OutputMessages.Should().Contain(
+                m => m.Contains("@@ ") && m.Contains("-<Project />") && m.Contains("+<Project><ItemGroup /></Project>"),
+                "the diff shows what the file would actually become, not a description of it");
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyFixes_DryRunWithDiffFile_WritesPatchArtifact_WithoutRendering()
+    {
+        var testDir = Path.Combine(Path.GetTempPath(), $"CPMigrateFixDiff_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDir);
+        try
+        {
+            var target = Path.Combine(testDir, "App.csproj");
+            File.WriteAllText(target, "<Project />\n");
+            var diffPath = Path.Combine(testDir, "diffs.patch");
+
+            RunWritingPass(
+                testDir,
+                Path.Combine(testDir, "Directory.Packages.props"),
+                request =>
+                {
+                    request.WriteFile(target, "<Project><ItemGroup /></Project>\n");
+                    return FixResult.Succeeded("fixed", [new FileChange(target, "Modified", "a", "b")]);
+                },
+                dryRun: true,
+                diffFile: diffPath);
+
+            var artifact = File.ReadAllText(diffPath);
+            artifact.Should().Contain("--- a/App.csproj");
+            artifact.Should().Contain("+++ b/App.csproj");
+            artifact.Should().Contain("@@ ");
+            // The artifact is collected, not rendered — same split the migration dry-run keeps.
+            _console.OutputMessages.Should().NotContain(m => m.Contains("@@ "));
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyFixes_DryRun_LaterFixerReadsEarlierPlannedWrite_SoThePreviewComposes()
+    {
+        // Two findings whose fixes touch the same file must compose in the preview the way they
+        // would on disk: without the read overlay the second fixer would compute against the
+        // original content and its planned write would silently drop the first fixer's change.
+        var testDir = Path.Combine(Path.GetTempPath(), $"CPMigrateFixDiff_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDir);
+        try
+        {
+            var target = Path.Combine(testDir, "App.csproj");
+            File.WriteAllText(target, "line1\n");
+            var diffPath = Path.Combine(testDir, "diffs.patch");
+            FixRequest? seen = null;
+            var marker = 0;
+
+            RunWritingPass(
+                testDir,
+                Path.Combine(testDir, "Directory.Packages.props"),
+                request =>
+                {
+                    seen ??= request;
+                    request.WriteFile(
+                        target,
+                        request.ReadFile(target) + $"line-{++marker}\n");
+                    return FixResult.Succeeded("fixed", [new FileChange(target, "Modified", "a", "b")]);
+                },
+                issueCount: 2,
+                dryRun: true,
+                diffFile: diffPath);
+
+            seen!.ReadFile(target).Should().Be(
+                "line1\nline-1\nline-2\n",
+                "the second fixer built on the first's planned write, exactly as a real run would");
+
+            File.ReadAllText(target).Should().Be("line1\n", "a dry run never writes");
+
+            var artifact = File.ReadAllText(diffPath);
+            artifact.Should().Contain("@@ ");
+            artifact.Should().Contain("+line-1");
+            artifact.Should().Contain("+line-2");
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
+
     /// <summary>
     /// Runs a one-analyzer fix pass whose fixer writes through <see cref="FixRequest.WriteFile"/>,
     /// the way the real fixers now do. Backup settings default to enabled with the backup anchored
@@ -666,7 +782,9 @@ public class FixServiceTests
         int issueCount = 1,
         bool dryRun = false,
         bool backupEnabled = true,
-        string? backupDir = null)
+        string? backupDir = null,
+        bool showDiff = false,
+        string? diffFile = null)
     {
         var issues = Enumerable
             .Range(0, issueCount)
@@ -689,7 +807,9 @@ public class FixServiceTests
                 propsPath,
                 ConflictStrategy.Highest,
                 DryRun: dryRun,
-                Backup: new BackupSettings(backupEnabled, backupDir ?? testDir, false, testDir)));
+                Backup: new BackupSettings(backupEnabled, backupDir ?? testDir, false, testDir),
+                ShowDiff: showDiff,
+                DiffFilePath: diffFile));
     }
 
     private sealed class StubFixer : IFixer

@@ -64,7 +64,7 @@ public class CpmNotEnabledFixer : IFixer
 
         try
         {
-            var originalContent = File.ReadAllText(propsPath);
+            var originalContent = request.ReadFile(propsPath);
             var doc = XDocument.Parse(originalContent);
 
             var property = doc

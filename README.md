@@ -166,7 +166,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | 📟 **`--status`** | One-shot workspace health dashboard — or `--output Json` for CI |
 | 🌳 **`--tree`** | Dependency tree, direct + transitive — ASCII, or `--output Json` for CI |
 | 🕵️ **`--why`** | Trace one or more packages (`--why A,B,C` shares one workspace scan): who declares each, who inherits it, version drift — as text or `--output Json` (one JSON document per run; multi-ID runs emit a `why-many` document) for CI |
-| 🔀 **`--diff`** | Unified diff preview on `--dry-run`; capture it with `--diff-file` for CI |
+| 🔀 **`--diff`** | Unified diff preview on `--dry-run`/`--fix-dry-run`; capture it with `--diff-file` for CI |
 
 ### Why not just do it by hand?
 
@@ -233,6 +233,7 @@ cpmigrate -s ./MySolution.sln --unify-props --verify     # unify, then prove onl
 cpmigrate --analyze --audit --outdated --deprecated --licenses --transitive
 cpmigrate --analyze --fix                       # apply every auto-fixable finding (backed up first — undo with --rollback)
 cpmigrate --analyze --fix-dry-run               # preview the fixes
+cpmigrate --analyze --fix-dry-run --diff        # …as unified diffs of the exact file contents
 cpmigrate --analyze --fail-on High              # gate CI without failing on old debt
 cpmigrate --analyze --write-baseline            # accept today's debt; fail only on new
 ```
@@ -279,7 +280,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--project` | `-p` | | A specific project file, or a directory holding one |
 | `--output-dir` | `-o` | `.` | Where `Directory.Packages.props` is written |
 | `--dry-run` | `-d` | `false` | Preview changes without modifying files |
-| `--diff` | | `false` | Render a unified diff during `--dry-run` (migration or `--unify-props`) |
+| `--diff` | | `false` | Render a unified diff during `--dry-run` or `--fix-dry-run` (migration, `--unify-props`, or fix preview) |
 | `--merge` | | `false` | Merge into an existing props file instead of failing |
 | `--conflict-strategy` | | `Highest` | `Highest` · `Lowest` · `Fail` |
 | `--interactive-conflicts` | | `false` | Prompt for each version conflict |
@@ -302,7 +303,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--deprecated` | | `false` | Deprecated package checks |
 | `--licenses` | | `false` | Flag copyleft / proprietary / unknown licenses from restored nuspecs |
 | `--fix` | | `false` | Apply auto-fixes (with `--analyze`) — every file lands in `.cpmigrate_backup` before its first write, so `--rollback` undoes a fix run too |
-| `--fix-dry-run` | | `false` | Preview auto-fixes |
+| `--fix-dry-run` | | `false` | Preview auto-fixes; `--diff`/`--diff-file` render the exact file changes |
 | `--fix-rule` | | | Comma-separated rule IDs to restrict `--fix`/`--fix-dry-run` to (e.g. `OrphanedPackageVersion,InlineVersionUnderCpm`) |
 | `--fail-on` | | `Info` | Lowest severity that fails: `Info`·`Low`·`Moderate`·`High`·`Critical`·`Never` |
 | `--rules` | | | Per-rule policy: `Rule=Severity` pairs, or `Rule=none` to switch a rule off |
@@ -415,7 +416,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 |--------|:-----:|:-------:|-------------|
 | `--output` | | `Terminal` | `Terminal` · `Json` · `Sarif` · `Markdown` · `Csv` (`Sarif`/`Csv` need `--analyze`; `Markdown` needs `--analyze` or `--verify`) |
 | `--output-file` | | | Write `Json`/`Sarif`/`Markdown`/`Csv` to a file |
-| `--diff-file` | | | Append every `--dry-run` unified diff — migration or `--unify-props` — to a file; created empty when nothing changes, missing when the run crashed; rejected for every other command |
+| `--diff-file` | | | Append every dry-run unified diff — migration, `--unify-props`, or `--fix-dry-run` — to a file; created empty when nothing changes, missing when the run crashed; rejected for every other command |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Diagnostic logging to `cpmigrate.log` |
 

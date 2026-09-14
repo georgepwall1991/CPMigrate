@@ -41,7 +41,7 @@ public class OrphanedPackageVersionFixer : IFixer
 
         try
         {
-            var originalContent = File.ReadAllText(propsPath);
+            var originalContent = request.ReadFile(propsPath);
             var doc = XDocument.Parse(originalContent);
 
             // PackageVersion entries declare the pin two ways — Include for a new pin, Update for
