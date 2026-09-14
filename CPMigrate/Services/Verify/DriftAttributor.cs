@@ -97,6 +97,49 @@ public static class DriftAttributor
         IReadOnlySet<string> fixedPackages,
         ResolvedGraphSnapshot before,
         ResolvedGraphSnapshot after
+    ) => AttributeClaimed(
+        changes,
+        fixedPackages,
+        DriftExplanation.FixApplied,
+        "the fix pass touched this package",
+        "fix pass",
+        before,
+        after
+    );
+
+    /// <summary>
+    /// The same attribution pass for a <c>--unify-props</c> run, whose decisions are the
+    /// <c>PackageReference</c> items it hoisted into <c>Directory.Build.props</c>. Hoisting below
+    /// full consensus injects the reference into every project that never declared it — a real
+    /// graph change, and one the run claims outright. A change to any other package is unexplained.
+    /// </summary>
+    public static IReadOnlyList<AttributedChange> AttributeUnification(
+        IReadOnlyList<GraphChange> changes,
+        IReadOnlySet<string> unifiedPackageIds,
+        ResolvedGraphSnapshot before,
+        ResolvedGraphSnapshot after
+    ) => AttributeClaimed(
+        changes,
+        unifiedPackageIds,
+        DriftExplanation.Unified,
+        "the unify pass hoisted this reference into Directory.Build.props",
+        "unify pass",
+        before,
+        after
+    );
+
+    /// <summary>
+    /// The shared first pass: a change to a package the run claims is directly explained; anything
+    /// else goes to the pending pile for reachability judgement.
+    /// </summary>
+    private static IReadOnlyList<AttributedChange> AttributeClaimed(
+        IReadOnlyList<GraphChange> changes,
+        IReadOnlySet<string> claimedPackages,
+        DriftExplanation explanation,
+        string explanationText,
+        string actor,
+        ResolvedGraphSnapshot before,
+        ResolvedGraphSnapshot after
     )
     {
         List<AttributedChange> attributed = [];
@@ -104,15 +147,10 @@ public static class DriftAttributor
 
         foreach (var change in changes)
         {
-            if (fixedPackages.Contains(change.PackageId))
+            if (claimedPackages.Contains(change.PackageId))
             {
                 attributed.Add(
-                    new AttributedChange(
-                        change,
-                        DriftExplanation.FixApplied,
-                        CausedBy: null,
-                        "the fix pass touched this package"
-                    )
+                    new AttributedChange(change, explanation, CausedBy: null, explanationText)
                 );
                 continue;
             }
@@ -122,7 +160,7 @@ public static class DriftAttributor
             );
         }
 
-        return Order(ResolvePending(attributed, pending, before, after, "fix pass"));
+        return Order(ResolvePending(attributed, pending, before, after, actor));
     }
 
     /// <summary>
@@ -323,6 +361,12 @@ public enum DriftExplanation
 
     /// <summary>An <c>--analyze --fix</c> pass changed it — the drift a fixer exists to cause.</summary>
     FixApplied,
+
+    /// <summary>
+    /// A <c>--unify-props</c> pass hoisted the reference into <c>Directory.Build.props</c>, where it
+    /// now flows into every governed project — including ones that never declared it.
+    /// </summary>
+    Unified,
 }
 
 /// <summary>One change, and what accounts for it.</summary>

@@ -608,7 +608,7 @@
     },
     "verification": {
       "type": "object",
-      "description": "The resolved-graph receipt a --verify run produces — a migration, or an --analyze --fix pass since output schema 1.21.0. Absent when --verify was not passed, so a run that never verified stays distinguishable from one that verified and found nothing. Added in output schema 1.5.0.",
+      "description": "The resolved-graph receipt a --verify run produces — a migration, an --analyze --fix pass since output schema 1.21.0, or a --unify-props run since 1.23.0. Absent when --verify was not passed, so a run that never verified stays distinguishable from one that verified and found nothing. Added in output schema 1.5.0.",
       "required": [
         "verdict",
         "passed",
@@ -711,8 +711,8 @@
           "description": "Whether the project references this package itself, as opposed to receiving it through another."
         },
         "explanation": {
-          "enum": ["unexplained", "conflictUnified", "transitiveFallout", "fixApplied"],
-          "description": "'fixApplied' — the --analyze --fix pass touched this package — joins the enum in output schema 1.21.0; before it, only migrations produced receipts."
+          "enum": ["unexplained", "conflictUnified", "transitiveFallout", "fixApplied", "unified"],
+          "description": "'fixApplied' — the --analyze --fix pass touched this package — joins the enum in output schema 1.21.0; 'unified' — a --unify-props pass hoisted the reference into Directory.Build.props — joins in 1.23.0; before either, only migrations produced receipts."
         },
         "causedBy": {
           "type": "string",
@@ -1612,6 +1612,9 @@
             "filesBackedUp": { "type": "integer" }
           },
           "additionalProperties": false
+        },
+        "verification": {
+          "$ref": "#/definitions/verification"
         }
       },
       "additionalProperties": false
@@ -1644,6 +1647,10 @@
           "type": "array",
           "description": "The projects that declare it, relative to the scan root",
           "items": { "type": "string" }
+        },
+        "willGain": {
+          "type": "integer",
+          "description": "How many scanned projects do not declare it today and will newly receive it through Directory.Build.props — the consensus was below full coverage. Added in output schema 1.23.0."
         }
       },
       "additionalProperties": false
@@ -1665,6 +1672,10 @@
           "type": "object",
           "description": "The item's metadata, when it carries any",
           "additionalProperties": { "type": "string" }
+        },
+        "willGain": {
+          "type": "integer",
+          "description": "How many scanned projects do not declare it today and will newly receive it through Directory.Build.props. For a PackageReference that is a resolved-graph change; --verify attributes it. Added in output schema 1.23.0."
         }
       },
       "additionalProperties": false

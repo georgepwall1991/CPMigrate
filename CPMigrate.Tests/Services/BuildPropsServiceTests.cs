@@ -1,4 +1,8 @@
+using System.Text.Json;
+using CPMigrate.Models;
 using CPMigrate.Services;
+using CPMigrate.Services.Migration;
+using CPMigrate.Services.Verify;
 using CPMigrate.Tests.TestDoubles;
 using FluentAssertions;
 using Microsoft.Build.Construction;
@@ -827,6 +831,312 @@ public class BuildPropsServiceTests : IDisposable
         result.Should().Be(ExitCodes.Success);
         Directory.Exists(Path.Combine(Path.GetDirectoryName(solutionPath)!, ".cpmigrate_backup"))
             .Should().BeFalse("a run that never wrote must not leave backup state behind");
+    }
+
+    // --verify on --unify-props
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_Verify_BaselineRestoreFails_WritesNothing()
+    {
+        // Arrange - three consensus projects, but the baseline restore reports failure
+        var p1 = CreateTestProject("Project1.csproj", ProjectWithNullable);
+        var p2 = CreateTestProject("Project2.csproj", ProjectWithNullable);
+        var p3 = CreateTestProject("Project3.csproj", ProjectWithNullable);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+        var baseline = Snapshot(restoreSucceeded: false, [p1, p2, p3]);
+
+        var service = VerifyService(baseline, after: Snapshot(restoreSucceeded: true, [p1, p2, p3]));
+        var options = VerifyOptions(solutionPath);
+
+        // Act
+        var result = await service.UnifyPropertiesAsync(options);
+
+        // Assert - fail closed: no props file, no project touched
+        result.Should().Be(ExitCodes.GraphDrift);
+        var buildPropsPath = Path.Combine(_testDirectory, "Directory.Build.props");
+        File.Exists(buildPropsPath).Should().BeFalse("a failed baseline must stop before a byte is written");
+        File.ReadAllText(p1).Should().Contain("<Nullable>enable</Nullable>");
+        _console.ErrorMessages.Should().Contain(m => m.Contains("does not restore before"));
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_Verify_UnchangedGraph_Succeeds()
+    {
+        // Arrange
+        var p1 = CreateTestProject("Project1.csproj", ProjectWithNullable);
+        var p2 = CreateTestProject("Project2.csproj", ProjectWithNullable);
+        var p3 = CreateTestProject("Project3.csproj", ProjectWithNullable);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+        var graph = Snapshot(true, [p1, p2, p3], (p1, "Newtonsoft.Json", "13.0.3"));
+
+        var service = VerifyService(baseline: graph, after: graph);
+        var options = VerifyOptions(solutionPath);
+
+        // Act
+        var result = await service.UnifyPropertiesAsync(options);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+        File.Exists(Path.Combine(_testDirectory, "Directory.Build.props")).Should().BeTrue();
+        File.ReadAllText(p1).Should().NotContain("<Nullable>");
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_Verify_InjectedPackageReference_IsExplainedDrift()
+    {
+        // Arrange - Polly is a PackageReference candidate at 2/3 consensus; the after graph shows
+        // the third project now resolving it — the injection --verify exists to attribute.
+        var withPolly = @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include=""Polly"" />
+  </ItemGroup>
+</Project>";
+        var p1 = CreateTestProject("Project1.csproj", withPolly);
+        var p2 = CreateTestProject("Project2.csproj", withPolly);
+        var p3 = CreateTestProject("Project3.csproj", ProjectWithNullable);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+
+        var baseline = Snapshot(true, [p1, p2, p3], (p1, "Polly", "8.0.0"), (p2, "Polly", "8.0.0"));
+        var after = Snapshot(true, [p1, p2, p3], (p1, "Polly", "8.0.0"), (p2, "Polly", "8.0.0"), (p3, "Polly", "8.0.0"));
+
+        var service = VerifyService(baseline, after);
+        var options = VerifyOptions(solutionPath);
+        var outputFile = Path.Combine(_testDirectory, "report.json");
+        options.Output = OutputFormat.Json;
+        options.OutputFile = outputFile;
+
+        // Act
+        var result = await service.UnifyPropertiesAsync(options);
+
+        // Assert - a gain the run claimed is explained drift, not a failure
+        result.Should().Be(ExitCodes.Success);
+        using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
+        var verification = doc.RootElement.GetProperty("verification");
+        verification.GetProperty("verdict").GetString().Should().Be("explainedDrift");
+        verification.GetProperty("changes")[0].GetProperty("explanation").GetString()
+            .Should().Be("unified");
+        verification.GetProperty("rolledBack").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_Verify_UnrelatedMove_RollsBack()
+    {
+        // Arrange - the after graph shows Serilog appearing: no candidate names it, so it is
+        // unexplained drift and the pass must undo itself.
+        var p1 = CreateTestProject("Project1.csproj", ProjectWithNullable);
+        var p2 = CreateTestProject("Project2.csproj", ProjectWithNullable);
+        var p3 = CreateTestProject("Project3.csproj", ProjectWithNullable);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+        var originalP1 = File.ReadAllText(p1);
+
+        var baseline = Snapshot(true, [p1, p2, p3]);
+        var after = Snapshot(true, [p1, p2, p3], (p1, "Serilog", "4.0.0"));
+
+        var service = VerifyService(baseline, after);
+        var options = VerifyOptions(solutionPath);
+
+        // Act
+        var result = await service.UnifyPropertiesAsync(options);
+
+        // Assert - drift nobody claimed: the tree goes back the way it was found
+        result.Should().Be(ExitCodes.GraphDrift);
+        File.ReadAllText(p1).Should().Be(originalP1);
+        File.ReadAllText(p2).Should().Contain("<Nullable>enable</Nullable>");
+        File.Exists(Path.Combine(_testDirectory, "Directory.Build.props"))
+            .Should().BeFalse("rollback must remove the props file the run created");
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_VerifyStrict_ExplainedDrift_FailsButKeepsTree()
+    {
+        // Arrange - same explained injection, but strict mode asks for a literal no-op
+        var withPolly = @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include=""Polly"" />
+  </ItemGroup>
+</Project>";
+        var p1 = CreateTestProject("Project1.csproj", withPolly);
+        var p2 = CreateTestProject("Project2.csproj", withPolly);
+        var p3 = CreateTestProject("Project3.csproj", ProjectWithNullable);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+
+        var baseline = Snapshot(true, [p1, p2, p3], (p1, "Polly", "8.0.0"), (p2, "Polly", "8.0.0"));
+        var after = Snapshot(true, [p1, p2, p3], (p1, "Polly", "8.0.0"), (p2, "Polly", "8.0.0"), (p3, "Polly", "8.0.0"));
+
+        var service = VerifyService(baseline, after);
+        var options = VerifyOptions(solutionPath);
+        options.VerifyStrict = true;
+
+        // Act
+        var result = await service.UnifyPropertiesAsync(options);
+
+        // Assert - strict fails on explainable drift, but the tree is left to be read: explained
+        // drift does not roll back.
+        result.Should().Be(ExitCodes.GraphDrift);
+        File.Exists(Path.Combine(_testDirectory, "Directory.Build.props")).Should().BeTrue();
+        File.ReadAllText(p1).Should().NotContain("<PackageReference Include=\"Polly\"");
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_Json_CandidatesCarryWillGain()
+    {
+        // Arrange - Nullable at 2/3 consensus: one project does not declare it and will gain it
+        var p1 = CreateTestProject("Project1.csproj", ProjectWithNullable);
+        var p2 = CreateTestProject("Project2.csproj", ProjectWithNullable);
+        var p3 = CreateTestProject("Project3.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+</Project>");
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+        var outputFile = Path.Combine(_testDirectory, "report.json");
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            Force = true,
+            Output = OutputFormat.Json,
+            OutputFile = outputFile,
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+        using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
+        var nullable = doc.RootElement
+            .GetProperty("candidates")
+            .GetProperty("properties")
+            .EnumerateArray()
+            .Single(e => e.GetProperty("name").GetString() == "Nullable");
+        nullable.GetProperty("willGain").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_VariantHolder_WarnsAboutDuplicateItem()
+    {
+        // Arrange - two projects hold 'Using System' bare; a third holds it under Alias metadata.
+        // The variant keeps its own copy AND inherits the props one — the NU1504-shaped hazard the
+        // run must name before writing.
+        var bare = @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include=""System"" />
+  </ItemGroup>
+</Project>";
+        var variant = @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include=""System"" Alias=""Sys"" />
+  </ItemGroup>
+</Project>";
+        var p1 = CreateTestProject("Project1.csproj", bare);
+        var p2 = CreateTestProject("Project2.csproj", bare);
+        var p3 = CreateTestProject("Project3.csproj", variant);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            DryRun = true,
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+        _console.OutputMessages.Should().Contain(m =>
+            m.Contains("different metadata") && m.Contains("duplicate"));
+    }
+
+    private const string ProjectWithNullable = @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>";
+
+    private Options VerifyOptions(string solutionPath) =>
+        new()
+        {
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? _testDirectory,
+            Force = true,
+            Verify = true,
+            BackupDir = _testDirectory,
+            Quiet = true,
+        };
+
+    private BuildPropsService VerifyService(GraphSnapshotResult baseline, GraphSnapshotResult after) =>
+        new(
+            _console,
+            _projectAnalyzer,
+            backupManager: null,
+            verifier: new MigrationVerifier(new OrderedSnapshots(baseline, after)),
+            rollbackHandler: new RollbackHandler(_console, quietMode: true)
+        );
+
+    /// <summary>
+    /// A snapshot covering every project — <see cref="GraphDiff"/> refuses to compare two snapshots
+    /// over different project sets, so each test graph names the whole solution.
+    /// </summary>
+    private static GraphSnapshotResult Snapshot(
+        bool restoreSucceeded,
+        string[] projectPaths,
+        params (string ProjectPath, string PackageId, string Version)[] packages) =>
+        new(
+            restoreSucceeded,
+            restoreSucceeded ? "restore ok" : "error NU1101: package not found",
+            new ResolvedGraphSnapshot(
+                restoreSucceeded
+                    ? projectPaths
+                        .Select(path => new ProjectResolvedGraph(
+                            path,
+                            [
+                                new ResolvedFramework(
+                                    "net8.0",
+                                    Resolved: true,
+                                    packages
+                                        .Where(p => p.ProjectPath == path)
+                                        .Select(p => new ResolvedPackage(p.PackageId, p.Version, IsDirect: true))
+                                        .ToList()
+                                ),
+                            ]
+                        ))
+                        .ToList()
+                    : [],
+                []
+            )
+        );
+
+    /// <summary>Answers the two captures a verify pass makes, in order.</summary>
+    private sealed class OrderedSnapshots(GraphSnapshotResult baseline, GraphSnapshotResult after)
+        : IGraphSnapshotService
+    {
+        private int _calls;
+
+        public Task<GraphSnapshotResult> CaptureAsync(
+            string restoreTargetPath,
+            IReadOnlyList<string> projectPaths,
+            string? basePath) =>
+            Task.FromResult(_calls++ == 0 ? baseline : after);
     }
 
     // Helper methods

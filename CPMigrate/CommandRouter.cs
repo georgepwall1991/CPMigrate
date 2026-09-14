@@ -516,7 +516,7 @@ internal static class CommandRouter
                 consoleService.WriteHeader();
             }
 
-            var buildPropsService = services.CreateBuildPropsService();
+            var buildPropsService = services.CreateBuildPropsService(options.Quiet);
             return await buildPropsService.UnifyPropertiesAsync(options);
         }
         catch (Exception ex)

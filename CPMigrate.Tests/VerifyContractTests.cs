@@ -46,7 +46,6 @@ public class VerifyContractTests : IDisposable
         "analysis does not migrate, so there is no migration to verify"
     )]
     [InlineData("--rollback", "--rollback", "rollback runs instead of a migration")]
-    [InlineData("--unify-props", "--unify-props", "unify-props runs instead of a migration")]
     public void Rejects_CombinationsWhereVerificationCouldNotRun(
         string flag,
         string expectedInMessage,
@@ -129,6 +128,19 @@ public class VerifyContractTests : IDisposable
         // tree still restores afterwards. --verify was migrate-only until the fix pass grew backups
         // to roll a failed verification back from.
         var options = new Options { Analyze = true, Fix = true, Verify = true };
+
+        var act = options.Validate;
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Accepts_UnifyProps_WhichRewritesProjectsLikeAMigration()
+    {
+        // --unify-props rewrites every consensus project and can inject a hoisted PackageReference
+        // into projects that never declared it — the graph change --verify exists to catch. It kept
+        // the migrate contract once the pass grew backups to roll a failed verification back from.
+        var options = new Options { UnifyProps = true, Verify = true };
 
         var act = options.Validate;
 

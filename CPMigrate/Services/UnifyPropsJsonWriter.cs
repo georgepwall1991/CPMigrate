@@ -32,6 +32,10 @@ namespace CPMigrate.Services;
 /// reading the document alone finds the undo path rather than inferring it. Added in output
 /// schema 1.22.0.
 /// </param>
+/// <param name="Verification">
+/// The resolved-graph receipt when <c>--verify</c> ran — baseline restore, post-unify restore,
+/// and a verdict on what moved. Absent when the run did not verify. Added in output schema 1.23.0.
+/// </param>
 public sealed record UnifyPropsReportPayload(
     [property: JsonPropertyName("outputSchemaVersion")] string OutputSchemaVersion,
     [property: JsonPropertyName("version")] string Version,
@@ -42,7 +46,8 @@ public sealed record UnifyPropsReportPayload(
     [property: JsonPropertyName("forced")] bool Forced,
     [property: JsonPropertyName("candidates")] UnifyPropsCandidatesPayload Candidates,
     [property: JsonPropertyName("summary")] UnifyPropsSummaryPayload Summary,
-    [property: JsonPropertyName("backup")] BackupInfo? Backup = null
+    [property: JsonPropertyName("backup")] BackupInfo? Backup = null,
+    [property: JsonPropertyName("verification")] VerificationInfo? Verification = null
 );
 
 /// <summary>
@@ -60,11 +65,16 @@ public sealed record UnifyPropsCandidatesPayload(
 /// <param name="Value">The value the consensus projects share.</param>
 /// <param name="Count">How many projects declare it.</param>
 /// <param name="Projects">The projects that declare it, relative to the scan root.</param>
+/// <param name="WillGain">
+/// How many scanned projects do not declare it today and will newly receive it through
+/// Directory.Build.props — the consensus was below full coverage. Added in output schema 1.23.0.
+/// </param>
 public sealed record UnifyPropsPropertyPayload(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("value")] string Value,
     [property: JsonPropertyName("count")] int Count,
-    [property: JsonPropertyName("projects")] IReadOnlyList<string> Projects
+    [property: JsonPropertyName("projects")] IReadOnlyList<string> Projects,
+    [property: JsonPropertyName("willGain")] int WillGain = 0
 );
 
 /// <summary>
@@ -75,12 +85,18 @@ public sealed record UnifyPropsPropertyPayload(
 /// <param name="Count">How many projects declare it.</param>
 /// <param name="Projects">The projects that declare it, relative to the scan root.</param>
 /// <param name="Metadata">The item's metadata, when it carries any.</param>
+/// <param name="WillGain">
+/// How many scanned projects do not declare it today and will newly receive it through
+/// Directory.Build.props — the consensus was below full coverage. For a <c>PackageReference</c>
+/// that is a resolved-graph change; <c>--verify</c> attributes it. Added in output schema 1.23.0.
+/// </param>
 public sealed record UnifyPropsItemPayload(
     [property: JsonPropertyName("itemType")] string ItemType,
     [property: JsonPropertyName("include")] string Include,
     [property: JsonPropertyName("count")] int Count,
     [property: JsonPropertyName("projects")] IReadOnlyList<string> Projects,
-    [property: JsonPropertyName("metadata")] IReadOnlyDictionary<string, string>? Metadata
+    [property: JsonPropertyName("metadata")] IReadOnlyDictionary<string, string>? Metadata,
+    [property: JsonPropertyName("willGain")] int WillGain = 0
 );
 
 /// <summary>
@@ -121,7 +137,8 @@ internal static class UnifyPropsJsonWriter
         int exitCode,
         UnifyPropsCandidatesPayload candidates,
         UnifyPropsSummaryPayload summary,
-        BackupInfo? backup = null
+        BackupInfo? backup = null,
+        VerificationInfo? verification = null
     )
     {
         var payload = new UnifyPropsReportPayload(
@@ -134,7 +151,8 @@ internal static class UnifyPropsJsonWriter
             forced,
             candidates,
             summary,
-            backup
+            backup,
+            verification
         );
 
         return JsonSerializer.Serialize(payload, SerializerOptions);

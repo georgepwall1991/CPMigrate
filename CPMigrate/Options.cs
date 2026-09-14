@@ -192,7 +192,8 @@ public class Options
             + "resolved package graph before and after, diffs it, and attributes every change to "
             + "the decision that caused it — unexplained drift exits 9 and rolls back. With "
             + "--analyze --fix, proves the fixes still restore; a broken restore is rolled back "
-            + "from the fix backup. Costs two full restores."
+            + "from the fix backup. With --unify-props, proves the hoisted references are the only "
+            + "graph change. Costs two full restores."
     )]
     public bool Verify { get; set; }
 
@@ -442,8 +443,10 @@ public class Options
     [Option(
         "unify-props",
         Default = false,
-        HelpText = "Migrate common properties from projects to Directory.Build.props. Backs up "
-            + "every file before writing; undo with --rollback."
+        HelpText = "Migrate common properties and items from projects to Directory.Build.props. "
+            + "Entries below full consensus flow into every project — combine with --verify to "
+            + "prove the hoisted references are the only graph change. Backs up every file before "
+            + "writing; undo with --rollback."
     )]
     public bool UnifyProps { get; set; }
 
@@ -1363,7 +1366,10 @@ public class Options
         }
 
         var conflictingMode = FindModeInsteadOfMigration();
-        if (conflictingMode is not null)
+        // --unify-props is a mode, but it rewrites project files exactly like a migration and can
+        // inject hoisted PackageReference items into projects that never declared them — a real
+        // graph change — so it keeps the same verify contract rather than being refused.
+        if (conflictingMode is not null && conflictingMode != "--unify-props")
         {
             throw new ArgumentException(
                 $"--verify cannot be combined with {conflictingMode}, which runs instead of a migration."

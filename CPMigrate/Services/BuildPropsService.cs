@@ -1,4 +1,6 @@
 using CPMigrate.Models;
+using CPMigrate.Services.Migration;
+using CPMigrate.Services.Verify;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
 
@@ -16,16 +18,32 @@ public class BuildPropsService
     private readonly BuildPropsAnalyzer _analyzer;
     private readonly IProjectAnalyzer _projectAnalyzer;
     private readonly IBackupManager _backupManager;
+    private readonly MigrationVerifier? _verifier;
+    private readonly RollbackHandler? _rollbackHandler;
+    private readonly MigrationDisplay _display;
 
     public BuildPropsService(
         IConsoleService consoleService,
         IProjectAnalyzer projectAnalyzer,
         IBackupManager? backupManager = null)
+        : this(consoleService, projectAnalyzer, backupManager, verifier: null, rollbackHandler: null)
+    {
+    }
+
+    internal BuildPropsService(
+        IConsoleService consoleService,
+        IProjectAnalyzer projectAnalyzer,
+        IBackupManager? backupManager,
+        MigrationVerifier? verifier,
+        RollbackHandler? rollbackHandler)
     {
         _consoleService = consoleService;
         _projectAnalyzer = projectAnalyzer;
         _analyzer = new BuildPropsAnalyzer(consoleService);
         _backupManager = backupManager ?? new BackupManager();
+        _verifier = verifier;
+        _rollbackHandler = rollbackHandler;
+        _display = new MigrationDisplay(consoleService);
     }
 
     public async Task<int> UnifyPropertiesAsync(Options options)
@@ -60,7 +78,7 @@ public class BuildPropsService
             return ExitCodes.Success;
         }
 
-        DisplayCandidates(propertyCandidates, itemCandidates, analysis.TotalProjects);
+        DisplayCandidates(propertyCandidates, itemCandidates, analysis);
 
         if (options.DryRun)
         {
@@ -98,9 +116,64 @@ public class BuildPropsService
             }
         }
 
+        return await RunUnificationAsync(
+            options, basePath, projectPaths, propertyCandidates, itemCandidates, analysis);
+    }
+
+    /// <summary>
+    /// The confirmed pass: baseline capture, the writes, then verification and its rollback. Split
+    /// from <see cref="UnifyPropertiesAsync"/> at the consent boundary — everything before it costs
+    /// nothing, everything after it is the mutation the gates above were guarding.
+    /// </summary>
+    private async Task<int> RunUnificationAsync(
+        Options options,
+        string basePath,
+        List<string> projectPaths,
+        List<PropertyCandidate> propertyCandidates,
+        List<ItemCandidate> itemCandidates,
+        PropertyAnalysisResult analysis)
+    {
         var propsList = propertyCandidates.Select(c => c.Property).ToList();
         var itemsList = itemCandidates.Select(c => c.Item).ToList();
         var buildPropsPath = Path.Combine(basePath, "Directory.Build.props");
+
+        // --verify keeps the migration's contract: the baseline is captured after the run is
+        // confirmed but before a byte is written, because "did not restore beforehand" is a reason
+        // to stop rather than to proceed unmeasured.
+        GraphSnapshotResult? baseline = null;
+        if (options.Verify && _verifier is not null)
+        {
+            baseline = await _verifier.CaptureAsync(
+                MigrationService.RestoreTarget(options),
+                projectPaths,
+                basePath
+            );
+
+            if (!baseline.RestoreSucceeded)
+            {
+                _consoleService.Error(
+                    "The solution does not restore before unification — nothing was written. "
+                        + Tail(baseline.RestoreOutput)
+                );
+                var baselineFailure = new VerificationReport(
+                    VerificationVerdict.Failed,
+                    ProjectsRestored: 0,
+                    ProjectsExpected: 0,
+                    ResolvedVersionCount: 0,
+                    UnchangedCount: 0,
+                    [],
+                    [],
+                    [],
+                    "the solution did not restore before unification, so there is no baseline "
+                        + $"to measure it against. {Tail(baseline.RestoreOutput)}"
+                );
+                if (options.Output == OutputFormat.Json)
+                {
+                    await EmitJsonAsync(options, basePath, "failed", ExitCodes.GraphDrift, propertyCandidates, itemCandidates, analysis, 0, verification: baselineFailure);
+                }
+                return ExitCodes.GraphDrift;
+            }
+        }
 
         // The pass rewrites every consensus project file exactly like a migration does, so it owes
         // the same undo path: each file lands in .cpmigrate_backup before its first write, under the
@@ -124,12 +197,38 @@ public class BuildPropsService
             );
         }
 
-        _consoleService.Success($"Successfully unified {propertyCandidates.Count} properties and {itemCandidates.Count} items.");
+        VerificationReport? verification = null;
+        var exitCode = ExitCodes.Success;
+        if (baseline is not null && _verifier is not null)
+        {
+            verification = await VerifyUnifiedTreeAsync(
+                options,
+                projectPaths,
+                basePath,
+                baseline,
+                itemCandidates,
+                backupSession,
+                _verifier
+            );
+            if (!verification.Passed(options.VerifyStrict))
+            {
+                exitCode = ExitCodes.GraphDrift;
+            }
+        }
+
+        if (exitCode == ExitCodes.Success)
+        {
+            _consoleService.Success($"Successfully unified {propertyCandidates.Count} properties and {itemCandidates.Count} items.");
+        }
         if (options.Output == OutputFormat.Json)
         {
-            await EmitJsonAsync(options, basePath, "unified", ExitCodes.Success, propertyCandidates, itemCandidates, analysis, projectPaths.Count + 1, backupSession);
+            // A failed verification reports 'failed' even though the writes happened — when the
+            // pass rolled back, the tree on disk no longer holds them, and 'unified' would tell a
+            // consumer gating on the token that they do.
+            var status = exitCode == ExitCodes.Success ? "unified" : "failed";
+            await EmitJsonAsync(options, basePath, status, exitCode, propertyCandidates, itemCandidates, analysis, projectPaths.Count + 1, backupSession, verification);
         }
-        return ExitCodes.Success;
+        return exitCode;
     }
 
     /// <summary>
@@ -145,7 +244,8 @@ public class BuildPropsService
         List<ItemCandidate> itemCandidates,
         PropertyAnalysisResult analysis,
         int filesModified,
-        FixBackupSession? backupSession = null
+        FixBackupSession? backupSession = null,
+        VerificationReport? verification = null
     )
     {
         var candidates = new UnifyPropsCandidatesPayload(
@@ -157,7 +257,8 @@ public class BuildPropsService
                     .Where(kv => kv.Value[0].Name == c.Property.Name && kv.Value[0].Value == c.Property.Value)
                     .SelectMany(kv => kv.Value)
                     .Select(p => p.ProjectPath)
-                    .ToList()
+                    .ToList(),
+                analysis.TotalProjects - c.Count
             )).ToList(),
             itemCandidates.Select(c => new UnifyPropsItemPayload(
                 c.Item.ItemType,
@@ -168,7 +269,8 @@ public class BuildPropsService
                     .SelectMany(kv => kv.Value)
                     .Select(i => i.ProjectPath)
                     .ToList(),
-                c.Item.Metadata
+                c.Item.Metadata,
+                analysis.TotalProjects - c.Count
             )).ToList()
         );
         var summary = new UnifyPropsSummaryPayload(
@@ -188,11 +290,177 @@ public class BuildPropsService
                 exitCode,
                 candidates,
                 summary,
-                backup
+                backup,
+                VerificationPayload.From(verification, options.VerifyStrict)
             ),
             options,
             _consoleService
         );
+    }
+
+    /// <summary>
+    /// Re-restores the unified tree and answers whether the resolved graph moved only in ways the
+    /// pass claimed — the <c>PackageReference</c> items hoisted into Directory.Build.props. Anything
+    /// else is unexplained drift and the pass is rolled back from its own backup.
+    /// </summary>
+    private async Task<VerificationReport> VerifyUnifiedTreeAsync(
+        Options options,
+        List<string> projectPaths,
+        string basePath,
+        GraphSnapshotResult baseline,
+        List<ItemCandidate> itemCandidates,
+        FixBackupSession? backupSession,
+        MigrationVerifier verifier
+    )
+    {
+        _consoleService.Info("Verifying the resolved dependency graph (dotnet restore)...");
+
+        var after = await verifier.CaptureAsync(
+            MigrationService.RestoreTarget(options),
+            projectPaths,
+            basePath
+        );
+
+        VerificationReport report;
+        if (!after.RestoreSucceeded)
+        {
+            // The loudest outcome and the one the flag exists for: unification produced a tree
+            // that does not restore.
+            report = new VerificationReport(
+                VerificationVerdict.Failed,
+                ProjectsRestored: 0,
+                baseline.Snapshot.ProjectCount,
+                ResolvedVersionCount: 0,
+                UnchangedCount: 0,
+                [],
+                [],
+                [],
+                $"the solution does not restore after unification. {Tail(after.RestoreOutput)}"
+            );
+        }
+        else
+        {
+            var diff = GraphDiff.Compare(baseline.Snapshot, after.Snapshot);
+
+            if (diff.IntegrityFailures.Count > 0)
+            {
+                report = new VerificationReport(
+                    VerificationVerdict.Failed,
+                    after.Snapshot.Projects.Count,
+                    baseline.Snapshot.ProjectCount,
+                    after.Snapshot.ResolvedVersionCount,
+                    diff.UnchangedCount,
+                    [],
+                    diff.IntegrityFailures,
+                    [],
+                    "the graph before and after unification do not cover the same projects, so "
+                        + "they cannot be compared"
+                );
+            }
+            else
+            {
+                // The unified PackageReference items are the run's claims: a package no candidate
+                // named that nonetheless moved is unexplained drift, and rolls back the same way.
+                var unifiedPackageIds = itemCandidates
+                    .Where(c => c.Item.ItemType == "PackageReference")
+                    .Select(c => c.Item.Include)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var attributed = DriftAttributor.AttributeUnification(
+                    diff.Changes,
+                    unifiedPackageIds,
+                    baseline.Snapshot,
+                    after.Snapshot
+                );
+
+                var hasUnexplained = attributed.Any(c => c.Kind == DriftExplanation.Unexplained);
+                var verdict = (attributed.Count, hasUnexplained) switch
+                {
+                    (0, _) => VerificationVerdict.Unchanged,
+                    (_, true) => VerificationVerdict.UnexplainedDrift,
+                    _ => VerificationVerdict.ExplainedDrift,
+                };
+
+                report = new VerificationReport(
+                    verdict,
+                    after.Snapshot.Projects.Count,
+                    baseline.Snapshot.ProjectCount,
+                    after.Snapshot.ResolvedVersionCount,
+                    diff.UnchangedCount,
+                    attributed,
+                    [],
+                    [],
+                    FailureReason: hasUnexplained
+                        ? "the resolved graph moved in ways the unification does not account for"
+                        : null
+                );
+            }
+        }
+
+        _display.ShowVerificationReport(report, options.VerifyStrict, options.Quiet);
+
+        if (!report.ShouldRollBack)
+        {
+            return report;
+        }
+
+        // Same judgment the migration's verify-rollback keeps: --verify is itself the consent to
+        // be protected from a change nobody has read, and a prompt a CI run cannot answer would
+        // leave the breakage on disk while the report claimed otherwise.
+        var rolledBack = await RollBackUnverifiedUnifyAsync(options, backupSession);
+        return report with { RolledBack = rolledBack };
+    }
+
+    /// <summary>
+    /// Undoes a unify pass the verification could not vouch for, from the backup the pass made.
+    /// </summary>
+    private async Task<bool> RollBackUnverifiedUnifyAsync(
+        Options options,
+        FixBackupSession? backupSession
+    )
+    {
+        if (_rollbackHandler is null || backupSession is not { ManifestWritten: true })
+        {
+            _consoleService.Warning(
+                "No backup is available, so the unification could not be undone. The working tree "
+                    + "still holds changes this run could not verify — use git to discard them."
+            );
+            return false;
+        }
+
+        _consoleService.Warning("Rolling the unification back.");
+
+        // The backup path names the .cpmigrate_backup directory itself; --rollback expects its
+        // parent — the same resolution BackupCoordinator keeps for the migration path.
+        var backupDir = Path.GetDirectoryName(
+            backupSession.BackupPath!.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar
+            )
+        );
+
+        var rollbackOptions = new Options
+        {
+            BackupDir = string.IsNullOrEmpty(backupDir) ? options.BackupDir : backupDir,
+            Rollback = true,
+            Force = true,
+            Output = options.Output,
+            Quiet = options.Quiet,
+        };
+
+        var result = await _rollbackHandler.ExecuteAsync(rollbackOptions);
+        return result.ExitCode == ExitCodes.Success;
+    }
+
+    /// <summary>The last few lines of a restore log — the NU error that matters is at the end.</summary>
+    private static string Tail(string output)
+    {
+        var lines = output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .TakeLast(5)
+            .ToList();
+
+        return lines.Count == 0 ? string.Empty : string.Join(" ", lines);
     }
 
     private static double GetConsensusThreshold(int totalProjects) =>
@@ -226,15 +494,20 @@ public class BuildPropsService
             .ToList();
     }
 
-    private void DisplayCandidates(List<PropertyCandidate> propertyCandidates, List<ItemCandidate> itemCandidates, int totalProjects)
+    private void DisplayCandidates(List<PropertyCandidate> propertyCandidates, List<ItemCandidate> itemCandidates, PropertyAnalysisResult analysis)
     {
+        var totalProjects = analysis.TotalProjects;
         if (propertyCandidates.Count > 0)
         {
             _consoleService.Info($"Found {propertyCandidates.Count} common properties (consensus > {ConsensusThresholdPercent:P0}):");
             foreach (var candidate in propertyCandidates)
             {
                 var percentage = (double)candidate.Count / totalProjects * 100;
-                _consoleService.Dim($"  - {candidate.Property.Name} = {candidate.Property.Value} [green]({candidate.Count}/{totalProjects}, {percentage:F0}%)[/]");
+                var gains = totalProjects - candidate.Count;
+                var gainNote = gains > 0
+                    ? $" [yellow]({gains} project(s) will newly receive it)[/]"
+                    : "";
+                _consoleService.Dim($"  - {candidate.Property.Name} = {candidate.Property.Value} [green]({candidate.Count}/{totalProjects}, {percentage:F0}%)[/]{gainNote}");
             }
         }
 
@@ -247,10 +520,49 @@ public class BuildPropsService
                 var meta = candidate.Item.Metadata != null && candidate.Item.Metadata.Count > 0
                     ? $" ({string.Join(", ", candidate.Item.Metadata.Select(m => $"{m.Key}={m.Value}"))})"
                     : "";
-                _consoleService.Dim($"  - [{candidate.Item.ItemType}] {candidate.Item.Include}{meta} [green]({candidate.Count}/{totalProjects}, {percentage:F0}%)[/]");
+                var gains = totalProjects - candidate.Count;
+                var gainNote = gains > 0
+                    ? $" [yellow]({gains} project(s) will newly receive it)[/]"
+                    : "";
+                _consoleService.Dim($"  - [{candidate.Item.ItemType}] {candidate.Item.Include}{meta} [green]({candidate.Count}/{totalProjects}, {percentage:F0}%)[/]{gainNote}");
+
+                WarnOnVariantHolders(candidate, analysis);
             }
         }
     }
+
+    /// <summary>
+    /// A project that holds the same item under different metadata keeps it — only exact-metadata
+    /// matches are stripped — and after unification it sees both its own and the props-level copy.
+    /// For a PackageReference that duplicate is a NU1504 warning on every restore; say so before
+    /// the write rather than leaving it to be discovered as a phantom build warning.
+    /// </summary>
+    private void WarnOnVariantHolders(ItemCandidate candidate, PropertyAnalysisResult analysis)
+    {
+        var prefix = $"{candidate.Item.ItemType}|{candidate.Item.Include}|";
+        var variantProjects = analysis.ItemOccurrences
+            .Where(kv =>
+                kv.Key.StartsWith(prefix, StringComparison.Ordinal)
+                && kv.Key != CreateLookupKey(candidate.Item))
+            .SelectMany(kv => kv.Value)
+            .Select(i => i.ProjectPath)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (variantProjects.Count == 0)
+        {
+            return;
+        }
+
+        _consoleService.Warning(
+            $"  {variantProjects.Count} project(s) keep their own {candidate.Item.ItemType} "
+                + $"{candidate.Item.Include} under different metadata — after unification they will "
+                + "see both, which NuGet reports as a duplicate item."
+        );
+    }
+
+    private static string CreateLookupKey(Models.ProjectItem item) =>
+        $"{item.ItemType}|{item.Include}|{string.Join(";", (item.Metadata ?? new Dictionary<string, string>()).OrderBy(m => m.Key).Select(m => $"{m.Key}={m.Value}"))}";
 
     private sealed record PropertyCandidate(CPMigrate.Models.ProjectProperty Property, int Count);
 
