@@ -125,8 +125,10 @@ internal sealed class StatusService
     private static bool CpmPackageCount(string dir, out int? packageCount)
     {
         packageCount = null;
-        var propsPath = Path.Combine(dir, "Directory.Packages.props");
-        if (!File.Exists(propsPath))
+        // The governing file can sit above the named directory; an ancestor props file means
+        // CPM is in effect for the projects under it.
+        var propsPath = GoverningFiles.FindNearestPropsFile(dir);
+        if (propsPath == null)
         {
             return false;
         }

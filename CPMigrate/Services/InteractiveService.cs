@@ -613,8 +613,10 @@ public class InteractiveService : IInteractiveService
         var propsRoot = options.HasExplicitSolutionPath
             ? options.SolutionFileDir
             : options.GetDiscoveryTargetPath();
-        var propsFilePath = Path.Combine(Path.GetFullPath(propsRoot), "Directory.Packages.props");
-        if (!File.Exists(propsFilePath))
+        // The same governing-file rule the migration validator applies: a props file above the
+        // target governs it, so the merge question is owed for an ancestor file too.
+        var propsFilePath = GoverningFiles.FindNearestPropsFile(propsRoot);
+        if (propsFilePath == null)
         {
             return;
         }

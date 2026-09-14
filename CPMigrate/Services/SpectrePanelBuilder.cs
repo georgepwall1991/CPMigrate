@@ -265,7 +265,7 @@ internal static class SpectrePanelBuilder
             : $"[{SpectrePalette.Ink.Warning}]No solutions found here[/]";
 
     private static string GetCpmStatus(string directory) =>
-        File.Exists(Path.Combine(directory, "Directory.Packages.props"))
+        GoverningFiles.FindNearestPropsFile(directory) is not null
             ? $"[{SpectrePalette.Ink.Primary}]YES[/] [{SpectrePalette.Ink.Muted}](Directory.Packages.props detected)[/]"
             : $"[{SpectrePalette.Ink.Dim}]NO[/]";
 

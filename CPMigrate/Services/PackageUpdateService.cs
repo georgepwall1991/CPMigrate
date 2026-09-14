@@ -201,6 +201,14 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         var solutionDir = Path.GetFullPath(request.SolutionPath);
         var (basePath, projectPaths) = await _projectAnalyzer.DiscoverProjectsFromSolutionAsync(solutionDir);
 
+        // The empty answer comes first: an ancestor props file can govern a directory that holds
+        // no projects at all, and updating that file would touch versions nothing here declared.
+        if (projectPaths.Count == 0)
+        {
+            _consoleService.Error("No projects found to update.");
+            return UpdateLoadContext.FromEarly(new PackageUpdateResult { ExitCode = ExitCodes.NoProjectsFound });
+        }
+
         var propsPath = FindPropsFile(basePath);
         if (propsPath == null)
         {
@@ -551,27 +559,11 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         _nuGetLookup.Dispose();
     }
 
-    private static string? FindPropsFile(string basePath)
-    {
-        // An empty base path means the target resolved to nothing — probing it would anchor the
-        // search at the process working directory and could open a props file that has nothing
-        // to do with the target the user named.
-        if (string.IsNullOrEmpty(basePath))
-        {
-            return null;
-        }
+    private static string? FindPropsFile(string basePath) =>
+        GoverningFiles.FindNearestPropsFile(basePath);
 
-        var propsPath = Path.Combine(basePath, "Directory.Packages.props");
-        return File.Exists(propsPath) ? propsPath : null;
-    }
-
-    private static string? FindSolutionFile(string basePath)
-    {
-        var slnFiles = Directory.GetFiles(basePath, "*.sln")
-            .Concat(Directory.GetFiles(basePath, "*.slnx"))
-            .ToArray();
-        return slnFiles.Length > 0 ? slnFiles[0] : null;
-    }
+    private static string? FindSolutionFile(string basePath) =>
+        GoverningFiles.FindSolutionFile(basePath);
 
     private async Task<List<PackageUpdateEntry>> QueryNuGetForUpdatesAsync(
         Dictionary<string, HashSet<string>> currentVersions,

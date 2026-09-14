@@ -4,6 +4,21 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **`--update-packages` finds the `Directory.Packages.props` that governs the target.** It
+  probed only the directory the solution sat in, so `-s repo/src/App.sln` with the file at
+  `repo/` reported "CPM is not enabled" on a fully migrated workspace. It now walks up to the
+  nearest ancestor props file — the same resolution NuGet performs and the rule migration and
+  remediation already keep — through one shared `GoverningFiles` helper.
+- **`--update-packages` reports "no projects found" before touching props.** The ancestor walk
+  can reach a props file governing a directory that holds no projects; updating it would
+  rewrite versions nothing under the target declared, so the empty answer now wins.
+- **The update/remediation verification target is chosen deterministically.** With several
+  `.sln`/`.slnx` files beside each other, the first in filesystem enumeration order was used;
+  the choice is now sorted, so verification runs against the same solution every time.
+
 ## [3.84.0] - 2026-09-14
 
 ### Fixed

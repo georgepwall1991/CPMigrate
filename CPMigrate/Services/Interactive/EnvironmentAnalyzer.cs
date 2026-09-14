@@ -36,7 +36,7 @@ internal class EnvironmentAnalyzer
 
         // Discover solutions
         ctx.Solutions = _solutionDiscovery.GetSolutionFiles(ctx.Directory).ToList();
-        ctx.IsCpm = File.Exists(Path.Combine(ctx.Directory, "Directory.Packages.props"));
+        ctx.IsCpm = GoverningFiles.FindNearestPropsFile(ctx.Directory) is not null;
 
         // Check backups
         ctx.Backups = _backupManager.GetBackupHistory(Path.Combine(ctx.Directory, ".cpmigrate_backup"));
