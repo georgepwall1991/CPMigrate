@@ -100,7 +100,9 @@ public sealed record FixRequest(
     ConflictStrategy ConflictStrategy,
     bool DryRun,
     IReadOnlySet<string>? OnlyRules = null,
-    BackupSettings? Backup = null)
+    BackupSettings? Backup = null,
+    bool ShowDiff = false,
+    string? DiffFilePath = null)
 {
     /// <summary>
     /// Invoked once per file immediately before a fix pass overwrites it. Set by
@@ -109,14 +111,47 @@ public sealed record FixRequest(
     public Action<string>? BeforeFileWrite { get; init; }
 
     /// <summary>
-    /// The only way a fixer should put bytes on disk. Dry runs never write, and real writes go
-    /// through <see cref="BeforeFileWrite"/> first so nothing is overwritten before its backup
-    /// exists — a fixer that bypassed this would leave <c>--rollback</c> with nothing to restore.
+    /// Dry-run write sink. <see cref="FixService"/> points it at the run's planned-write overlay
+    /// so the pass ends with one "final content" per file it would have written; null means a dry
+    /// run has nowhere to record and previews stay at the per-issue descriptions.
+    /// </summary>
+    /// <remarks>
+    /// Kept as a delegate rather than mutable state on the record so value equality stays
+    /// structural — two default-constructed requests remain equal, which the request-mapping
+    /// tests and any caller comparing requests rely on.
+    /// </remarks>
+    internal Action<string, string>? OnPlannedWrite { get; init; }
+
+    /// <summary>
+    /// Dry-run read overlay: returns the planned content for a path an earlier fixer already
+    /// rewrote, or null when nothing is planned for it. Without it a dry run computes every fixer
+    /// against the original file, and a second fixer touching the same file produces a preview
+    /// that silently drops the first fixer's change.
+    /// </summary>
+    internal Func<string, string?>? PlannedRead { get; init; }
+
+    /// <summary>
+    /// Reads a project or props file through the planned-write overlay when the pass supplies
+    /// one, else straight from disk — which is also what a real run sees, since its writes have
+    /// already landed by the time the next fixer reads.
+    /// </summary>
+    public string ReadFile(string path)
+    {
+        return PlannedRead?.Invoke(path) ?? File.ReadAllText(path);
+    }
+
+    /// <summary>
+    /// The only way a fixer should put bytes on disk. Dry runs never write — they hand the
+    /// content to <see cref="OnPlannedWrite"/> so the pass can preview or diff it — and real
+    /// writes go through <see cref="BeforeFileWrite"/> first so nothing is overwritten before its
+    /// backup exists; a fixer that bypassed this would leave <c>--rollback</c> with nothing to
+    /// restore.
     /// </summary>
     public void WriteFile(string path, string contents)
     {
         if (DryRun)
         {
+            OnPlannedWrite?.Invoke(path, contents);
             return;
         }
 
@@ -139,7 +174,9 @@ public sealed record FixRequest(
             options.ConflictStrategy,
             options.FixDryRun,
             options.ParseFixRules(),
-            BackupSettings.FromOptions(options)
+            BackupSettings.FromOptions(options),
+            options.Diff,
+            options.DiffFile
         );
     }
 }

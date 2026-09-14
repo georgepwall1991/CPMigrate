@@ -153,7 +153,7 @@ public class DiffFileOptionValidationTests
         var action = () => options.Validate();
 
         action.Should().Throw<ArgumentException>()
-            .WithMessage("*--diff-file can only be used with --dry-run*");
+            .WithMessage("*--diff-file can only be used during a dry run*");
     }
 
     [Theory]
@@ -182,7 +182,7 @@ public class DiffFileOptionValidationTests
         var action = () => options.Validate();
 
         action.Should().Throw<ArgumentException>()
-            .WithMessage("*--diff-file can only be used with a --dry-run migration or --unify-props preview*");
+            .WithMessage("*--diff-file can only be used with a --dry-run migration*");
     }
 
     [Fact]
@@ -195,6 +195,41 @@ public class DiffFileOptionValidationTests
         var action = () => options.Validate();
 
         action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_DiffFileWithFixDryRun_DoesNotThrow()
+    {
+        // A fix dry-run produces real diffs — every file the pass would have written — so it
+        // earns the artifact the same way the other two previews do.
+        var options = new Options
+        {
+            Analyze = true,
+            FixDryRun = true,
+            DiffFile = "d.patch",
+        };
+
+        var action = () => options.Validate();
+
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_DiffFileWithRealFix_ThrowsArgumentException()
+    {
+        // A real --fix writes files; an artifact of "what would change" would be empty while the
+        // run did real work — the same reason real migrations and real unify-props reject it.
+        var options = new Options
+        {
+            Analyze = true,
+            Fix = true,
+            DiffFile = "d.patch",
+        };
+
+        var action = () => options.Validate();
+
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*--diff-file can only be used during a dry run*");
     }
 }
 

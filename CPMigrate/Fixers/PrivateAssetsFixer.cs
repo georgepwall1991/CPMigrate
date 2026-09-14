@@ -140,7 +140,7 @@ public class PrivateAssetsFixer : IFixer
     {
         try
         {
-            var originalContent = File.ReadAllText(filePath);
+            var originalContent = request.ReadFile(filePath);
             var doc = XDocument.Parse(originalContent);
 
             var touched = 0;

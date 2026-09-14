@@ -336,10 +336,11 @@ public class Options
 
     [Option(
         "diff-file",
-        HelpText = "Append every unified diff generated during a --dry-run migration or "
-            + "--unify-props preview to this file, whether or not --diff renders it on screen. "
-            + "Created empty at the start of the run: an empty artifact means no changes, a missing "
-            + "one means the run crashed. Rejected for every other command."
+        HelpText = "Append every unified diff generated during a --dry-run migration, "
+            + "--unify-props preview, or --fix-dry-run pass to this file, whether or not --diff "
+            + "renders it on screen. Created empty at the start of the run: an empty artifact "
+            + "means no changes, a missing one means the run crashed. Rejected for every other "
+            + "command."
     )]
     public string? DiffFile { get; set; }
 
@@ -470,7 +471,7 @@ public class Options
     [Option(
         "diff",
         Default = false,
-        HelpText = "Show a unified diff of file changes during --dry-run instead of the default preview. Applies to migrations and --unify-props."
+        HelpText = "Show a unified diff of file changes during --dry-run or --fix-dry-run instead of the default preview. Applies to migrations, --unify-props, and --fix-dry-run."
     )]
     public bool Diff { get; set; }
 
@@ -518,7 +519,7 @@ public class Options
     [Option(
         "fix-dry-run",
         Default = false,
-        HelpText = "Show what --fix would change without modifying files."
+        HelpText = "Show what --fix would change without modifying files. Add --diff for unified diffs of every file, or --diff-file to capture them as a patch artifact."
     )]
     public bool FixDryRun { get; set; }
 
@@ -1087,10 +1088,11 @@ public class Options
 
     /// <summary>
     /// Validates the <c>--diff-file</c> contract. The artifact only makes sense where diffs are
-    /// actually produced: a migration or --unify-props dry-run. A real write changes files and
-    /// would leave an empty artifact despite doing real work; every other mode (analysis, rollback,
-    /// pruning, package updates, batch, self-update, doctor) never reaches the diff-generation
-    /// path, so allowing the flag there would promise a file the command cannot fill.
+    /// actually produced: a migration, --unify-props, or --fix dry-run. A real write changes
+    /// files and would leave an empty artifact despite doing real work; every other mode
+    /// (read-only analysis, rollback, pruning, package updates, batch, self-update, doctor) never
+    /// reaches the diff-generation path, so allowing the flag there would promise a file the
+    /// command cannot fill.
     /// </summary>
     /// <exception cref="ArgumentException">Thrown when the combination is unsupported.</exception>
     private void ValidateDiffFileOptions()
@@ -1107,15 +1109,15 @@ public class Options
             );
         }
 
-        if (!DryRun)
+        if (!DryRun && !FixDryRun)
         {
             throw new ArgumentException(
-                "--diff-file can only be used with --dry-run."
+                "--diff-file can only be used during a dry run (--dry-run or --fix-dry-run)."
             );
         }
 
         if (
-            Analyze
+            (Analyze && !FixDryRun)
             || Interactive
             || Rollback
             || ListBackups
@@ -1128,8 +1130,8 @@ public class Options
         )
         {
             throw new ArgumentException(
-                "--diff-file can only be used with a --dry-run migration or --unify-props preview; "
-                    + "it has no meaning for this command."
+                "--diff-file can only be used with a --dry-run migration, --unify-props preview, "
+                    + "or --fix-dry-run pass; it has no meaning for this command."
             );
         }
     }

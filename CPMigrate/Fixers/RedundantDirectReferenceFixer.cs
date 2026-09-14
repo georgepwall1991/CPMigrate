@@ -99,7 +99,7 @@ public class RedundantDirectReferenceFixer : IFixer
     {
         try
         {
-            var originalContent = File.ReadAllText(projectPath);
+            var originalContent = request.ReadFile(projectPath);
             var doc = XDocument.Parse(originalContent);
 
             var removed = 0;

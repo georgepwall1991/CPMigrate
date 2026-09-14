@@ -102,7 +102,7 @@ public class RedundantReferenceFixer : IFixer
     {
         try
         {
-            var originalContent = File.ReadAllText(projectPath);
+            var originalContent = request.ReadFile(projectPath);
             var doc = XDocument.Parse(originalContent);
 
             var packageRefs = doc.Descendants("PackageReference")

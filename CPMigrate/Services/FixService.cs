@@ -12,6 +12,7 @@ public class FixService : IFixService
     private readonly List<IFixer> _fixers;
     private readonly IConsoleService _console;
     private readonly IBackupManager _backupManager;
+    private readonly DiffFileCollector _diffCollector = new();
 
     public FixService(
         IConsoleService console,
@@ -43,7 +44,9 @@ public class FixService : IFixService
                 options.ConflictStrategy,
                 dryRun,
                 options.ParseFixRules(),
-                BackupSettings.FromOptions(options)));
+                BackupSettings.FromOptions(options),
+                options.Diff,
+                options.DiffFile));
     }
 
     /// <param name="request">Mode-specific fix settings.</param>
@@ -70,6 +73,44 @@ public class FixService : IFixService
             return fixReport;
         }
         _console.Info($"Found {allIssues.Count} issue(s) to fix{(request.DryRun ? " (dry run)" : "")}...");
+
+        // The artifact exists from the first moment of the pass: empty means "no changes", absent
+        // means the run crashed before it could say so — the contract --diff-file keeps everywhere.
+        if (request.DryRun && !string.IsNullOrEmpty(request.DiffFilePath))
+        {
+            _diffCollector.Begin(request.DiffFilePath);
+        }
+
+        // The dry run's record of what the write path produced. A fixer that edits a file an
+        // earlier fixer already rewrote builds on that edit through ReadFile, so the preview ends
+        // with one honest "final content" per file rather than a stack of partial snapshots; real
+        // runs get the same composition for free because each write lands before the next read.
+        var plannedIndex = new Dictionary<string, int>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var plannedWrites = new List<KeyValuePair<string, string>>();
+        if (request.DryRun)
+        {
+            request = request with
+            {
+                OnPlannedWrite = (path, contents) =>
+                {
+                    var key = Path.GetFullPath(path);
+                    if (plannedIndex.TryGetValue(key, out var index))
+                    {
+                        plannedWrites[index] = new KeyValuePair<string, string>(key, contents);
+                    }
+                    else
+                    {
+                        plannedIndex[key] = plannedWrites.Count;
+                        plannedWrites.Add(new KeyValuePair<string, string>(key, contents));
+                    }
+                },
+                PlannedRead = path =>
+                    plannedIndex.TryGetValue(Path.GetFullPath(path), out var index)
+                        ? plannedWrites[index].Value
+                        : null,
+            };
+        }
 
         // A fix pass rewrites project and props files exactly like a migration does, so it owes the
         // same undo path: every file lands in .cpmigrate_backup before its first write, and the
@@ -102,8 +143,47 @@ public class FixService : IFixService
             }
         }
 
+        if (request.DryRun)
+        {
+            ShowPlannedDiffs(request, plannedWrites);
+        }
+
         WriteSummary(fixReport, request.DryRun);
         return fixReport;
+    }
+
+    /// <summary>
+    /// The dry run's real preview: one unified diff per file the pass would have written, built
+    /// from the planned content every fixer produced — including edits later fixers composed on
+    /// top of earlier ones through <see cref="FixRequest.ReadFile"/>. The per-issue lines above
+    /// name what each finding did; the diffs show what the files will actually contain.
+    /// </summary>
+    private void ShowPlannedDiffs(FixRequest request, List<KeyValuePair<string, string>> plannedWrites)
+    {
+        var wantsDiffs = request.ShowDiff || _diffCollector.IsEnabled;
+        if (!wantsDiffs || plannedWrites.Count == 0)
+        {
+            return;
+        }
+
+        _console.WriteLine();
+        _console.DryRun("File changes:");
+
+        foreach (var (path, planned) in plannedWrites)
+        {
+            var original = File.Exists(path) ? File.ReadAllText(path) : null;
+            if (string.Equals(original, planned, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var diff = UnifiedDiffGenerator.Generate(original, planned, path);
+            _diffCollector.Append(diff);
+            if (request.ShowDiff)
+            {
+                _console.WriteDiff(diff);
+            }
+        }
     }
 
     private static List<AnalysisIssue> CollectIssues(AnalysisReport report)
