@@ -13,12 +13,12 @@
     <Product>CPMigrate</Product>
     <Title>CPMigrate — NuGet Central Package Management Migration &amp; Dependency Analysis CLI</Title>
     <Description>Migrate .NET solutions to NuGet Central Package Management (CPM). Generate Directory.Packages.props, analyze dependency health (version drift, transitive conflicts, vulnerabilities), auto-fix package issues, unify Directory.Build.props, and update NuGet packages with test verification and rollback — including --bisect to keep the largest green subset. --remediate clears CVEs with the smallest version bump that fixes them, test-verified and re-scanned to prove it.</Description>
-    <PackageReleaseNotes>3.79.0 makes --fix-dry-run show the real change instead of per-issue descriptions: every fixer now reads and writes through the fix request, so a dry run composes sequential edits in memory exactly as a real run does on disk; --diff prints a unified diff of every file the pass would write, and --diff-file captures the edits as a patch artifact (previously rejected for this command).</PackageReleaseNotes>
+    <PackageReleaseNotes>3.80.0 makes --update-packages --dry-run and --remediate --dry-run show the real change instead of version arrows: both render the Directory.Packages.props the pass would write through the same merge the write path uses, --diff prints it as a unified diff, and --diff-file captures it as a patch artifact — closing a hole where --remediate --diff-file was accepted but silently produced nothing.</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://georgepwall1991.github.io/CPMigrate/</PackageProjectUrl>
     <TargetFramework>net10.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
-    <Version>3.79.0</Version>
+    <Version>3.80.0</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/georgepwall1991/CPMigrate</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
