@@ -13,12 +13,12 @@
     <Product>CPMigrate</Product>
     <Title>CPMigrate — NuGet Central Package Management Migration &amp; Dependency Analysis CLI</Title>
     <Description>Migrate .NET solutions to NuGet Central Package Management (CPM). Generate Directory.Packages.props, analyze dependency health (version drift, transitive conflicts, vulnerabilities), auto-fix package issues, unify Directory.Build.props, and update NuGet packages with test verification and rollback — including --bisect to keep the largest green subset. --remediate clears CVEs with the smallest version bump that fixes them, test-verified and re-scanned to prove it.</Description>
-    <PackageReleaseNotes>3.77.0 makes the --unify-props report exact about who holds what: candidates.items[].projects now lists only exact-match holders (variant holders no longer appear as declarers of a candidate they don't declare), summary.filesModified counts the files actually rewritten rather than every project, and items held under a Condition — which nothing strips, so they see both copies once unified — now join the duplicate-item warning the run prints before writing.</PackageReleaseNotes>
+    <PackageReleaseNotes>3.78.0 makes --unify-props --dry-run show the real change instead of two sentences about it: the preview renders the Directory.Build.props the pass would write through the same code path the write uses, names each project file that would lose entries, prints every change as a unified diff under --diff, and --diff-file captures the props file and every project edit as a patch artifact (previously rejected for this command).</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://georgepwall1991.github.io/CPMigrate/</PackageProjectUrl>
     <TargetFramework>net10.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
-    <Version>3.77.0</Version>
+    <Version>3.78.0</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/georgepwall1991/CPMigrate</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

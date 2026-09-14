@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.78.0] - 2026-09-14
 
 ### Added
 - **`--unify-props --dry-run` shows the real change, not two sentences about it.** The preview now
