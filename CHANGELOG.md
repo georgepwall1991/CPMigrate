@@ -4,6 +4,26 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **Migration targets the `Directory.Packages.props` that already governs the workspace.**
+  NuGet resolves the file by walking up from each project, and restore fails NU1507 the
+  moment two sit in one ancestry — so `-s repo/src/App.sln` with a props file at `repo/`
+  was writing a shadow beside the solution and breaking the build. The nearest existing
+  props file above the derived output location is now the target: unmerged runs report it
+  as already migrated (naming the real path), `--merge` updates it in place, and every
+  fixer resolves the same governing file. An explicit `-o` is still honored verbatim.
+- **"No projects found" answers before "already migrated."** The ancestor walk can reach
+  a props file governing a directory that holds no projects at all; the empty answer is
+  the honest one, so the already-migrated gate now runs after discovery.
+- **`-p` on a directory with several projects refuses to guess.** It silently took the
+  first in enumeration order — a non-interactive run now names the candidates and asks for
+  an explicit path (interactive runs get the selection prompt), matching the rule the
+  multi-solution case already keeps.
+- **The already-migrated hint names the real escape hatch.** It claimed `--force` would
+  overwrite the existing file; `--force` does not do that — `--merge` does.
+
 ## [3.83.0] - 2026-09-14
 
 ### Fixed

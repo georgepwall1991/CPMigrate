@@ -366,7 +366,7 @@ internal class MigrationDisplay
     {
         _consoleService.Info($"Directory.Packages.props already exists at {propsPath}");
         _consoleService.Info("This directory appears to be already migrated to CPM.");
-        _consoleService.Dim("Use --force to overwrite the existing file, or delete it manually.");
+        _consoleService.Dim("Use --merge to update the existing file in place, or delete it to regenerate.");
 
         return new MigrationResult { ExitCode = ExitCodes.Success, PropsFilePath = propsPath };
     }

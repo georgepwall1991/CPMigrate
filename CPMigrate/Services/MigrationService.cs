@@ -165,9 +165,7 @@ public class MigrationService
         {
             var validationResult = await ValidateMigrationPrerequisitesAsync(
                 options,
-                outputPath,
-                propsFileExists,
-                propsPath
+                outputPath
             );
             if (validationResult != null)
             {
@@ -179,6 +177,14 @@ public class MigrationService
             {
                 _consoleService.Error("No projects found to process.");
                 return new MigrationResult { ExitCode = ExitCodes.NoProjectsFound };
+            }
+
+            // "Nothing here to migrate" answers before "already migrated" — the walk that finds
+            // the governing props file can reach ancestors of a directory that holds no projects,
+            // and that answer should not masquerade as a completed migration.
+            if (propsFileExists && !options.MergeExisting)
+            {
+                return _display.CreateAlreadyMigratedResult(propsPath);
             }
 
             if (!_quietMode)
@@ -563,9 +569,7 @@ public class MigrationService
 
     private async Task<MigrationResult?> ValidateMigrationPrerequisitesAsync(
         Options options,
-        string outputPath,
-        bool propsFileExists,
-        string propsPath
+        string outputPath
     )
     {
         if (!options.DryRun)
@@ -577,11 +581,6 @@ public class MigrationService
             }
 
             await _validator.CheckForUnstagedChangesAsync(outputPath);
-        }
-
-        if (propsFileExists && !options.MergeExisting)
-        {
-            return _display.CreateAlreadyMigratedResult(propsPath);
         }
 
         if (!_quietMode)

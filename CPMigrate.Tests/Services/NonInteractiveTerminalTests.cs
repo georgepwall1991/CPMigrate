@@ -71,6 +71,40 @@ public class NonInteractiveTerminalTests : IDisposable
     }
 
     [Fact]
+    public void SolutionDiscovery_MultipleProjectsInDir_FailsLoudlyInsteadOfGuessing()
+    {
+        // -p on a directory is a single-project scope; taking the first in enumeration order is a
+        // silent guess — same refusal the multi-solution case keeps.
+        CreateTestProject("Api.csproj");
+        CreateTestProject("Web.csproj");
+
+        var console = NonInteractiveConsole();
+        var discovery = new SolutionDiscovery(console);
+
+        var (_, projectPaths) = discovery.DiscoverProjectFromPath(_testDirectory);
+
+        projectPaths.Should().BeEmpty();
+        console.ErrorMessages.Should().Contain(m => m.Contains("non-interactive"));
+        console.OutputMessages.Should().Contain(m => m.Contains("-p"));
+        console.OutputMessages.Should().Contain(m => m.Contains("Api.csproj"));
+        console.OutputMessages.Should().Contain(m => m.Contains("Web.csproj"));
+    }
+
+    [Fact]
+    public void SolutionDiscovery_SingleProjectInDir_StillResolvesWithoutPrompting()
+    {
+        CreateTestProject("Only.csproj");
+
+        var console = NonInteractiveConsole();
+        var discovery = new SolutionDiscovery(console);
+
+        var (_, projectPaths) = discovery.DiscoverProjectFromPath(_testDirectory);
+
+        projectPaths.Should().ContainSingle();
+        console.ErrorMessages.Should().NotContain(m => m.Contains("non-interactive"));
+    }
+
+    [Fact]
     public async Task BuildPropsService_DeclinesTheWriteAndPointsAtForce()
     {
         CreateTestSolution("Unify.sln",

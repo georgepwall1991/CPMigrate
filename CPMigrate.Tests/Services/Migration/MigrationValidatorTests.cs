@@ -115,4 +115,74 @@ public class MigrationValidatorTests
         outputPath.Should().Be(repoDir);
         propsPath.Should().Be(Path.Combine(repoDir, "Directory.Packages.props"));
     }
+
+    [Fact]
+    public void GetOutputPaths_PropsInAncestor_TargetsTheGoverningFile()
+    {
+        // NuGet walks up from each project for Directory.Packages.props and restore fails NU1507
+        // when two sit in one ancestry. A props file above the solution directory is the file
+        // already governing these projects — a second one next to the solution shadows nothing
+        // and breaks every restore.
+        var repoDir = Path.Combine(Path.GetTempPath(), $"CPMigrateAncestor_{Guid.NewGuid():N}");
+        var srcDir = Path.Combine(repoDir, "src");
+        Directory.CreateDirectory(srcDir);
+        var ancestorProps = Path.Combine(repoDir, "Directory.Packages.props");
+        File.WriteAllText(ancestorProps, "<Project />");
+
+        try
+        {
+            var options = new Options { OutputDir = ".", SolutionFileDir = srcDir };
+            var (outputPath, propsPath) = MigrationValidator.GetOutputPaths(options);
+
+            outputPath.Should().Be(srcDir);
+            propsPath.Should().Be(ancestorProps);
+        }
+        finally
+        {
+            Directory.Delete(repoDir, true);
+        }
+    }
+
+    [Fact]
+    public void GetOutputPaths_ExplicitOutputDir_HonoredVerbatim()
+    {
+        // -o is the caller's contract: an ancestor props file does not redirect an explicit
+        // output directory.
+        var repoDir = Path.Combine(Path.GetTempPath(), $"CPMigrateExplicit_{Guid.NewGuid():N}");
+        var outDir = Path.Combine(repoDir, "out");
+        Directory.CreateDirectory(outDir);
+        File.WriteAllText(Path.Combine(repoDir, "Directory.Packages.props"), "<Project />");
+
+        try
+        {
+            var options = new Options { OutputDir = outDir, SolutionFileDir = repoDir };
+            var (_, propsPath) = MigrationValidator.GetOutputPaths(options);
+
+            propsPath.Should().Be(Path.Combine(outDir, "Directory.Packages.props"));
+        }
+        finally
+        {
+            Directory.Delete(repoDir, true);
+        }
+    }
+
+    [Fact]
+    public void GetOutputPaths_NoPropsAnywhere_TargetsOutputDir()
+    {
+        var repoDir = Path.Combine(Path.GetTempPath(), $"CPMigrateNone_{Guid.NewGuid():N}");
+        var srcDir = Path.Combine(repoDir, "src");
+        Directory.CreateDirectory(srcDir);
+
+        try
+        {
+            var options = new Options { OutputDir = ".", SolutionFileDir = srcDir };
+            var (_, propsPath) = MigrationValidator.GetOutputPaths(options);
+
+            propsPath.Should().Be(Path.Combine(srcDir, "Directory.Packages.props"));
+        }
+        finally
+        {
+            Directory.Delete(repoDir, true);
+        }
+    }
 }
