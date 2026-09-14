@@ -1192,14 +1192,14 @@ internal static class CommandRouter
     {
         // A verifying migration has a report of its own, and it is the one worth pasting into a pull
         // request: what the migration changed about the build, rather than what the analyzers think of
-        // the tree. Nothing else under --output Markdown reaches here without --analyze.
-        if (result.Verification is not null)
+        // the tree. An --analyze --fix --verify run produces both — findings first, receipt second.
+        var verificationSection = result.Verification is null
+            ? null
+            : VerificationMarkdown.Format(result.Verification, options.VerifyStrict, result.Warnings);
+
+        if (verificationSection is not null && !options.Analyze)
         {
-            await JsonOutputWriter.EmitAsync(
-                VerificationMarkdown.Format(result.Verification, options.VerifyStrict, result.Warnings),
-                options,
-                consoleService
-            );
+            await JsonOutputWriter.EmitAsync(verificationSection, options, consoleService);
             return;
         }
 
@@ -1229,6 +1229,11 @@ internal static class CommandRouter
                 result.BaselineUnknownRuleCodes ?? []
             )
         );
+
+        if (verificationSection is not null)
+        {
+            markdown = markdown + "\n\n" + verificationSection;
+        }
 
         await JsonOutputWriter.EmitAsync(markdown, options, consoleService);
     }

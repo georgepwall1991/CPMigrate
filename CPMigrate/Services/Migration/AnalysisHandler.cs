@@ -2,6 +2,7 @@ using System.Globalization;
 using CPMigrate.Fixers;
 using CPMigrate.Licensing;
 using CPMigrate.Models;
+using CPMigrate.Services.Verify;
 using Spectre.Console;
 
 namespace CPMigrate.Services.Migration;
@@ -21,6 +22,9 @@ internal sealed class AnalysisHandler
     > _discoverProjects;
     private readonly LicenseScanService _licenseScanService;
     private readonly DevelopmentDependencyScanService _developmentDependencyScanService;
+    private readonly MigrationVerifier? _verifier;
+    private readonly RollbackHandler? _rollbackHandler;
+    private readonly MigrationDisplay _display;
 
     private Dictionary<string, List<PackageReference>>? _cachedProjectScans;
 
@@ -32,7 +36,9 @@ internal sealed class AnalysisHandler
         bool quietMode,
         Func<Options, Task<(string BasePath, List<string> ProjectPaths)>> discoverProjects,
         LicenseScanService? licenseScanService = null,
-        DevelopmentDependencyScanService? developmentDependencyScanService = null
+        DevelopmentDependencyScanService? developmentDependencyScanService = null,
+        MigrationVerifier? verifier = null,
+        RollbackHandler? rollbackHandler = null
     )
     {
         _projectAnalyzer = projectAnalyzer;
@@ -45,6 +51,9 @@ internal sealed class AnalysisHandler
         _licenseScanService = licenseScanService ?? new LicenseScanService();
         _developmentDependencyScanService =
             developmentDependencyScanService ?? new DevelopmentDependencyScanService();
+        _verifier = verifier;
+        _rollbackHandler = rollbackHandler;
+        _display = new MigrationDisplay(consoleService);
     }
 
     public async Task<MigrationResult> ExecuteAsync(Options options)
@@ -147,7 +156,7 @@ internal sealed class AnalysisHandler
             basePath,
             scanFailures,
             deepScanFailures,
-            projectPaths.Count,
+            projectPaths,
             match
         );
     }
@@ -632,11 +641,13 @@ internal sealed class AnalysisHandler
         string basePath,
         int scanFailures,
         int deepScanFailures,
-        int projectsDiscovered,
+        List<string> projectPaths,
         BaselineMatch? baselineMatch
     )
     {
+        var projectsDiscovered = projectPaths.Count;
         FixReport? fixReport = null;
+        VerificationReport? verification = null;
 
         if ((options.Fix || options.FixDryRun) && report.HasIssues)
         {
@@ -647,6 +658,52 @@ internal sealed class AnalysisHandler
                     options.FixDryRun ? "FIX DRY RUN - Showing proposed changes" : "APPLYING FIXES"
                 );
                 _consoleService.WriteLine();
+            }
+
+            // --verify on a fix run keeps the migration's contract: the baseline is captured before
+            // a byte is written, because "did not restore beforehand" is a reason to stop rather
+            // than to proceed unmeasured.
+            GraphSnapshotResult? fixBaseline = null;
+            if (options.Verify && !options.FixDryRun && _verifier is not null)
+            {
+                fixBaseline = await _verifier.CaptureAsync(
+                    MigrationService.RestoreTarget(options),
+                    projectPaths,
+                    basePath
+                );
+
+                if (!fixBaseline.RestoreSucceeded)
+                {
+                    _consoleService.Error(
+                        "The solution does not restore before the fixes — nothing was written. "
+                            + Tail(fixBaseline.RestoreOutput)
+                    );
+                    verification = new VerificationReport(
+                        VerificationVerdict.Failed,
+                        ProjectsRestored: 0,
+                        ProjectsExpected: 0,
+                        ResolvedVersionCount: 0,
+                        UnchangedCount: 0,
+                        [],
+                        [],
+                        [],
+                        $"the solution did not restore before the fixes, so there is no baseline "
+                            + $"to measure them against. {Tail(fixBaseline.RestoreOutput)}"
+                    );
+                    return new MigrationResult
+                    {
+                        ProjectsProcessed = packageInfo.ProjectCount,
+                        PackagesCentralized = packageInfo.TotalReferences,
+                        AnalysisReport = report,
+                        PackageInfo = packageInfo,
+                        BasePath = basePath,
+                        ProjectsDiscovered = projectsDiscovered,
+                        ScanFailures = scanFailures,
+                        DeepScanFailures = deepScanFailures,
+                        Verification = verification,
+                        ExitCode = ExitCodes.GraphDrift,
+                    };
+                }
             }
 
             fixReport = _fixService.ApplyFixes(report, packageInfo, options, options.FixDryRun);
@@ -688,6 +745,30 @@ internal sealed class AnalysisHandler
                     ReportThresholdDecision(options, postFixReport);
                 }
 
+                var exitCode = ResolveExitCodeAfterFixes(
+                    postFixReport,
+                    fixReport,
+                    options.FailOn,
+                    postFixScanFailures,
+                    postFixDeepScanFailures
+                );
+
+                if (options.Verify && fixBaseline is not null && _verifier is not null)
+                {
+                    verification = await VerifyFixedTreeAsync(
+                        options,
+                        projectPaths,
+                        basePath,
+                        fixBaseline,
+                        fixReport,
+                        _verifier
+                    );
+                    if (!verification.Passed(options.VerifyStrict))
+                    {
+                        exitCode = ExitCodes.GraphDrift;
+                    }
+                }
+
                 return new MigrationResult
                 {
                     ProjectsProcessed = packageInfo.ProjectCount,
@@ -707,14 +788,9 @@ internal sealed class AnalysisHandler
                     DeepScanFailures = postFixDeepScanFailures,
                     ProjectsDiscovered = projectsDiscovered,
                     WasDryRun = options.FixDryRun,
+                    Verification = verification,
                     GatedIssueCount = CountGatedIssues(postFixReport, options.FailOn),
-                    ExitCode = ResolveExitCodeAfterFixes(
-                        postFixReport,
-                        fixReport,
-                        options.FailOn,
-                        postFixScanFailures,
-                        postFixDeepScanFailures
-                    ),
+                    ExitCode = exitCode,
                 };
             }
         }
@@ -747,6 +823,170 @@ internal sealed class AnalysisHandler
                 ProjectsDiscovered = projectsDiscovered,
             }
         );
+    }
+
+    /// <summary>
+    /// Re-restores after a fix pass and reaches a verdict: a tree that no longer restores, or no
+    /// longer covers the same projects, is a <see cref="VerificationVerdict.Failed"/> and is undone
+    /// from the backup the pass made. Resolved-version movement is attributed to the fix run rather
+    /// than treated as unexplained — moving versions is what a fixer is for — so it fails only under
+    /// <c>--verify-strict</c>, matching the migration's semantics.
+    /// </summary>
+    private async Task<VerificationReport> VerifyFixedTreeAsync(
+        Options options,
+        List<string> projectPaths,
+        string basePath,
+        GraphSnapshotResult baseline,
+        FixReport fixReport,
+        MigrationVerifier verifier
+    )
+    {
+        if (!_quietMode)
+        {
+            _consoleService.Info("Verifying the resolved dependency graph (dotnet restore)...");
+        }
+
+        var after = await verifier.CaptureAsync(
+            MigrationService.RestoreTarget(options),
+            projectPaths,
+            basePath
+        );
+
+        VerificationReport report;
+        if (!after.RestoreSucceeded)
+        {
+            // The loudest outcome and the one the flag exists for: the fixes produced a tree that
+            // does not restore.
+            report = new VerificationReport(
+                VerificationVerdict.Failed,
+                ProjectsRestored: 0,
+                baseline.Snapshot.ProjectCount,
+                ResolvedVersionCount: 0,
+                UnchangedCount: 0,
+                [],
+                [],
+                [],
+                $"the solution does not restore after the fixes. {Tail(after.RestoreOutput)}"
+            );
+        }
+        else
+        {
+            var diff = GraphDiff.Compare(baseline.Snapshot, after.Snapshot);
+
+            if (diff.IntegrityFailures.Count > 0)
+            {
+                report = new VerificationReport(
+                    VerificationVerdict.Failed,
+                    after.Snapshot.Projects.Count,
+                    baseline.Snapshot.ProjectCount,
+                    after.Snapshot.ResolvedVersionCount,
+                    diff.UnchangedCount,
+                    [],
+                    diff.IntegrityFailures,
+                    [],
+                    "the graph before and after the fixes do not cover the same projects, so they "
+                        + "cannot be compared"
+                );
+            }
+            else
+            {
+                // The fix report's package names are the run's "decisions": a package no fixer
+                // claimed to touch that nonetheless moved is unexplained drift, exactly as an
+                // undecided move is under a migration — and it is rolled back the same way.
+                var fixedPackages = fixReport.Results
+                    .Select(r => r.PackageName)
+                    .OfType<string>()
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var attributed = DriftAttributor.AttributeFixes(
+                    diff.Changes,
+                    fixedPackages,
+                    baseline.Snapshot,
+                    after.Snapshot
+                );
+
+                var hasUnexplained = attributed.Any(c => c.Kind == DriftExplanation.Unexplained);
+                var verdict = (attributed.Count, hasUnexplained) switch
+                {
+                    (0, _) => VerificationVerdict.Unchanged,
+                    (_, true) => VerificationVerdict.UnexplainedDrift,
+                    _ => VerificationVerdict.ExplainedDrift,
+                };
+
+                report = new VerificationReport(
+                    verdict,
+                    after.Snapshot.Projects.Count,
+                    baseline.Snapshot.ProjectCount,
+                    after.Snapshot.ResolvedVersionCount,
+                    diff.UnchangedCount,
+                    attributed,
+                    [],
+                    [],
+                    FailureReason: hasUnexplained
+                        ? "the resolved graph moved in ways the fix pass does not account for"
+                        : null
+                );
+            }
+        }
+
+        _display.ShowVerificationReport(report, options.VerifyStrict, _quietMode);
+
+        if (!report.ShouldRollBack)
+        {
+            return report;
+        }
+
+        // Same judgment the migration's verify-rollback keeps: --verify is itself the consent to be
+        // protected from a change nobody has read, and a prompt a CI run cannot answer would leave
+        // the breakage on disk while the report claimed otherwise.
+        var rolledBack = await RollBackUnverifiedFixesAsync(options, fixReport.BackupPath);
+        return report with { RolledBack = rolledBack };
+    }
+
+    /// <summary>
+    /// Undoes a fix pass the verification could not vouch for, from the backup the pass made.
+    /// </summary>
+    private async Task<bool> RollBackUnverifiedFixesAsync(Options options, string? backupPath)
+    {
+        if (_rollbackHandler is null || string.IsNullOrEmpty(backupPath))
+        {
+            _consoleService.Warning(
+                "No backup is available, so the fixes could not be undone. The working tree still "
+                    + "holds changes this run could not verify — use git to discard them."
+            );
+            return false;
+        }
+
+        _consoleService.Warning("Rolling the fixes back.");
+
+        // The backup path names the .cpmigrate_backup directory itself; --rollback expects its
+        // parent — the same resolution BackupCoordinator keeps for the migration path.
+        var backupDir = Path.GetDirectoryName(
+            backupPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+        );
+
+        var rollbackOptions = new Options
+        {
+            BackupDir = string.IsNullOrEmpty(backupDir) ? options.BackupDir : backupDir,
+            Rollback = true,
+            Force = true,
+            Output = options.Output,
+            Quiet = options.Quiet,
+        };
+
+        var result = await _rollbackHandler.ExecuteAsync(rollbackOptions);
+        return result.ExitCode == ExitCodes.Success;
+    }
+
+    /// <summary>The last few lines of a restore log — the NU error that matters is at the end.</summary>
+    private static string Tail(string output)
+    {
+        var lines = output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .TakeLast(5)
+            .ToList();
+
+        return lines.Count == 0 ? string.Empty : string.Join(" ", lines);
     }
 
     /// <summary>

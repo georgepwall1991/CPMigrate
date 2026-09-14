@@ -64,14 +64,6 @@ public class MigrationService
         _backupCoordinator = new BackupCoordinator(_backupManager, consoleService, quietMode);
         _rollbackHandler = new RollbackHandler(consoleService, quietMode);
         _listBackupsHandler = new ListBackupsHandler(_backupManager, consoleService, quietMode);
-        _analysisHandler = new AnalysisHandler(
-            _projectAnalyzer,
-            resolvedAnalysisService,
-            resolvedFixService,
-            consoleService,
-            quietMode,
-            DiscoverProjectsWithSpinnerAsync
-        );
         _verifier =
             verifier
             ?? new MigrationVerifier(
@@ -81,6 +73,16 @@ public class MigrationService
                     consoleService
                 )
             );
+        _analysisHandler = new AnalysisHandler(
+            _projectAnalyzer,
+            resolvedAnalysisService,
+            resolvedFixService,
+            consoleService,
+            quietMode,
+            DiscoverProjectsWithSpinnerAsync,
+            verifier: _verifier,
+            rollbackHandler: _rollbackHandler
+        );
         _logger = logger ?? NullLogger<MigrationService>.Instance;
         _quietMode = quietMode;
         _progressReporter = new MigrationProgressReporter(quietMode, consoleService.Live);

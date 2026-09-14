@@ -311,6 +311,72 @@ public class DriftAttributionTests
             .Be(DriftExplanation.Unexplained);
     }
 
+    // ── AttributeFixes — the --analyze --fix analogue ────────────────────────────────────────
+
+    [Fact]
+    public void FixApplied_WhenTheFixReportClaimsThePackage()
+    {
+        // A fix has no landed version to match against — it touched the package, and whatever the
+        // pin produced after that is the fix doing its job.
+        var change = Changed("Serilog", "3.1.1", "4.4.0", direct: true);
+
+        var attributed = DriftAttributor.AttributeFixes(
+            [change],
+            new HashSet<string>(["Serilog"], StringComparer.OrdinalIgnoreCase),
+            before: After(("Serilog", [])),
+            after: After(("Serilog", []))
+        );
+
+        attributed.Single().Kind.Should().Be(DriftExplanation.FixApplied);
+    }
+
+    [Fact]
+    public void FixApplied_StillExplainsFalloutReachableFromTheFixedPackage()
+    {
+        // Scoping a dev-only package can change what resolves beneath it — that is the fix's
+        // consequence, judged by the same reachability the migration claims.
+        var changes = new[]
+        {
+            Changed("SonarAnalyzer.CSharp", "9.0.0", "10.0.0", direct: true),
+            Changed("Roslyn.Dep", "1.0.0", "2.0.0", direct: false),
+        };
+
+        var attributed = DriftAttributor.AttributeFixes(
+            changes,
+            new HashSet<string>(["SonarAnalyzer.CSharp"], StringComparer.OrdinalIgnoreCase),
+            before: After(("SonarAnalyzer.CSharp", ["Roslyn.Dep"]), ("Roslyn.Dep", [])),
+            after: After(("SonarAnalyzer.CSharp", ["Roslyn.Dep"]), ("Roslyn.Dep", []))
+        );
+
+        var fallout = attributed.Single(a => a.Change.PackageId == "Roslyn.Dep");
+        fallout.Kind.Should().Be(DriftExplanation.TransitiveFallout);
+        fallout.CausedBy.Should().Be("SonarAnalyzer.CSharp");
+    }
+
+    [Fact]
+    public void FixApplied_ExplainsNothing_TheFixReportDidNotClaim()
+    {
+        // The alarm the flag exists for: a package no fixer touched moved anyway — concurrent edit,
+        // a broken pin, anything. Unexplained drift rolls the fixes back.
+        var changes = new[]
+        {
+            Changed("Serilog", "3.1.1", "4.4.0", direct: true),
+            Changed("Unrelated", "1.0.0", "2.0.0", direct: false),
+        };
+
+        var attributed = DriftAttributor.AttributeFixes(
+            changes,
+            new HashSet<string>(["Serilog"], StringComparer.OrdinalIgnoreCase),
+            before: After(("Serilog", []), ("Unrelated", [])),
+            after: After(("Serilog", []), ("Unrelated", []))
+        );
+
+        attributed
+            .Single(a => a.Change.PackageId == "Unrelated")
+            .Kind.Should()
+            .Be(DriftExplanation.Unexplained);
+    }
+
     private static IReadOnlyList<AttributedChange> Attribute(
         IReadOnlyList<GraphChange> changes,
         IReadOnlyList<MigrationDecision> decisions,

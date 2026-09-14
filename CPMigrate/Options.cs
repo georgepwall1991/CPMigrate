@@ -188,10 +188,11 @@ public class Options
     [Option(
         "verify",
         Default = false,
-        HelpText = "Prove the migration did not change what restores. Captures the resolved package "
-            + "graph before and after, diffs it, and attributes every change to the decision that "
-            + "caused it. Anything unaccounted for exits 9 and rolls the migration back. Costs two "
-            + "full restores."
+        HelpText = "Prove the change did not break what restores. On a migration, captures the "
+            + "resolved package graph before and after, diffs it, and attributes every change to "
+            + "the decision that caused it — unexplained drift exits 9 and rolls back. With "
+            + "--analyze --fix, proves the fixes still restore; a broken restore is rolled back "
+            + "from the fix backup. Costs two full restores."
     )]
     public bool Verify { get; set; }
 
@@ -1349,11 +1350,14 @@ public class Options
             );
         }
 
-        if (Analyze)
+        // --analyze --fix changes the tree, so verification applies to it exactly as it does to a
+        // migration; --fix-dry-run reaches this branch too (it sets FixDryRun, not Fix) and writes
+        // nothing to verify.
+        if (Analyze && !Fix)
         {
             throw new ArgumentException(
-                "--verify cannot be used with --analyze, which reports on the tree as it is rather "
-                    + "than migrating it. Run the migration to verify it."
+                "--verify with --analyze only makes sense alongside --fix, which changes the tree. "
+                    + "An analysis that writes nothing has nothing to verify."
             );
         }
 
