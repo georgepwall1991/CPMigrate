@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Added
+- **`--verify` now covers `--analyze --fix`.** A fix pass rewrites project files exactly like a
+  migration does, and until now ran with no proof the tree still restored afterwards — the receipt
+  `--verify` produces was migrate-only. With fixes applied, CPMigrate captures the resolved graph
+  before a byte is written, re-restores after, and attributes every moved version to the package
+  the fix report claims (`explanation: "fixApplied"`) or to fallout reachable from it. A change no
+  fixer touched is unexplained drift and rolls the fixes back from the pass's own backup — the same
+  fail-closed contract a migration keeps, exit `9` and all. Baseline restore failure stops the run
+  before any write. `--fix-dry-run` stays rejected: it writes nothing, so there is nothing to
+  verify. The output schema widens to 1.21.0 for the new `fixApplied` explanation.
+
 ## [3.72.0] - 2026-09-14
 
 ### Added

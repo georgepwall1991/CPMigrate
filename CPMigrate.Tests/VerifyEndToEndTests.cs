@@ -225,6 +225,50 @@ public class VerifyEndToEndTests : IDisposable
             .BeFalse("the rollback removes what the refused migration created");
     }
 
+    [Fact]
+    public async Task VerifiesTheFixedTree_WhenAnalyzeFixRuns()
+    {
+        // The same receipt a migration earns, now for --analyze --fix: an orphaned central pin is
+        // removed (a real file write), the graph is re-restored, and because nothing resolved from
+        // that pin the verdict is "unchanged" — the strongest answer this feature can give.
+        WriteFile(
+            "Directory.Packages.props",
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+                <PackageVersion Include="Nobody.References.This" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj");
+
+        var (exitCode, verification) = await Verify(extraArgs: ["--analyze", "--fix"]);
+
+        exitCode.Should().Be(ExitCodes.Success);
+        verification.GetProperty("verdict").GetString().Should().Be("unchanged");
+        (await File.ReadAllTextAsync(Path.Combine(_root, "Directory.Packages.props")))
+            .Should()
+            .NotContain("Nobody.References.This", "the fix must have run for the verdict to mean anything");
+    }
+
     private async Task<(int ExitCode, JsonElement Verification)> Verify(
         string? target = null,
         params string[] extraArgs

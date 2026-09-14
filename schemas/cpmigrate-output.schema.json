@@ -608,7 +608,7 @@
     },
     "verification": {
       "type": "object",
-      "description": "The resolved-graph receipt a --verify migration produces. Absent when --verify was not passed, so a run that never verified stays distinguishable from one that verified and found nothing. Added in output schema 1.5.0.",
+      "description": "The resolved-graph receipt a --verify run produces — a migration, or an --analyze --fix pass since output schema 1.21.0. Absent when --verify was not passed, so a run that never verified stays distinguishable from one that verified and found nothing. Added in output schema 1.5.0.",
       "required": [
         "verdict",
         "passed",
@@ -711,7 +711,8 @@
           "description": "Whether the project references this package itself, as opposed to receiving it through another."
         },
         "explanation": {
-          "enum": ["unexplained", "conflictUnified", "transitiveFallout"]
+          "enum": ["unexplained", "conflictUnified", "transitiveFallout", "fixApplied"],
+          "description": "'fixApplied' — the --analyze --fix pass touched this package — joins the enum in output schema 1.21.0; before it, only migrations produced receipts."
         },
         "causedBy": {
           "type": "string",

@@ -83,6 +83,60 @@ public static class DriftAttributor
             );
         }
 
+        return Order(ResolvePending(attributed, pending, before, after, "migration"));
+    }
+
+    /// <summary>
+    /// The same attribution pass for an <c>--analyze --fix</c> run, whose decisions are not
+    /// version choices but the packages the fix report says it touched. A change to a package no
+    /// fixer claimed is unexplained — the pass has no more right to move it silently than a
+    /// migration does.
+    /// </summary>
+    public static IReadOnlyList<AttributedChange> AttributeFixes(
+        IReadOnlyList<GraphChange> changes,
+        IReadOnlySet<string> fixedPackages,
+        ResolvedGraphSnapshot before,
+        ResolvedGraphSnapshot after
+    )
+    {
+        List<AttributedChange> attributed = [];
+        List<AttributedChange> pending = [];
+
+        foreach (var change in changes)
+        {
+            if (fixedPackages.Contains(change.PackageId))
+            {
+                attributed.Add(
+                    new AttributedChange(
+                        change,
+                        DriftExplanation.FixApplied,
+                        CausedBy: null,
+                        "the fix pass touched this package"
+                    )
+                );
+                continue;
+            }
+
+            pending.Add(
+                new AttributedChange(change, DriftExplanation.Unexplained, null, string.Empty)
+            );
+        }
+
+        return Order(ResolvePending(attributed, pending, before, after, "fix pass"));
+    }
+
+    /// <summary>
+    /// The second pass both attributions share: everything not directly explained is judged by
+    /// reachability from a change that was.
+    /// </summary>
+    private static List<AttributedChange> ResolvePending(
+        List<AttributedChange> attributed,
+        List<AttributedChange> pending,
+        ResolvedGraphSnapshot before,
+        ResolvedGraphSnapshot after,
+        string actor
+    )
+    {
         List<AttributedChange> result = [.. attributed];
 
         foreach (var candidate in pending)
@@ -93,25 +147,27 @@ public static class DriftAttributor
                 cause is null
                     ? candidate with
                     {
-                        Description = "nothing this migration decided accounts for this change",
+                        Description = $"nothing this {actor} did accounts for this change",
                     }
                     : new AttributedChange(
                         candidate.Change,
                         DriftExplanation.TransitiveFallout,
                         cause,
-                        $"reachable from {cause}, which this migration moved"
+                        $"reachable from {cause}, which this {actor} moved"
                     )
             );
         }
 
-        return
+        return result;
+    }
+
+    private static IReadOnlyList<AttributedChange> Order(List<AttributedChange> result) =>
         [
             .. result
                 .OrderBy(a => a.Change.ProjectPath, StringComparer.Ordinal)
                 .ThenBy(a => a.Change.TargetFramework, StringComparer.Ordinal)
                 .ThenBy(a => a.Change.PackageId, StringComparer.OrdinalIgnoreCase),
         ];
-    }
 
     /// <summary>
     /// The decision that accounts for a change, or null.
@@ -264,6 +320,9 @@ public enum DriftExplanation
 
     /// <summary>Reachable from a package the migration moved deliberately.</summary>
     TransitiveFallout,
+
+    /// <summary>An <c>--analyze --fix</c> pass changed it — the drift a fixer exists to cause.</summary>
+    FixApplied,
 }
 
 /// <summary>One change, and what accounts for it.</summary>

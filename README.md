@@ -151,7 +151,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | Surface | What you get |
 |---------|--------------|
 | 🏗️ **CPM migration** | Generate `Directory.Packages.props`, strip inline versions, conflict strategies, `--merge` |
-| 🔎 **`--verify`** | Restores before *and* after, diffs the resolved graph, attributes every change to the decision that caused it |
+| 🔎 **`--verify`** | Restores before *and* after a migration **or** `--analyze --fix`, diffs the resolved graph, attributes every change to what caused it |
 | 🔬 **Dependency analysis** | 17 rules / 14 analyzers + scoreboard + 0–100 health score; JSON / SARIF / Markdown / **CSV** |
 | 🩹 **Auto-fix** | Version, casing, redundant refs, transitive pin |
 | 🔁 **Safe updates** | Latest versions + `dotnet test` + automatic rollback |
@@ -220,6 +220,7 @@ cpmigrate -s ./MySolution.sln --dry-run --diff-file changes.patch   # same previ
 cpmigrate -s ./MySolution.sln --verify           # migrate, then prove the graph didn't move
 cpmigrate -s ./MySolution.sln --verify --verify-strict   # demand a literal no-op
 cpmigrate -s ./MySolution.sln --verify --output Markdown # the receipt, for the PR body
+cpmigrate -s ./MySolution.sln --analyze --fix --verify   # fix, then prove it still restores
 ```
 
 </details>
@@ -282,7 +283,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--conflict-strategy` | | `Highest` | `Highest` · `Lowest` · `Fail` |
 | `--interactive-conflicts` | | `false` | Prompt for each version conflict |
 | `--keep-attrs` | `-k` | `false` | Leave inline `Version` attributes in place |
-| `--verify` | | `false` | Prove the migration didn't change what restores. Two restores; exit `9` on drift nothing explains |
+| `--verify` | | `false` | Prove the migration — or `--analyze --fix` — didn't change what restores. Two restores; exit `9` on drift nothing explains, rolled back |
 | `--verify-strict` | | `false` | Fail on *any* graph change, including explained ones. Requires `--verify` |
 | `--interactive` | `-i` | `false` | Launch the Mission Control wizard |
 
@@ -521,7 +522,7 @@ A migration PR is sixty changed files, and `git diff` cannot answer the only que
     [ "$code" = "0" ] || { echo "::error::resolved graph moved unexplained (exit $code)"; exit 1; }
 ```
 
-`--verify` rolls the migration back on drift it can't account for, so a failed job leaves the tree as it found it. Add `--verify-strict` when the migration must be a literal no-op — then *any* graph change fails, even one the receipt explains.
+`--verify` rolls the change back on drift it can't account for — the migration, or the fixes under `--analyze --fix` — so a failed job leaves the tree as it found it. Add `--verify-strict` when the migration must be a literal no-op — then *any* graph change fails, even one the receipt explains.
 
 After any rollback — including this one — run `dotnet restore` before building. Backups cover project files and `Directory.Packages.props`, not `obj/`, so `obj/project.assets.json` can still hold resolved graphs written *after* the backup was taken (by the verification captures, or by a test-verified update's restore). External tools that read `obj/` directly will see the undone graph until a fresh restore rewrites it. CPMigrate itself always clears those files before reading, so its own verdicts are unaffected.
 

@@ -148,8 +148,15 @@ public static class OutputMetadata
     /// on the result. <c>latestVersion</c> is absent when the check itself failed, and
     /// <c>error</c> is present only on <c>failed</c>.
     /// </para>
+    /// <para>
+    /// 1.21.0 widened <c>verification.changes[].explanation</c> with <c>fixApplied</c>: a change a
+    /// <c>--analyze --fix</c> pass accounts for. <c>verification</c> itself now appears on analysis
+    /// payloads too, because <c>--verify</c> applies to fix runs — the receipt's shape is unchanged,
+    /// but a consumer validating the enum against 1.20.0 would reject it, which is why the version
+    /// moved.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.20.0";
+    public const string SchemaVersion = "1.21.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

@@ -123,6 +123,41 @@ public class VerifyContractTests : IDisposable
     }
 
     [Fact]
+    public void Accepts_AnalyzeFix_WhichChangesTheTreeLikeAMigration()
+    {
+        // A fix pass rewrites project files, so it owes the same proof a migration owes: that the
+        // tree still restores afterwards. --verify was migrate-only until the fix pass grew backups
+        // to roll a failed verification back from.
+        var options = new Options { Analyze = true, Fix = true, Verify = true };
+
+        var act = options.Validate;
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Rejects_AnalyzeFixDryRun_WhichWritesNothingToVerify()
+    {
+        // --fix-dry-run previews; it never touches disk, so there is no before-and-after to diff.
+        // Allowing it would run two restores and report a verdict about files nobody changed.
+        var options = new Options { Analyze = true, FixDryRun = true, Verify = true };
+
+        var act = options.Validate;
+
+        act.Should().Throw<ArgumentException>().WithMessage("*--analyze*");
+    }
+
+    [Fact]
+    public void Rejects_AnalyzeWithoutFix_WhichReportsRatherThanChanges()
+    {
+        var options = new Options { Analyze = true, Verify = true };
+
+        var act = options.Validate;
+
+        act.Should().Throw<ArgumentException>().WithMessage("*--fix*");
+    }
+
+    [Fact]
     public void Rejects_VerifyWithBatch()
     {
         // Each solution would capture and compare its own graph, but the batch payload has no shape
