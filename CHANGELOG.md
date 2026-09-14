@@ -6,6 +6,16 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Fixed
+- **Subprocess waits can no longer hang on inherited pipe handles.** Every `dotnet`/`git` call the
+  tool spawns redirected stdout/stderr and then waited for stream EOF — but a detached grandchild,
+  most commonly an MSBuild `/nodeReuse:true` process spawned by `dotnet restore`, inherits those
+  pipe handles and can hold them open for minutes after the child exits. `ReadToEnd` and
+  `Process.WaitForExit` then never return even though the process is dead (dotnet/msbuild#2981,
+  #10530): a `--verify` restore could stall a run indefinitely. Child output is now drained
+  through async line callbacks, the exit wait is on the process handle alone, and the EOF wait is
+  bounded — so the run proceeds with the exit code the moment the child dies.
+
 ## [3.74.0] - 2026-09-14
 
 ### Added

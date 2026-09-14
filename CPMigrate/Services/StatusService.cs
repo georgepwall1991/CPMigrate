@@ -227,9 +227,28 @@ internal sealed class StatusService
             };
 
             using var process = System.Diagnostics.Process.Start(startInfo);
-            var output = process?.StandardOutput.ReadToEnd() ?? string.Empty;
-            process?.WaitForExit(5000);
-            return !string.IsNullOrWhiteSpace(output);
+            if (process == null)
+            {
+                return false;
+            }
+
+            using var capture = new ProcessOutputCapture();
+            capture.BeginCapture(process);
+            if (!capture.Wait(process, TimeSpan.FromSeconds(5)))
+            {
+                try
+                {
+                    process.Kill();
+                }
+                catch (InvalidOperationException)
+                {
+                    // Already exited between the timeout expiring and the kill.
+                }
+
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(capture.Output);
         }
         catch
         {

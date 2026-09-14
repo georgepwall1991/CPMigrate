@@ -15,11 +15,13 @@ public class ProcessRunner : IProcessRunner
         process.StartInfo = startInfo;
         process.Start();
 
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
+        // Sequential ReadToEnd calls deadlock when the child fills stderr while the caller is
+        // blocked on stdout, and any ReadToEnd can hang forever when a detached grandchild
+        // inherits the pipes — the capture drains continuously and bounds the EOF wait.
+        using var capture = new ProcessOutputCapture();
+        capture.BeginCapture(process);
+        capture.Wait(process);
 
-        process.WaitForExit();
-
-        return (process.ExitCode, output, error);
+        return (process.ExitCode, capture.Output, capture.Error);
     }
 }

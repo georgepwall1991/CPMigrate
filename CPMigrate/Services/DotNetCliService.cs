@@ -245,15 +245,14 @@ public class DotNetCliService : IDotNetCliService
 
         using (process)
         {
-            // Read streams before WaitForExitAsync to prevent deadlock when output buffers fill
-            var outputTask = process.StandardOutput.ReadToEndAsync();
-            var errorTask = process.StandardError.ReadToEndAsync();
+            // ReadToEndAsync before WaitForExitAsync keeps the pipes drained, but the EOF itself can
+            // never arrive: a detached MSBuild node-reuse process inherits the handles and holds them
+            // open past the child's exit. The capture waits on the handle, then bounds the drain.
+            using var capture = new ProcessOutputCapture();
+            capture.BeginCapture(process);
+            await capture.WaitAsync(process);
 
-            var output = await outputTask;
-            var error = await errorTask;
-            await process.WaitForExitAsync();
-
-            return (output, error, process.ExitCode == 0);
+            return (capture.Output, capture.Error, process.ExitCode == 0);
         }
     }
 }
