@@ -6,6 +6,24 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Added
+- **New rule: `DevelopmentDependencyLeak` — dev-only packages caught flowing to every consumer.**
+  Analyzers, test SDKs, coverage collectors, and source generators only contribute at build time,
+  but a `PackageReference` without `PrivateAssets="all"` hands them to everyone who consumes the
+  project: into produced nuspec dependency lists, downstream lock files, and other people's
+  builds. NuGet never warns — the reference resolves cleanly — so the leak stays silent until
+  someone reads their own dependency list and finds a test framework in it. The rule reads what
+  the project files declare (the resolved graph has already consumed `PrivateAssets`), treats
+  only unconditional `PrivateAssets="all"` as coverage — a conditioned value still leaks on every
+  other configuration, and a partial asset list still flows the package — and honours the
+  CPM-sanctioned central form: `PrivateAssets` on a `PackageVersion` or `GlobalPackageReference`
+  in a governing props file covers every project it manages. A `GlobalPackageReference` for a
+  dev-only package with no scoping is itself reported, naming the props file. The dev-only set is
+  convention-based — `.Analyzer`/`.Analyzers` ids, test SDKs and adapters, coverage collectors,
+  `Microsoft.SourceLink.*`, `Microsoft.TestPlatform.*`, `SonarAnalyzer.*` — rather than a feed
+  lookup, so it works unrestored and offline. Default severity Low; auto-fixable, setting
+  `PrivateAssets="all"` on the reference or the global entry.
+
 ## [3.68.0] - 2026-09-13
 
 ### Fixed

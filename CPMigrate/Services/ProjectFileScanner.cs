@@ -409,6 +409,18 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     var versionOverrideMetadata = item.Metadata.FirstOrDefault(m => m.Name == "VersionOverride");
                     var versionOverride = versionOverrideMetadata?.Value;
 
+                    // Asset scoping is declaration data the resolved graph has already consumed: a
+                    // package's PrivateAssets decides whether it flows to consumers, and nothing
+                    // downstream preserves that fact. A conditional PrivateAssets still leaks the
+                    // package on every configuration the condition excludes, so only an
+                    // unconditional declaration counts as coverage. ProjectMetadataElement.Condition
+                    // is empty, not null, when absent — attribute-expressed metadata has none.
+                    var privateAssetsMetadata = item.Metadata.FirstOrDefault(m => m.Name == "PrivateAssets");
+                    var privateAssets = privateAssetsMetadata is not null
+                        && string.IsNullOrEmpty(privateAssetsMetadata.Condition)
+                            ? privateAssetsMetadata.Value
+                            : null;
+
                     // Kept rather than filtered, because "this package is declared twice, both times
                     // conditionally" is a different fact from "this package is declared twice" and only
                     // the caller knows which one it needs.
@@ -475,7 +487,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 versionMetadataCondition,
                                 null,
                                 propertyMutationStates,
-                                propertyMutationState
+                                propertyMutationState,
+                                privateAssets: privateAssets
                             );
                             AddDeclaredPackageReference(
                                 references,
@@ -499,7 +512,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                                 propertyMutationState,
                                 false,
                                 string.IsNullOrWhiteSpace(versionOverride),
-                                false
+                                false,
+                                privateAssets
                             );
                         }
 
@@ -529,7 +543,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                             versionMetadataCondition,
                             versionOverrideMetadataCondition,
                             propertyMutationStates,
-                            propertyMutationState
+                            propertyMutationState,
+                            privateAssets: privateAssets
                         );
                     }
                 }
@@ -581,7 +596,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         PropertyMutationState propertyMutationState,
         bool allowUnconditionalMetadataProjection = true,
         bool allowInheritedVersion = true,
-        bool allowInheritedVersionOverride = true
+        bool allowInheritedVersionOverride = true,
+        string? privateAssets = null
     )
     {
         var reference = new PackageReference(
@@ -602,6 +618,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 && isConditional
                 && hasVersionMetadata,
             ConditionalScope = conditionalScope,
+            PrivateAssets = privateAssets,
         };
         if (isUpdate)
         {
@@ -650,7 +667,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 hasVersionMetadata,
                 versionOverride?.Trim(),
                 hasVersionOverrideMetadata,
-                isConditional
+                isConditional,
+                privateAssets
             );
 
             return;
@@ -1999,7 +2017,8 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         bool hasVersionMetadata,
         string? versionOverride,
         bool hasVersionOverrideMetadata,
-        bool isConditional
+        bool isConditional,
+        string? privateAssets = null
     )
     {
         var foldsConditionalUpdates =
@@ -2055,6 +2074,10 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                 IsMetadataOnlyUpdate = false,
                 IsConditionalUpdate = foldsConditionalUpdates
                     || (existing.IsConditionalUpdate && conditionalMetadataSurvives),
+                // An Update that names PrivateAssets replaces it — including with an explicit
+                // empty value, which clears inherited coverage — and one that does not leaves the
+                // declaration's existing scoping alone.
+                PrivateAssets = privateAssets ?? existing.PrivateAssets,
             };
         }
 

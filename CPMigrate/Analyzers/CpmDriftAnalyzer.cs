@@ -926,7 +926,8 @@ public class CpmDriftAnalyzer : IAnalyzer
                 versions[packageName] = new CentralEntry(
                     ReadVersion(element),
                     isGlobal,
-                    documentPath
+                    documentPath,
+                    ReadPrivateAssets(element)
                 );
             }
         }
@@ -990,7 +991,12 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// The file that declared it, which is not always the file being read: a props file may import
     /// others, and a pin reported against the importing file names the wrong place to edit.
     /// </param>
-    private readonly record struct CentralEntry(string? Version, bool IsGlobal, string SourcePath);
+    private readonly record struct CentralEntry(
+        string? Version,
+        bool IsGlobal,
+        string SourcePath,
+        string? PrivateAssets = null
+    );
 
     private readonly record struct ConditionalCentralEntry(string Package, CentralEntry Entry);
 
@@ -1010,6 +1016,28 @@ public class CpmDriftAnalyzer : IAnalyzer
     private static string? ReadVersion(XElement element)
     {
         return ReadAttributeOrChild(element, "Version");
+    }
+
+    /// <summary>
+    /// Reads a central item's <c>PrivateAssets</c> — attribute or child-element form — but only
+    /// when nothing conditions it. Asset scoping set only for one configuration still lets the
+    /// package flow to consumers on every other one, so a conditioned value is not coverage.
+    /// </summary>
+    private static string? ReadPrivateAssets(XElement element)
+    {
+        var attribute = element.Attribute("PrivateAssets");
+        if (attribute is not null && !string.IsNullOrWhiteSpace(attribute.Value))
+        {
+            return attribute.Value.Trim();
+        }
+
+        var child = element
+            .Elements()
+            .FirstOrDefault(e =>
+                e.Name.LocalName.Equals("PrivateAssets", StringComparison.OrdinalIgnoreCase)
+            );
+
+        return child?.Attribute("Condition") is null ? child?.Value.Trim() : null;
     }
 
     /// <summary>
@@ -1175,8 +1203,10 @@ public class CpmDriftAnalyzer : IAnalyzer
 
         var (central, conditional, _) = ReadCentralVersions(props, propsPath, pathComparer);
         var allEntries = central
-            .Select(entry => (Package: entry.Key, Entry: entry.Value))
-            .Concat(conditional.Select(entry => (entry.Package, entry.Entry)));
+            .Select(entry => (Package: entry.Key, Entry: entry.Value, Conditional: false))
+            .Concat(
+                conditional.Select(entry => (entry.Package, entry.Entry, Conditional: true))
+            );
 
         foreach (var entry in allEntries.Where(entry => !string.IsNullOrWhiteSpace(entry.Entry.Version)))
         {
@@ -1193,7 +1223,11 @@ public class CpmDriftAnalyzer : IAnalyzer
                 // Relative to the *scan root*, not the project directory the properties were
                 // resolved from — otherwise a nested file reads as '../Directory.Packages.props'
                 // and two different nested files collapse onto one name.
-                DescribePropsPath(entry.Entry.SourcePath, scanRoot)
+                DescribePropsPath(entry.Entry.SourcePath, scanRoot),
+                // A pin that only exists for some configurations cannot scope assets for all of
+                // them — asset coverage only counts when the entry is unconditional.
+                entry.Conditional ? null : entry.Entry.PrivateAssets,
+                entry.Entry.IsGlobal
             );
             if (!effective.Contains(pin))
             {
@@ -1206,7 +1240,21 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// <param name="Package">Package id.</param>
     /// <param name="Version">The specification, verbatim.</param>
     /// <param name="PropsFile">The props file the pin was read from, relative to the scan root.</param>
-    internal readonly record struct CentralPin(string Package, string Version, string PropsFile);
+    /// <param name="PrivateAssets">
+    /// The pin's unconditional <c>PrivateAssets</c> metadata, or null when absent or conditioned —
+    /// a conditional scoping does not hold for every configuration, so it is not reported as coverage.
+    /// </param>
+    /// <param name="IsGlobal">
+    /// Whether the entry is a <c>GlobalPackageReference</c>, which injects the reference into every
+    /// governed project rather than merely pinning a version for whichever project asks.
+    /// </param>
+    internal readonly record struct CentralPin(
+        string Package,
+        string Version,
+        string PropsFile,
+        string? PrivateAssets = null,
+        bool IsGlobal = false
+    );
 
     /// <summary>
     /// Finds the <c>Directory.Packages.props</c> in effect, walking up from the scan root the way

@@ -100,7 +100,7 @@
       <div class="hero-grid">
         <div>
           <p class="hero-out"><span class="t-p">➜</span> every version lands in <code>Directory.Packages.props</code></p>
-          <p class="lede">A .NET global tool that migrates solutions to CPM, scores dependency health across 11 analyzers, and updates packages with test verification — rolling back the instant <code>dotnet test</code> goes red.</p>
+          <p class="lede">A .NET global tool that migrates solutions to CPM, scores dependency health across 14 analyzers, and updates packages with test verification — rolling back the instant <code>dotnet test</code> goes red.</p>
         </div>
         <div class="cta-col">
           <div class="cta-row">
@@ -115,7 +115,7 @@
         </div>
       </div>
       <div class="stat-strip">
-        <span><b>11</b> analyzers</span>
+        <span><b>14</b> analyzers</span>
         <span><b>4+1</b> output formats</span>
         <span><b>.sln + .slnx</b></span>
         <span><b>SDK 8.0+</b></span>
@@ -155,7 +155,7 @@
         <span class="ghost">01</span>
         <div class="kicker">analysis</div>
         <h2>Everything that silently rots a dependency graph</h2>
-        <p class="sub">Eleven analyzers run against your real project files and the resolved NuGet graph. Every finding carries a stable rule ID — hover a row for the command that explains it.</p>
+        <p class="sub">Fourteen analyzers run against your real project files and the resolved NuGet graph. Every finding carries a stable rule ID — hover a row for the command that explains it.</p>
       </div>
 
       <div class="scan">
@@ -166,6 +166,7 @@
         <div class="srow"><span class="sev s-high">High</span><span class="rid">LicenseRisk</span><span class="rd">Copyleft (GPL/AGPL) and proprietary licenses flagged before legal finds them for you.</span><span class="expl">LicenseRisk</span></div>
         <div class="srow"><span class="sev s-low">Low</span><span class="rid">DuplicatePackageCasing</span><span class="rd"><code>Newtonsoft.Json</code> vs <code>newtonsoft.json</code> — dedup that the casing difference hid.</span><span class="expl">DuplicatePackageCasing</span></div>
         <div class="srow"><span class="sev s-low">Low</span><span class="rid">OutdatedPackage</span><span class="rd">Versions behind the feed, with the latest available alongside — fuel for <code>--update-packages</code>.</span><span class="expl">OutdatedPackage</span></div>
+        <div class="srow"><span class="sev s-low">Low</span><span class="rid">DevelopmentDependencyLeak</span><span class="rd">Analyzers, test SDKs, and coverage tools flowing to every consumer — scoped private with <code>PrivateAssets="all"</code>.</span><span class="expl">DevelopmentDependencyLeak</span></div>
       </div>
 
       <!-- scoreboard + animated gauge -->
@@ -466,7 +467,8 @@ brew install cpmigrate</code></pre></div></div>
       ["d-mod","VersionInconsistency","moderate"],["d-mod","TransitiveConflict","moderate"],
       ["d-high","LicenseRisk","high"],["d-low","DuplicatePackageCasing","low"],
       ["d-low","OutdatedPackage","low"],["d-low","FrameworkAlignment","info"],
-      ["d-mod","RedundantReference","low"],["d-low","OrphanedPackageVersion","low"]
+      ["d-mod","RedundantReference","low"],["d-low","OrphanedPackageVersion","low"],
+      ["d-low","DevelopmentDependencyLeak","low"]
     ];
     function tickerHTML() {
       return tickItems.map(function (t) {

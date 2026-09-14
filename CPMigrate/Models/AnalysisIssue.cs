@@ -36,6 +36,12 @@ public enum AnalysisIssueCode
 
     /// <summary>A project targets an end-of-life .NET runtime.</summary>
     EolTargetFramework,
+
+    /// <summary>
+    /// A development-only package (analyzer, test SDK, coverage, source generator) is referenced
+    /// without <c>PrivateAssets</c> scoping, so it flows transitively to every consumer.
+    /// </summary>
+    DevelopmentDependencyLeak,
 }
 
 /// <summary>
