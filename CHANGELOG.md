@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.87.0] - 2026-09-14
 
 ### Fixed
 - **`--no-backup` no longer writes — or deletes — a stray `backup_manifest.json` in the working
