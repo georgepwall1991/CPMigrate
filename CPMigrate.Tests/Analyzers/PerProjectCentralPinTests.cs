@@ -1,5 +1,6 @@
 using CPMigrate.Analyzers;
 using CPMigrate.Models;
+using CPMigrate.Services;
 using FluentAssertions;
 
 namespace CPMigrate.Tests.Analyzers;
@@ -40,7 +41,7 @@ public class PerProjectCentralPinTests : IDisposable
     [Fact]
     public void PathComparerFor_ReflectsFilesystemCaseSensitivity_AndCleansItsProbe()
     {
-        var comparer = CpmDriftAnalyzer.PathComparerFor(_root);
+        var comparer = MsBuildProps.PathComparerFor(_root);
         var markerDirectory = Path.Combine(_root, $"case-marker-{Guid.NewGuid():N}");
 
         try
@@ -74,7 +75,7 @@ public class PerProjectCentralPinTests : IDisposable
     [Fact]
     public void PathComparerFor_UsesOrdinalWhenTheScanRootCannotBeProbed()
     {
-        CpmDriftAnalyzer
+        MsBuildProps
             .PathComparerFor(Path.Combine(_root, "does-not-exist"))
             .Should()
             .BeSameAs(StringComparer.Ordinal);
@@ -91,7 +92,7 @@ public class PerProjectCentralPinTests : IDisposable
         var lowerProject = WriteProject("tools/Lower/Lower.csproj", "Lower.Only");
         var upperProject = WriteProject("Tools/Upper/Upper.csproj", "Upper.Only");
 
-        var comparer = CpmDriftAnalyzer.PathComparerFor(_root);
+        var comparer = MsBuildProps.PathComparerFor(_root);
         var lowerDirectory = Path.GetFullPath(Path.Combine(_root, "tools"));
         var upperDirectory = Path.GetFullPath(Path.Combine(_root, "Tools"));
         var caseDistinct = !comparer.Equals(lowerDirectory, upperDirectory);

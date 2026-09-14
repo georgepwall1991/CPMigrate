@@ -691,7 +691,9 @@ public class Options
     /// <summary>
     /// True when <c>-o/--output-dir</c> was set to something other than the default — the
     /// caller then owns where <c>Directory.Packages.props</c> lands, and the ancestor walk
-    /// that protects derived targets from NU1507 shadowing must not redirect it.
+    /// that protects derived targets from NU1507 shadowing must not redirect it. A declared
+    /// <c>DirectoryPackagesPropsPath</c> is the one exception: NuGet imports the declared path,
+    /// so honoring <c>-o</c> there would write a file nothing reads.
     /// </summary>
     public bool HasExplicitOutputDir =>
         !string.IsNullOrWhiteSpace(OutputDir) && OutputDir != ".";

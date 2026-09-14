@@ -152,13 +152,54 @@ internal class MigrationValidator
         // derived from the target — not an explicit -o, which is the user's contract and is
         // honored verbatim — a props file above it is the governing file: writing a second one
         // next to the solution would shadow nothing and break every restore. Target it instead.
+        //
+        // A declared DirectoryPackagesPropsPath outranks even -o: the workspace has pointed the
+        // import at a path of its own choosing, so a file written anywhere else is inert whether
+        // it exists or not. The declaration is resolved from the directory the projects live
+        // under, and the declared path is the write target even when the file is missing —
+        // creating it there is what makes the migration live.
+        var discoveryDir = DiscoveryDirectory(options);
+
         var propsPath = Path.Combine(outputPath, "Directory.Packages.props");
-        if (!options.HasExplicitOutputDir)
+        var declared = GoverningFiles.ResolveDeclaredPropsPath(discoveryDir);
+        if (declared is not null)
+        {
+            propsPath = declared;
+        }
+        else if (!options.HasExplicitOutputDir)
         {
             propsPath = GoverningFiles.FindNearestPropsFile(outputPath) ?? propsPath;
         }
 
         return (outputPath, propsPath);
+    }
+
+    /// <summary>
+    /// The directory the discovered projects live under — where NuGet begins its own walk for
+    /// both <c>Directory.Build.props</c> and <c>Directory.Packages.props</c>. Independent of
+    /// <c>-o</c>: an explicit output directory moves where output lands, not which files govern
+    /// the workspace being migrated.
+    /// </summary>
+    private static string DiscoveryDirectory(Options options)
+    {
+        if (options.HasExplicitProjectPath)
+        {
+            var projectDir = Path.GetDirectoryName(options.ProjectFileDir);
+            return string.IsNullOrWhiteSpace(projectDir) ? "." : projectDir;
+        }
+
+        if (options.HasExplicitSolutionPath)
+        {
+            if (IsSolutionFilePath(options.SolutionFileDir))
+            {
+                var parent = Path.GetDirectoryName(options.SolutionFileDir);
+                return string.IsNullOrWhiteSpace(parent) ? "." : parent;
+            }
+
+            return options.SolutionFileDir;
+        }
+
+        return ".";
     }
 
     private static bool IsSolutionFilePath(string path)

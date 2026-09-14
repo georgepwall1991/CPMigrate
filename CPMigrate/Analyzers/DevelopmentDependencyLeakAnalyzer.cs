@@ -1,4 +1,5 @@
 using CPMigrate.Models;
+using CPMigrate.Services;
 using NuGet.Versioning;
 
 namespace CPMigrate.Analyzers;
@@ -129,7 +130,7 @@ public class DevelopmentDependencyLeakAnalyzer : IAnalyzer
         // GlobalPackageReference makes, so it is reported against the file, not a project.
         var injected = CpmDriftAnalyzer.ReadBuildImportPackageReferences(
             packageInfo.GetProjectsScanned(),
-            CpmDriftAnalyzer.PathComparerFor(packageInfo.BasePath)
+            MsBuildProps.PathComparerFor(packageInfo.BasePath)
         );
 
         foreach (

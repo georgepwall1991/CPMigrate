@@ -104,7 +104,7 @@ public sealed class DotNetPackageQueryService : IDotNetPackageQueryService
         // Path identity follows the filesystem: case-folded where the volume folds names
         // (default Windows/macOS, so Api.csproj and API.csproj share one payload) and verbatim
         // where it does not (/repo/tools/App.csproj and /repo/Tools/App.csproj stay distinct).
-        var comparer = CpmDriftAnalyzer.PathComparerFor(Path.GetDirectoryName(projectFilePath));
+        var comparer = MsBuildProps.PathComparerFor(Path.GetDirectoryName(projectFilePath));
         var pathKey = comparer == StringComparer.OrdinalIgnoreCase
             ? projectFilePath.ToUpperInvariant()
             : projectFilePath;

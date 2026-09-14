@@ -12,6 +12,10 @@ public static class FileHelper
     public static async Task WriteAtomicAsync(string path, string content)
     {
         var directory = Path.GetDirectoryName(path) ?? ".";
+        // The target can live in a subtree that does not exist yet — a declared
+        // DirectoryPackagesPropsPath may point into one — so the parent is created rather
+        // than assumed. No-op when it is already there.
+        Directory.CreateDirectory(directory);
         var tempPath = Path.Combine(directory, $".{Path.GetFileName(path)}.tmp.{Guid.NewGuid():N}");
 
         try

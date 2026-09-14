@@ -373,7 +373,7 @@ internal sealed class DoctorService
             )
             && !string.IsNullOrEmpty(parent)
             && Directory.Exists(parent)
-            && CpmDriftAnalyzer.PathComparerFor(parent) == StringComparer.OrdinalIgnoreCase;
+            && MsBuildProps.PathComparerFor(parent) == StringComparer.OrdinalIgnoreCase;
 
         if (sameAncestry && finalNameFolds)
         {

@@ -1,6 +1,6 @@
-using System.Xml;
 using System.Xml.Linq;
 using CPMigrate.Models;
+using CPMigrate.Services;
 
 namespace CPMigrate.Analyzers;
 
@@ -28,82 +28,10 @@ public class CpmDriftAnalyzer : IAnalyzer
     private const string PackageReferenceItem = "PackageReference";
     private const string EnablementProperty = "ManagePackageVersionsCentrally";
 
-    private const string RedirectProperty = "DirectoryPackagesPropsPath";
-
     private const string TransitivePinningProperty = "CentralPackageTransitivePinningEnabled";
 
     /// <summary>Unit separator: it cannot occur in a path, so composite keys stay unambiguous.</summary>
     private const string KeySeparator = "\u001F";
-
-    /// <summary>
-    /// Chooses the path comparer for the filesystem containing a scan root.
-    ///
-    /// <para>
-    /// The operating system is not a sufficient proxy for filesystem semantics: macOS can use a
-    /// case-sensitive APFS volume, and Windows supports case-sensitive directories. Probing beside
-    /// the scan root keeps two distinct contexts such as <c>tools/</c> and <c>Tools/</c> distinct
-    /// wherever the filesystem does. If the probe cannot run, ordinal comparison is the
-    /// conservative fallback: it may inspect one case-insensitive path twice, but it cannot merge
-    /// two contexts and silently lose one of their pins.
-    /// </para>
-    /// </summary>
-    internal static StringComparer PathComparerFor(string? scanRoot)
-    {
-        if (string.IsNullOrWhiteSpace(scanRoot))
-        {
-            return StringComparer.Ordinal;
-        }
-
-        var root = Path.GetFullPath(scanRoot);
-        if (!Directory.Exists(root))
-        {
-            return StringComparer.Ordinal;
-        }
-
-        var probeDirectory = Path.Combine(root, $".cpmigrate-case-probe-{Guid.NewGuid():N}");
-        var probeFile = Path.Combine(probeDirectory, "probe");
-        var differentlyCasedProbeFile = Path.Combine(probeDirectory, "PROBE");
-
-        try
-        {
-            Directory.CreateDirectory(probeDirectory);
-            File.WriteAllText(probeFile, string.Empty);
-
-            return File.Exists(differentlyCasedProbeFile)
-                ? StringComparer.OrdinalIgnoreCase
-                : StringComparer.Ordinal;
-        }
-        catch (Exception ex) when (
-            ex is IOException
-                or UnauthorizedAccessException
-                or ArgumentException
-                or NotSupportedException
-                or System.Security.SecurityException
-        )
-        {
-            return StringComparer.Ordinal;
-        }
-        finally
-        {
-            try
-            {
-                if (Directory.Exists(probeDirectory))
-                {
-                    Directory.Delete(probeDirectory, recursive: true);
-                }
-            }
-            catch (Exception ex) when (
-                ex is IOException
-                    or UnauthorizedAccessException
-                    or ArgumentException
-                    or NotSupportedException
-                    or System.Security.SecurityException
-            )
-            {
-                // A failed cleanup must not make an otherwise valid scan fail.
-            }
-        }
-    }
 
     /// <inheritdoc />
     public string Name => "Central Package Management Drift";
@@ -112,13 +40,13 @@ public class CpmDriftAnalyzer : IAnalyzer
     public AnalyzerResult Analyze(ProjectPackageInfo packageInfo)
     {
         ArgumentNullException.ThrowIfNull(packageInfo);
-        return Analyze(packageInfo, PathComparerFor(packageInfo.BasePath));
+        return Analyze(packageInfo, MsBuildProps.PathComparerFor(packageInfo.BasePath));
     }
 
     /// <summary>
     /// Analyzes a package scan with an explicit path comparer. The overload is internal so tests can
     /// exercise case-distinct contexts even on a case-insensitive host; production scans always use
-    /// <see cref="PathComparerFor(string?)"/> for their scan root.
+    /// <see cref="MsBuildProps.PathComparerFor(string?)"/> for their scan root.
     /// </summary>
     internal AnalyzerResult Analyze(ProjectPackageInfo packageInfo, StringComparer pathComparer)
     {
@@ -297,7 +225,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             {
                 // Created only once a project has proved the file usable, so a props file every
                 // project turned out to be exempt from never reaches the orphan check.
-                var props = ReadProps(propsPath)!;
+                var props = MsBuildProps.ReadProps(propsPath)!;
                 var (central, _, importsResolved) = ReadCentralVersions(
                     props,
                     propsPath,
@@ -347,7 +275,7 @@ public class CpmDriftAnalyzer : IAnalyzer
     {
         var propsFile = DescribePropsPath(propsPath, packageInfo);
 
-        var props = ReadProps(propsPath);
+        var props = MsBuildProps.ReadProps(propsPath);
         if (props is null)
         {
             if (reported.Add($"parse{propsPath}"))
@@ -464,7 +392,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         StringComparer pathComparer
     )
     {
-        enablement = ReadPropertyThroughImports(
+        enablement = MsBuildProps.ReadPropertyThroughImports(
             props,
             propsPath,
             EnablementProperty,
@@ -491,7 +419,7 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             if (
                 buildProps is { } nearest
-                && ReadPropertyThroughImports(
+                && MsBuildProps.ReadPropertyThroughImports(
                     nearest.Document,
                     nearest.Path,
                     EnablementProperty,
@@ -586,7 +514,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         StringComparer pathComparer
     )
     {
-        var effective = ReadPropertyThroughImports(
+        var effective = MsBuildProps.ReadPropertyThroughImports(
             document,
             documentPath,
             propertyName,
@@ -616,11 +544,11 @@ public class CpmDriftAnalyzer : IAnalyzer
         StringComparer pathComparer
     )
     {
-        var project = ReadProps(projectPath);
+        var project = MsBuildProps.ReadProps(projectPath);
 
         return project is null
             ? null
-            : ReadPropertyThroughImports(
+            : MsBuildProps.ReadPropertyThroughImports(
                 project,
                 projectPath,
                 EnablementProperty,
@@ -644,7 +572,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         string propsFile
     )
     {
-        var project = ReadProps(projectPath);
+        var project = MsBuildProps.ReadProps(projectPath);
         if (project is null)
         {
             return;
@@ -874,7 +802,7 @@ public class CpmDriftAnalyzer : IAnalyzer
 
             if (element.Name.LocalName.Equals("Import", StringComparison.OrdinalIgnoreCase))
             {
-                var conditionalImport = inheritedConditional || HasCondition(element);
+                var conditionalImport = inheritedConditional || MsBuildProps.HasCondition(element);
                 if (conditionalImport)
                 {
                     // The file can still be inspected for declaration-level rules, but its pins
@@ -902,7 +830,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             var packageName =
                 element.Attribute("Include")?.Value ?? element.Attribute("Update")?.Value;
 
-            if (inheritedConditional || HasCondition(element))
+            if (inheritedConditional || MsBuildProps.HasCondition(element))
             {
                 // A conditional pin may not exist in every evaluated configuration. Keep it in a
                 // separate stream for rules such as FloatingVersion that can still inspect its
@@ -952,7 +880,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         var directory = Path.GetDirectoryName(Path.GetFullPath(documentPath));
         if (
             directory is null
-            || !TryResolveImportPath(
+            || !MsBuildProps.TryResolveImportPath(
                 import,
                 directory,
                 out var importedPath,
@@ -963,7 +891,7 @@ public class CpmDriftAnalyzer : IAnalyzer
             return false;
         }
 
-        var imported = ReadProps(importedPath);
+        var imported = MsBuildProps.ReadProps(importedPath);
 
         if (imported is null)
         {
@@ -1104,7 +1032,7 @@ public class CpmDriftAnalyzer : IAnalyzer
     )
     {
         var effective = new List<CentralPin>();
-        pathComparer ??= PathComparerFor(basePath);
+        pathComparer ??= MsBuildProps.PathComparerFor(basePath);
 
         var supplied = (projectPaths ?? []).ToList();
 
@@ -1192,7 +1120,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         StringComparer pathComparer
     )
     {
-        var props = ReadProps(propsPath);
+        var props = MsBuildProps.ReadProps(propsPath);
         if (
             props is null
             || (!IsCpmEnabled(props, propsPath, propertyRoot, out _, pathComparer) && !optedIn)
@@ -1276,7 +1204,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         StringComparer? pathComparer = null
     )
     {
-        var comparer = pathComparer ?? PathComparerFor(null);
+        var comparer = pathComparer ?? MsBuildProps.PathComparerFor(null);
         var files = new HashSet<string>(comparer);
 
         foreach (var projectPath in projectPaths ?? [])
@@ -1304,7 +1232,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         var injected = new List<InjectedPackageReference>();
         foreach (var file in files)
         {
-            var document = ReadProps(file);
+            var document = MsBuildProps.ReadProps(file);
             if (document?.Root is null)
             {
                 continue;
@@ -1376,7 +1304,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                 return candidate;
             }
 
-            if (IsRepositoryRoot(directory.FullName))
+            if (MsBuildProps.IsRepositoryRoot(directory.FullName))
             {
                 return null;
             }
@@ -1419,7 +1347,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         // project against pins it never receives and told the reader to edit a file MSBuild does not
         // read for it. When the redirect cannot be resolved no file is claimed at all: saying
         // nothing is better than measuring a project against the wrong file.
-        if (TryReadRedirectedPropsPath(basePath, pathComparer, out var redirected))
+        if (MsBuildProps.TryReadRedirectedPropsPath(basePath, pathComparer, out var redirected))
         {
             return redirected;
         }
@@ -1433,7 +1361,7 @@ public class CpmDriftAnalyzer : IAnalyzer
                 return candidate;
             }
 
-            if (IsRepositoryRoot(directory.FullName))
+            if (MsBuildProps.IsRepositoryRoot(directory.FullName))
             {
                 // Checked after the candidate, so a props file sitting at the repository root is
                 // still found — it is the last directory searched, not the first one skipped.
@@ -1480,251 +1408,6 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// often, and it errs towards not accusing a working repository.
     /// </para>
     /// </summary>
-    /// <summary>
-    /// Whether a directory is the root of a working tree.
-    ///
-    /// <c>.git</c> is a directory in an ordinary clone but a <em>file</em> in a linked worktree or a
-    /// submodule. Testing only for the directory walked straight past those roots, so a props file
-    /// in a parent could be picked up — the machine-dependent result this boundary exists to
-    /// prevent, appearing only for the people using worktrees.
-    /// </summary>
-    private static bool IsRepositoryRoot(string directory)
-    {
-        var git = Path.Combine(directory, ".git");
-        return Directory.Exists(git) || File.Exists(git);
-    }
-
-    /// <summary>
-    /// The file <c>DirectoryPackagesPropsPath</c> names, when the nearest
-    /// <c>Directory.Build.props</c> sets one.
-    ///
-    /// <para>
-    /// Only <c>$(MSBuildThisFileDirectory)</c> is substituted. Anchoring the path to the file that
-    /// declares it is how this is written in practice, and any other property left unevaluated means
-    /// the real answer is unknown — a guess here picks the wrong file and every finding drawn from it
-    /// is wrong.
-    /// </para>
-    /// </summary>
-    /// <param name="startDirectory">Directory of the project whose props file is being resolved.</param>
-    /// <param name="resolved">The redirected file, or null when it could not be resolved.</param>
-    /// <returns>True when a redirect was declared at all, resolved or not.</returns>
-    private static bool TryReadRedirectedPropsPath(
-        string startDirectory,
-        StringComparer pathComparer,
-        out string? resolved
-    )
-    {
-        resolved = null;
-
-        if (WalkUpForBuildProps(startDirectory) is not { } buildProps)
-        {
-            return false;
-        }
-
-        var (document, buildPropsPath) = buildProps;
-
-        // Followed through imports, because delegating shared settings to an imported fragment is
-        // ordinary and MSBuild observes the redirect wherever it is written. Reading only the outer
-        // document fell back to the conventional file and judged the project against pins it never
-        // receives.
-        if (
-            ReadPropertyThroughImports(
-                document,
-                buildPropsPath,
-                RedirectProperty,
-                new HashSet<string>(pathComparer),
-                pathComparer
-            )
-            is not { } declaration
-        )
-        {
-            return false;
-        }
-
-        // The directory of the file that *declared* it, not the outer one: a redirect anchored with
-        // $(MSBuildThisFileDirectory) means its own file, and so does a bare relative path.
-        var (declared, directory) = declaration;
-
-        if (string.IsNullOrWhiteSpace(declared))
-        {
-            return false;
-        }
-
-        var expanded = declared
-            .Replace(
-                "$(MSBuildThisFileDirectory)",
-                directory + Path.DirectorySeparatorChar,
-                StringComparison.OrdinalIgnoreCase
-            )
-            .Replace('\\', Path.DirectorySeparatorChar)
-            .Replace('/', Path.DirectorySeparatorChar);
-
-        if (expanded.Contains("$(", StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        var candidate = Path.GetFullPath(
-            Path.IsPathRooted(expanded) ? expanded : Path.Combine(directory, expanded)
-        );
-
-        if (File.Exists(candidate))
-        {
-            resolved = candidate;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// The last <c>DirectoryPackagesPropsPath</c> assignment in a document, following unconditional
-    /// imports in evaluation order, paired with the directory of the file that declared it.
-    ///
-    /// <para>
-    /// An import that cannot be resolved by reading XML — conditioned, globbed, or built from
-    /// properties — is skipped rather than followed, the same trade made for the enablement
-    /// property: acting on an import that may not apply is worse than not reading it.
-    /// </para>
-    /// </summary>
-    private static (string Value, string Directory)? ReadPropertyThroughImports(
-        XDocument document,
-        string documentPath,
-        string propertyName,
-        HashSet<string> visited,
-        StringComparer pathComparer
-    )
-    {
-        var fullPath = Path.GetFullPath(documentPath);
-        if (!visited.Add(fullPath))
-        {
-            return null;
-        }
-
-        var directory = Path.GetDirectoryName(fullPath);
-        if (directory is null)
-        {
-            return null;
-        }
-
-        (string Value, string Directory)? resolved = null;
-
-        // Document order, last assignment wins — how MSBuild evaluates a file. Reading the local
-        // value first instead would let an import turn a property on but never off.
-        foreach (var element in document.Descendants())
-        {
-            if (element.Name.LocalName.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                // Paired with the directory of the file that *declared* it, because a path-valued
-                // property is anchored to its own file, not to whichever one imported it.
-                resolved = (element.Value.Trim(), directory);
-                continue;
-            }
-
-            if (!element.Name.LocalName.Equals("Import", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!TryResolveImportPath(element, directory, out var importedPath))
-            {
-                continue;
-            }
-
-            var imported = ReadProps(importedPath);
-            if (imported is null)
-            {
-                continue;
-            }
-
-            if (
-                ReadPropertyThroughImports(
-                    imported,
-                    importedPath,
-                    propertyName,
-                    visited,
-                    pathComparer
-                ) is
-                { } inherited
-            )
-            {
-                resolved = inherited;
-            }
-        }
-
-        return resolved;
-    }
-
-    /// <summary>
-    /// The file an <c>Import</c> names, when reading XML alone can say what it is.
-    ///
-    /// <para>
-    /// <c>$(MSBuildThisFileDirectory)</c> is substituted rather than rejected: it is statically
-    /// known, and anchoring an import with it is the ordinary way to write a portable one, so
-    /// treating it as unresolvable left the commonest form unread. Any other property, or a glob,
-    /// genuinely cannot be resolved here.
-    /// </para>
-    ///
-    /// <para>
-    /// A condition on the import <em>or on any element enclosing it</em> makes it unresolved for
-    /// property readers. Central discovery may still ask for the statically resolvable path so it
-    /// can retain declarations for <c>FloatingVersion</c>, while keeping them out of universal drift
-    /// evidence. An <c>Import</c> inside a conditioned <c>ImportGroup</c> is as conditional as one
-    /// carrying the attribute itself.
-    /// </para>
-    /// </summary>
-    private static bool TryResolveImportPath(
-        XElement element,
-        string directory,
-        out string resolved,
-        bool allowConditional = false
-    )
-    {
-        resolved = string.Empty;
-
-        if (!allowConditional && HasCondition(element))
-        {
-            return false;
-        }
-
-        var relative = element.Attribute("Project")?.Value;
-        if (string.IsNullOrWhiteSpace(relative) || relative.Contains('*'))
-        {
-            return false;
-        }
-
-        var expanded = relative.Replace(
-            "$(MSBuildThisFileDirectory)",
-            directory + Path.DirectorySeparatorChar,
-            StringComparison.OrdinalIgnoreCase
-        );
-
-        if (expanded.Contains("$(", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        resolved = Path.GetFullPath(
-            Path.Combine(directory, expanded.Replace('\\', Path.DirectorySeparatorChar))
-        );
-
-        return true;
-    }
-
-    private static bool HasCondition(XElement element)
-    {
-        for (XElement? enclosing = element; enclosing is not null; enclosing = enclosing.Parent)
-        {
-            if (
-                enclosing.Name.LocalName.Equals("Otherwise", StringComparison.OrdinalIgnoreCase)
-                || !string.IsNullOrWhiteSpace(enclosing.Attribute("Condition")?.Value)
-            )
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /// <summary>
     /// The nearest <c>Directory.Build.props</c>: beside the central props file first, then beside
@@ -1745,7 +1428,7 @@ public class CpmDriftAnalyzer : IAnalyzer
         // file wins: with /repo/Directory.Build.props setting the property one way and
         // /repo/src/Directory.Build.props setting it the other, a project under src gets the
         // nearer answer. Checking only the two endpoints picked the wrong one.
-        var fromScanRoot = WalkUpForBuildProps(basePath);
+        var fromScanRoot = MsBuildProps.WalkUpForBuildProps(basePath);
         if (fromScanRoot is not null)
         {
             return fromScanRoot;
@@ -1753,63 +1436,9 @@ public class CpmDriftAnalyzer : IAnalyzer
 
         // Then beside the props file, which may sit above the scan root and above the boundary the
         // walk stops at.
-        return WalkUpForBuildProps(
+        return MsBuildProps.WalkUpForBuildProps(
             Path.GetDirectoryName(Path.GetFullPath(propsPath)),
             single: true
         );
-    }
-
-    /// <summary>
-    /// The nearest <c>Directory.Build.props</c> at or above a directory, stopping at the repository
-    /// root for the same reason the central props walk does.
-    /// </summary>
-    /// <param name="startDirectory">Where to start looking.</param>
-    /// <param name="single">When true, look only in <paramref name="startDirectory"/>.</param>
-    private static (XDocument Document, string Path)? WalkUpForBuildProps(
-        string? startDirectory,
-        bool single = false
-    )
-    {
-        const string BuildPropsFileName = "Directory.Build.props";
-
-        if (string.IsNullOrWhiteSpace(startDirectory))
-        {
-            return null;
-        }
-
-        var directory = new DirectoryInfo(Path.GetFullPath(startDirectory));
-        while (directory is not null)
-        {
-            // The path travels with the document because reading a property through imports needs
-            // to know which file it came from, both to resolve relative imports and to anchor a
-            // path-valued property.
-            var candidate = Path.Combine(directory.FullName, BuildPropsFileName);
-            var found = ReadProps(candidate);
-            if (found is not null)
-            {
-                return (found, candidate);
-            }
-
-            if (single || IsRepositoryRoot(directory.FullName))
-            {
-                return null;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
-    }
-
-    private static XDocument? ReadProps(string path)
-    {
-        try
-        {
-            return File.Exists(path) ? XDocument.Load(path) : null;
-        }
-        catch (Exception ex) when (ex is XmlException or IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
     }
 }

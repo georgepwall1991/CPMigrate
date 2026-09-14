@@ -4,6 +4,22 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **`DirectoryPackagesPropsPath` redirects are honored everywhere.** A repository that points
+  central management at a file of its own choosing — declared in `Directory.Build.props`,
+  including through an unconditional `Import` — now gets that file read and written: migration
+  creates the declared path even before it exists (instead of an inert conventional file NuGet
+  never imports), `--update-packages` and `--remediate` find it rather than reporting "CPM is
+  not enabled", and doctor/status/the interactive merge prompt agree. A declaration that names
+  a missing file answers "not found" rather than falling back to a conventional file the build
+  ignores. The resolution machinery the drift analyzer already used is now shared as
+  `MsBuildProps`, so every workflow reads properties through imports the same way.
+- **Atomic writes create the target's parent directory.** A declared redirect can point into a
+  subtree that does not exist yet; the temp-file write used to fail "could not find a part of
+  the path" instead of creating it.
+
 ## [3.85.0] - 2026-09-14
 
 ### Fixed

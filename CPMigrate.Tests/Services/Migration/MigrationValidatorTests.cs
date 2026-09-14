@@ -167,6 +167,64 @@ public class MigrationValidatorTests
     }
 
     [Fact]
+    public void GetOutputPaths_DeclaredRedirect_TargetsDeclaredPath()
+    {
+        // DirectoryPackagesPropsPath points the import at a file of the repository's choosing —
+        // creating the conventional name would produce a file NuGet never reads.
+        var repoDir = Path.Combine(Path.GetTempPath(), $"CPMigrateRedirect_{Guid.NewGuid():N}");
+        var srcDir = Path.Combine(repoDir, "src");
+        Directory.CreateDirectory(srcDir);
+        File.WriteAllText(Path.Combine(repoDir, "Directory.Build.props"), """
+            <Project>
+              <PropertyGroup>
+                <DirectoryPackagesPropsPath>$(MSBuildThisFileDirectory)eng/Packages.props</DirectoryPackagesPropsPath>
+              </PropertyGroup>
+            </Project>
+            """);
+
+        try
+        {
+            var options = new Options { OutputDir = ".", SolutionFileDir = srcDir };
+            var (_, propsPath) = MigrationValidator.GetOutputPaths(options);
+
+            propsPath.Should().Be(Path.Combine(repoDir, "eng", "Packages.props"));
+        }
+        finally
+        {
+            Directory.Delete(repoDir, true);
+        }
+    }
+
+    [Fact]
+    public void GetOutputPaths_DeclaredRedirect_ExplicitOutputDir_StillTargetsDeclaredPath()
+    {
+        // -o chooses the output directory, but a declared redirect is stronger than convention:
+        // NuGet imports the declared path, so a file written anywhere else is inert.
+        var repoDir = Path.Combine(Path.GetTempPath(), $"CPMigrateRedirectOut_{Guid.NewGuid():N}");
+        var outDir = Path.Combine(repoDir, "out");
+        Directory.CreateDirectory(outDir);
+        File.WriteAllText(Path.Combine(repoDir, "Directory.Build.props"), """
+            <Project>
+              <PropertyGroup>
+                <DirectoryPackagesPropsPath>eng/Packages.props</DirectoryPackagesPropsPath>
+              </PropertyGroup>
+            </Project>
+            """);
+
+        try
+        {
+            var options = new Options { OutputDir = outDir, SolutionFileDir = repoDir };
+            var (_, propsPath) = MigrationValidator.GetOutputPaths(options);
+
+            propsPath.Should().Be(Path.Combine(repoDir, "eng", "Packages.props"));
+        }
+        finally
+        {
+            Directory.Delete(repoDir, true);
+        }
+    }
+
+    [Fact]
     public void GetOutputPaths_NoPropsAnywhere_TargetsOutputDir()
     {
         var repoDir = Path.Combine(Path.GetTempPath(), $"CPMigrateNone_{Guid.NewGuid():N}");
