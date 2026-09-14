@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.86.0] - 2026-09-14
 
 ### Fixed
 - **`DirectoryPackagesPropsPath` redirects are honored everywhere.** A repository that points
