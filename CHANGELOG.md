@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.74.0] - 2026-09-14
+
 ### Added
 - **`--unify-props` runs are now backed up and rollbackable.** The last mutating mode with no
   undo: a unify pass rewrites every consensus project file and creates `Directory.Build.props`,
