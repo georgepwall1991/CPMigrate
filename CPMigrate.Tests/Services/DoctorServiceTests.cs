@@ -246,4 +246,68 @@ public class DoctorServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Props Shadowing
+
+    [Fact]
+    public void CheckPropsShadowing_NestedProps_WarnsWithBothFiles()
+    {
+        // NuGet evaluates only the nearest props file per project — projects under src/ lose
+        // the root file's pins silently, and restore says nothing. Doctor must.
+        File.WriteAllText(Path.Combine(_testDirectory, "Directory.Packages.props"), "<Project />");
+        var nested = Path.Combine(_testDirectory, "src");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "Directory.Packages.props"), "<Project />");
+
+        var check = DoctorService.CheckPropsShadowing(_testDirectory);
+
+        check.Should().NotBeNull();
+        check!.Status.Should().Be(DoctorStatus.Warning);
+        check.Details.Should().Contain("Directory.Packages.props");
+        check.Hint.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void CheckPropsShadowing_SingleProps_ReturnsNull()
+    {
+        File.WriteAllText(Path.Combine(_testDirectory, "Directory.Packages.props"), "<Project />");
+
+        DoctorService.CheckPropsShadowing(_testDirectory).Should().BeNull();
+    }
+
+    [Fact]
+    public void CheckPropsShadowing_SiblingSubtrees_ReturnsNull()
+    {
+        // Separate subtrees, each self-governing — a legitimate layout, not a finding.
+        var a = Path.Combine(_testDirectory, "srcA");
+        var b = Path.Combine(_testDirectory, "srcB");
+        Directory.CreateDirectory(a);
+        Directory.CreateDirectory(b);
+        File.WriteAllText(Path.Combine(a, "Directory.Packages.props"), "<Project />");
+        File.WriteAllText(Path.Combine(b, "Directory.Packages.props"), "<Project />");
+
+        DoctorService.CheckPropsShadowing(_testDirectory).Should().BeNull();
+    }
+
+    [Fact]
+    public void CollectChecks_ShadowedWorkspace_IncludesCpmLayoutWarning()
+    {
+        File.WriteAllText(Path.Combine(_testDirectory, "Directory.Packages.props"), "<Project />");
+        var nested = Path.Combine(_testDirectory, "src");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "Directory.Packages.props"), "<Project />");
+
+        var discovery = new Mock<ISolutionDiscovery>();
+        discovery.Setup(d => d.GetSolutionFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+        var service = new DoctorService(new FakeConsoleService(), discovery.Object);
+        var checks = service.CollectChecks(_testDirectory, backupDir: null);
+        var layout = checks.Single(c => c.Name == "CPM layout");
+
+        layout.Status.Should().Be(DoctorStatus.Warning);
+        // The same run still reports CPM as active — both statements are true; the layout row
+        // is what says the second file shadows the first.
+        checks.Single(c => c.Name == "CPM").Status.Should().Be(DoctorStatus.Ok);
+    }
+
+    #endregion
 }

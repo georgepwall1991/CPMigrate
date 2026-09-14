@@ -222,4 +222,93 @@ public class GoverningFilesTests : IDisposable
             </Project>
             """);
     }
+
+    [Fact]
+    public void FindConflictingPropsFiles_NestedProps_ReportsBoth()
+    {
+        // Projects under src/ see both files; NuGet keeps only the nearer — the root file's
+        // pins silently stop applying there.
+        var root = Path.Combine(_directory, "Directory.Packages.props");
+        File.WriteAllText(root, "<Project />");
+        var nested = Path.Combine(_directory, "src");
+        Directory.CreateDirectory(nested);
+        var deeper = Path.Combine(nested, "Directory.Packages.props");
+        File.WriteAllText(deeper, "<Project />");
+
+        GoverningFiles.FindConflictingPropsFiles(_directory)
+            .Should().BeEquivalentTo(root, deeper);
+    }
+
+    [Fact]
+    public void FindConflictingPropsFiles_PropsAboveWorkspace_ReportsBoth()
+    {
+        // The workspace itself can be the deeper side: a props file above it plus one inside
+        // it is the same shared ancestry.
+        var above = Path.Combine(_directory, "Directory.Packages.props");
+        File.WriteAllText(above, "<Project />");
+        var workspace = Path.Combine(_directory, "repo");
+        Directory.CreateDirectory(workspace);
+        var inside = Path.Combine(workspace, "Directory.Packages.props");
+        File.WriteAllText(inside, "<Project />");
+
+        GoverningFiles.FindConflictingPropsFiles(workspace)
+            .Should().BeEquivalentTo(above, inside);
+    }
+
+    [Fact]
+    public void FindConflictingPropsFiles_SiblingSubtrees_NoConflict()
+    {
+        // Two files in separate subtrees never meet in one project's ancestry — each governs
+        // its own tree, which is a legitimate layout.
+        var a = Path.Combine(_directory, "srcA");
+        var b = Path.Combine(_directory, "srcB");
+        Directory.CreateDirectory(a);
+        Directory.CreateDirectory(b);
+        File.WriteAllText(Path.Combine(a, "Directory.Packages.props"), "<Project />");
+        File.WriteAllText(Path.Combine(b, "Directory.Packages.props"), "<Project />");
+
+        GoverningFiles.FindConflictingPropsFiles(_directory).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FindConflictingPropsFiles_PropsUnderExcludedDir_NotCounted()
+    {
+        // A props file under obj/ or node_modules/ governs nothing a user builds — scanning it
+        // would invent a conflict that cannot occur.
+        File.WriteAllText(Path.Combine(_directory, "Directory.Packages.props"), "<Project />");
+        var obj = Path.Combine(_directory, "src", "obj");
+        Directory.CreateDirectory(obj);
+        File.WriteAllText(Path.Combine(obj, "Directory.Packages.props"), "<Project />");
+
+        GoverningFiles.FindConflictingPropsFiles(_directory).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FindConflictingPropsFiles_SingleProps_ReturnsEmpty()
+    {
+        File.WriteAllText(Path.Combine(_directory, "Directory.Packages.props"), "<Project />");
+
+        GoverningFiles.FindConflictingPropsFiles(_directory).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FindConflictingPropsFiles_NoProps_ReturnsEmpty()
+    {
+        GoverningFiles.FindConflictingPropsFiles(_directory).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void FindConflictingPropsFiles_EmptyStart_ReturnsEmpty(string? start)
+    {
+        GoverningFiles.FindConflictingPropsFiles(start).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FindConflictingPropsFiles_NonexistentStart_ReturnsEmpty()
+    {
+        GoverningFiles.FindConflictingPropsFiles(Path.Combine(_directory, "missing"))
+            .Should().BeEmpty();
+    }
 }
