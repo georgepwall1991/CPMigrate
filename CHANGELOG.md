@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.79.0] - 2026-09-14
 
 ### Added
 - **`--fix-dry-run` shows the real change, not per-issue descriptions of it.** Every fixer now
