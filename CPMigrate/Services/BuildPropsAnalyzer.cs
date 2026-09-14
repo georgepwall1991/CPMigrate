@@ -101,19 +101,30 @@ public class BuildPropsAnalyzer
     {
         foreach (var itemGroup in projectRoot.ItemGroups)
         {
-            if (!string.IsNullOrEmpty(itemGroup.Condition))
-            {
-                continue; // Skip conditional item groups
-            }
-
+            var groupConditional = !string.IsNullOrEmpty(itemGroup.Condition);
             foreach (var item in itemGroup.Items)
             {
-                if (ShouldSkipItem(item))
+                if (item.ItemType != "Using" && item.ItemType != "PackageReference")
                 {
                     continue;
                 }
 
                 var metadata = item.Metadata.ToDictionary(m => m.Name, m => m.Value);
+
+                // A conditional item can never join a candidate — but it stays in the project, so
+                // hoisting the unconditional variant means it sees both. Recorded for hazard
+                // reporting, never for consensus.
+                if (groupConditional || !string.IsNullOrEmpty(item.Condition))
+                {
+                    result.ConditionalItems.Add(new ProjectItem(
+                        item.ItemType,
+                        item.Include,
+                        projectPath,
+                        metadata
+                    ));
+                    continue;
+                }
+
                 var key = CreateItemKey(item, metadata);
 
                 if (!result.ItemOccurrences.TryGetValue(key, out var itemList))
@@ -130,12 +141,6 @@ public class BuildPropsAnalyzer
                 ));
             }
         }
-    }
-
-    private static bool ShouldSkipItem(ProjectItemElement item)
-    {
-        return (item.ItemType != "Using" && item.ItemType != "PackageReference") ||
-               !string.IsNullOrEmpty(item.Condition);
     }
 
     private static string CreateItemKey(ProjectItemElement item, Dictionary<string, string> metadata)

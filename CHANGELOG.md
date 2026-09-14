@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Fixed
+- **`--unify-props` reporting is exact about who holds what.** Three places the report could
+  misdescribe the pass: `candidates.items[].projects` listed every project holding the item under
+  *any* metadata — including the variant holders that keep their own copy — while `count` named
+  only exact matches, so the two disagreed; `summary.filesModified` claimed every project was
+  rewritten whether or not it held a candidate; and a project holding the item under a
+  `Condition` was invisible to the duplicate-item warning even though nothing strips it and it
+  sees both copies once unified. The projects list now names only exact-match holders,
+  `filesModified` counts real writes, and conditional holders join the duplicate hazard the run
+  reports before writing.
+
 ## [3.76.0] - 2026-09-14
 
 ### Added

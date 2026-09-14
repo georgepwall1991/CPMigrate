@@ -1066,6 +1066,140 @@ public class BuildPropsServiceTests : IDisposable
             m.Contains("different metadata") && m.Contains("duplicate"));
     }
 
+    [Fact]
+    public async Task UnifyPropertiesAsync_Json_FilesModifiedCountsRealWrites()
+    {
+        // Arrange - Nullable held by 2 of 3 projects, and the third on a different TFM so nothing
+        // it declares is a candidate: the run writes the props file plus the two holders —
+        // reporting projectPaths.Count + 1 would claim a fourth file nobody touched.
+        var p1 = CreateTestProject("Project1.csproj", ProjectWithNullable);
+        var p2 = CreateTestProject("Project2.csproj", ProjectWithNullable);
+        var p3 = CreateTestProject("Project3.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+  </PropertyGroup>
+</Project>");
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+        var outputFile = Path.Combine(_testDirectory, "report.json");
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            Force = true,
+            Output = OutputFormat.Json,
+            OutputFile = outputFile,
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+        using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
+        doc.RootElement.GetProperty("summary").GetProperty("filesModified").GetInt32()
+            .Should().Be(3, "the props file plus the two projects that actually held the property");
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_Json_ItemProjectsListExactHoldersOnly()
+    {
+        // Arrange - 'Using System' bare in two projects, under Alias metadata in a third. The
+        // variant holder declares a different thing and must not appear in the candidate's
+        // projects list — otherwise projects.Length disagrees with count.
+        var bare = @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include=""System"" />
+  </ItemGroup>
+</Project>";
+        var variant = @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include=""System"" Alias=""Sys"" />
+  </ItemGroup>
+</Project>";
+        var p1 = CreateTestProject("Project1.csproj", bare);
+        var p2 = CreateTestProject("Project2.csproj", bare);
+        var p3 = CreateTestProject("Project3.csproj", variant);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+        var outputFile = Path.Combine(_testDirectory, "report.json");
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            Force = true,
+            Output = OutputFormat.Json,
+            OutputFile = outputFile,
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+        using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
+        var item = doc.RootElement
+            .GetProperty("candidates")
+            .GetProperty("items")
+            .EnumerateArray()
+            .Single(e => e.GetProperty("include").GetString() == "System"
+                && !e.GetProperty("metadata").EnumerateObject().Any());
+        var projects = item.GetProperty("projects").EnumerateArray().Select(e => e.GetString()).ToList();
+        item.GetProperty("count").GetInt32().Should().Be(2);
+        projects.Should().BeEquivalentTo([p1, p2], "a variant holder is not a declarer of the candidate");
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_ConditionalHolder_WarnsAboutDuplicateItem()
+    {
+        // Arrange - 'Using System' bare in two projects, conditional in a third. A conditional
+        // item is never a consensus member, so nothing strips it — and when its condition holds
+        // the project sees both copies. The hazard warning must see it too.
+        var bare = @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include=""System"" />
+  </ItemGroup>
+</Project>";
+        var conditional = @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include=""System"" Condition=""'$(OS)' == 'Windows_NT'"" />
+  </ItemGroup>
+</Project>";
+        var p1 = CreateTestProject("Project1.csproj", bare);
+        var p2 = CreateTestProject("Project2.csproj", bare);
+        var p3 = CreateTestProject("Project3.csproj", conditional);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2, p3);
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            DryRun = true,
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+        _console.OutputMessages.Should().Contain(m =>
+            m.Contains("condition") && m.Contains("duplicate"));
+    }
+
     private const string ProjectWithNullable = @"
 <Project Sdk=""Microsoft.NET.Sdk"">
   <PropertyGroup>
