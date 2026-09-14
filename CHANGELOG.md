@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.75.0] - 2026-09-14
+
 ### Fixed
 - **Subprocess waits can no longer hang on inherited pipe handles.** Every `dotnet`/`git` call the
   tool spawns redirected stdout/stderr and then waited for stream EOF — but a detached grandchild,
