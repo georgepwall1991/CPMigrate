@@ -151,7 +151,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 | Surface | What you get |
 |---------|--------------|
 | 🏗️ **CPM migration** | Generate `Directory.Packages.props`, strip inline versions, conflict strategies, `--merge` |
-| 🔎 **`--verify`** | Restores before *and* after a migration **or** `--analyze --fix`, diffs the resolved graph, attributes every change to what caused it |
+| 🔎 **`--verify`** | Restores before *and* after a migration, `--analyze --fix`, **or** `--unify-props`, diffs the resolved graph, attributes every change to what caused it |
 | 🔬 **Dependency analysis** | 17 rules / 14 analyzers + scoreboard + 0–100 health score; JSON / SARIF / Markdown / **CSV** |
 | 🩹 **Auto-fix** | Version, casing, redundant refs, transitive pin |
 | 🔁 **Safe updates** | Latest versions + `dotnet test` + automatic rollback |
@@ -221,6 +221,7 @@ cpmigrate -s ./MySolution.sln --verify           # migrate, then prove the graph
 cpmigrate -s ./MySolution.sln --verify --verify-strict   # demand a literal no-op
 cpmigrate -s ./MySolution.sln --verify --output Markdown # the receipt, for the PR body
 cpmigrate -s ./MySolution.sln --analyze --fix --verify   # fix, then prove it still restores
+cpmigrate -s ./MySolution.sln --unify-props --verify     # unify, then prove only the hoisted refs moved
 ```
 
 </details>
@@ -283,7 +284,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--conflict-strategy` | | `Highest` | `Highest` · `Lowest` · `Fail` |
 | `--interactive-conflicts` | | `false` | Prompt for each version conflict |
 | `--keep-attrs` | `-k` | `false` | Leave inline `Version` attributes in place |
-| `--verify` | | `false` | Prove the migration — or `--analyze --fix` — didn't change what restores. Two restores; exit `9` on drift nothing explains, rolled back |
+| `--verify` | | `false` | Prove the migration, `--analyze --fix`, or `--unify-props` didn't change what restores. Two restores; exit `9` on drift nothing explains, rolled back |
 | `--verify-strict` | | `false` | Fail on *any* graph change, including explained ones. Requires `--verify` |
 | `--interactive` | `-i` | `false` | Launch the Mission Control wizard |
 
@@ -381,7 +382,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 
 | Option | Default | Description |
 |--------|:-------:|-------------|
-| `--unify-props` | `false` | Promote common properties to `Directory.Build.props`, with a backup `--rollback` undoes (`--output Json` emits the candidates, outcome, and backup location) |
+| `--unify-props` | `false` | Promote common properties and items to `Directory.Build.props`, with a backup `--rollback` undoes. Names the projects that newly receive each entry; `--verify` proves the hoisted references are the only graph change (`--output Json` emits the candidates, outcome, backup, and receipt) |
 | `--force` | `false` | Skip confirmation prompts |
 
 **Batch processing**

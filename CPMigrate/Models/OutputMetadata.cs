@@ -161,8 +161,16 @@ public static class OutputMetadata
     /// no-candidates outcomes — nothing was written, so there is nothing to undo — keeping a run
     /// that backed files up distinguishable from one that could not.
     /// </para>
+    /// <para>
+    /// 1.23.0 widened <c>verification.changes[].explanation</c> with <c>unified</c> — a change a
+    /// <c>--unify-props</c> pass accounts for — and additively introduced <c>verification</c> on the
+    /// unify-props report, because <c>--verify</c> now applies to it. The candidates also gain
+    /// <c>willGain</c>: how many scanned projects do not declare the property or item today and will
+    /// newly receive it through <c>Directory.Build.props</c> — for a <c>PackageReference</c> that is
+    /// the resolved-graph change verification attributes.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.22.0";
+    public const string SchemaVersion = "1.23.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

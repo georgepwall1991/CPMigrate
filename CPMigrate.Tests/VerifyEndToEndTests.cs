@@ -269,6 +269,110 @@ public class VerifyEndToEndTests : IDisposable
             .NotContain("Nobody.References.This", "the fix must have run for the verdict to mean anything");
     }
 
+    [Fact]
+    public async Task VerifiesTheUnifiedTree_WhenUnifyPropsRuns()
+    {
+        // The same receipt again, now for --unify-props — and for the change only it makes: a
+        // PackageReference hoisted at two-thirds consensus flows into the project that never
+        // declared it. That gain is real drift the pass claims outright, so the verdict is
+        // explained, the change is attributed 'unified', and the run succeeds.
+        WriteFile(
+            "Directory.Packages.props",
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteFile(
+            "src/Api/Api.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <Nullable>enable</Nullable>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteFile(
+            "src/Worker/Worker.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <Nullable>enable</Nullable>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteFile(
+            "src/Tool/Tool.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+        WriteSolution("src/Api/Api.csproj", "src/Worker/Worker.csproj", "src/Tool/Tool.csproj");
+
+        var reportPath = Path.Combine(_root, "verify.json");
+        var exitCode = await ProgramRunner.RunAsync(
+            [
+                "--unify-props",
+                "--verify",
+                "--force",
+                "--quiet",
+                "--output",
+                "Json",
+                "--output-file",
+                reportPath,
+                "-s",
+                _root,
+            ],
+            new FakeConsoleService()
+        );
+
+        exitCode.Should().Be(ExitCodes.Success, "the only graph change is one the pass claimed");
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(reportPath));
+        var verification = document.RootElement.GetProperty("verification");
+        verification.GetProperty("verdict").GetString().Should().Be("explainedDrift");
+
+        var change = verification
+            .GetProperty("changes")
+            .EnumerateArray()
+            .Single(c => c.GetProperty("packageId").GetString() == "Newtonsoft.Json");
+        change.GetProperty("project").GetString().Should().Be("src/Tool/Tool.csproj");
+        change.GetProperty("explanation").GetString().Should().Be("unified");
+
+        var item = document.RootElement
+            .GetProperty("candidates")
+            .GetProperty("items")
+            .EnumerateArray()
+            .Single(i => i.GetProperty("include").GetString() == "Newtonsoft.Json");
+        item.GetProperty("willGain").GetInt32().Should().Be(1);
+
+        File.ReadAllText(Path.Combine(_root, "Directory.Build.props"))
+            .Should()
+            .Contain("Newtonsoft.Json", "the hoisted reference must land in the props file");
+        (await File.ReadAllTextAsync(Path.Combine(_root, "src", "Api", "Api.csproj")))
+            .Should()
+            .NotContain("PackageReference", "the holders must be stripped");
+    }
+
     private async Task<(int ExitCode, JsonElement Verification)> Verify(
         string? target = null,
         params string[] extraArgs

@@ -1,5 +1,6 @@
 using CPMigrate.Models;
 using CPMigrate.Services;
+using CPMigrate.Services.Migration;
 using CPMigrate.Services.Remediation;
 using CPMigrate.Services.Verify;
 using Microsoft.Extensions.Logging;
@@ -174,8 +175,20 @@ internal sealed class ApplicationServices
         );
     }
 
-    public BuildPropsService CreateBuildPropsService()
+    public BuildPropsService CreateBuildPropsService(bool quietMode)
     {
-        return new BuildPropsService(ConsoleService, ProjectAnalyzer, BackupManager);
+        return new BuildPropsService(
+            ConsoleService,
+            ProjectAnalyzer,
+            BackupManager,
+            new MigrationVerifier(
+                new AssetsGraphSnapshotService(
+                    new DotNetCliService(),
+                    new DependencyGraphService(ConsoleService),
+                    ConsoleService
+                )
+            ),
+            new RollbackHandler(ConsoleService, quietMode)
+        );
     }
 }

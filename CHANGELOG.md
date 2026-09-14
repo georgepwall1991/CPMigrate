@@ -6,6 +6,20 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Added
+- **`--verify` now covers `--unify-props`, and the pass names what it injects.** Unifying a
+  property or item below full consensus hoists it into `Directory.Build.props` — where every
+  governed project receives it, including the ones that never declared it. For a hoisted
+  `PackageReference` that is a real change to what restores, and until now the pass made it
+  silently. With `--verify`, CPMigrate captures the resolved graph before a byte is written,
+  re-restores after, and attributes every moved version to the references the pass claimed
+  (`explanation: "unified"`) or to fallout reachable from them — drift nobody claimed rolls the
+  unification back from its own backup, exactly like the migration and `--analyze --fix`
+  contracts. The candidate list now reports how many projects will newly receive each property or
+  item — `willGain` on the JSON candidates (output schema 1.23.0) and a console callout — and a
+  project that holds the same item under different metadata is warned about the duplicate it will
+  see after the write.
+
 ## [3.75.0] - 2026-09-14
 
 ### Fixed
