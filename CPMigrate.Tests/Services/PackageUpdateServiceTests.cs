@@ -297,7 +297,7 @@ public class PackageUpdateServiceTests : IDisposable
         _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
             .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
 
-        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<BackupSettings>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = Path.Combine(_testDirectory, "Directory.Packages.props"), BackupFileName = "backup" });
 
         _dotNetCliMock.Setup(d => d.RunRestoreAsync(It.IsAny<string>()))
@@ -314,6 +314,17 @@ public class PackageUpdateServiceTests : IDisposable
         result.ExitCode.Should().Be(ExitCodes.Success);
         result.TestsPassed.Should().BeTrue();
         result.PackagesUpdated.Should().Be(1);
+
+        // The service calls the BackupSettings overload — a mock on the Options overload would
+        // silently return null and leave the manifest's Backups list empty.
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        _backupManagerMock.Verify(
+            b => b.CreateBackupForProject(
+                It.IsAny<BackupSettings>(),
+                propsPath,
+                It.Is<string>(p => !string.IsNullOrEmpty(p)),
+                It.IsAny<string?>()),
+            Times.Once);
     }
 
     [Fact]
@@ -330,7 +341,7 @@ public class PackageUpdateServiceTests : IDisposable
         // User accepts the major update (first option)
         _consoleService.SelectionResponses.Enqueue("Accept major update to 14.0.3");
 
-        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<BackupSettings>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = Path.Combine(_testDirectory, "Directory.Packages.props"), BackupFileName = "backup" });
 
         _dotNetCliMock.Setup(d => d.RunRestoreAsync(It.IsAny<string>()))
@@ -383,7 +394,7 @@ public class PackageUpdateServiceTests : IDisposable
         _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
             .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
 
-        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<BackupSettings>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = propsPath, BackupFileName = "backup" });
 
         _dotNetCliMock.Setup(d => d.RunRestoreAsync(It.IsAny<string>()))
@@ -414,7 +425,7 @@ public class PackageUpdateServiceTests : IDisposable
         _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
             .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
 
-        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<BackupSettings>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = propsPath, BackupFileName = "backup" });
 
         _dotNetCliMock.Setup(d => d.RunRestoreAsync(It.IsAny<string>()))
@@ -447,7 +458,7 @@ public class PackageUpdateServiceTests : IDisposable
         // Accept the major update for WorkingPackage
         _consoleService.SelectionResponses.Enqueue("Accept major update to 2.0.0");
 
-        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<Options>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+        _backupManagerMock.Setup(b => b.CreateBackupForProject(It.IsAny<BackupSettings>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .Returns(new BackupEntry { OriginalPath = Path.Combine(_testDirectory, "Directory.Packages.props"), BackupFileName = "backup" });
 
         _dotNetCliMock.Setup(d => d.RunRestoreAsync(It.IsAny<string>()))

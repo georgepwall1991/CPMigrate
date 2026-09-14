@@ -4,6 +4,21 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **The remaining empty-backup-path holes are closed.** `CreateBackupForProject` now returns null
+  when handed an empty backup path — even with backups enabled — instead of resolving the
+  `*.backup_*` file name against the process working directory, and `RestoreFile` fails fast on an
+  empty path rather than probing the working directory for a coincidentally named backup file.
+
+### Tests
+- **`--update-packages` backup coverage actually exercises the backup now.** The service calls
+  `CreateBackupForProject`'s `BackupSettings` overload, but every unit-test mock targeted the
+  `Options` overload and never matched — the manifest's `Backups` list was always empty under test,
+  the same blind spot that once let a real backup bug ship. The mocks now match the production
+  overload, and a `Times.Once` verification locks the contract in.
+
 ## [3.87.0] - 2026-09-14
 
 ### Fixed
