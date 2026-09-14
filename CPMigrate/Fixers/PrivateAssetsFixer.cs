@@ -49,7 +49,7 @@ public class PrivateAssetsFixer : IFixer
                         resolvedProps,
                         issue.PackageName,
                         ["GlobalPackageReference", "PackageReference"],
-                        request.DryRun
+                        request
                     );
                     if (result is not null)
                     {
@@ -81,7 +81,7 @@ public class PrivateAssetsFixer : IFixer
                     projectPath,
                     issue.PackageName,
                     ["PackageReference"],
-                    request.DryRun
+                    request
                 );
                 if (result is not null)
                 {
@@ -135,7 +135,7 @@ public class PrivateAssetsFixer : IFixer
         string filePath,
         string packageName,
         IReadOnlyList<string> itemNames,
-        bool dryRun
+        FixRequest request
     )
     {
         try
@@ -198,10 +198,7 @@ public class PrivateAssetsFixer : IFixer
             }
 
             var newContent = doc.ToString();
-            if (!dryRun)
-            {
-                File.WriteAllText(filePath, newContent);
-            }
+            request.WriteFile(filePath, newContent);
 
             return new FileChange(
                 filePath,
@@ -210,7 +207,7 @@ public class PrivateAssetsFixer : IFixer
                 "PrivateAssets=\"all\""
             );
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not FixWriteException)
         {
             // Same contract the other fixers keep: a read-only, locked, or malformed file is a
             // failure with a cause, not "nothing to change".

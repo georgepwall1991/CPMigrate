@@ -56,7 +56,7 @@ public class RedundantDirectReferenceFixer : IFixer
 
             try
             {
-                var result = RemoveDirectReference(projectPath, issue.PackageName, request.DryRun);
+                var result = RemoveDirectReference(projectPath, issue.PackageName, request);
                 if (result != null)
                 {
                     changes.Add(result);
@@ -95,7 +95,7 @@ public class RedundantDirectReferenceFixer : IFixer
     /// none — the finding names a package the graph already provides, so a reference that is not
     /// there is not the finding's subject.
     /// </summary>
-    private static FileChange? RemoveDirectReference(string projectPath, string packageName, bool dryRun)
+    private static FileChange? RemoveDirectReference(string projectPath, string packageName, FixRequest request)
     {
         try
         {
@@ -124,10 +124,7 @@ public class RedundantDirectReferenceFixer : IFixer
             }
 
             var newContent = doc.ToString();
-            if (!dryRun)
-            {
-                File.WriteAllText(projectPath, newContent);
-            }
+            request.WriteFile(projectPath, newContent);
 
             return new FileChange(
                 projectPath,
@@ -136,7 +133,7 @@ public class RedundantDirectReferenceFixer : IFixer
                 "provided transitively"
             );
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not FixWriteException)
         {
             // Same contract the other fixers keep: a read-only, locked, or malformed project file is
             // a failure with a cause, not "nothing to change".

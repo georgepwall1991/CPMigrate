@@ -40,7 +40,7 @@ public class RedundantReferenceFixer : IFixer
 
             try
             {
-                var result = RemoveDuplicateReferences(projectPath, issue.PackageName, request.DryRun);
+                var result = RemoveDuplicateReferences(projectPath, issue.PackageName, request);
                 if (result != null)
                 {
                     changes.Add(result);
@@ -98,7 +98,7 @@ public class RedundantReferenceFixer : IFixer
         return false;
     }
 
-    private static FileChange? RemoveDuplicateReferences(string projectPath, string packageName, bool dryRun)
+    private static FileChange? RemoveDuplicateReferences(string projectPath, string packageName, FixRequest request)
     {
         try
         {
@@ -165,10 +165,7 @@ public class RedundantReferenceFixer : IFixer
 
             var newContent = doc.ToString();
 
-            if (!dryRun)
-            {
-                File.WriteAllText(projectPath, newContent);
-            }
+            request.WriteFile(projectPath, newContent);
 
             return new FileChange(
                 projectPath,
@@ -177,7 +174,7 @@ public class RedundantReferenceFixer : IFixer
                 "1 reference"
             );
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not FixWriteException)
         {
             // Swallowed, this returned null — which the caller could only read as "nothing to change", so
             // a project file that was read-only, locked, or malformed produced "No changes were needed"

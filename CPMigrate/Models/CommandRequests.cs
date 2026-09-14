@@ -1,3 +1,4 @@
+using CPMigrate.Fixers;
 using CPMigrate.Services;
 using CPMigrate.Services.Migration;
 using CPMigrate.Services.Update;
@@ -98,12 +99,48 @@ public sealed record FixRequest(
     string PropsFilePath,
     ConflictStrategy ConflictStrategy,
     bool DryRun,
-    IReadOnlySet<string>? OnlyRules = null)
+    IReadOnlySet<string>? OnlyRules = null,
+    BackupSettings? Backup = null)
 {
+    /// <summary>
+    /// Invoked once per file immediately before a fix pass overwrites it. Set by
+    /// <see cref="FixService"/> so the pass leaves a rollbackable backup; null everywhere else.
+    /// </summary>
+    public Action<string>? BeforeFileWrite { get; init; }
+
+    /// <summary>
+    /// The only way a fixer should put bytes on disk. Dry runs never write, and real writes go
+    /// through <see cref="BeforeFileWrite"/> first so nothing is overwritten before its backup
+    /// exists — a fixer that bypassed this would leave <c>--rollback</c> with nothing to restore.
+    /// </summary>
+    public void WriteFile(string path, string contents)
+    {
+        if (DryRun)
+        {
+            return;
+        }
+
+        try
+        {
+            BeforeFileWrite?.Invoke(path);
+            File.WriteAllText(path, contents);
+        }
+        catch (Exception ex) when (ex is not FixWriteException)
+        {
+            throw new FixWriteException(path, ex);
+        }
+    }
+
     public static FixRequest FromOptions(Options options)
     {
         var (_, propsPath) = MigrationValidator.GetOutputPaths(options);
-        return new(propsPath, options.ConflictStrategy, options.FixDryRun, options.ParseFixRules());
+        return new(
+            propsPath,
+            options.ConflictStrategy,
+            options.FixDryRun,
+            options.ParseFixRules(),
+            BackupSettings.FromOptions(options)
+        );
     }
 }
 

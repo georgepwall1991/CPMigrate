@@ -73,10 +73,7 @@ public class OrphanedPackageVersionFixer : IFixer
             }
 
             var newContent = doc.ToString();
-            if (!request.DryRun)
-            {
-                File.WriteAllText(propsPath, newContent);
-            }
+            request.WriteFile(propsPath, newContent);
 
             return FixResult.Succeeded(
                 $"Removed orphaned PackageVersion for {issue.PackageName} from {propsPath}",
@@ -90,7 +87,7 @@ public class OrphanedPackageVersionFixer : IFixer
                 ]
             );
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not FixWriteException)
         {
             // Same contract the other fixers keep: a read-only, locked, or malformed props file is
             // a failure with a cause, not "nothing to change".

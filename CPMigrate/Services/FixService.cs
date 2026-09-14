@@ -11,11 +11,16 @@ public class FixService : IFixService
 {
     private readonly List<IFixer> _fixers;
     private readonly IConsoleService _console;
+    private readonly IBackupManager _backupManager;
 
-    public FixService(IConsoleService console, IEnumerable<IFixer> fixers)
+    public FixService(
+        IConsoleService console,
+        IEnumerable<IFixer> fixers,
+        IBackupManager? backupManager = null)
     {
         _console = console;
         _fixers = fixers.ToList();
+        _backupManager = backupManager ?? new BackupManager();
     }
 
     public FixService(IConsoleService console, VersionResolver? versionResolver = null)
@@ -33,7 +38,12 @@ public class FixService : IFixService
         return ApplyFixes(
             report,
             packageInfo,
-            new FixRequest(MigrationValidator.GetOutputPaths(options).PropsPath, options.ConflictStrategy, dryRun, options.ParseFixRules()));
+            new FixRequest(
+                MigrationValidator.GetOutputPaths(options).PropsPath,
+                options.ConflictStrategy,
+                dryRun,
+                options.ParseFixRules(),
+                BackupSettings.FromOptions(options)));
     }
 
     /// <param name="request">Mode-specific fix settings.</param>
@@ -61,9 +71,32 @@ public class FixService : IFixService
         }
         _console.Info($"Found {allIssues.Count} issue(s) to fix{(request.DryRun ? " (dry run)" : "")}...");
 
+        // A fix pass rewrites project and props files exactly like a migration does, so it owes the
+        // same undo path: every file lands in .cpmigrate_backup before its first write, and the
+        // manifest the session writes is the same one --rollback already restores from.
+        var backupSession = FixBackupSession.TryCreate(request, _backupManager);
+        if (backupSession is not null)
+        {
+            request = request with { BeforeFileWrite = backupSession.BeforeWrite };
+        }
+
         foreach (var issue in allIssues)
         {
             fixReport.Results.Add(ApplyFixToIssue(issue, packageInfo, request));
+        }
+
+        if (backupSession is not null)
+        {
+            backupSession.WriteManifest();
+            fixReport.BackupPath = backupSession.BackupPath;
+            fixReport.FilesBackedUp = backupSession.FileCount;
+            if (backupSession.FileCount > 0)
+            {
+                _console.Dim(
+                    $"Backed up {backupSession.FileCount} file(s) to {backupSession.BackupPath} "
+                        + "- undo with --rollback."
+                );
+            }
         }
 
         WriteSummary(fixReport, request.DryRun);

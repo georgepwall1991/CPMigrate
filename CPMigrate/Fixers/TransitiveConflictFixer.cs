@@ -116,10 +116,7 @@ public class TransitiveConflictFixer : IFixer
             return FixResult.NoFixNeeded("Version already aligned or package entry not found in suitable format.");
         }
 
-        if (!request.DryRun)
-        {
-            File.WriteAllText(propsPath, updatedContent);
-        }
+        request.WriteFile(propsPath, updatedContent);
 
         return FixResult.Succeeded(
             $"Pinned {issue.PackageName} to version {bestVersion} in Directory.Packages.props",
