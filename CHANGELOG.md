@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.81.0] - 2026-09-14
 
 ### Fixed
 - **`--update-packages --transitive` no longer writes pins that govern nothing.** A
