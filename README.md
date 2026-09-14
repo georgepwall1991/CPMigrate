@@ -276,7 +276,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 
 | Option | Short | Default | Description |
 |--------|:-----:|:-------:|-------------|
-| `--solution` | `-s` | cwd | Path to a `.sln` / `.slnx` file or directory |
+| `--solution` | `-s` | cwd | Path to a `.sln` / `.slnx` file, a project file, or a directory — a directory with no solution is scanned for projects recursively |
 | `--project` | `-p` | | A specific project file, or a directory holding one |
 | `--output-dir` | `-o` | `.` | Where `Directory.Packages.props` is written |
 | `--dry-run` | `-d` | `false` | Preview changes without modifying files |

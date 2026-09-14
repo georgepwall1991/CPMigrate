@@ -553,13 +553,23 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
     private static string? FindPropsFile(string basePath)
     {
+        // An empty base path means the target resolved to nothing — probing it would anchor the
+        // search at the process working directory and could open a props file that has nothing
+        // to do with the target the user named.
+        if (string.IsNullOrEmpty(basePath))
+        {
+            return null;
+        }
+
         var propsPath = Path.Combine(basePath, "Directory.Packages.props");
         return File.Exists(propsPath) ? propsPath : null;
     }
 
     private static string? FindSolutionFile(string basePath)
     {
-        var slnFiles = Directory.GetFiles(basePath, "*.sln");
+        var slnFiles = Directory.GetFiles(basePath, "*.sln")
+            .Concat(Directory.GetFiles(basePath, "*.slnx"))
+            .ToArray();
         return slnFiles.Length > 0 ? slnFiles[0] : null;
     }
 

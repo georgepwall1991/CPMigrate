@@ -105,4 +105,94 @@ public class SlnxDiscoveryTests : IDisposable
         result.MissingProjects.Should().ContainSingle()
             .Which.Should().EndWith(Path.Combine("Gone", "Gone.csproj"));
     }
+
+    [Fact]
+    public void DiscoverProjectsFromSolution_DirectoryWithoutSolution_DiscoversProjectsRecursively()
+    {
+        // Pointing at a folder is a reasonable way to say "this workspace"; a directory holding
+        // projects but no .sln/.slnx should scan them rather than report nothing.
+        var appDir = Path.Combine(_testDirectory, "App");
+        var libDir = Path.Combine(_testDirectory, "nested", "Lib");
+        Directory.CreateDirectory(appDir);
+        Directory.CreateDirectory(libDir);
+        var appPath = Path.Combine(appDir, "App.csproj");
+        var libPath = Path.Combine(libDir, "Lib.csproj");
+        File.WriteAllText(appPath, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+        File.WriteAllText(libPath, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+
+        var (basePath, projectPaths) = _analyzer.DiscoverProjectsFromSolution(_testDirectory);
+
+        projectPaths.Should().HaveCount(2);
+        projectPaths.Should().Contain(Path.GetFullPath(appPath));
+        projectPaths.Should().Contain(Path.GetFullPath(libPath));
+        basePath.Should().Be(Path.GetFullPath(_testDirectory));
+    }
+
+    [Fact]
+    public void DiscoverProjectsFromSolution_DirectoryWithoutSolution_SkipsBuildOutput()
+    {
+        // obj/bin carry generated project assets — discovering them would migrate files a build
+        // regenerates.
+        var appDir = Path.Combine(_testDirectory, "App");
+        var objDir = Path.Combine(appDir, "obj");
+        Directory.CreateDirectory(objDir);
+        var appPath = Path.Combine(appDir, "App.csproj");
+        File.WriteAllText(appPath, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+        File.WriteAllText(
+            Path.Combine(objDir, "Stray.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+
+        var (_, projectPaths) = _analyzer.DiscoverProjectsFromSolution(_testDirectory);
+
+        projectPaths.Should().ContainSingle().Which.Should().Be(Path.GetFullPath(appPath));
+    }
+
+    [Fact]
+    public void DiscoverProjectsFromSolution_EmptyDirectory_ReportsNoProjects()
+    {
+        var (basePath, projectPaths) = _analyzer.DiscoverProjectsFromSolution(_testDirectory);
+
+        projectPaths.Should().BeEmpty();
+        basePath.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DiscoverProjectsFromSolution_ProjectFile_DiscoversSingleProject()
+    {
+        // A .csproj passed as the target is a one-project scope, not an unsupported format.
+        var projectDir = Path.Combine(_testDirectory, "App");
+        Directory.CreateDirectory(projectDir);
+        var projectPath = Path.Combine(projectDir, "App.csproj");
+        File.WriteAllText(projectPath, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+
+        var (basePath, projectPaths) = _analyzer.DiscoverProjectsFromSolution(projectPath);
+
+        projectPaths.Should().ContainSingle().Which.Should().Be(Path.GetFullPath(projectPath));
+        basePath.Should().Be(Path.GetFullPath(projectDir));
+    }
+
+    [Fact]
+    public void DiscoverProjectsFromSolution_DirectoryWithSolution_StillPrefersSolution()
+    {
+        // The directory scan is a fallback for the no-solution case — a real solution keeps
+        // defining the project set, including projects it deliberately leaves out.
+        var inSlnDir = Path.Combine(_testDirectory, "InSln");
+        var looseDir = Path.Combine(_testDirectory, "Loose");
+        Directory.CreateDirectory(inSlnDir);
+        Directory.CreateDirectory(looseDir);
+        var inSlnPath = Path.Combine(inSlnDir, "InSln.csproj");
+        File.WriteAllText(inSlnPath, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+        File.WriteAllText(
+            Path.Combine(looseDir, "Loose.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+        File.WriteAllText(
+            Path.Combine(_testDirectory, "Test.slnx"),
+            @"<Solution>
+  <Project Path=""InSln/InSln.csproj"" />
+</Solution>");
+
+        var (_, projectPaths) = _analyzer.DiscoverProjectsFromSolution(_testDirectory);
+
+        projectPaths.Should().ContainSingle().Which.Should().Be(Path.GetFullPath(inSlnPath));
+    }
 }

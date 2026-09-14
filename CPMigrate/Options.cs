@@ -110,7 +110,7 @@ public class Options
     [Option(
         's',
         "solution",
-        HelpText = "Path to a .sln/.slnx file, or a directory containing one. When omitted, CPMigrate uses the current directory.",
+        HelpText = "Path to a .sln/.slnx file, a project file, or a directory — a directory with no solution file is scanned for projects recursively. When omitted, CPMigrate uses the current directory.",
         Required = false
     )]
     public string SolutionFileDir { get; set; } = string.Empty;

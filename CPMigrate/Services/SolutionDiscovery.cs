@@ -22,15 +22,54 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
     {
         var projectPaths = new List<string>();
         var missingProjects = new List<string>();
-        var fullPath = ResolveSolutionFilePath(solutionPath);
+        var fullPath = ResolveSolutionFilePath(solutionPath, out var ambiguous);
 
-        if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath))
+        if (ambiguous)
         {
-            var message = fullPath == null
-                ? "No solution file found in the specified directory."
-                : "Solution file not found.";
-            _consoleService.Info(message);
+            // Several solutions and no way to choose — the refusal was already reported; scanning
+            // the whole directory instead would sweep up projects no solution names.
             return new DiscoveryResult(string.Empty, projectPaths, missingProjects);
+        }
+
+        if (fullPath == null)
+        {
+            // The target is a directory holding no solution file — but it may still hold
+            // projects. Scanning it is what pointing a tool at a folder means; anchoring the
+            // result at that directory also keeps props-file lookups honest instead of falling
+            // back to the process working directory.
+            var discovered = DiscoverProjectsInDirectory(Path.GetFullPath(solutionPath));
+            if (discovered.Count == 0)
+            {
+                _consoleService.Info("No solution file found in the specified directory.");
+                return new DiscoveryResult(string.Empty, projectPaths, missingProjects);
+            }
+
+            _consoleService.Info(
+                $"No solution file found; discovered {discovered.Count} project(s) in the directory tree.");
+            projectPaths.AddRange(discovered);
+            return new DiscoveryResult(Path.GetFullPath(solutionPath), projectPaths, missingProjects);
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            _consoleService.Info("Solution file not found.");
+            return new DiscoveryResult(string.Empty, projectPaths, missingProjects);
+        }
+
+        // A project file passed as the target is a single-project discovery — only the
+        // serializer check below would otherwise reject it as an unsupported format.
+        if (IsProjectFile(fullPath))
+        {
+            _consoleService.Info($"Found project: {Path.GetFileNameWithoutExtension(fullPath)}");
+            projectPaths.Add(fullPath);
+            var projectDir = Path.GetDirectoryName(fullPath);
+            if (string.IsNullOrEmpty(projectDir))
+            {
+                _consoleService.Error("Invalid project path: cannot determine directory.");
+                return new DiscoveryResult(string.Empty, projectPaths, missingProjects);
+            }
+
+            return new DiscoveryResult(projectDir, projectPaths, missingProjects);
         }
 
         var basePath = Path.GetDirectoryName(fullPath);
@@ -110,8 +149,14 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
             .ToArray();
     }
 
-    private string? ResolveSolutionFilePath(string solutionPath)
+    /// <summary>
+    /// Resolves the target to one solution file. <paramref name="ambiguous"/> distinguishes
+    /// "directory with no solution" (null — the directory scan is a fair fallback) from
+    /// "several solutions and no answer" (null — falling back would ignore the refusal).
+    /// </summary>
+    private string? ResolveSolutionFilePath(string solutionPath, out bool ambiguous)
     {
+        ambiguous = false;
         var fullPath = Path.GetFullPath(solutionPath);
 
         if (!Directory.Exists(fullPath))
@@ -131,7 +176,13 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
         }
 
         var selected = PromptForSolutionSelection(slnFiles);
-        return selected != null && File.Exists(selected) ? selected : null;
+        if (selected != null && File.Exists(selected))
+        {
+            return selected;
+        }
+
+        ambiguous = true;
+        return null;
     }
 
     private async Task<bool> DiscoverProjectsInSolutionAsync(string solutionFullPath, string basePath, List<string> projectPaths, List<string> missingProjects)
@@ -169,6 +220,62 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Every project file under a directory, honoring the same exclusions and symlink guard
+    /// batch discovery uses — build output and vendored trees are not projects to migrate.
+    /// </summary>
+    private List<string> DiscoverProjectsInDirectory(string rootPath)
+    {
+        var projects = new List<string>();
+        DiscoverProjectsRecursive(rootPath, projects, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        return projects.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private void DiscoverProjectsRecursive(
+        string directory,
+        List<string> projects,
+        HashSet<string> visitedPaths)
+    {
+        try
+        {
+            // The real path is what a symlink loop revisits, not the path that reached it.
+            var realPath = Path.GetFullPath(directory);
+            if (!visitedPaths.Add(realPath))
+            {
+                return;
+            }
+
+            var dirInfo = new DirectoryInfo(directory);
+            if (dirInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                return;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(directory, "*.*proj").Where(IsProjectFile))
+            {
+                projects.Add(Path.GetFullPath(file));
+                _consoleService.Info($"Found project: {Path.GetFileNameWithoutExtension(file)}");
+            }
+
+            foreach (var subDir in Directory
+                .EnumerateDirectories(directory)
+                .Where(d => !BatchService.DefaultExcludedDirectories.Contains(Path.GetFileName(d))))
+            {
+                DiscoverProjectsRecursive(subDir, projects, visitedPaths);
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or DirectoryNotFoundException)
+        {
+            // A subtree we cannot read is skipped, not fatal — same rule batch discovery keeps.
+        }
+    }
+
+    private static bool IsProjectFile(string path)
+    {
+        var extension = GetSafeExtension(path);
+        return extension is ".csproj" or ".fsproj" or ".vbproj";
     }
 
     private string? PromptForSolutionSelection(string[] slnFiles)
