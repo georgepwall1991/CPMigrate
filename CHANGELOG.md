@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.77.0] - 2026-09-14
+
 ### Fixed
 - **`--unify-props` reporting is exact about who holds what.** Three places the report could
   misdescribe the pass: `candidates.items[].projects` listed every project holding the item under
