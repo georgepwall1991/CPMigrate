@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.69.0] - 2026-09-14
+
 ### Added
 - **New rule: `DevelopmentDependencyLeak` — dev-only packages caught flowing to every consumer.**
   Analyzers, test SDKs, coverage collectors, and source generators only contribute at build time,
