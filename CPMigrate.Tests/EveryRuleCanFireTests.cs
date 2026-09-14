@@ -227,6 +227,40 @@ public class EveryRuleCanFireTests : IDisposable
         (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.OrphanedPackageVersion));
     }
 
+    [Fact]
+    public async Task DevelopmentDependencyLeak_Fires()
+    {
+        // A test SDK referenced with no PrivateAssets scoping — the rule reads the declaration, not
+        // the resolved graph, so no restore output is needed to prove the pipeline delivers it.
+        WriteProject("tests/Unit/Unit.csproj", ("xunit.runner.visualstudio", "2.8.2"));
+        WriteSolution("tests/Unit/Unit.csproj");
+
+        (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.DevelopmentDependencyLeak));
+    }
+
+    [Fact]
+    public async Task DevelopmentDependencyLeak_DoesNotFireWhenScopedPrivately()
+    {
+        // The other half of the guard: PrivateAssets="all" on the declaration is coverage, and a
+        // rule that ignores it flags every correctly written analyzer/test project on earth.
+        WriteFile(
+            "tests/Unit/Unit.csproj",
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteSolution("tests/Unit/Unit.csproj");
+
+        (await Analyze()).Should().NotContain(nameof(AnalysisIssueCode.DevelopmentDependencyLeak));
+    }
+
     // ------------------------------------------------------------------ completeness
 
     [Fact]
