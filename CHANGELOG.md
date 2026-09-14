@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.83.0] - 2026-09-14
 
 ### Fixed
 - **A directory target no longer needs a solution file.** `-s` pointed at a folder with no
