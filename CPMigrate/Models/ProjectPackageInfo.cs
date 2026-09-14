@@ -73,6 +73,13 @@ public record PackageReference(
     /// Updates in one conditional branch from Updates in different branches.
     /// </summary>
     public string? ConditionalScope { get; init; }
+
+    /// <summary>
+    /// The declared <c>PrivateAssets</c> metadata verbatim, or null when the item does not set it.
+    /// Only ever populated on references read from a project file's declaration — resolved scan
+    /// data never carries it, because what flows to consumers is a property of the declaration.
+    /// </summary>
+    public string? PrivateAssets { get; init; }
 }
 
 /// <summary>

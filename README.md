@@ -29,7 +29,7 @@ NuGet dependency drift is a slow leak. Version sprawl, duplicate references, tra
 CPMigrate replaces both with three things that actually hold up:
 
 - 🔍 **A dry-run-first migration** that shows you the exact `Directory.Packages.props` diff before it touches a byte.
-- 📊 **A dependency health scoreboard** — 16 rules across 13 analyzers, a 0–100 score, severity-gated CI exits.
+- 📊 **A dependency health scoreboard** — 17 rules across 14 analyzers, a 0–100 score, severity-gated CI exits.
 - 🛡️ **Updates that roll themselves back** the instant `dotnet test` goes red — and with `--bisect`, keep the largest subset that stays green instead of nuking all 38 because one broke.
 - 🚑 **CVEs that fix themselves — minimally.** `--remediate` moves each vulnerable package to the *lowest* version that clears its advisory, tests it, rolls back on red, then **re-scans to prove the CVE is gone**.
 
@@ -52,6 +52,7 @@ CPMigrate replaces both with three things that actually hold up:
 | 🟦 | **RedundantReference** | The same `PackageReference` twice in one project | Low |
 | 🟦 | **OutdatedPackage** / **DeprecatedPackage** | Behind the feed / abandoned packages | Low |
 | 🟦 | **OrphanedPackageVersion** | Central pins no project references anymore (auto-fixable) | Low |
+| 🟦 | **DevelopmentDependencyLeak** | An analyzer, test SDK, coverage, or source-gen package referenced without `PrivateAssets="all"` — it flows to every consumer (auto-fixable) | Low |
 | 🟦 | **RedundantDirectReference** | A direct reference already provided transitively (auto-fixable under CPM — refused without it, since the direct reference may be the only thing holding the version) | Low |
 | ⬜ | **FrameworkAlignment** | Projects drifting across `TargetFramework` values | Info |
 
@@ -151,7 +152,7 @@ dotnet tool update --global CPMigrate     # or:  cpmigrate --update
 |---------|--------------|
 | 🏗️ **CPM migration** | Generate `Directory.Packages.props`, strip inline versions, conflict strategies, `--merge` |
 | 🔎 **`--verify`** | Restores before *and* after, diffs the resolved graph, attributes every change to the decision that caused it |
-| 🔬 **Dependency analysis** | 16 rules / 13 analyzers + scoreboard + 0–100 health score; JSON / SARIF / Markdown / **CSV** |
+| 🔬 **Dependency analysis** | 17 rules / 14 analyzers + scoreboard + 0–100 health score; JSON / SARIF / Markdown / **CSV** |
 | 🩹 **Auto-fix** | Version, casing, redundant refs, transitive pin |
 | 🔁 **Safe updates** | Latest versions + `dotnet test` + automatic rollback |
 | 🔪 **`--bisect`** | Largest green update subset; names the held-back packages |

@@ -178,6 +178,16 @@ public static class AnalysisRuleCatalog
                 new[] { "dependencies", "security" }
             ),
             new(
+                AnalysisIssueCode.DevelopmentDependencyLeak,
+                "A development-only package is referenced without PrivateAssets scoping.",
+                "Analyzer, test, coverage, and source-generation packages only contribute at build "
+                    + "time, but a PackageReference without PrivateAssets=\"all\" flows them transitively "
+                    + "to every consumer — into produced nuspec dependency lists, downstream lock files, "
+                    + "and other people's builds. Scope the reference with PrivateAssets=\"all\", or set "
+                    + "it once on the central PackageVersion entry.",
+                new[] { "dependencies", "maintainability", "supply-chain" }
+            ),
+            new(
                 AnalysisIssueCode.Unknown,
                 "An analyzer reported a finding without a specific rule code.",
                 "This is a fallback used when an analyzer does not classify its finding. Treat the message text as "

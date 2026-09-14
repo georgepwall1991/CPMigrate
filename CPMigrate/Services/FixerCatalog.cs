@@ -15,7 +15,8 @@ internal static class FixerCatalog
             new OrphanedPackageVersionFixer(),
             new InlineVersionFixer(),
             new RedundantDirectReferenceFixer(),
-            new CpmNotEnabledFixer()
+            new CpmNotEnabledFixer(),
+            new PrivateAssetsFixer()
         ];
     }
 }

@@ -310,6 +310,34 @@ compile-time surface rather than a runtime and follows its own lifecycle.
 - Fixable: no — retargeting changes what restores; update packages that do not support the new
   target yourself, then confirm with `cpmigrate -s ./Solution.sln --verify`
 
+## DevelopmentDependencyLeak
+
+**A development-only package is referenced without `PrivateAssets` scoping.**
+
+Analyzers, test SDKs, coverage collectors, and source generators only contribute at build time —
+but a `PackageReference` without `PrivateAssets="all"` flows them transitively to every consumer:
+into the nuspec dependency list of any package the project produces, into downstream lock files,
+and into other people's builds. NuGet does not warn about it — the reference resolves cleanly — so
+the leak is silent until someone reads their own dependency list and finds a test framework in it.
+
+The dev-only set is convention-based: ids ending in `.Analyzer`/`.Analyzers` are Roslyn analyzer
+packages by definition, and the exact ids and prefixes the rule names — test SDKs and adapters,
+coverage collectors, `Microsoft.SourceLink.*`, `Microsoft.TestPlatform.*`, `SonarAnalyzer.*` — never
+contribute runtime surface. A dev-only package that escapes the convention is out of scope rather
+than guessed at.
+
+Coverage is read from declarations, not the resolved graph — by the time `dotnet package list`
+reports a reference, resolution has already applied `PrivateAssets`. Only unconditional
+`PrivateAssets="all"` (or `*`) counts: a conditioned value still leaks on every configuration it
+excludes, and a partial asset list still flows the package. Scoping set centrally — on a
+`PackageVersion` or `GlobalPackageReference` in a governing `Directory.Packages.props` — covers
+every project that file governs. A `GlobalPackageReference` for a dev-only package that carries no
+scoping is itself reported, naming the props file rather than a project.
+
+- Default severity: `Low`
+- Fixable: yes — `cpmigrate --analyze --fix` sets `PrivateAssets="all"` on the reference, or on the
+  `GlobalPackageReference` when the leak is a global entry
+
 ## Unknown
 
 **An analyzer reported a finding without a specific rule code.**

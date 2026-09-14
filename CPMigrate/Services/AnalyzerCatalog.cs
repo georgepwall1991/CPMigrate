@@ -37,6 +37,9 @@ internal static class AnalyzerCatalog
             // Reads declared XML and the props file, never the resolved graph: resolution has
             // already turned a wildcard into a concrete version by the time it reaches an analyzer.
             new FloatingVersionAnalyzer(),
+            // Reads declared references only — the resolved graph has already consumed PrivateAssets,
+            // so a resolved reference cannot say whether the package flows on to consumers.
+            new DevelopmentDependencyLeakAnalyzer(),
         ];
     }
 }
