@@ -147,8 +147,41 @@ internal class MigrationValidator
             outputPath = options.OutputDir ?? ".";
         }
 
+        // NuGet resolves Directory.Packages.props by walking up from each project, and restore
+        // fails NU1507 the moment two files sit in one ancestry. When the output location was
+        // derived from the target — not an explicit -o, which is the user's contract and is
+        // honored verbatim — a props file above it is the governing file: writing a second one
+        // next to the solution would shadow nothing and break every restore. Target it instead.
         var propsPath = Path.Combine(outputPath, "Directory.Packages.props");
+        // ...and only for a directory that exists: walking up from a path that names nothing
+        // resolves a props file governing a tree that isn't there.
+        if (!options.HasExplicitOutputDir && Directory.Exists(outputPath))
+        {
+            propsPath = FindNearestExistingProps(outputPath) ?? propsPath;
+        }
+
         return (outputPath, propsPath);
+    }
+
+    /// <summary>
+    /// The closest <c>Directory.Packages.props</c> at or above <paramref name="startDirectory"/>,
+    /// or null when none exists — the same nearest-wins walk NuGet performs from each project.
+    /// </summary>
+    private static string? FindNearestExistingProps(string startDirectory)
+    {
+        var directory = new DirectoryInfo(Path.GetFullPath(startDirectory));
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, "Directory.Packages.props");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     private static bool IsSolutionFilePath(string path)

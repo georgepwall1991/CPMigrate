@@ -109,20 +109,48 @@ public sealed class SolutionDiscovery : ISolutionDiscovery
 
         if (Directory.Exists(fullPath))
         {
-            var projFile = Directory.EnumerateFiles(fullPath, "*.*proj")
-                .FirstOrDefault(f =>
+            var projFiles = Directory.EnumerateFiles(fullPath, "*.*proj")
+                .Where(f =>
                 {
                     var ext = Path.GetExtension(f).ToLowerInvariant();
                     return ext is ".csproj" or ".fsproj" or ".vbproj";
-                });
+                })
+                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            if (projFile == null)
+            if (projFiles.Count == 0)
             {
                 _consoleService.Info("No project file found in the specified directory.");
                 return (string.Empty, projectPaths);
             }
 
-            fullPath = projFile;
+            if (projFiles.Count > 1)
+            {
+                // -p is a single-project scope: picking the first in enumeration order is a
+                // silent guess at which project the user meant — same rule the multi-solution
+                // case already keeps.
+                var choices = projFiles.Select(Path.GetFileName).ToList();
+                if (!_consoleService.IsInteractive)
+                {
+                    _consoleService.Error(
+                        $"Found {projFiles.Count} project files in the directory and cannot prompt on a non-interactive terminal.");
+                    foreach (var choice in choices)
+                    {
+                        _consoleService.Dim($"  • {choice}");
+                    }
+                    _consoleService.Info("Pass the one you want explicitly, e.g. -p ./App.csproj");
+                    return (string.Empty, projectPaths);
+                }
+
+                var selection = _consoleService.AskSelection(
+                    "Multiple project files found. Which one would you like to use?",
+                    choices!);
+                fullPath = projFiles.First(f => Path.GetFileName(f) == selection);
+            }
+            else
+            {
+                fullPath = projFiles[0];
+            }
         }
 
         if (!File.Exists(fullPath))

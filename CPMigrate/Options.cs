@@ -688,6 +688,14 @@ public class Options
 
     public bool HasExplicitProjectPath => !string.IsNullOrWhiteSpace(ProjectFileDir);
 
+    /// <summary>
+    /// True when <c>-o/--output-dir</c> was set to something other than the default — the
+    /// caller then owns where <c>Directory.Packages.props</c> lands, and the ancestor walk
+    /// that protects derived targets from NU1507 shadowing must not redirect it.
+    /// </summary>
+    public bool HasExplicitOutputDir =>
+        !string.IsNullOrWhiteSpace(OutputDir) && OutputDir != ".";
+
     public string GetDiscoveryTargetPath()
     {
         if (HasExplicitProjectPath)
