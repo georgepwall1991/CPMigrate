@@ -233,6 +233,39 @@ public class PrivateAssetsFixerTests : IDisposable
         File.ReadAllText(propsPath).Should().Contain("PrivateAssets=\"all\"");
     }
 
+    [Fact]
+    public void Fix_ImportFileIssue_EditsThePackageReferenceInTheImportFile()
+    {
+        // An injected finding names the import file in metadata — the fix scopes the
+        // PackageReference item there, the same place the analyzer read it.
+        var propsPath = Path.Combine(_testDirectory, "Directory.Build.props");
+        File.WriteAllText(
+            propsPath,
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Include="SonarAnalyzer.CSharp" Version="9.16.0.82469" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var issue = new AnalysisIssue(
+            "SonarAnalyzer.CSharp",
+            "Injected reference without PrivateAssets",
+            Array.Empty<string>(),
+            AnalysisIssueCode.DevelopmentDependencyLeak,
+            AnalysisSeverity.Low,
+            Fixable: true,
+            Metadata: new Dictionary<string, string> { ["propsFile"] = "Directory.Build.props" }
+        );
+
+        var result = _fixer.Fix(issue, PackageInfo(projectPath: null), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        File.ReadAllText(propsPath).Should().Contain("PrivateAssets=\"all\"");
+    }
+
     private string WriteProject(string content)
     {
         var path = Path.Combine(_testDirectory, "App.csproj");

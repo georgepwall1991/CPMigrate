@@ -43,10 +43,12 @@ public class PrivateAssetsFixer : IFixer
             {
                 try
                 {
+                    // An import file can inject the package either way — GlobalPackageReference or
+                    // a plain PackageReference — and both kinds scope the same.
                     var result = ScopePackagePrivately(
                         resolvedProps,
                         issue.PackageName,
-                        "GlobalPackageReference",
+                        ["GlobalPackageReference", "PackageReference"],
                         request.DryRun
                     );
                     if (result is not null)
@@ -60,7 +62,7 @@ public class PrivateAssetsFixer : IFixer
                 }
             }
 
-            return Summarize(issue, changes, failures, "the global reference");
+            return Summarize(issue, changes, failures, "the import file");
         }
 
         // AffectedProjects carries project ids (paths relative to the scan root), not file names —
@@ -78,7 +80,7 @@ public class PrivateAssetsFixer : IFixer
                 var result = ScopePackagePrivately(
                     projectPath,
                     issue.PackageName,
-                    "PackageReference",
+                    ["PackageReference"],
                     request.DryRun
                 );
                 if (result is not null)
@@ -125,14 +127,14 @@ public class PrivateAssetsFixer : IFixer
     }
 
     /// <summary>
-    /// Sets <c>PrivateAssets="all"</c> on every <paramref name="itemName"/> item naming the package
-    /// that does not already cover all assets. Items already scoped — including a
+    /// Sets <c>PrivateAssets="all"</c> on every matching item of the given item types naming the
+    /// package that does not already cover all assets. Items already scoped — including a
     /// <c>PackageReference Update</c> that declares coverage — are left alone.
     /// </summary>
     private static FileChange? ScopePackagePrivately(
         string filePath,
         string packageName,
-        string itemName,
+        IReadOnlyList<string> itemNames,
         bool dryRun
     )
     {
@@ -142,7 +144,7 @@ public class PrivateAssetsFixer : IFixer
             var doc = XDocument.Parse(originalContent);
 
             var touched = 0;
-            foreach (var reference in doc.Descendants(itemName))
+            foreach (var reference in itemNames.SelectMany(itemName => doc.Descendants(itemName)))
             {
                 var name =
                     reference.Attribute("Include")?.Value

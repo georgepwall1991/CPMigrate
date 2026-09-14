@@ -123,6 +123,34 @@ public class DevelopmentDependencyLeakAnalyzer : IAnalyzer
             .Select(pin => pin.Package)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        // PackageReference items in governing import files inject into every project beneath them
+        // — Directory.Build.props/targets, and Directory.Packages.props — but never appear in any
+        // project's declaration list. An unscoped dev-only Include there is the same leak a
+        // GlobalPackageReference makes, so it is reported against the file, not a project.
+        var injected = CpmDriftAnalyzer.ReadBuildImportPackageReferences(
+            packageInfo.GetProjectsScanned(),
+            CpmDriftAnalyzer.PathComparerFor(packageInfo.BasePath)
+        );
+
+        foreach (
+            var importGroup in injected.GroupBy(
+                reference => (reference.DeclaringFile, reference.Package),
+                InjectedGroupComparer.Instance
+            )
+        )
+        {
+            if (
+                centralCoverage.Contains(importGroup.Key.Package)
+                || importGroup.All(reference => CoversAll(reference.PrivateAssets))
+                || !IsDevelopmentOnlyInjected(importGroup.Key.Package, importGroup, scan, pins)
+            )
+            {
+                continue;
+            }
+
+            issues.Add(ReportInjected(importGroup.Key.DeclaringFile, importGroup.Key.Package, packageInfo.BasePath));
+        }
+
         // DeclaredReferences only: the resolved list never carries PrivateAssets — resolution has
         // already applied it — so falling back to it would read every dev-only package as
         // uncovered. A null list means the declarations could not be read, and "could not look"
@@ -214,6 +242,110 @@ public class DevelopmentDependencyLeakAnalyzer : IAnalyzer
                 ["propsFile"] = pin.PropsFile,
             }
         );
+    }
+
+    /// <summary>
+    /// Whether an injected reference's package is development-only: the convention answers by id;
+    /// the nuspec scan answers by the item's own version, or by the central pin's when the item
+    /// carries none — the same precedence the resolved graph would give it.
+    /// </summary>
+    private static bool IsDevelopmentOnlyInjected(
+        string packageName,
+        IEnumerable<CpmDriftAnalyzer.InjectedPackageReference> items,
+        DevelopmentDependencyScanResult? scan,
+        IReadOnlyList<CpmDriftAnalyzer.CentralPin> pins
+    )
+    {
+        if (IsDevelopmentOnlyByConvention(packageName) || scan is null)
+        {
+            return IsDevelopmentOnlyByConvention(packageName);
+        }
+
+        var candidates = items
+            .Select(item => item.Version)
+            .Concat(
+                pins.Where(pin =>
+                        string.Equals(pin.Package, packageName, StringComparison.OrdinalIgnoreCase)
+                    )
+                    .Select(pin => (string?)pin.Version)
+            );
+
+        return candidates.Any(version =>
+            version is not null
+            && NuGetVersion.TryParse(version, out var parsed)
+            && scan.Versions.Contains(
+                new PackageVersionKey(packageName, parsed.ToNormalizedString().ToLowerInvariant())
+            )
+        );
+    }
+
+    /// <summary>
+    /// The leak an import-file <c>PackageReference</c> makes: every governed project gets the
+    /// reference, so the file that declares it is the place to fix it.
+    /// </summary>
+    private static AnalysisIssue ReportInjected(
+        string declaringFile,
+        string packageName,
+        string? basePath
+    )
+    {
+        var file = DescribeRelativeTo(declaringFile, basePath);
+        return new AnalysisIssue(
+            packageName,
+            $"{packageName} is a development-only package injected into every governed project by "
+                + $"a PackageReference in {file} without PrivateAssets=\"all\", so it flows to "
+                + "every consumer of every project. Set the assets on the reference in the import "
+                + "file, or centrally on the PackageVersion entry.",
+            [],
+            AnalysisIssueCode.DevelopmentDependencyLeak,
+            AnalysisSeverity.Low,
+            Fixable: true,
+            Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["suggestedPrivateAssets"] = "all",
+                ["propsFile"] = file,
+            }
+        );
+    }
+
+    /// <summary>
+    /// A path relative to the scan root when it sits beneath it, verbatim otherwise — the same
+    /// description the drift analyzer gives props files so a finding names the file to edit.
+    /// </summary>
+    private static string DescribeRelativeTo(string path, string? basePath)
+    {
+        if (string.IsNullOrWhiteSpace(basePath))
+        {
+            return path;
+        }
+
+        var relative = Path.GetRelativePath(
+            Path.GetFullPath(basePath),
+            Path.GetFullPath(path)
+        );
+
+        return relative.StartsWith("..", StringComparison.Ordinal) ? path : relative;
+    }
+
+    /// <summary>Groups injected items by (declaring file, package), both compared ordinally.</summary>
+    private sealed class InjectedGroupComparer
+        : IEqualityComparer<(string DeclaringFile, string Package)>
+    {
+        public static readonly InjectedGroupComparer Instance = new();
+
+        public bool Equals((string DeclaringFile, string Package) x, (string DeclaringFile, string Package) y)
+        {
+            return string.Equals(x.DeclaringFile, y.DeclaringFile, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.Package, y.Package, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int GetHashCode((string DeclaringFile, string Package) obj)
+        {
+            return HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.DeclaringFile),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Package)
+            );
+        }
     }
 
     /// <summary>
