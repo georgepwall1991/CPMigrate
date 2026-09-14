@@ -92,7 +92,7 @@ cpmigrate --remediate               # apply · test · roll back on red · re-sc
 Requires **.NET SDK 8.0** or later. The tool itself targets `net10.0` with `LatestMajor` roll-forward.
 
 ```bash
-dotnet tool install --global CPMigrate --version 3.72.0
+dotnet tool install --global CPMigrate --version 3.73.0
 ```
 
 ```bash

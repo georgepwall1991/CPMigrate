@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.73.0] - 2026-09-14
+
 ### Added
 - **`--verify` now covers `--analyze --fix`.** A fix pass rewrites project files exactly like a
   migration does, and until now ran with no proof the tree still restored afterwards — the receipt
