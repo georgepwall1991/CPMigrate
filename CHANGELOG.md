@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+## [3.72.0] - 2026-09-14
+
 ### Added
 - **`--analyze --fix` runs are now backed up and rollbackable.** Fixers rewrote project and props
   files with no safety net — a migration gets a timestamped backup and `--rollback`, while a fix
