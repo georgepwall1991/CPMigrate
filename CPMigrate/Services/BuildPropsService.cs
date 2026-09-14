@@ -614,10 +614,19 @@ public class BuildPropsService
 
             foreach (var prop in properties)
             {
-                var existing = propertyGroup.Properties.FirstOrDefault(p => p.Name == prop.Name);
-                if (existing != null)
+                // MSBuild evaluates properties last-wins across EVERY PropertyGroup — a
+                // declaration in a second or conditional group is what applies, and updating
+                // only the first group's element reports a write that changes nothing.
+                var existing = root.PropertyGroups
+                    .SelectMany(g => g.Properties)
+                    .Where(p => p.Name == prop.Name)
+                    .ToList();
+                if (existing.Count > 0)
                 {
-                    existing.Value = prop.Value;
+                    foreach (var element in existing)
+                    {
+                        element.Value = prop.Value;
+                    }
                 }
                 else
                 {
@@ -637,12 +646,17 @@ public class BuildPropsService
 
             foreach (var item in items)
             {
-                // Check if exists (simplified check by Include)
-                var existing = itemGroup.Items.FirstOrDefault(i => i.ItemType == item.ItemType && i.Include == item.Include);
-                if (existing != null)
+                // Items are cumulative in MSBuild, not last-wins: a matching element in another
+                // group is not replaced by AddItem — both evaluate, and NuGet reports the pair
+                // as a duplicate. Every existing declaration must be removed from the group
+                // that actually owns it.
+                var existing = root.ItemGroups
+                    .SelectMany(g => g.Items)
+                    .Where(i => i.ItemType == item.ItemType && i.Include == item.Include)
+                    .ToList();
+                foreach (var element in existing)
                 {
-                    // Remove existing to refresh metadata
-                    itemGroup.RemoveChild(existing);
+                    element.Parent.RemoveChild(element);
                 }
 
                 var newItem = itemGroup.AddItem(item.ItemType, item.Include);

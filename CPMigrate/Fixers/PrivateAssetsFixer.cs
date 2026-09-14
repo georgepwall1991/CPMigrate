@@ -159,15 +159,19 @@ public class PrivateAssetsFixer : IFixer
                 // makes when it reads coverage. Attributes cannot carry a Condition, so the
                 // attribute form is unconditional by construction.
                 var attribute = reference.Attribute("PrivateAssets");
-                var child = reference
+                // Item metadata is last-wins: a second PrivateAssets element stays in force no
+                // matter what the first says, so every declaration must be covered and set.
+                var children = reference
                     .Elements()
-                    .FirstOrDefault(e =>
+                    .Where(e =>
                         e.Name.LocalName.Equals("PrivateAssets", StringComparison.OrdinalIgnoreCase)
-                    );
+                    )
+                    .ToList();
 
                 if (
                     CoversAll(attribute?.Value)
-                    || (child?.Attribute("Condition") is null && CoversAll(child?.Value))
+                    || (children.Count > 0 && children.All(c =>
+                        c.Attribute("Condition") is null && CoversAll(c.Value)))
                 )
                 {
                     continue;
@@ -178,13 +182,13 @@ public class PrivateAssetsFixer : IFixer
                     attribute.Value = "all";
                 }
 
-                if (child is not null)
+                foreach (var child in children)
                 {
                     child.Attribute("Condition")?.Remove();
                     child.Value = "all";
                 }
 
-                if (attribute is null && child is null)
+                if (attribute is null && children.Count == 0)
                 {
                     reference.SetAttributeValue("PrivateAssets", "all");
                 }

@@ -203,16 +203,6 @@ public class VersionInconsistencyFixer : IFixer
             );
     }
 
-    private static XElement? GetUnconditionalMetadataElement(
-        XElement packageReference,
-        string metadataName
-    )
-    {
-        return packageReference
-            .Elements(metadataName)
-            .FirstOrDefault(metadata => !HasConditionalScope(metadata));
-    }
-
     private static FileChange? UpdateProjectVersions(string projectPath, string packageName, string targetVersion, FixRequest request)
     {
         if (!File.Exists(projectPath))
@@ -263,7 +253,7 @@ public class VersionInconsistencyFixer : IFixer
                     packageRef,
                     packageName
                 );
-                var metadataResults = new[]
+                var metadataResults = new List<(bool Modified, bool Unresolved)>
                 {
                     UpdateVersionMetadata(
                         packageRef.Attribute("Version"),
@@ -276,18 +266,40 @@ public class VersionInconsistencyFixer : IFixer
                         targetVersion,
                         ignoreSupersededPropertyOverride
                     ),
-                    UpdateVersionMetadata(
-                        GetUnconditionalMetadataElement(packageRef, "Version"),
-                        targetVersion,
-                        ignoreSupersededPropertyVersion,
-                        preserveOrdinaryVersion
-                    ),
-                    UpdateVersionMetadata(
-                        GetUnconditionalMetadataElement(packageRef, "VersionOverride"),
-                        targetVersion,
-                        ignoreSupersededPropertyOverride
-                    ),
                 };
+
+                // Item metadata is last-wins — updating only the first element child leaves a
+                // second unconditional declaration still applying the old version.
+                foreach (
+                    var element in packageRef
+                        .Elements("Version")
+                        .Where(metadata => !HasConditionalScope(metadata))
+                )
+                {
+                    metadataResults.Add(
+                        UpdateVersionMetadata(
+                            element,
+                            targetVersion,
+                            ignoreSupersededPropertyVersion,
+                            preserveOrdinaryVersion
+                        )
+                    );
+                }
+
+                foreach (
+                    var element in packageRef
+                        .Elements("VersionOverride")
+                        .Where(metadata => !HasConditionalScope(metadata))
+                )
+                {
+                    metadataResults.Add(
+                        UpdateVersionMetadata(
+                            element,
+                            targetVersion,
+                            ignoreSupersededPropertyOverride
+                        )
+                    );
+                }
 
                 modified |= metadataResults.Any(result => result.Modified);
                 containsUnresolvedVersion |= metadataResults.Any(result => result.Unresolved);
@@ -545,7 +557,9 @@ public class VersionInconsistencyFixer : IFixer
     {
         var value = packageReference.Attribute(metadataName)?.Value;
         var scope = value is null ? null : GetConditionalScope(packageReference);
-        var metadataElement = packageReference.Element(metadataName);
+        // MSBuild item metadata is last-wins — reading the first of several elements answers a
+        // value nothing applies.
+        var metadataElement = packageReference.Elements(metadataName).LastOrDefault();
         if (metadataElement is not null)
         {
             value = metadataElement.Value;
@@ -837,8 +851,9 @@ public class VersionInconsistencyFixer : IFixer
             yield return metadataAttribute.Value;
         }
 
-        var metadataElement = packageReference.Element(metadataName);
-        if (metadataElement is not null)
+        // Every element declares a value — a second <Version> child is in force over the first,
+        // so reading only the first would miss the metadata that actually applies.
+        foreach (var metadataElement in packageReference.Elements(metadataName))
         {
             yield return metadataElement.Value;
         }

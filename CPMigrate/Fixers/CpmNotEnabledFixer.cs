@@ -67,20 +67,35 @@ public class CpmNotEnabledFixer : IFixer
             var originalContent = request.ReadFile(propsPath);
             var doc = XDocument.Parse(originalContent);
 
-            var property = doc
+            // MSBuild is document-order last-wins: a props file that ends in a second
+            // <ManagePackageVersionsCentrally>false</…> stays disabled no matter what the
+            // first element says. Flipping the first — as this did — reported Success while
+            // the effective value never changed. Every declaration is set so no leftover
+            // "false" can still govern under its condition.
+            var properties = doc
                 .Descendants("ManagePackageVersionsCentrally")
-                .FirstOrDefault();
+                .ToList();
 
             string before;
-            if (property != null)
+            if (properties.Count > 0)
             {
-                before = $"ManagePackageVersionsCentrally={property.Value}";
-                property.Value = "true";
+                var effective = properties[^1].Value;
+                before = properties.Count == 1
+                    ? $"ManagePackageVersionsCentrally={effective}"
+                    : $"ManagePackageVersionsCentrally={effective} (effective of {properties.Count} declarations)";
+                foreach (var property in properties)
+                {
+                    property.Value = "true";
+                }
             }
             else
             {
                 before = "no ManagePackageVersionsCentrally";
-                var propertyGroup = doc.Root?.Element("PropertyGroup");
+                // The new declaration must be unconditional — adding it to a conditioned
+                // PropertyGroup would enable CPM only under that condition.
+                var propertyGroup = doc.Root?
+                    .Elements("PropertyGroup")
+                    .FirstOrDefault(group => group.Attribute("Condition") == null);
                 if (propertyGroup == null)
                 {
                     propertyGroup = new XElement("PropertyGroup");

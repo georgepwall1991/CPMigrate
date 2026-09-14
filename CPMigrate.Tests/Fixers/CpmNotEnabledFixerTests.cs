@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using CPMigrate.Fixers;
 using CPMigrate.Models;
 using FluentAssertions;
@@ -88,6 +89,68 @@ public class CpmNotEnabledFixerTests : IDisposable
 
         result.Success.Should().BeTrue();
         File.ReadAllText(propsPath).Should().Contain(">true<");
+    }
+
+    [Fact]
+    public void Fix_DuplicatePropertyTrailingFalse_EnablesEveryDeclaration()
+    {
+        // MSBuild is document-order last-wins: this file's effective value is false, and a
+        // fixer that flips only the first element reports Success while nothing changes.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.2.0" />
+              </ItemGroup>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+
+        var result = _fixer.Fix(Issue(), PackageInfo(), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+
+        var reparsed = XDocument.Parse(File.ReadAllText(propsPath));
+        reparsed
+            .Descendants("ManagePackageVersionsCentrally")
+            .Should().HaveCount(2)
+            .And.OnlyContain(e => e.Value == "true");
+    }
+
+    [Fact]
+    public void Fix_OnlyConditionalPropertyGroup_AddsUnconditionalDeclaration()
+    {
+        // A property added under a conditioned group only holds when the condition does —
+        // "enable CPM" under `'$(Configuration)' == 'Debug'` leaves Release restores broken.
+        var propsPath = WriteProps(
+            """
+            <Project>
+              <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+                <Deterministic>true</Deterministic>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="4.2.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var result = _fixer.Fix(Issue(), PackageInfo(), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+
+        var reparsed = XDocument.Parse(File.ReadAllText(propsPath));
+        var declaration = reparsed
+            .Descendants("ManagePackageVersionsCentrally")
+            .Should().ContainSingle().Subject;
+        declaration.Value.Should().Be("true");
+        declaration.Parent?.Attribute("Condition").Should().BeNull();
     }
 
     [Fact]

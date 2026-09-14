@@ -158,6 +158,32 @@ public class PrivateAssetsFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_DuplicatePrivateAssetsChildren_SetsEveryDeclaration()
+    {
+        // Item metadata is last-wins: setting only the first <PrivateAssets> leaves a trailing
+        // declaration in force, and the leak the fix claims to close stays open.
+        var projectPath = WriteProject(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="SonarAnalyzer.CSharp" Version="10.0.0">
+                  <PrivateAssets>all</PrivateAssets>
+                  <PrivateAssets>none</PrivateAssets>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var result = _fixer.Fix(Issue("SonarAnalyzer.CSharp"), PackageInfo(projectPath), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(projectPath);
+        content.Should().NotContain("<PrivateAssets>none</PrivateAssets>");
+        content.Split("<PrivateAssets>", StringSplitOptions.None).Length.Should().Be(3);
+    }
+
+    [Fact]
     public void Fix_DryRun_ReportsChangeButDoesNotWrite()
     {
         var projectPath = WriteProject(

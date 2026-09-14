@@ -4,6 +4,28 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.90.0] - 2026-09-14
+
+### Fixed
+- **Fixers and `--unify-props` now honor MSBuild's last-wins and cumulative-item semantics instead
+  of editing only the first matching element.** Several fixers used `FirstOrDefault`-style lookups,
+  so a second declaration the first edit didn't touch stayed in force — and the run still reported
+  success while the build behaved exactly as before:
+  - `CpmNotEnabled` set only the first `ManagePackageVersionsCentrally`; a trailing `false` — which
+    MSBuild evaluates as the effective value — kept CPM disabled. Every declaration is now set to
+    `true`, and when the property is absent it's added to an *unconditional* `PropertyGroup` rather
+    than the first group, which could be conditioned to a single configuration.
+  - `--unify-props` only searched the first unconditional `PropertyGroup` and one `ItemGroup`, so a
+    property declared later still won and an item declared in another group was duplicated (items
+    are cumulative, not last-wins). All matching declarations are now updated or removed before the
+    unified entry is written.
+  - The inline-version fixer removed only the first `<Version>` child of a `PackageReference`; all
+    are now removed.
+  - The version-inconsistency fixer read and updated only the first `<Version>`/`VersionOverride`
+    metadata child; all unconditional declarations are now read and updated.
+  - The `PrivateAssets` fixer inspected only the first `<PrivateAssets>` child; all declarations are
+    now brought to `all` so no trailing element re-opens the leak.
+
 ## [3.89.0] - 2026-09-14
 
 ### Added

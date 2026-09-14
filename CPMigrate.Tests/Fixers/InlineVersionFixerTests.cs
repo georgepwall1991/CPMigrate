@@ -95,6 +95,28 @@ public class InlineVersionFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_DuplicateVersionChildren_RemovesAll()
+    {
+        // Item metadata is last-wins: removing only the first <Version> child leaves the second
+        // in force, and the fix would report "central pin applies" while an inline version
+        // still overrides it.
+        var projectPath = WriteProject(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json"><Version>12.0.3</Version><Version>13.0.1</Version></PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var result = _fixer.Fix(Issue("Newtonsoft.Json"), PackageInfo(projectPath), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        File.ReadAllText(projectPath).Should().NotContain("<Version>");
+    }
+
+    [Fact]
     public void Fix_VersionOverride_Stays()
     {
         // A VersionOverride is NuGet's supported per-project escape hatch — the analyzer reports it
