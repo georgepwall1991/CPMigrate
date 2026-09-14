@@ -689,32 +689,9 @@ public sealed class RemediationService : IRemediationService, IDisposable
     /// </remarks>
     /// <param name="basePath">Directory to start from.</param>
     /// <returns>The governing props file, or null when no ancestor has one.</returns>
-    private static string? FindPropsFile(string basePath)
-    {
-        var directory = new DirectoryInfo(Path.GetFullPath(basePath));
+    private static string? FindPropsFile(string basePath) =>
+        GoverningFiles.FindNearestPropsFile(basePath);
 
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, "Directory.Packages.props");
-
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
-    }
-
-    private static string? FindSolutionFile(string basePath)
-    {
-        return Directory
-            .EnumerateFiles(basePath, "*.sln*", SearchOption.TopDirectoryOnly)
-            .FirstOrDefault(f =>
-                f.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
-                || f.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
-            );
-    }
+    private static string? FindSolutionFile(string basePath) =>
+        GoverningFiles.FindSolutionFile(basePath);
 }

@@ -180,6 +180,54 @@ public class PackageUpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatePackagesAsync_PropsFileInAncestorDirectory_UsesGoverningFile()
+    {
+        // NuGet resolves the props file by walking up from each project, so -s aimed at
+        // repo/src where repo/Directory.Packages.props already governs must find that file —
+        // probing only the solution directory reports "CPM is not enabled" on a migrated repo.
+        var srcDir = Path.Combine(_testDirectory, "src");
+        Directory.CreateDirectory(srcDir);
+        var propsPath = CreatePropsFile(("Newtonsoft.Json", "12.0.3"));
+        _projectAnalyzerMock.Setup(p => p.DiscoverProjectsFromSolutionAsync(It.IsAny<string>()))
+            .ReturnsAsync((srcDir, new List<string> { Path.Combine(srcDir, "App.csproj") }));
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        var options = CreateOptions(dryRun: true);
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        _consoleService.PropsPreviews.Should().ContainSingle()
+            .Which.Should().Contain("13.0.3");
+        File.ReadAllText(propsPath).Should().NotContain("13.0.3");
+    }
+
+    [Fact]
+    public async Task UpdatePackagesAsync_NoProjects_ReportsNoProjectsBeforePropsLookup()
+    {
+        // An ancestor props file can govern a directory that holds no projects at all; updating
+        // it would touch versions nothing under the target declared. The empty answer is the
+        // honest one — the same rule migration and remediation already keep.
+        var propsPath = CreatePropsFile(("Newtonsoft.Json", "12.0.3"));
+        var emptyDir = Path.Combine(_testDirectory, "empty");
+        Directory.CreateDirectory(emptyDir);
+        _projectAnalyzerMock.Setup(p => p.DiscoverProjectsFromSolutionAsync(It.IsAny<string>()))
+            .ReturnsAsync((emptyDir, new List<string>()));
+
+        var options = CreateOptions();
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.NoProjectsFound);
+        _consoleService.ErrorMessages.Should().Contain(m => m.Contains("No projects found"));
+        File.ReadAllText(propsPath).Should().Contain("12.0.3");
+        _nuGetLookupMock.Verify(
+            n => n.GetLatestVersionAsync(It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
+    }
+
+    [Fact]
     public async Task UpdatePackagesAsync_DryRunWithDiffFile_NoUpdates_LeavesEmptyArtifact()
     {
         // "Created empty at the start of the run": nothing to update still owes the file — empty

@@ -203,10 +203,13 @@ internal sealed class DoctorService
             }
         }
 
-        var propsPath = Path.Combine(dir, "Directory.Packages.props");
-        if (File.Exists(propsPath))
+        // The governing file can sit above the directory being examined — NuGet resolves it by
+        // walking up from each project, so an ancestor props file means CPM is active here too.
+        var propsPath = GoverningFiles.FindNearestPropsFile(dir);
+        if (propsPath != null)
         {
-            checks.Add(new DoctorCheck("CPM", DoctorStatus.Ok, "Directory.Packages.props found — CPM is active"));
+            checks.Add(new DoctorCheck("CPM", DoctorStatus.Ok,
+                $"Directory.Packages.props found — CPM is active ({propsPath})"));
         }
         else
         {
