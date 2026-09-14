@@ -133,7 +133,8 @@ public record ProjectPackageInfo(
     string? BasePath = null,
     IReadOnlyList<string>? ScannedProjects = null,
     IReadOnlyList<PackageReference>? DeclaredReferences = null,
-    IReadOnlyList<LicenseInfo>? Licenses = null
+    IReadOnlyList<LicenseInfo>? Licenses = null,
+    DevelopmentDependencyScanResult? DevelopmentDependencies = null
 )
 {
     /// <summary>

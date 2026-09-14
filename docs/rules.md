@@ -320,11 +320,15 @@ into the nuspec dependency list of any package the project produces, into downst
 and into other people's builds. NuGet does not warn about it — the reference resolves cleanly — so
 the leak is silent until someone reads their own dependency list and finds a test framework in it.
 
-The dev-only set is convention-based: ids ending in `.Analyzer`/`.Analyzers` are Roslyn analyzer
-packages by definition, and the exact ids and prefixes the rule names — test SDKs and adapters,
-coverage collectors, `Microsoft.SourceLink.*`, `Microsoft.TestPlatform.*`, `SonarAnalyzer.*` — never
-contribute runtime surface. A dev-only package that escapes the convention is out of scope rather
-than guessed at.
+Dev-only is decided two ways. The convention needs no data and never goes stale: ids ending in
+`.Analyzer`/`.Analyzers` are Roslyn analyzer packages by definition, and the exact ids and prefixes
+the rule names — test SDKs and adapters, coverage collectors, `Microsoft.SourceLink.*`,
+`Microsoft.TestPlatform.*`, `SonarAnalyzer.*` — never contribute runtime surface. And a package
+whose nuspec self-declares `developmentDependency="true"` counts too — NuGet's canonical signal —
+which catches dev-only tools under ordinary names the convention cannot guess, like
+`Nerdbank.GitVersioning` or `Microsoft.NETFramework.ReferenceAssemblies`. The nuspec answer is
+version-precise: a project pinned to a non-dev version is not flagged on another project's nuspec,
+and when packages are not restored only the convention applies.
 
 Coverage is read from declarations, not the resolved graph — by the time `dotnet package list`
 reports a reference, resolution has already applied `PrivateAssets`. Only unconditional

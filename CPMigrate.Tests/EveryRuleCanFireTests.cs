@@ -239,6 +239,39 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     [Fact]
+    public async Task DevelopmentDependencyLeak_FiresOnNuspecDeclaredDevDependency()
+    {
+        // Contoso.DevTool escapes every convention the rule can guess — but its nuspec says
+        // developmentDependency="true", and the scan reads that the way the license scan reads
+        // license fields. This is the path that catches a dev-only tool under an ordinary name.
+        WriteProject("src/Api/Api.csproj", ("Contoso.DevTool", "2.0.0"));
+        WriteSolution("src/Api/Api.csproj");
+        SeedNuspecXml(
+            "contoso.devtool",
+            "2.0.0",
+            """<package><metadata developmentDependency="true"><id>Contoso.DevTool</id></metadata></package>"""
+        );
+
+        (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.DevelopmentDependencyLeak));
+    }
+
+    [Fact]
+    public async Task DevelopmentDependencyLeak_DoesNotFireOnAnOrdinaryNuspec()
+    {
+        // The same layout minus the attribute must not invent a finding — a nuspec that says
+        // nothing about development means the package is a normal runtime dependency.
+        WriteProject("src/Api/Api.csproj", ("Contoso.DevTool", "2.0.0"));
+        WriteSolution("src/Api/Api.csproj");
+        SeedNuspecXml(
+            "contoso.devtool",
+            "2.0.0",
+            """<package><metadata><id>Contoso.DevTool</id><license type="expression">MIT</license></metadata></package>"""
+        );
+
+        (await Analyze()).Should().NotContain(nameof(AnalysisIssueCode.DevelopmentDependencyLeak));
+    }
+
+    [Fact]
     public async Task DevelopmentDependencyLeak_DoesNotFireWhenScopedPrivately()
     {
         // The other half of the guard: PrivateAssets="all" on the declaration is coverage, and a
@@ -782,13 +815,19 @@ public class EveryRuleCanFireTests : IDisposable
 
     private void SeedNuspec(string packageIdLower, string version, string expression)
     {
+        SeedNuspecXml(
+            packageIdLower,
+            version,
+            $"""<package><metadata><license type="expression">{expression}</license></metadata></package>"""
+        );
+    }
+
+    private void SeedNuspecXml(string packageIdLower, string version, string xml)
+    {
         var packages = Path.Combine(_root, "packages");
         var directory = Path.Combine(packages, packageIdLower, version);
         Directory.CreateDirectory(directory);
-        File.WriteAllText(
-            Path.Combine(directory, $"{packageIdLower}.nuspec"),
-            $"""<package><metadata><license type="expression">{expression}</license></metadata></package>"""
-        );
+        File.WriteAllText(Path.Combine(directory, $"{packageIdLower}.nuspec"), xml);
         Environment.SetEnvironmentVariable("NUGET_PACKAGES", packages);
     }
 

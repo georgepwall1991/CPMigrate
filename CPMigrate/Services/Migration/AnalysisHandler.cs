@@ -20,6 +20,7 @@ internal sealed class AnalysisHandler
         Task<(string BasePath, List<string> ProjectPaths)>
     > _discoverProjects;
     private readonly LicenseScanService _licenseScanService;
+    private readonly DevelopmentDependencyScanService _developmentDependencyScanService;
 
     private Dictionary<string, List<PackageReference>>? _cachedProjectScans;
 
@@ -30,7 +31,8 @@ internal sealed class AnalysisHandler
         IConsoleService consoleService,
         bool quietMode,
         Func<Options, Task<(string BasePath, List<string> ProjectPaths)>> discoverProjects,
-        LicenseScanService? licenseScanService = null
+        LicenseScanService? licenseScanService = null,
+        DevelopmentDependencyScanService? developmentDependencyScanService = null
     )
     {
         _projectAnalyzer = projectAnalyzer;
@@ -41,6 +43,8 @@ internal sealed class AnalysisHandler
         _progressReporter = new MigrationProgressReporter(quietMode, consoleService.Live);
         _discoverProjects = discoverProjects;
         _licenseScanService = licenseScanService ?? new LicenseScanService();
+        _developmentDependencyScanService =
+            developmentDependencyScanService ?? new DevelopmentDependencyScanService();
     }
 
     public async Task<MigrationResult> ExecuteAsync(Options options)
@@ -185,7 +189,7 @@ internal sealed class AnalysisHandler
             }
         );
 
-        var (packageInfo, deepScanFailures) = AttachLicenseScan(
+        var (withLicenses, deepScanFailures) = AttachLicenseScan(
             options,
             new ProjectPackageInfo(
                 results.SelectMany(r => r.References).ToList(),
@@ -198,6 +202,7 @@ internal sealed class AnalysisHandler
             ),
             results.Sum(r => r.DeepScanFailures)
         );
+        var packageInfo = AttachDevelopmentDependencyScan(withLicenses);
 
         // A project whose declarations could not be read was not fully examined — RedundantReference
         // could not run against it. Counting only resolved-scan failures let that pass as a clean,
@@ -227,6 +232,17 @@ internal sealed class AnalysisHandler
 
         var licenseScan = _licenseScanService.Scan(packageInfo.References, options.IncludeTransitive);
         return (packageInfo with { Licenses = licenseScan.Licenses }, deepScanFailures + licenseScan.Failures);
+    }
+
+    /// <summary>
+    /// Always runs, unlike <c>--licenses</c>: <c>DevelopmentDependencyLeak</c> is on by default and
+    /// the nuspec check is cheap local IO. Missing nuspecs — unrestored projects are a normal
+    /// state — produce no entries rather than failures, so nothing here feeds the failure count.
+    /// </summary>
+    private ProjectPackageInfo AttachDevelopmentDependencyScan(ProjectPackageInfo packageInfo)
+    {
+        var scan = _developmentDependencyScanService.Scan(packageInfo.References);
+        return packageInfo with { DevelopmentDependencies = scan };
     }
 
     /// <summary>
