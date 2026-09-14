@@ -4,6 +4,21 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **A directory target no longer needs a solution file.** `-s` pointed at a folder with no
+  `.sln`/`.slnx` now discovers its projects recursively (honoring the same `bin`/`obj`/
+  `node_modules` exclusions and symlink guard batch mode uses) instead of reporting "no
+  projects found" — which also means update/remediate anchor `Directory.Packages.props`
+  at the directory the user named rather than silently probing the process working
+  directory. A project file passed to `-s` is a single-project scope rather than an
+  "unsupported format" error, and several ambiguous solutions on a non-interactive
+  terminal still refuse loudly instead of falling back to a whole-directory scan.
+- **`--update-packages` verification finds `.slnx`.** The post-update restore/build probe
+  looked only for `*.sln`, so a `.slnx`-only workspace verified against the directory
+  instead of the solution.
+
 ## [3.82.0] - 2026-09-14
 
 ### Fixed
