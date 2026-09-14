@@ -338,6 +338,311 @@ public class MigrationServiceCoverageTests
     }
 
     [Fact]
+    public async Task ExecuteMigrationAsync_TransitiveOnlyPin_EnablesTransitivePinningInProps()
+    {
+        // A transitive-only PackageVersion is dead without the property — the migration that adds it
+        // must also switch the setting on.
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <PackageReference Include=""Direct.Pkg"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var options = new Options { SolutionFileDir = tempDir, IncludeTransitive = true };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        _mockAnalyzer.Setup(a => a.ScanProjectPackages(projectPath))
+            .Returns((new List<PackageReference>
+            {
+                new("Direct.Pkg", "1.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        _mockAnalyzer.Setup(a => a.ScanTransitivePackagesAsync(projectPath))
+            .ReturnsAsync((new List<PackageReference>
+            {
+                new("Transitive.Pkg", "2.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        try
+        {
+            var result = await _service.ExecuteAsync(options);
+
+            result.ExitCode.Should().Be(ExitCodes.Success);
+            var propsContent = File.ReadAllText(Path.Combine(tempDir, "Directory.Packages.props"));
+            propsContent.Should().Contain(
+                "<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>");
+            propsContent.Should().Contain("Include=\"Transitive.Pkg\"");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteMigrationAsync_AllPinsDirect_OmitsTransitivePinningProperty()
+    {
+        // When every pinned package is directly referenced by some project, the property is
+        // unnecessary — writing it anyway would imply a broader pin scope than the props file has.
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <PackageReference Include=""Direct.Pkg"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var options = new Options { SolutionFileDir = tempDir, IncludeTransitive = true };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        _mockAnalyzer.Setup(a => a.ScanProjectPackages(projectPath))
+            .Returns((new List<PackageReference>
+            {
+                new("Direct.Pkg", "1.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        // The transitive scan only surfaces packages some project already references directly.
+        _mockAnalyzer.Setup(a => a.ScanTransitivePackagesAsync(projectPath))
+            .ReturnsAsync((new List<PackageReference>
+            {
+                new("Direct.Pkg", "1.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        try
+        {
+            var result = await _service.ExecuteAsync(options);
+
+            result.ExitCode.Should().Be(ExitCodes.Success);
+            var propsContent = File.ReadAllText(Path.Combine(tempDir, "Directory.Packages.props"));
+            propsContent.Should().NotContain("CentralPackageTransitivePinningEnabled");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteMigrationAsync_WithoutTransitive_OmitsTransitivePinningProperty()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <PackageReference Include=""Direct.Pkg"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var options = new Options { SolutionFileDir = tempDir };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        _mockAnalyzer.Setup(a => a.ScanProjectPackages(projectPath))
+            .Returns((new List<PackageReference>
+            {
+                new("Direct.Pkg", "1.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        try
+        {
+            var result = await _service.ExecuteAsync(options);
+
+            result.ExitCode.Should().Be(ExitCodes.Success);
+            var propsContent = File.ReadAllText(Path.Combine(tempDir, "Directory.Packages.props"));
+            propsContent.Should().NotContain("CentralPackageTransitivePinningEnabled");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteMigrationAsync_PinningSetInBuildProps_DoesNotDuplicateInProps()
+    {
+        // The property already governs the projects via Directory.Build.props — stamping it into
+        // Directory.Packages.props again would duplicate a user-authored setting.
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <PackageReference Include=""Direct.Pkg"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+        File.WriteAllText(Path.Combine(tempDir, "Directory.Build.props"), @"<Project>
+  <PropertyGroup>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+</Project>");
+
+        var options = new Options { SolutionFileDir = tempDir, IncludeTransitive = true };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        _mockAnalyzer.Setup(a => a.ScanProjectPackages(projectPath))
+            .Returns((new List<PackageReference>
+            {
+                new("Direct.Pkg", "1.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        _mockAnalyzer.Setup(a => a.ScanTransitivePackagesAsync(projectPath))
+            .ReturnsAsync((new List<PackageReference>
+            {
+                new("Transitive.Pkg", "2.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        try
+        {
+            var result = await _service.ExecuteAsync(options);
+
+            result.ExitCode.Should().Be(ExitCodes.Success);
+            var propsContent = File.ReadAllText(Path.Combine(tempDir, "Directory.Packages.props"));
+            propsContent.Should().NotContain("CentralPackageTransitivePinningEnabled");
+            propsContent.Should().Contain("Include=\"Transitive.Pkg\"");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteMigrationAsync_BuildPropsWithFalse_PreservesAndWarns()
+    {
+        // An explicit false in Directory.Build.props governs just the same — a new true in the
+        // packages props would silently outrank it, which is exactly the flip this must not do.
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <PackageReference Include=""Direct.Pkg"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+        File.WriteAllText(Path.Combine(tempDir, "Directory.Build.props"), @"<Project>
+  <PropertyGroup>
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+</Project>");
+
+        var options = new Options { SolutionFileDir = tempDir, IncludeTransitive = true };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        _mockAnalyzer.Setup(a => a.ScanProjectPackages(projectPath))
+            .Returns((new List<PackageReference>
+            {
+                new("Direct.Pkg", "1.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        _mockAnalyzer.Setup(a => a.ScanTransitivePackagesAsync(projectPath))
+            .ReturnsAsync((new List<PackageReference>
+            {
+                new("Transitive.Pkg", "2.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        try
+        {
+            var result = await _service.ExecuteAsync(options);
+
+            result.ExitCode.Should().Be(ExitCodes.Success);
+            var propsContent = File.ReadAllText(Path.Combine(tempDir, "Directory.Packages.props"));
+            propsContent.Should().NotContain("CentralPackageTransitivePinningEnabled");
+            propsContent.Should().Contain("Include=\"Transitive.Pkg\"");
+            _mockConsole.Verify(
+                c => c.Warning(It.Is<string>(s =>
+                    s.Contains("CentralPackageTransitivePinningEnabled")
+                    && s.Contains("explicitly false"))),
+                Times.Once);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteMigrationAsync_ExistingPropsWithFalse_PreservesAndWarns()
+    {
+        // An explicit false is the workspace's own choice — never flipped, but never silent either:
+        // the pins the merge just accepted are inert until the workspace changes its mind.
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var projectPath = Path.Combine(tempDir, "P1.csproj");
+        File.WriteAllText(projectPath, @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <PackageReference Include=""Direct.Pkg"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+        File.WriteAllText(Path.Combine(tempDir, "Directory.Packages.props"), @"<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include=""Direct.Pkg"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var options = new Options
+        {
+            SolutionFileDir = tempDir,
+            IncludeTransitive = true,
+            MergeExisting = true,
+        };
+
+        _mockAnalyzer.Setup(a => a.DiscoverProjectsFromSolution(It.IsAny<string>()))
+            .Returns((tempDir, new List<string> { projectPath }));
+
+        _mockAnalyzer.Setup(a => a.ScanProjectPackages(projectPath))
+            .Returns((new List<PackageReference>
+            {
+                new("Direct.Pkg", "1.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        _mockAnalyzer.Setup(a => a.ScanTransitivePackagesAsync(projectPath))
+            .ReturnsAsync((new List<PackageReference>
+            {
+                new("Transitive.Pkg", "2.0.0", projectPath, "P1.csproj"),
+            }, true));
+
+        try
+        {
+            var result = await _service.ExecuteAsync(options);
+
+            result.ExitCode.Should().Be(ExitCodes.Success);
+            var propsContent = File.ReadAllText(Path.Combine(tempDir, "Directory.Packages.props"));
+            propsContent.Should().Contain(
+                "<CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>");
+            propsContent.Should().NotContain(
+                "<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>");
+            propsContent.Should().Contain("Include=\"Transitive.Pkg\"");
+            _mockConsole.Verify(
+                c => c.Warning(It.Is<string>(s =>
+                    s.Contains("CentralPackageTransitivePinningEnabled")
+                    && s.Contains("explicitly false"))),
+                Times.Once);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public async Task ExecuteMigrationAsync_AlreadyMigrated_NoMerge_ReturnsAlreadyMigrated()
     {
         // Arrange

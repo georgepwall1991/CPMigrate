@@ -396,6 +396,182 @@ public class PropsGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void Generate_TransitivePinningRequested_WritesPropertyAfterManageCentrally()
+    {
+        // Arrange
+        var packageVersions = new Dictionary<string, HashSet<string>>
+        {
+            { "Transitive.Package", new HashSet<string> { "1.0.0" } }
+        };
+
+        // Act
+        var xml = _generator.Generate(packageVersions, enableTransitivePinning: true);
+
+        // Assert
+        xml.Should().Contain("<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>");
+        xml.Should().Contain("<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>");
+        xml.IndexOf("ManagePackageVersionsCentrally", StringComparison.Ordinal)
+            .Should().BeLessThan(xml.IndexOf("CentralPackageTransitivePinningEnabled", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Generate_TransitivePinningNotRequested_OmitsProperty()
+    {
+        // Arrange
+        var packageVersions = new Dictionary<string, HashSet<string>>
+        {
+            { "Direct.Package", new HashSet<string> { "1.0.0" } }
+        };
+
+        // Act
+        var xml = _generator.Generate(packageVersions);
+
+        // Assert
+        xml.Should().NotContain("CentralPackageTransitivePinningEnabled");
+    }
+
+    [Fact]
+    public void MergeExisting_TransitivePinningRequested_AddsProperty()
+    {
+        // Arrange
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include=""TestPackage"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var packageVersions = new Dictionary<string, HashSet<string>>
+        {
+            { "Transitive.Package", new HashSet<string> { "2.0.0" } }
+        };
+
+        // Act
+        var (content, _, _, _) = _generator.MergeExisting(
+            propsPath, packageVersions, ensureTransitivePinning: true);
+
+        // Assert
+        content.Should().Contain("<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>");
+        content.IndexOf("ManagePackageVersionsCentrally", StringComparison.Ordinal)
+            .Should().BeLessThan(content.IndexOf("CentralPackageTransitivePinningEnabled", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MergeExisting_TransitivePinningRequested_ExplicitFalse_PreservesValue()
+    {
+        // Arrange — an explicit false is the workspace's own choice: never overridden, never
+        // duplicated. The caller is responsible for warning that the pins are inert.
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include=""TestPackage"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var packageVersions = new Dictionary<string, HashSet<string>>
+        {
+            { "Transitive.Package", new HashSet<string> { "2.0.0" } }
+        };
+
+        // Act
+        var (content, _, _, _) = _generator.MergeExisting(
+            propsPath, packageVersions, ensureTransitivePinning: true);
+
+        // Assert
+        content.Should().Contain("<CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>");
+        content.Should().NotContain("<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>");
+    }
+
+    [Fact]
+    public void MergeExisting_TransitivePinningRequested_AlreadyEnabled_DoesNotDuplicate()
+    {
+        // Arrange
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include=""TestPackage"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var packageVersions = new Dictionary<string, HashSet<string>>
+        {
+            { "Transitive.Package", new HashSet<string> { "2.0.0" } }
+        };
+
+        // Act
+        var (content, _, _, _) = _generator.MergeExisting(
+            propsPath, packageVersions, ensureTransitivePinning: true);
+
+        // Assert
+        var occurrences = content.Split("CentralPackageTransitivePinningEnabled").Length - 1;
+        occurrences.Should().Be(2); // opening + closing tag of the single element
+    }
+
+    [Fact]
+    public void MergeExisting_TransitivePinningNotRequested_PreservesExistingValue()
+    {
+        // Arrange — pinning already opted in; a migration that adds no transitive-only pins must not touch it.
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include=""TestPackage"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var packageVersions = new Dictionary<string, HashSet<string>>
+        {
+            { "NewPackage", new HashSet<string> { "2.0.0" } }
+        };
+
+        // Act
+        var (content, _, _, _) = _generator.MergeExisting(propsPath, packageVersions);
+
+        // Assert
+        var occurrences = content.Split("CentralPackageTransitivePinningEnabled").Length - 1;
+        occurrences.Should().Be(2);
+    }
+
+    [Fact]
+    public void MergeExisting_TransitivePinningRequested_NoPropertyGroup_CreatesOne()
+    {
+        // Arrange
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""TestPackage"" Version=""1.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var packageVersions = new Dictionary<string, HashSet<string>>
+        {
+            { "Transitive.Package", new HashSet<string> { "2.0.0" } }
+        };
+
+        // Act
+        var (content, _, _, _) = _generator.MergeExisting(
+            propsPath, packageVersions, ensureTransitivePinning: true);
+
+        // Assert
+        content.Should().Contain("<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>");
+        content.Should().Contain("<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>");
+    }
+
+    [Fact]
     public void MergeExisting_DetectsConditionalPackages()
     {
         // Arrange
