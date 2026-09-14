@@ -528,4 +528,52 @@ public class BackupManagerTests : IDisposable
         File.Exists(manifestPath).Should().BeFalse();
         Directory.Exists(backupDir).Should().BeFalse();
     }
+
+    [Fact]
+    public async Task WriteManifestAsync_EmptyBackupPath_WritesNothing()
+    {
+        // An empty path means backups are disabled; Path.Combine would resolve the manifest name
+        // against the process working directory and drop a stray file there.
+        var cwd = Directory.GetCurrentDirectory();
+        var manifestName = "backup_manifest.json";
+        var cwdManifest = Path.Combine(cwd, manifestName);
+        var existedBefore = File.Exists(cwdManifest);
+
+        await BackupManager.WriteManifestAsync(
+            string.Empty,
+            new BackupManifest { PropsFilePath = "/x" }
+        );
+
+        File.Exists(cwdManifest).Should().Be(existedBefore);
+    }
+
+    [Fact]
+    public void CleanupBackups_EmptyBackupPath_DeletesNothing()
+    {
+        // The CWD may already hold a backup_manifest.json the run did not create; cleanup must
+        // not resolve relative paths against it.
+        var errors = BackupManager.CleanupBackups(
+            string.Empty,
+            new BackupManifest
+            {
+                PropsFilePath = "/x",
+                Backups =
+                [
+                    new BackupEntry
+                    {
+                        OriginalPath = "/x",
+                        BackupFileName = "backup_manifest.json",
+                    },
+                ],
+            }
+        );
+
+        errors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ReadManifestAsync_EmptyBackupPath_ReturnsNull()
+    {
+        (await BackupManager.ReadManifestAsync(string.Empty)).Should().BeNull();
+    }
 }

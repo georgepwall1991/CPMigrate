@@ -247,6 +247,13 @@ public class BackupManager : IBackupManager
     /// <param name="manifest">The manifest to write.</param>
     public static async Task WriteManifestAsync(string backupPath, BackupManifest manifest)
     {
+        // An empty path means backups are disabled — Path.Combine would resolve the manifest
+        // against the process working directory and drop a stray backup_manifest.json there.
+        if (string.IsNullOrEmpty(backupPath))
+        {
+            return;
+        }
+
         var manifestPath = Path.Combine(backupPath, ManifestFileName);
         var json = JsonSerializer.Serialize(manifest, JsonOptions);
         await File.WriteAllTextAsync(manifestPath, json);
@@ -259,6 +266,11 @@ public class BackupManager : IBackupManager
     /// <returns>The manifest if found and valid, null otherwise.</returns>
     public static async Task<BackupManifest?> ReadManifestAsync(string backupPath)
     {
+        if (string.IsNullOrEmpty(backupPath))
+        {
+            return null;
+        }
+
         var manifestPath = Path.Combine(backupPath, ManifestFileName);
 
         if (!File.Exists(manifestPath))
@@ -374,6 +386,14 @@ public class BackupManager : IBackupManager
     public static List<string> CleanupBackups(string backupPath, BackupManifest manifest)
     {
         var errors = new List<string>();
+
+        // An empty path must never reach the deletes below: Path.Combine would resolve them
+        // against the process working directory and could delete a backup_manifest.json the
+        // run did not create.
+        if (string.IsNullOrEmpty(backupPath))
+        {
+            return errors;
+        }
 
         // Delete backup files
         var deleteErrors = manifest

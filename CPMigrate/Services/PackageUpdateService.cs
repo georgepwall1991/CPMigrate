@@ -320,6 +320,17 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
     private async Task<UpdateBackupContext> CreateBackupAsync(PackageUpdateRequest request, string propsPath)
     {
+        // Disabled backups produce no directory and no manifest — writing one anyway would land
+        // a stray backup_manifest.json in the working directory, since an empty backup path
+        // resolves there.
+        if (!request.Backup.Enabled)
+        {
+            return new UpdateBackupContext(
+                string.Empty,
+                new BackupManifest { PropsFilePath = propsPath }
+            );
+        }
+
         string backupPath;
         try
         {
