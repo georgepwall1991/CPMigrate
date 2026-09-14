@@ -30,6 +30,14 @@ public class PropertyAnalysisResult
     public Dictionary<string, List<ProjectItem>> ItemOccurrences { get; set; } = new();
 
     /// <summary>
+    /// Items of unify-eligible types that carry a <c>Condition</c> — their own or their group's.
+    /// Never counted toward consensus (a conditional item cannot be hoisted unconditionally), but
+    /// recorded because such an item stays in its project: unifying the unconditional variant
+    /// leaves it seeing both copies.
+    /// </summary>
+    public List<ProjectItem> ConditionalItems { get; set; } = [];
+
+    /// <summary>
     /// Total number of projects scanned.
     /// </summary>
     public int TotalProjects { get; set; }

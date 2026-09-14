@@ -185,8 +185,9 @@ public class BuildPropsService
             _backupManager);
 
         await CreateOrUpdateBuildProps(buildPropsPath, propsList, itemsList, backupSession);
-        await RemovePropertiesFromProjects(projectPaths, propsList, backupSession);
-        await RemoveItemsFromProjects(projectPaths, itemsList, backupSession);
+        var filesModified = 1; // the props file itself is always written
+        filesModified += await RemovePropertiesFromProjects(projectPaths, propsList, backupSession);
+        filesModified += await RemoveItemsFromProjects(projectPaths, itemsList, backupSession);
 
         backupSession?.WriteManifest();
         if (backupSession is { FileCount: > 0 })
@@ -226,7 +227,7 @@ public class BuildPropsService
             // pass rolled back, the tree on disk no longer holds them, and 'unified' would tell a
             // consumer gating on the token that they do.
             var status = exitCode == ExitCodes.Success ? "unified" : "failed";
-            await EmitJsonAsync(options, basePath, status, exitCode, propertyCandidates, itemCandidates, analysis, projectPaths.Count + 1, backupSession, verification);
+            await EmitJsonAsync(options, basePath, status, exitCode, propertyCandidates, itemCandidates, analysis, filesModified, backupSession, verification);
         }
         return exitCode;
     }
@@ -248,16 +249,20 @@ public class BuildPropsService
         VerificationReport? verification = null
     )
     {
+        // Projects are looked up by the candidate's exact occurrence key — name+value for
+        // properties, type+include+metadata for items. Matching on identity alone would list a
+        // project that holds the item under different metadata as a declarer of a thing it does
+        // not declare, and a consumer reconciling count against projects.Length would find them
+        // disagreeing.
         var candidates = new UnifyPropsCandidatesPayload(
             propertyCandidates.Select(c => new UnifyPropsPropertyPayload(
                 c.Property.Name,
                 c.Property.Value,
                 c.Count,
                 analysis.PropertyOccurrences
-                    .Where(kv => kv.Value[0].Name == c.Property.Name && kv.Value[0].Value == c.Property.Value)
-                    .SelectMany(kv => kv.Value)
-                    .Select(p => p.ProjectPath)
-                    .ToList(),
+                    .TryGetValue($"{c.Property.Name}|{c.Property.Value}", out var holders)
+                    ? holders.Select(p => p.ProjectPath).ToList()
+                    : [],
                 analysis.TotalProjects - c.Count
             )).ToList(),
             itemCandidates.Select(c => new UnifyPropsItemPayload(
@@ -265,10 +270,9 @@ public class BuildPropsService
                 c.Item.Include,
                 c.Count,
                 analysis.ItemOccurrences
-                    .Where(kv => kv.Value[0].ItemType == c.Item.ItemType && kv.Value[0].Include == c.Item.Include)
-                    .SelectMany(kv => kv.Value)
-                    .Select(i => i.ProjectPath)
-                    .ToList(),
+                    .TryGetValue(CreateLookupKey(c.Item), out var holders)
+                    ? holders.Select(i => i.ProjectPath).ToList()
+                    : [],
                 c.Item.Metadata,
                 analysis.TotalProjects - c.Count
             )).ToList()
@@ -545,19 +549,30 @@ public class BuildPropsService
                 kv.Key.StartsWith(prefix, StringComparison.Ordinal)
                 && kv.Key != CreateLookupKey(candidate.Item))
             .SelectMany(kv => kv.Value)
-            .Select(i => i.ProjectPath)
+            .Select(i => i.ProjectPath);
+
+        // Conditional holders keep their item too — it was never a consensus member, so nothing
+        // strips it — and when their condition holds they see both copies.
+        var conditionalProjects = analysis.ConditionalItems
+            .Where(i =>
+                string.Equals(i.ItemType, candidate.Item.ItemType, StringComparison.Ordinal)
+                && string.Equals(i.Include, candidate.Item.Include, StringComparison.Ordinal))
+            .Select(i => i.ProjectPath);
+
+        var holders = variantProjects
+            .Concat(conditionalProjects)
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        if (variantProjects.Count == 0)
+        if (holders.Count == 0)
         {
             return;
         }
 
         _consoleService.Warning(
-            $"  {variantProjects.Count} project(s) keep their own {candidate.Item.ItemType} "
-                + $"{candidate.Item.Include} under different metadata — after unification they will "
-                + "see both, which NuGet reports as a duplicate item."
+            $"  {holders.Count} project(s) keep their own {candidate.Item.ItemType} "
+                + $"{candidate.Item.Include} under different metadata or a condition — after "
+                + "unification they will see both, which NuGet reports as a duplicate item."
         );
     }
 
@@ -643,11 +658,13 @@ public class BuildPropsService
         root.Save(path);
     }
 
-    private async Task RemoveItemsFromProjects(List<string> projectPaths, List<CPMigrate.Models.ProjectItem> itemsToRemove, FixBackupSession? backupSession)
+    /// <returns>How many project files were actually rewritten — the honest count the report owes.</returns>
+    private async Task<int> RemoveItemsFromProjects(List<string> projectPaths, List<CPMigrate.Models.ProjectItem> itemsToRemove, FixBackupSession? backupSession)
     {
+        var modifiedCount = 0;
         if (itemsToRemove.Count == 0)
         {
-            return;
+            return modifiedCount;
         }
 
         // Lookup: Type|Include -> Metadata
@@ -662,9 +679,12 @@ public class BuildPropsService
 
             if (modified)
             {
+                modifiedCount++;
                 _consoleService.Dim($"Updated {Path.GetFileName(projectPath)}");
             }
         }
+
+        return modifiedCount;
     }
 
     private bool ProcessProjectForItemRemoval(
@@ -756,11 +776,13 @@ public class BuildPropsService
         return emptyGroups.Count > 0;
     }
 
-    private async Task RemovePropertiesFromProjects(List<string> projectPaths, List<CPMigrate.Models.ProjectProperty> propertiesToRemove, FixBackupSession? backupSession)
+    /// <returns>How many project files were actually rewritten — the honest count the report owes.</returns>
+    private async Task<int> RemovePropertiesFromProjects(List<string> projectPaths, List<CPMigrate.Models.ProjectProperty> propertiesToRemove, FixBackupSession? backupSession)
     {
+        var modifiedCount = 0;
         if (propertiesToRemove.Count == 0)
         {
-            return;
+            return modifiedCount;
         }
 
         var propertiesSet = new HashSet<string>(propertiesToRemove.Select(p => p.Name));
@@ -805,10 +827,13 @@ public class BuildPropsService
 
             if (modified)
             {
+                modifiedCount++;
                 backupSession?.BeforeWrite(projectPath);
                 root.Save(projectPath);
                 _consoleService.Dim($"Updated {Path.GetFileName(projectPath)}");
             }
         }
+
+        return modifiedCount;
     }
 }
