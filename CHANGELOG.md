@@ -6,6 +6,16 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Changed
+- **`DevelopmentDependencyLeak` now reads the nuspec, not just the name.** The rule's dev-only
+  detection was convention-based — analyzer suffixes, test SDKs, coverage ids — which missed
+  dev-only packages under ordinary names. It now also honours the package's own
+  `developmentDependency="true"` nuspec declaration, read from the global packages folder the way
+  the license scan reads licenses, catching packages like `Nerdbank.GitVersioning` and
+  `Microsoft.NETFramework.ReferenceAssemblies`. The answer is version-precise — a project pinned
+  to a non-dev version is not flagged on another project's nuspec — and unrestored projects fall
+  back to the convention, unchanged.
+
 ## [3.69.0] - 2026-09-14
 
 ### Added

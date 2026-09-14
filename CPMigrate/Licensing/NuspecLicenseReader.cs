@@ -21,6 +21,14 @@ public static class NuspecLicenseReader
             var document = XDocument.Parse(xml);
             var metadata = Find(document.Root, "metadata") ?? document.Root;
 
+            // The package's own "build-time only" declaration lives on the metadata element
+            // itself — nuspec schema puts it there, not on a child.
+            var developmentDependency = string.Equals(
+                (string?)metadata?.Attribute("developmentDependency"),
+                "true",
+                StringComparison.OrdinalIgnoreCase
+            );
+
             var licenseElement = Find(metadata, "license");
             if (licenseElement is not null)
             {
@@ -28,22 +36,22 @@ public static class NuspecLicenseReader
                 var value = licenseElement.Value.Trim();
                 if (string.Equals(type, "file", StringComparison.OrdinalIgnoreCase))
                 {
-                    license = new NuspecLicense(value, "file", LicenseUrl: null);
+                    license = new NuspecLicense(value, "file", LicenseUrl: null, developmentDependency);
                     return true;
                 }
 
-                license = new NuspecLicense(value, "expression", LicenseUrl: null);
+                license = new NuspecLicense(value, "expression", LicenseUrl: null, developmentDependency);
                 return true;
             }
 
             var licenseUrl = Find(metadata, "licenseUrl")?.Value.Trim();
             if (!string.IsNullOrEmpty(licenseUrl))
             {
-                license = new NuspecLicense(null, "url", licenseUrl);
+                license = new NuspecLicense(null, "url", licenseUrl, developmentDependency);
                 return true;
             }
 
-            license = new NuspecLicense(null, "missing", LicenseUrl: null);
+            license = new NuspecLicense(null, "missing", LicenseUrl: null, developmentDependency);
             return true;
         }
         catch (Exception)

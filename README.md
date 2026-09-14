@@ -52,7 +52,7 @@ CPMigrate replaces both with three things that actually hold up:
 | 🟦 | **RedundantReference** | The same `PackageReference` twice in one project | Low |
 | 🟦 | **OutdatedPackage** / **DeprecatedPackage** | Behind the feed / abandoned packages | Low |
 | 🟦 | **OrphanedPackageVersion** | Central pins no project references anymore (auto-fixable) | Low |
-| 🟦 | **DevelopmentDependencyLeak** | An analyzer, test SDK, coverage, or source-gen package referenced without `PrivateAssets="all"` — it flows to every consumer (auto-fixable) | Low |
+| 🟦 | **DevelopmentDependencyLeak** | An analyzer, test SDK, coverage, or source-gen package — or a nuspec-declared `developmentDependency` — referenced without `PrivateAssets="all"`, so it flows to every consumer (auto-fixable) | Low |
 | 🟦 | **RedundantDirectReference** | A direct reference already provided transitively (auto-fixable under CPM — refused without it, since the direct reference may be the only thing holding the version) | Low |
 | ⬜ | **FrameworkAlignment** | Projects drifting across `TargetFramework` values | Info |
 

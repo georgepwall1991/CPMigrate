@@ -343,16 +343,132 @@ public class DevelopmentDependencyLeakAnalyzerTests : IDisposable
             .ContainSingle();
     }
 
+    [Fact]
+    public void Analyze_NuspecDeclaredDevDependency_IsReportedWithoutConventionMatch()
+    {
+        // Contoso.DevTool escapes every convention — no .Analyzer suffix, no known prefix — but its
+        // nuspec says developmentDependency="true", and the scan carried that fact through.
+        var projectPath = Path.Combine(_testDirectory, "App.csproj");
+        var declared = DeclaredReference("Contoso.DevTool", "2.0.0");
+        var scan = ScanResult(
+            projects: [new ProjectDevelopmentDependency(projectPath, "Contoso.DevTool")],
+            versions: [new PackageVersionKey("Contoso.DevTool", "2.0.0")]
+        );
+
+        var issue = AnalyzeWithScan(scan, declared).Issues.Should().ContainSingle().Subject;
+        issue.PackageName.Should().Be("Contoso.DevTool");
+        issue.IssueCode.Should().Be(AnalysisIssueCode.DevelopmentDependencyLeak);
+    }
+
+    [Fact]
+    public void Analyze_NuspecDevDependency_IsProjectAndVersionPrecise()
+    {
+        // Same package, two projects: Api resolves the dev-declared 2.0.0, Worker resolves 1.0.0
+        // whose nuspec says nothing. Only Api leaks — PrivateAssets on Worker's ordinary package
+        // would hide real runtime assets from its consumers.
+        var apiPath = Path.Combine(_testDirectory, "Api.csproj");
+        var workerPath = Path.Combine(_testDirectory, "Worker.csproj");
+        var scan = ScanResult(
+            projects: [new ProjectDevelopmentDependency(apiPath, "Contoso.DevTool")],
+            versions: [new PackageVersionKey("Contoso.DevTool", "2.0.0")]
+        );
+
+        var issue = AnalyzeWithScan(
+                scan,
+                Reference("Contoso.DevTool", "2.0.0", "Api.csproj"),
+                Reference("Contoso.DevTool", "1.0.0", "Worker.csproj")
+            )
+            .Issues.Should()
+            .ContainSingle()
+            .Subject;
+
+        issue.AffectedProjects.Should().ContainSingle().Which.Should().Contain("Api");
+    }
+
+    [Fact]
+    public void Analyze_NoScanAttached_ConventionStillApplies()
+    {
+        // DevelopmentDependencies null — the scan could not run or was not attached — must behave
+        // exactly like the convention-only rule, never like "nothing is dev-only".
+        var result = AnalyzeWithScan(null, DeclaredReference("SonarAnalyzer.CSharp", "9.0.0"));
+
+        result.Issues.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Analyze_GlobalPackageReference_NuspecDevDependency_ReportsPropsFile()
+    {
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <GlobalPackageReference Include="Contoso.DevTool" Version="2.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var scan = ScanResult(
+            projects: [],
+            versions: [new PackageVersionKey("Contoso.DevTool", "2.0.0")]
+        );
+
+        var issue = AnalyzeWithScan(scan).Issues.Should().ContainSingle().Subject;
+        issue.PackageName.Should().Be("Contoso.DevTool");
+        issue.Metadata.Should().ContainKey("propsFile");
+    }
+
+    [Fact]
+    public void Analyze_GlobalPackageReference_NuspecDevDependencyOnAnotherVersion_IsSilent()
+    {
+        // The pin asks for 1.0.0; only 2.0.0's nuspec declares developmentDependency. Version-level
+        // precision means the pin is not flagged on a version it does not resolve.
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <GlobalPackageReference Include="Contoso.DevTool" Version="1.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var scan = ScanResult(
+            projects: [],
+            versions: [new PackageVersionKey("Contoso.DevTool", "2.0.0")]
+        );
+
+        AnalyzeWithScan(scan).Issues.Should().BeEmpty();
+    }
+
     private AnalyzerResult Analyze(params PackageReference[] declared)
+    {
+        return AnalyzeWithScan(null, declared);
+    }
+
+    private AnalyzerResult AnalyzeWithScan(
+        DevelopmentDependencyScanResult? scan,
+        params PackageReference[] declared
+    )
     {
         var packageInfo = new ProjectPackageInfo(
             References: Array.Empty<PackageReference>(),
             BasePath: _testDirectory,
-            DeclaredReferences: declared
+            DeclaredReferences: declared,
+            DevelopmentDependencies: scan
         );
 
         return new DevelopmentDependencyLeakAnalyzer().Analyze(packageInfo);
     }
+
+    private static DevelopmentDependencyScanResult ScanResult(
+        ProjectDevelopmentDependency[] projects,
+        PackageVersionKey[] versions
+    ) => new(projects.ToHashSet(), versions.ToHashSet());
 
     private PackageReference DeclaredReference(
         string package,

@@ -183,8 +183,10 @@ public static class AnalysisRuleCatalog
                 "Analyzer, test, coverage, and source-generation packages only contribute at build "
                     + "time, but a PackageReference without PrivateAssets=\"all\" flows them transitively "
                     + "to every consumer — into produced nuspec dependency lists, downstream lock files, "
-                    + "and other people's builds. Scope the reference with PrivateAssets=\"all\", or set "
-                    + "it once on the central PackageVersion entry.",
+                    + "and other people's builds. Dev-only is matched by id convention and by the "
+                    + "package's own nuspec developmentDependency=\"true\" declaration. Scope the "
+                    + "reference with PrivateAssets=\"all\", or set it once on the central "
+                    + "PackageVersion entry.",
                 new[] { "dependencies", "maintainability", "supply-chain" }
             ),
             new(

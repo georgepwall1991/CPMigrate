@@ -1,4 +1,5 @@
 using CPMigrate.Models;
+using NuGet.Versioning;
 
 namespace CPMigrate.Analyzers;
 
@@ -16,11 +17,14 @@ namespace CPMigrate.Analyzers;
 /// </para>
 ///
 /// <para>
-/// The dev-only set is deliberately convention-based rather than a feed lookup: a package id ending
-/// in <c>.Analyzer</c>/<c>.Analyzers</c> ships analyzer assets by definition, and the test and
-/// coverage packages named here never contribute runtime surface. A package that escapes the
-/// convention — a dev-only tool under an ordinary name — is out of scope for this rule rather than
-/// guessed at.
+/// Dev-only is decided two ways. The convention set — a package id ending in
+/// <c>.Analyzer</c>/<c>.Analyzers</c>, the test and coverage packages named here — needs no data
+/// and never goes stale. And when the analysis pipeline attached a nuspec scan, a package whose
+/// nuspec self-declares <c>developmentDependency="true"</c> counts too: a dev-only tool under an
+/// ordinary name escapes every suffix the convention can guess, but it has already said what it
+/// is. The nuspec answer is version-precise — a project pinned to a non-dev version is not flagged
+/// on another project's nuspec — and absent when packages are not restored, where only the
+/// convention applies.
 /// </para>
 ///
 /// <para>
@@ -95,6 +99,7 @@ public class DevelopmentDependencyLeakAnalyzer : IAnalyzer
         );
 
         var issues = new List<AnalysisIssue>();
+        var scan = packageInfo.DevelopmentDependencies;
 
         // A GlobalPackageReference is itself a declaration: it injects the package into every
         // governed project, so when it is dev-only and unscoped the leak lives in the props file.
@@ -102,7 +107,7 @@ public class DevelopmentDependencyLeakAnalyzer : IAnalyzer
         {
             if (
                 pin.IsGlobal
-                && IsDevelopmentOnly(pin.Package)
+                && IsDevelopmentOnlyPin(pin.Package, pin.Version, scan)
                 && !CoversAll(pin.PrivateAssets)
             )
             {
@@ -136,21 +141,23 @@ public class DevelopmentDependencyLeakAnalyzer : IAnalyzer
                 )
         )
         {
-            if (!IsDevelopmentOnly(packageGroup.Key) || centralCoverage.Contains(packageGroup.Key))
+            if (centralCoverage.Contains(packageGroup.Key))
             {
                 continue;
             }
 
-            // Per project: the group must contain a real declaration (a metadata-only Update alone
-            // does not create the reference) and no member may scope every asset private.
+            // Per project, and per the version that project resolves: the group must contain a real
+            // declaration (a metadata-only Update alone does not create the reference), no member
+            // may scope every asset private, and dev-only must hold for *this* project — the
+            // convention answers by id, the nuspec scan by the resolved version.
             var uncovered = packageGroup
-                .GroupBy(
-                    reference => packageInfo.ProjectId(reference.ProjectPath),
-                    StringComparer.Ordinal
-                )
+                .GroupBy(reference => reference.ProjectPath, StringComparer.Ordinal)
                 .Where(projectGroup => projectGroup.Any(reference => !reference.IsMetadataOnlyUpdate))
                 .Where(projectGroup => !projectGroup.Any(HasCoveringPrivateAssets))
-                .Select(projectGroup => projectGroup.Key)
+                .Where(projectGroup =>
+                    IsDevelopmentOnly(packageGroup.Key, projectGroup.Key, scan)
+                )
+                .Select(projectGroup => packageInfo.ProjectId(projectGroup.Key))
                 .OrderBy(project => project, StringComparer.Ordinal)
                 .ToList();
 
@@ -210,9 +217,55 @@ public class DevelopmentDependencyLeakAnalyzer : IAnalyzer
     }
 
     /// <summary>
+    /// Whether the package is development-only as a particular project resolves it: the convention
+    /// answers by id, and the nuspec scan — when a scan was attached — answers by the version that
+    /// project actually gets, so a project pinned to a non-dev version is not flagged on another
+    /// project's nuspec.
+    /// </summary>
+    private static bool IsDevelopmentOnly(
+        string packageName,
+        string? projectPath,
+        DevelopmentDependencyScanResult? scan
+    )
+    {
+        if (IsDevelopmentOnlyByConvention(packageName))
+        {
+            return true;
+        }
+
+        return projectPath is not null
+            && scan is not null
+            && scan.Projects.Contains(new ProjectDevelopmentDependency(projectPath, packageName));
+    }
+
+    /// <summary>
+    /// Whether a central pin's package is development-only: the convention answers by id, and the
+    /// nuspec scan answers by the pin's own version — a version a range or unreadable spec cannot
+    /// identify is left to the convention rather than guessed at.
+    /// </summary>
+    private static bool IsDevelopmentOnlyPin(
+        string packageName,
+        string? pinVersion,
+        DevelopmentDependencyScanResult? scan
+    )
+    {
+        if (IsDevelopmentOnlyByConvention(packageName))
+        {
+            return true;
+        }
+
+        return scan is not null
+            && pinVersion is not null
+            && NuGetVersion.TryParse(pinVersion, out var parsed)
+            && scan.Versions.Contains(
+                new PackageVersionKey(packageName, parsed.ToNormalizedString().ToLowerInvariant())
+            );
+    }
+
+    /// <summary>
     /// Whether the package id names something that only contributes at build or test time.
     /// </summary>
-    private static bool IsDevelopmentOnly(string packageName)
+    private static bool IsDevelopmentOnlyByConvention(string packageName)
     {
         if (DevelopmentOnlyPackages.Contains(packageName))
         {
