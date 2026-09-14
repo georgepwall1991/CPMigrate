@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.88.0] - 2026-09-14
 
 ### Fixed
 - **The remaining empty-backup-path holes are closed.** `CreateBackupForProject` now returns null
