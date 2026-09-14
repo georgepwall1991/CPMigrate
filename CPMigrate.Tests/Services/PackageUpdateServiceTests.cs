@@ -205,6 +205,43 @@ public class PackageUpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatePackagesAsync_DeclaredRedirect_UpdatesTheDeclaredFile()
+    {
+        // A repository that points central management at its own file gets that file updated —
+        // writing to Directory.Packages.props under a redirect would be inert.
+        var engDir = Path.Combine(_testDirectory, "eng");
+        Directory.CreateDirectory(engDir);
+        var declared = Path.Combine(engDir, "Packages.props");
+        File.WriteAllText(declared, """
+            <Project>
+              <ItemGroup>
+                <PackageVersion Include="Newtonsoft.Json" Version="12.0.3" />
+              </ItemGroup>
+            </Project>
+            """);
+        File.WriteAllText(Path.Combine(_testDirectory, "Directory.Build.props"), """
+            <Project>
+              <PropertyGroup>
+                <DirectoryPackagesPropsPath>$(MSBuildThisFileDirectory)eng/Packages.props</DirectoryPackagesPropsPath>
+              </PropertyGroup>
+            </Project>
+            """);
+        SetupProjectAnalyzer();
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        var options = CreateOptions(dryRun: true);
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        _consoleService.PropsPreviews.Should().ContainSingle()
+            .Which.Should().Contain("13.0.3");
+        File.ReadAllText(declared).Should().Contain("12.0.3");
+    }
+
+    [Fact]
     public async Task UpdatePackagesAsync_NoProjects_ReportsNoProjectsBeforePropsLookup()
     {
         // An ancestor props file can govern a directory that holds no projects at all; updating

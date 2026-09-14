@@ -2,28 +2,43 @@ namespace CPMigrate.Services;
 
 /// <summary>
 /// Locates the files that govern a workspace the way NuGet and MSBuild locate them:
-/// <c>Directory.Packages.props</c> is the nearest one in a project's ancestry, so every
-/// workflow that reads or writes it must walk up the same way rather than probing a single
-/// directory and missing (or shadowing) the file that actually applies.
+/// <c>Directory.Packages.props</c> is the nearest one in a project's ancestry unless the
+/// workspace redirects it with <c>DirectoryPackagesPropsPath</c>, so every workflow that reads
+/// or writes it must resolve both rather than probing a single directory and missing (or
+/// shadowing) the file that actually applies.
 /// </summary>
 internal static class GoverningFiles
 {
     /// <summary>
-    /// The closest <c>Directory.Packages.props</c> at or above <paramref name="startDirectory"/>,
-    /// or null when none exists — the same nearest-wins walk NuGet performs from each project.
-    /// A null, empty, or nonexistent start answers null: walking up from a path that names
-    /// nothing resolves a file governing a tree that isn't there, and an empty path would
-    /// anchor the search at the process working directory.
+    /// The props file that governs <paramref name="startDirectory"/> right now: a declared
+    /// <c>DirectoryPackagesPropsPath</c> that exists, else the nearest conventional
+    /// <c>Directory.Packages.props</c> at or above the directory — the same nearest-wins walk
+    /// NuGet performs from each project. A null, empty, or nonexistent start answers null:
+    /// walking up from a path that names nothing resolves a file governing a tree that isn't
+    /// there, and an empty path would anchor the search at the process working directory.
     /// </summary>
     /// <remarks>
-    /// Not handled: a repository that redirects the file with <c>DirectoryPackagesPropsPath</c>.
-    /// Resolving that needs full MSBuild evaluation, which these callers do not perform.
+    /// A redirect that is declared but names a file that does not exist — or cannot be resolved
+    /// by reading XML — answers null rather than the conventional file: NuGet imports the
+    /// declared path, so the conventional one would be inert, and claiming it would report
+    /// against a file the build never reads.
     /// </remarks>
     public static string? FindNearestPropsFile(string? startDirectory)
     {
         if (string.IsNullOrEmpty(startDirectory) || !Directory.Exists(startDirectory))
         {
             return null;
+        }
+
+        if (
+            MsBuildProps.TryReadRedirectedPropsPath(
+                startDirectory,
+                MsBuildProps.PathComparerFor(startDirectory),
+                out var redirected
+            )
+        )
+        {
+            return redirected;
         }
 
         var directory = new DirectoryInfo(Path.GetFullPath(startDirectory));
@@ -39,6 +54,28 @@ internal static class GoverningFiles
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The path a write should target when <paramref name="startDirectory"/> declares a
+    /// <c>DirectoryPackagesPropsPath</c> redirect — whether or not the file exists yet, because
+    /// NuGet imports the declared path and creating it there is what makes the write live. Null
+    /// when no resolvable redirect is declared, leaving the caller to its conventional answer.
+    /// </summary>
+    public static string? ResolveDeclaredPropsPath(string? startDirectory)
+    {
+        if (string.IsNullOrEmpty(startDirectory) || !Directory.Exists(startDirectory))
+        {
+            return null;
+        }
+
+        return MsBuildProps.TryGetDeclaredPropsPath(
+            startDirectory,
+            MsBuildProps.PathComparerFor(startDirectory),
+            out var declaredPath
+        )
+            ? declaredPath
+            : null;
     }
 
     /// <summary>

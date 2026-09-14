@@ -121,4 +121,105 @@ public class GoverningFilesTests : IDisposable
     {
         GoverningFiles.FindSolutionFile(Path.Combine(_directory, "missing")).Should().BeNull();
     }
+
+    [Fact]
+    public void FindNearestPropsFile_DeclaredRedirect_ReturnsDeclaredFile()
+    {
+        // A repository that points central management at its own file gets judged against that
+        // file, not the conventional name — MSBuild imports the declared path.
+        var declared = Path.Combine(_directory, "eng", "Packages.props");
+        Directory.CreateDirectory(Path.GetDirectoryName(declared)!);
+        File.WriteAllText(declared, "<Project />");
+        WriteBuildPropsRedirect("$(MSBuildThisFileDirectory)eng/Packages.props");
+        var nested = Path.Combine(_directory, "src");
+        Directory.CreateDirectory(nested);
+
+        GoverningFiles.FindNearestPropsFile(nested).Should().Be(declared);
+    }
+
+    [Fact]
+    public void FindNearestPropsFile_DeclaredRedirect_BeatsConventionalFile()
+    {
+        var declared = Path.Combine(_directory, "eng", "Packages.props");
+        Directory.CreateDirectory(Path.GetDirectoryName(declared)!);
+        File.WriteAllText(declared, "<Project />");
+        File.WriteAllText(Path.Combine(_directory, "Directory.Packages.props"), "<Project />");
+        WriteBuildPropsRedirect("eng/Packages.props");
+
+        GoverningFiles.FindNearestPropsFile(_directory).Should().Be(declared);
+    }
+
+    [Fact]
+    public void FindNearestPropsFile_DeclaredRedirectMissing_ReturnsNullNotConventional()
+    {
+        // The redirect is declared, so NuGet imports that path — not the conventional file that
+        // happens to sit beside it. Answering the conventional one would report against a file
+        // the build never reads.
+        File.WriteAllText(Path.Combine(_directory, "Directory.Packages.props"), "<Project />");
+        WriteBuildPropsRedirect("eng/Packages.props");
+
+        GoverningFiles.FindNearestPropsFile(_directory).Should().BeNull();
+    }
+
+    [Fact]
+    public void FindNearestPropsFile_UnresolvableRedirect_ReturnsNull()
+    {
+        File.WriteAllText(Path.Combine(_directory, "Directory.Packages.props"), "<Project />");
+        WriteBuildPropsRedirect("$(SomeOtherProperty)/Packages.props");
+
+        GoverningFiles.FindNearestPropsFile(_directory).Should().BeNull();
+    }
+
+    [Fact]
+    public void FindNearestPropsFile_RedirectThroughImport_FollowsIt()
+    {
+        // Delegating the declaration to an imported fragment is ordinary — MSBuild observes the
+        // redirect wherever it is written, so the reader follows unconditional imports.
+        var declared = Path.Combine(_directory, "eng", "Packages.props");
+        Directory.CreateDirectory(Path.GetDirectoryName(declared)!);
+        File.WriteAllText(declared, "<Project />");
+        var imported = Path.Combine(_directory, "eng", "redirect.props");
+        File.WriteAllText(imported, """
+            <Project>
+              <PropertyGroup>
+                <DirectoryPackagesPropsPath>$(MSBuildThisFileDirectory)Packages.props</DirectoryPackagesPropsPath>
+              </PropertyGroup>
+            </Project>
+            """);
+        File.WriteAllText(Path.Combine(_directory, "Directory.Build.props"), """
+            <Project>
+              <Import Project="$(MSBuildThisFileDirectory)eng/redirect.props" />
+            </Project>
+            """);
+
+        GoverningFiles.FindNearestPropsFile(_directory).Should().Be(declared);
+    }
+
+    [Fact]
+    public void ResolveDeclaredPropsPath_DeclaredMissing_ReturnsDeclaredPath()
+    {
+        // The write target is the declared path even before the file exists — creating it there
+        // is what makes the write live under the redirect.
+        WriteBuildPropsRedirect("eng/Packages.props");
+
+        GoverningFiles.ResolveDeclaredPropsPath(_directory)
+            .Should().Be(Path.Combine(_directory, "eng", "Packages.props"));
+    }
+
+    [Fact]
+    public void ResolveDeclaredPropsPath_NoRedirect_ReturnsNull()
+    {
+        GoverningFiles.ResolveDeclaredPropsPath(_directory).Should().BeNull();
+    }
+
+    private void WriteBuildPropsRedirect(string value)
+    {
+        File.WriteAllText(Path.Combine(_directory, "Directory.Build.props"), $"""
+            <Project>
+              <PropertyGroup>
+                <DirectoryPackagesPropsPath>{value}</DirectoryPackagesPropsPath>
+              </PropertyGroup>
+            </Project>
+            """);
+    }
 }

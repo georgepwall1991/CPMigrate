@@ -683,9 +683,9 @@ public sealed class RemediationService : IRemediationService, IDisposable
     /// nested solution is governed by the ancestor — and refusing to remediate it reported "CPM is
     /// not enabled" about a repository where it plainly is.
     ///
-    /// Not handled: a repository that redirects the file with <c>DirectoryPackagesPropsPath</c>.
-    /// Resolving that needs full MSBuild evaluation, which this pass does not perform; such a
-    /// repository still gets the "not found" refusal, which writes nothing.
+    /// A <c>DirectoryPackagesPropsPath</c> redirect is honored too: the declared file is the
+    /// answer when it exists, and a declaration that cannot be resolved answers null — the
+    /// conventional file would be inert under a redirect, and "not found" writes nothing.
     /// </remarks>
     /// <param name="basePath">Directory to start from.</param>
     /// <returns>The governing props file, or null when no ancestor has one.</returns>
