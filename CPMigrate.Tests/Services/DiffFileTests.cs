@@ -163,7 +163,6 @@ public class DiffFileOptionValidationTests
     [InlineData("list-backups")]
     [InlineData("prune-backups")]
     [InlineData("update-packages")]
-    [InlineData("unify-props")]
     [InlineData("doctor")]
     [InlineData("update")]
     public void Validate_DiffFileOutsideMigrationDryRun_ThrowsArgumentException(string mode)
@@ -176,7 +175,6 @@ public class DiffFileOptionValidationTests
             "list-backups" => new Options { ListBackups = true, BackupDir = ".", DiffFile = "d.patch", DryRun = true },
             "prune-backups" => new Options { PruneBackups = true, Force = true, DiffFile = "d.patch", DryRun = true },
             "update-packages" => new Options { UpdatePackages = true, DiffFile = "d.patch", DryRun = true },
-            "unify-props" => new Options { UnifyProps = true, DiffFile = "d.patch", DryRun = true },
             "doctor" => new Options { Doctor = true, DiffFile = "d.patch", DryRun = true },
             _ => new Options { Update = true, DiffFile = "d.patch", DryRun = true },
         };
@@ -184,7 +182,19 @@ public class DiffFileOptionValidationTests
         var action = () => options.Validate();
 
         action.Should().Throw<ArgumentException>()
-            .WithMessage("*--diff-file can only be used with a plain --dry-run migration*");
+            .WithMessage("*--diff-file can only be used with a --dry-run migration or --unify-props preview*");
+    }
+
+    [Fact]
+    public void Validate_DiffFileWithUnifyPropsDryRun_DoesNotThrow()
+    {
+        // A unify-props preview produces real diffs — the props file plus every stripped project —
+        // so it earns the artifact the same way a migration dry-run does.
+        var options = new Options { UnifyProps = true, DiffFile = "d.patch", DryRun = true };
+
+        var action = () => options.Validate();
+
+        action.Should().NotThrow();
     }
 }
 

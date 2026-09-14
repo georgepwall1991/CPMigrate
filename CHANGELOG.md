@@ -6,6 +6,13 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Added
+- **`--unify-props --dry-run` shows the real change, not two sentences about it.** The preview now
+  renders the `Directory.Build.props` the pass would write — created or updated — using the same
+  code path the write uses, and names each project file that would lose entries. Under `--diff`
+  every change prints as a unified diff, and `--diff-file` captures the props file *and* every
+  project edit as a patch artifact for review (previously rejected for this command).
+
 ## [3.77.0] - 2026-09-14
 
 ### Fixed

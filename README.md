@@ -279,7 +279,7 @@ cpmigrate --update-packages --only Serilog,Polly   # chase the held-back ones
 | `--project` | `-p` | | A specific project file, or a directory holding one |
 | `--output-dir` | `-o` | `.` | Where `Directory.Packages.props` is written |
 | `--dry-run` | `-d` | `false` | Preview changes without modifying files |
-| `--diff` | | `false` | Render a unified diff during `--dry-run` |
+| `--diff` | | `false` | Render a unified diff during `--dry-run` (migration or `--unify-props`) |
 | `--merge` | | `false` | Merge into an existing props file instead of failing |
 | `--conflict-strategy` | | `Highest` | `Highest` · `Lowest` · `Fail` |
 | `--interactive-conflicts` | | `false` | Prompt for each version conflict |
@@ -382,7 +382,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 
 | Option | Default | Description |
 |--------|:-------:|-------------|
-| `--unify-props` | `false` | Promote common properties and items to `Directory.Build.props`, with a backup `--rollback` undoes. Names the projects that newly receive each entry; `--verify` proves the hoisted references are the only graph change (`--output Json` emits the candidates, outcome, backup, and receipt) |
+| `--unify-props` | `false` | Promote common properties and items to `Directory.Build.props`, with a backup `--rollback` undoes. Names the projects that newly receive each entry; `--verify` proves the hoisted references are the only graph change; `--dry-run [--diff|--diff-file]` previews the exact writes (`--output Json` emits the candidates, outcome, backup, and receipt) |
 | `--force` | `false` | Skip confirmation prompts |
 
 **Batch processing**
@@ -415,7 +415,7 @@ cpmigrate --remediate --output Json --quiet     # the receipt, for CI
 |--------|:-----:|:-------:|-------------|
 | `--output` | | `Terminal` | `Terminal` · `Json` · `Sarif` · `Markdown` · `Csv` (`Sarif`/`Csv` need `--analyze`; `Markdown` needs `--analyze` or `--verify`) |
 | `--output-file` | | | Write `Json`/`Sarif`/`Markdown`/`Csv` to a file |
-| `--diff-file` | | | Append every `--dry-run` migration unified diff to a file; created empty when nothing changes, missing when the run crashed; rejected for every other command |
+| `--diff-file` | | | Append every `--dry-run` unified diff — migration or `--unify-props` — to a file; created empty when nothing changes, missing when the run crashed; rejected for every other command |
 | `--quiet` | `-q` | `false` | Suppress non-essential output |
 | `--verbose` | `-v` | `false` | Diagnostic logging to `cpmigrate.log` |
 
