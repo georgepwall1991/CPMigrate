@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.89.0] - 2026-09-14
 
 ### Added
 - **`--doctor` now detects shadowed `Directory.Packages.props` files.** When one props file's
