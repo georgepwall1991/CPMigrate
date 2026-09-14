@@ -306,6 +306,56 @@ public class VersionInconsistencyFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_DuplicateVersionChildren_UpdatesEveryDeclaration()
+    {
+        // Item metadata is last-wins: updating only the first unconditional <Version> child
+        // leaves the trailing declaration in force and the fix reports success while the old
+        // version still applies.
+        var projectPath = Path.Combine(_testDirectory, "Project1.csproj");
+        File.WriteAllText(
+            projectPath,
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json">
+                  <Version>12.0.1</Version>
+                  <Version>12.0.1</Version>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "12.0.1 (Project1), 13.0.1 (Project2)",
+            new[] { projectPath }
+        );
+
+        var packageInfo = new ProjectPackageInfo(
+            new List<PackageReference>
+            {
+                new("Newtonsoft.Json", "12.0.1", projectPath, "Project1.csproj"),
+                new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj"),
+            }
+        );
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new Options { ConflictStrategy = ConflictStrategy.Highest },
+            dryRun: false
+        );
+
+        result.Success.Should().BeTrue();
+        var updatedContent = File.ReadAllText(projectPath);
+        updatedContent.Should().NotContain("12.0.1");
+        updatedContent
+            .Split("<Version>", StringSplitOptions.None)
+            .Length.Should().Be(3);
+    }
+
+    [Fact]
     public void Fix_UpdateOnlyReference_UpdatesVersionAttribute()
     {
         // Arrange: the scanner reports an Update-only declaration as a real package reference, so the

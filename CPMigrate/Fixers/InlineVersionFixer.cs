@@ -101,16 +101,22 @@ public class InlineVersionFixer : IFixer
                 }
 
                 // The attribute form is the common one; the child-element form is legal MSBuild and
-                // carries the same override.
+                // carries the same override. A reference can declare the element twice and item
+                // metadata is last-wins, so every <Version> child must go — removing only the
+                // first would leave a second one still overriding the central pin.
                 var attribute = reference.Attribute("Version");
-                var child = reference.Elements("Version").FirstOrDefault();
-                if (attribute is null && child is null)
+                var children = reference.Elements("Version").ToList();
+                if (attribute is null && children.Count == 0)
                 {
                     continue;
                 }
 
                 attribute?.Remove();
-                child?.Remove();
+                foreach (var child in children)
+                {
+                    child.Remove();
+                }
+
                 removed++;
             }
 

@@ -346,6 +346,104 @@ public class BuildPropsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UnifyPropertiesAsync_PropertyInLaterGroup_StillBecomesEffective()
+    {
+        // MSBuild is document-order last-wins across every PropertyGroup. A unify write that
+        // only touches the first group leaves a later declaration in force — the run reports
+        // success while the property keeps its old value.
+        var solutionPath = CreateTestSolution("TestSolution.sln",
+            CreateTestProject("Project1.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>"),
+            CreateTestProject("Project2.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>")
+        );
+
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
+        File.WriteAllText(buildPropsPath, @"<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <PropertyGroup>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+</Project>");
+
+        var options = new Options
+        {
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
+            Force = true
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+        File.ReadAllText(buildPropsPath).Should().NotContain("<Nullable>disable</Nullable>");
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_ItemInConditionalGroup_NotDuplicated()
+    {
+        // Items are cumulative, not last-wins: leaving the conditional element and adding a
+        // second one makes the item apply twice — NuGet reports the pair as a duplicate.
+        var solutionPath = CreateTestSolution("TestSolution.sln",
+            CreateTestProject("Project1.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <Using Include=""System"" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include=""System.Text"" />
+  </ItemGroup>
+</Project>"),
+            CreateTestProject("Project2.csproj", @"
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <ItemGroup>
+    <Using Include=""System"" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include=""System.Text"" />
+  </ItemGroup>
+</Project>")
+        );
+
+        var buildPropsPath = Path.Combine(Path.GetDirectoryName(solutionPath) ?? "", "Directory.Build.props");
+        File.WriteAllText(buildPropsPath, @"<Project>
+  <ItemGroup>
+    <Using Include=""System.Memory"" />
+  </ItemGroup>
+  <ItemGroup Condition=""'$(OS)' == 'Windows_NT'"">
+    <Using Include=""System"" />
+  </ItemGroup>
+</Project>");
+
+        var options = new Options
+        {
+            SolutionFileDir = Path.GetDirectoryName(solutionPath) ?? "",
+            Force = true
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert
+        result.Should().Be(ExitCodes.Success);
+        var content = File.ReadAllText(buildPropsPath);
+        content.Split("<Using Include=\"System\"", StringSplitOptions.None).Length.Should().Be(2);
+    }
+
+    [Fact]
     public async Task UnifyPropertiesAsync_PropertiesRemovedFromProjects()
     {
         // Arrange
