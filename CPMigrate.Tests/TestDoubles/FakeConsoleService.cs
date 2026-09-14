@@ -35,7 +35,8 @@ public class FakeConsoleService : IConsoleService
     public void WriteConflictsTable(Dictionary<string, HashSet<string>> packageVersions, List<string> conflicts, ConflictStrategy strategy) { }
     public void WriteSummaryTable(int projectCount, int packageCount, int conflictCount, string propsFilePath, string? backupPath, bool wasDryRun) { }
     public void WriteProjectTree(List<string> projectPaths, string basePath) { }
-    public void WritePropsPreview(string content) { }
+    public List<string> PropsPreviews { get; } = new();
+    public void WritePropsPreview(string content) { PropsPreviews.Add(content); }
     public void WriteDiff(string diff) { OutputMessages.Add(diff); }
     public void WriteStructuredError(string title, string detail, string? suggestion = null, string? docsUrl = null) { ErrorMessages.Add($"{title}: {detail}"); }
     public void WriteMarkup(string message) { OutputMessages.Add(message); }

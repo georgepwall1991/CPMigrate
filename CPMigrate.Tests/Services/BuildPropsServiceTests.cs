@@ -1200,6 +1200,90 @@ public class BuildPropsServiceTests : IDisposable
             m.Contains("condition") && m.Contains("duplicate"));
     }
 
+    // --dry-run preview
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_DryRun_RendersThePropsFileItWouldWrite()
+    {
+        // Arrange
+        var p1 = CreateTestProject("Project1.csproj", ProjectWithNullable);
+        var p2 = CreateTestProject("Project2.csproj", ProjectWithNullable);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2);
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            DryRun = true,
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert - the preview is the real content, and nothing landed on disk
+        result.Should().Be(ExitCodes.Success);
+        _console.PropsPreviews.Should().ContainSingle()
+            .Which.Should().Contain("<Nullable>enable</Nullable>");
+        File.Exists(Path.Combine(_testDirectory, "Directory.Build.props")).Should().BeFalse();
+        File.ReadAllText(p1).Should().Contain("<Nullable>enable</Nullable>");
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_DryRunDiff_PrintsUnifiedDiffs()
+    {
+        // Arrange
+        var p1 = CreateTestProject("Project1.csproj", ProjectWithNullable);
+        var p2 = CreateTestProject("Project2.csproj", ProjectWithNullable);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2);
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            DryRun = true,
+            Diff = true,
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert - diff mode prints the patch instead of the preview, and it covers both sides of
+        // the pass: the props file created and the projects stripped.
+        result.Should().Be(ExitCodes.Success);
+        _console.PropsPreviews.Should().BeEmpty("--diff replaces the content preview");
+        _console.OutputMessages.Should().Contain(m => m.Contains("--- a/Directory.Build.props"));
+        _console.OutputMessages.Should().Contain(m => m.Contains("--- a/Project1.csproj"));
+        _console.OutputMessages.Should().Contain(m => m.Contains("-    <Nullable>enable</Nullable>"));
+        File.Exists(Path.Combine(_testDirectory, "Directory.Build.props")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UnifyPropertiesAsync_DryRunDiffFile_WritesThePatchArtifact()
+    {
+        // Arrange
+        var p1 = CreateTestProject("Project1.csproj", ProjectWithNullable);
+        var p2 = CreateTestProject("Project2.csproj", ProjectWithNullable);
+        var solutionPath = CreateTestSolution("TestSolution.sln", p1, p2);
+        var diffFile = Path.Combine(_testDirectory, "unify.patch");
+
+        var options = new Options
+        {
+            SolutionFileDir = _testDirectory,
+            DryRun = true,
+            DiffFile = diffFile,
+        };
+
+        // Act
+        var result = await _service.UnifyPropertiesAsync(options);
+
+        // Assert - the artifact exists even without --diff, and captures every file the pass
+        // would touch.
+        result.Should().Be(ExitCodes.Success);
+        var patch = await File.ReadAllTextAsync(diffFile);
+        patch.Should().Contain("--- a/Directory.Build.props");
+        patch.Should().Contain("--- a/Project1.csproj");
+        patch.Should().Contain("--- a/Project2.csproj");
+        patch.Should().Contain("-    <Nullable>enable</Nullable>");
+    }
+
     private const string ProjectWithNullable = @"
 <Project Sdk=""Microsoft.NET.Sdk"">
   <PropertyGroup>

@@ -21,6 +21,7 @@ public class BuildPropsService
     private readonly MigrationVerifier? _verifier;
     private readonly RollbackHandler? _rollbackHandler;
     private readonly MigrationDisplay _display;
+    private readonly DiffFileCollector _diffCollector = new();
 
     public BuildPropsService(
         IConsoleService consoleService,
@@ -80,10 +81,13 @@ public class BuildPropsService
 
         DisplayCandidates(propertyCandidates, itemCandidates, analysis);
 
+        var propsList = propertyCandidates.Select(c => c.Property).ToList();
+        var itemsList = itemCandidates.Select(c => c.Item).ToList();
+        var buildPropsPath = Path.Combine(basePath, "Directory.Build.props");
+
         if (options.DryRun)
         {
-            _consoleService.DryRun("Would create/update Directory.Build.props with these items.");
-            _consoleService.DryRun("Would remove these items from matching project files.");
+            await ShowDryRunAsync(options, buildPropsPath, propsList, itemsList, projectPaths);
             if (options.Output == OutputFormat.Json)
             {
                 await EmitJsonAsync(options, basePath, "dryRun", ExitCodes.Success, propertyCandidates, itemCandidates, analysis, 0);
@@ -117,7 +121,7 @@ public class BuildPropsService
         }
 
         return await RunUnificationAsync(
-            options, basePath, projectPaths, propertyCandidates, itemCandidates, analysis);
+            options, basePath, projectPaths, propsList, itemsList, propertyCandidates, itemCandidates, analysis);
     }
 
     /// <summary>
@@ -129,14 +133,13 @@ public class BuildPropsService
         Options options,
         string basePath,
         List<string> projectPaths,
+        List<Models.ProjectProperty> propsList,
+        List<Models.ProjectItem> itemsList,
         List<PropertyCandidate> propertyCandidates,
         List<ItemCandidate> itemCandidates,
         PropertyAnalysisResult analysis)
     {
-        var propsList = propertyCandidates.Select(c => c.Property).ToList();
-        var itemsList = itemCandidates.Select(c => c.Item).ToList();
         var buildPropsPath = Path.Combine(basePath, "Directory.Build.props");
-
         // --verify keeps the migration's contract: the baseline is captured after the run is
         // confirmed but before a byte is written, because "did not restore beforehand" is a reason
         // to stop rather than to proceed unmeasured.
@@ -583,24 +586,22 @@ public class BuildPropsService
 
     private sealed record ItemCandidate(CPMigrate.Models.ProjectItem Item, int Count);
 
-    private async Task CreateOrUpdateBuildProps(string path,
+    /// <summary>
+    /// Opens the props file when it exists or builds a fresh root when it does not, applies the
+    /// candidates, and returns the mutated root. The caller decides whether it is saved or only
+    /// rendered — a dry run needs the same result without the write.
+    /// </summary>
+    private static ProjectRootElement ApplyCandidatesToPropsRoot(
+        string path,
         List<CPMigrate.Models.ProjectProperty> properties,
         List<CPMigrate.Models.ProjectItem> items,
-        FixBackupSession? backupSession)
+        ProjectCollection collection,
+        out bool existed)
     {
-        using var collection = new ProjectCollection();
-        ProjectRootElement root;
-        backupSession?.BeforeWrite(path);
-        if (File.Exists(path))
-        {
-            _consoleService.Info($"Updating existing {Path.GetFileName(path)}...");
-            root = ProjectRootElement.Open(path, collection);
-        }
-        else
-        {
-            _consoleService.Info($"Creating new {Path.GetFileName(path)}...");
-            root = ProjectRootElement.Create(collection);
-        }
+        existed = File.Exists(path);
+        var root = existed
+            ? ProjectRootElement.Open(path, collection)
+            : ProjectRootElement.Create(collection);
 
         // Add Properties
         if (properties.Count > 0)
@@ -655,7 +656,159 @@ public class BuildPropsService
             }
         }
 
+        return root;
+    }
+
+    private async Task CreateOrUpdateBuildProps(string path,
+        List<CPMigrate.Models.ProjectProperty> properties,
+        List<CPMigrate.Models.ProjectItem> items,
+        FixBackupSession? backupSession)
+    {
+        using var collection = new ProjectCollection();
+        backupSession?.BeforeWrite(path);
+        var root = ApplyCandidatesToPropsRoot(path, properties, items, collection, out var existed);
+        _consoleService.Info(existed
+            ? $"Updating existing {Path.GetFileName(path)}..."
+            : $"Creating new {Path.GetFileName(path)}...");
         root.Save(path);
+    }
+
+    /// <summary>The props file as the pass would leave it — rendered, never written.</summary>
+    private static string RenderPropsContent(
+        string path,
+        List<CPMigrate.Models.ProjectProperty> properties,
+        List<CPMigrate.Models.ProjectItem> items)
+    {
+        using var collection = new ProjectCollection();
+        var root = ApplyCandidatesToPropsRoot(path, properties, items, collection, out _);
+        using var writer = new Utf8StringWriter();
+        root.Save(writer);
+        return writer.ToString();
+    }
+
+    /// <summary>
+    /// <see cref="StringWriter"/> advertises UTF-16, so serializing through one writes an XML
+    /// declaration that disagrees with the utf-8 file <c>Save(path)</c> would produce — and the
+    /// preview would show a line the real write never contains.
+    /// </summary>
+    private sealed class Utf8StringWriter : StringWriter
+    {
+        public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+    }
+
+    /// <summary>The project file as the pass would leave it, or null when the pass would not touch it.</summary>
+    private string? RenderProjectAfterRemoval(
+        string projectPath,
+        List<CPMigrate.Models.ProjectProperty> properties,
+        List<CPMigrate.Models.ProjectItem> items)
+    {
+        using var collection = new ProjectCollection();
+        var root = ProjectRootElement.Open(projectPath, collection);
+
+        var modified = false;
+        if (properties.Count > 0)
+        {
+            modified = ApplyPropertyRemoval(
+                root,
+                properties,
+                new HashSet<string>(properties.Select(p => p.Name)),
+                projectPath) || modified;
+        }
+        if (items.Count > 0)
+        {
+            var targetItems = items.ToDictionary(
+                i => $"{i.ItemType}|{i.Include}",
+                i => i.Metadata);
+            modified = ApplyItemRemoval(root, targetItems, projectPath) || modified;
+        }
+
+        if (!modified)
+        {
+            return null;
+        }
+
+        using var writer = new Utf8StringWriter();
+        root.Save(writer);
+        return writer.ToString();
+    }
+
+    /// <summary>
+    /// The dry run's real preview: the props file the pass would write, rendered exactly as the
+    /// write path renders it, and — under <c>--diff</c> or <c>--diff-file</c> — the per-project
+    /// removals as unified diffs. Two sentences about what would happen are not a preview a
+    /// reviewer can sign off on; the actual content is.
+    /// </summary>
+    private async Task ShowDryRunAsync(
+        Options options,
+        string buildPropsPath,
+        List<CPMigrate.Models.ProjectProperty> properties,
+        List<CPMigrate.Models.ProjectItem> items,
+        List<string> projectPaths)
+    {
+        var wantsDiffs = options.Diff || !string.IsNullOrEmpty(options.DiffFile);
+        if (!string.IsNullOrEmpty(options.DiffFile))
+        {
+            _diffCollector.Begin(options.DiffFile);
+        }
+
+        var propsExisted = File.Exists(buildPropsPath);
+        var propsAfter = RenderPropsContent(buildPropsPath, properties, items);
+
+        _consoleService.WriteLine();
+        _consoleService.DryRun(
+            $"{(propsExisted ? "Would update" : "Would create")}: {buildPropsPath}");
+        _consoleService.WriteLine();
+
+        string? propsDiff = null;
+        if (wantsDiffs)
+        {
+            propsDiff = UnifiedDiffGenerator.Generate(
+                propsExisted ? await File.ReadAllTextAsync(buildPropsPath) : null,
+                propsAfter,
+                buildPropsPath);
+            _diffCollector.Append(propsDiff);
+        }
+
+        if (propsDiff is not null && options.Diff)
+        {
+            _consoleService.WriteDiff(propsDiff);
+        }
+        else
+        {
+            _consoleService.WritePropsPreview(propsAfter);
+        }
+
+        var wouldChange = 0;
+        foreach (var projectPath in projectPaths)
+        {
+            var after = RenderProjectAfterRemoval(projectPath, properties, items);
+            if (after is null)
+            {
+                continue;
+            }
+
+            wouldChange++;
+            _consoleService.DryRun($"Would update: {projectPath}");
+
+            if (!wantsDiffs)
+            {
+                continue;
+            }
+
+            var diff = UnifiedDiffGenerator.Generate(
+                await File.ReadAllTextAsync(projectPath),
+                after,
+                projectPath);
+            _diffCollector.Append(diff);
+            if (options.Diff)
+            {
+                _consoleService.WriteDiff(diff);
+            }
+        }
+
+        _consoleService.DryRun(
+            $"{wouldChange} project file(s) would lose the entries above; "
+                + "everything else stays as it is.");
     }
 
     /// <returns>How many project files were actually rewritten — the honest count the report owes.</returns>
@@ -694,6 +847,27 @@ public class BuildPropsService
     {
         using var collection = new ProjectCollection();
         var root = ProjectRootElement.Open(projectPath, collection);
+        var modified = ApplyItemRemoval(root, targetItems, projectPath);
+
+        if (modified)
+        {
+            backupSession?.BeforeWrite(projectPath);
+            root.Save(projectPath);
+        }
+
+        return modified;
+    }
+
+    /// <summary>
+    /// The item-removal pass over an already-open root, shared by the write path and the dry-run
+    /// renderer — the two must agree, or the preview would describe a change that is not the one
+    /// that lands.
+    /// </summary>
+    private bool ApplyItemRemoval(
+        ProjectRootElement root,
+        Dictionary<string, Dictionary<string, string>?> targetItems,
+        string projectPath)
+    {
         var modified = false;
 
         foreach (var group in root.ItemGroups)
@@ -710,12 +884,6 @@ public class BuildPropsService
 
         // Remove empty item groups
         modified = RemoveEmptyItemGroups(root) || modified;
-
-        if (modified)
-        {
-            backupSession?.BeforeWrite(projectPath);
-            root.Save(projectPath);
-        }
 
         return modified;
     }
@@ -792,38 +960,7 @@ public class BuildPropsService
             // Use a local collection to ensure no caching issues
             using var collection = new ProjectCollection();
             var root = ProjectRootElement.Open(projectPath, collection);
-            var modified = false;
-
-            foreach (var group in root.PropertyGroups)
-            {
-                // ToList to allow modification during iteration
-                var props = group.Properties.Where(p => propertiesSet.Contains(p.Name)).ToList();
-                foreach (var prop in props)
-                {
-                    // Only remove if value matches (defensive, though our analysis said they all match)
-                    var targetValue = propertiesToRemove.First(p => p.Name == prop.Name).Value;
-                    if (prop.Value == targetValue)
-                    {
-                        group.RemoveChild(prop);
-                        modified = true;
-                    }
-                    else
-                    {
-                        // Explicitly log why we aren't removing it, to help the user debug
-                        _consoleService.Warning($"Skipped removing '{prop.Name}' in {Path.GetFileName(projectPath)}: Value mismatch.");
-                        _consoleService.Dim($"  Expected: '{targetValue}'");
-                        _consoleService.Dim($"  Found:    '{prop.Value}'");
-                    }
-                }
-            }
-
-            // Remove empty property groups
-            var emptyGroups = root.PropertyGroups.Where(g => g.Count == 0 && string.IsNullOrEmpty(g.Condition)).ToList();
-            foreach (var group in emptyGroups)
-            {
-                root.RemoveChild(group);
-                modified = true;
-            }
+            var modified = ApplyPropertyRemoval(root, propertiesToRemove, propertiesSet, projectPath);
 
             if (modified)
             {
@@ -835,5 +972,51 @@ public class BuildPropsService
         }
 
         return modifiedCount;
+    }
+
+    /// <summary>
+    /// The property-removal pass over an already-open root, shared by the write path and the
+    /// dry-run renderer.
+    /// </summary>
+    private bool ApplyPropertyRemoval(
+        ProjectRootElement root,
+        List<CPMigrate.Models.ProjectProperty> propertiesToRemove,
+        HashSet<string> propertiesSet,
+        string projectPath)
+    {
+        var modified = false;
+
+        foreach (var group in root.PropertyGroups)
+        {
+            // ToList to allow modification during iteration
+            var props = group.Properties.Where(p => propertiesSet.Contains(p.Name)).ToList();
+            foreach (var prop in props)
+            {
+                // Only remove if value matches (defensive, though our analysis said they all match)
+                var targetValue = propertiesToRemove.First(p => p.Name == prop.Name).Value;
+                if (prop.Value == targetValue)
+                {
+                    group.RemoveChild(prop);
+                    modified = true;
+                }
+                else
+                {
+                    // Explicitly log why we aren't removing it, to help the user debug
+                    _consoleService.Warning($"Skipped removing '{prop.Name}' in {Path.GetFileName(projectPath)}: Value mismatch.");
+                    _consoleService.Dim($"  Expected: '{targetValue}'");
+                    _consoleService.Dim($"  Found:    '{prop.Value}'");
+                }
+            }
+        }
+
+        // Remove empty property groups
+        var emptyGroups = root.PropertyGroups.Where(g => g.Count == 0 && string.IsNullOrEmpty(g.Condition)).ToList();
+        foreach (var group in emptyGroups)
+        {
+            root.RemoveChild(group);
+            modified = true;
+        }
+
+        return modified;
     }
 }
