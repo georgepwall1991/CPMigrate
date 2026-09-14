@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [3.85.0] - 2026-09-14
 
 ### Fixed
 - **`--update-packages` finds the `Directory.Packages.props` that governs the target.** It
