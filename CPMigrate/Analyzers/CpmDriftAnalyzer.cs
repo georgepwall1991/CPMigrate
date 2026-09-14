@@ -1257,6 +1257,137 @@ public class CpmDriftAnalyzer : IAnalyzer
     );
 
     /// <summary>
+    /// Package references declared outside the project files but injected into them anyway: a
+    /// <c>PackageReference Include</c> in a governing <c>Directory.Build.props</c>,
+    /// <c>Directory.Build.targets</c>, or <c>Directory.Packages.props</c> applies to every project
+    /// beneath the file, and the per-project declaration scan — which reads each project's own XML —
+    /// never sees it. Rules about what a project declares would otherwise treat injected references
+    /// as though they did not exist.
+    ///
+    /// <para>
+    /// The walk mirrors MSBuild's import semantics: the nearest file of each name wins per project
+    /// directory, and the walk stops at the repository root for the same reason the central props
+    /// walk does. <c>GlobalPackageReference</c> items are skipped — they are already surfaced as
+    /// pins — as are <c>Update</c>-only items, which amend rather than inject.
+    /// </para>
+    /// </summary>
+    internal static IReadOnlyList<InjectedPackageReference> ReadBuildImportPackageReferences(
+        IEnumerable<string>? projectPaths,
+        StringComparer? pathComparer = null
+    )
+    {
+        var comparer = pathComparer ?? PathComparerFor(null);
+        var files = new HashSet<string>(comparer);
+
+        foreach (var projectPath in projectPaths ?? [])
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(projectPath));
+            if (directory is null)
+            {
+                continue;
+            }
+
+            foreach (var fileName in BuildImportFileNames)
+            {
+                if (WalkUpForFile(directory, fileName) is { } found)
+                {
+                    files.Add(found);
+                }
+            }
+
+            if (ResolvePropsPath(directory, comparer) is { } packagesProps)
+            {
+                files.Add(packagesProps);
+            }
+        }
+
+        var injected = new List<InjectedPackageReference>();
+        foreach (var file in files)
+        {
+            var document = ReadProps(file);
+            if (document?.Root is null)
+            {
+                continue;
+            }
+
+            foreach (var element in document.Root.Descendants("PackageReference"))
+            {
+                var include = element.Attribute("Include")?.Value;
+                if (string.IsNullOrWhiteSpace(include))
+                {
+                    continue;
+                }
+
+                injected.Add(
+                    new InjectedPackageReference(
+                        include.Trim(),
+                        ReadVersion(element),
+                        ReadPrivateAssets(element),
+                        file
+                    )
+                );
+            }
+        }
+
+        return injected;
+    }
+
+    /// <summary>File names MSBuild imports into every governed project, nearest-first per project.</summary>
+    private static readonly string[] BuildImportFileNames =
+    [
+        "Directory.Build.props",
+        "Directory.Build.targets",
+    ];
+
+    /// <summary>
+    /// One <c>PackageReference Include</c> item read from a governing import file.
+    /// </summary>
+    /// <param name="Package">The package id, verbatim.</param>
+    /// <param name="Version">The item's <c>Version</c> metadata, or null when the pin supplies it.</param>
+    /// <param name="PrivateAssets">
+    /// The item's unconditional <c>PrivateAssets</c>, or null when absent or conditioned — the same
+    /// coverage judgment the central-pin reader makes.
+    /// </param>
+    /// <param name="DeclaringFile">Absolute path of the import file the item was read from.</param>
+    internal readonly record struct InjectedPackageReference(
+        string Package,
+        string? Version,
+        string? PrivateAssets,
+        string DeclaringFile
+    );
+
+    /// <summary>
+    /// The nearest file of a given name at or above a directory, stopping at the repository root —
+    /// the same boundary the <c>Directory.Build.props</c> walk keeps.
+    /// </summary>
+    private static string? WalkUpForFile(string? startDirectory, string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(startDirectory))
+        {
+            return null;
+        }
+
+        var directory = new DirectoryInfo(Path.GetFullPath(startDirectory));
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, fileName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            if (IsRepositoryRoot(directory.FullName))
+            {
+                return null;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Finds the <c>Directory.Packages.props</c> in effect, walking up from the scan root the way
     /// MSBuild does — the nearest one wins.
     ///

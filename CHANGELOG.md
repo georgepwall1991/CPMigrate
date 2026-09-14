@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
 
 ## [Unreleased]
 
+### Changed
+- **`DevelopmentDependencyLeak` now sees import-injected references.** A `PackageReference`
+  declared in `Directory.Build.props`, `Directory.Build.targets`, or `Directory.Packages.props`
+  injects into every governed project while no project file names the package — the per-project
+  declaration scan cannot see that site, and `--unify-props` itself produces exactly this shape.
+  An unscoped dev-only `Include` in a governing import file is now reported against the file and
+  fixed there; central `PackageVersion` scoping still covers injected references under CPM.
+
 ## [3.70.0] - 2026-09-14
 
 ### Changed

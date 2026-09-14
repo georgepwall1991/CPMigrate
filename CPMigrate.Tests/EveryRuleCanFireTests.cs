@@ -272,6 +272,28 @@ public class EveryRuleCanFireTests : IDisposable
     }
 
     [Fact]
+    public async Task DevelopmentDependencyLeak_FiresOnAnImportInjectedReference()
+    {
+        // A PackageReference in Directory.Build.props injects into every project beneath it while
+        // no project file mentions the package at all — the leak exists only in the import file,
+        // the shape --unify-props itself can produce.
+        WriteProject("src/Api/Api.csproj", ("Serilog", "4.3.0"));
+        WriteSolution("src/Api/Api.csproj");
+        WriteFile(
+            "Directory.Build.props",
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Include="SonarAnalyzer.CSharp" Version="9.16.0.82469" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        (await Analyze()).Should().Contain(nameof(AnalysisIssueCode.DevelopmentDependencyLeak));
+    }
+
+    [Fact]
     public async Task DevelopmentDependencyLeak_DoesNotFireWhenScopedPrivately()
     {
         // The other half of the guard: PrivateAssets="all" on the declaration is coverage, and a

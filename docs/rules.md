@@ -338,9 +338,15 @@ excludes, and a partial asset list still flows the package. Scoping set centrall
 every project that file governs. A `GlobalPackageReference` for a dev-only package that carries no
 scoping is itself reported, naming the props file rather than a project.
 
+The same applies to `PackageReference` items declared in governing import files —
+`Directory.Build.props`, `Directory.Build.targets`, and `Directory.Packages.props` — which inject
+the reference into every project beneath them without any project file naming the package (the
+shape `--unify-props` produces). An unscoped dev-only `Include` there is reported against the
+import file.
+
 - Default severity: `Low`
-- Fixable: yes — `cpmigrate --analyze --fix` sets `PrivateAssets="all"` on the reference, or on the
-  `GlobalPackageReference` when the leak is a global entry
+- Fixable: yes — `cpmigrate --analyze --fix` sets `PrivateAssets="all"` on the reference, on the
+  `GlobalPackageReference`, or on the injected item in the import file
 
 ## Unknown
 

@@ -445,9 +445,178 @@ public class DevelopmentDependencyLeakAnalyzerTests : IDisposable
         AnalyzeWithScan(scan).Issues.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Analyze_DevPackageInjectedByDirectoryBuildProps_IsReportedAgainstTheFile()
+    {
+        // A PackageReference in Directory.Build.props injects into every project beneath it, and no
+        // project's own file mentions it — the declaration scan cannot see this site, so the rule
+        // has to look at the governing imports itself.
+        var projectPath = Path.Combine(_testDirectory, "src", "Api", "Api.csproj");
+        WriteBuildProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Include="SonarAnalyzer.CSharp" Version="9.16.0.82469" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var issue = AnalyzeInjected(projectPath).Issues.Should().ContainSingle().Subject;
+        issue.PackageName.Should().Be("SonarAnalyzer.CSharp");
+        issue.Metadata.Should().ContainKey("propsFile");
+        issue.AffectedProjects.Should().BeEmpty("the leak lives in the import file");
+    }
+
+    [Fact]
+    public void Analyze_DevPackageInjectedByDirectoryBuildTargets_IsReportedAgainstTheFile()
+    {
+        var projectPath = Path.Combine(_testDirectory, "src", "Api", "Api.csproj");
+        WriteFile(
+            "Directory.Build.targets",
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Include="coverlet.collector" Version="6.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        AnalyzeInjected(projectPath).Issues.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Analyze_InjectedDevPackageScopedPrivately_IsNotReported()
+    {
+        var projectPath = Path.Combine(_testDirectory, "src", "Api", "Api.csproj");
+        WriteBuildProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Include="SonarAnalyzer.CSharp" Version="9.16.0.82469" PrivateAssets="all" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        AnalyzeInjected(projectPath).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_InjectedDevPackageCoveredByCentralPin_IsNotReported()
+    {
+        // PrivateAssets on the central PackageVersion applies to the reference however it arrives —
+        // an injected Include consuming a covered pin is scoped.
+        var projectPath = Path.Combine(_testDirectory, "src", "Api", "Api.csproj");
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="SonarAnalyzer.CSharp" Version="9.16.0.82469" PrivateAssets="all" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        WriteBuildProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Include="SonarAnalyzer.CSharp" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        AnalyzeInjected(projectPath).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_InjectedOrdinaryPackage_IsNotReported()
+    {
+        var projectPath = Path.Combine(_testDirectory, "src", "Api", "Api.csproj");
+        WriteBuildProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Include="Serilog" Version="4.3.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        AnalyzeInjected(projectPath).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_InjectedDevPackageOutsideTheRepository_IsNotReported()
+    {
+        // The walk stops at the repository root like the props walk does — a Directory.Build.props
+        // above the checkout belongs to something else.
+        var projectPath = Path.Combine(_testDirectory, "src", "Api", "Api.csproj");
+        WriteBuildProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Include="SonarAnalyzer.CSharp" Version="9.16.0.82469" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        // Nested under the props file but beyond the boundary: .git at src marks the root, so the
+        // root-level import must not reach the project.
+        Directory.CreateDirectory(Path.Combine(_testDirectory, "src", ".git"));
+
+        AnalyzeInjected(projectPath).Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Analyze_InjectedNuspecDevDependency_IsReported()
+    {
+        var projectPath = Path.Combine(_testDirectory, "src", "Api", "Api.csproj");
+        WriteBuildProps(
+            """
+            <Project>
+              <ItemGroup>
+                <PackageReference Include="Contoso.DevTool" Version="2.0.0" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var scan = new DevelopmentDependencyScanResult(
+            new HashSet<ProjectDevelopmentDependency>(),
+            new HashSet<PackageVersionKey> { new("Contoso.DevTool", "2.0.0") }
+        );
+
+        AnalyzeInjected(projectPath, scan).Issues.Should().ContainSingle();
+    }
+
     private AnalyzerResult Analyze(params PackageReference[] declared)
     {
         return AnalyzeWithScan(null, declared);
+    }
+
+    /// <summary>
+    /// Runs the analyzer with a single scanned project path — injected-reference discovery walks
+    /// project directories, so a scanned project must exist for the governing files to be found.
+    /// </summary>
+    private AnalyzerResult AnalyzeInjected(
+        string projectPath,
+        DevelopmentDependencyScanResult? scan = null
+    )
+    {
+        var packageInfo = new ProjectPackageInfo(
+            References: Array.Empty<PackageReference>(),
+            BasePath: _testDirectory,
+            ScannedProjects: [projectPath],
+            DeclaredReferences: [],
+            DevelopmentDependencies: scan
+        );
+
+        return new DevelopmentDependencyLeakAnalyzer().Analyze(packageInfo);
     }
 
     private AnalyzerResult AnalyzeWithScan(
@@ -491,4 +660,13 @@ public class DevelopmentDependencyLeakAnalyzerTests : IDisposable
 
     private void WriteProps(string content) =>
         File.WriteAllText(Path.Combine(_testDirectory, CpmDriftAnalyzer.PropsFileName), content);
+
+    private void WriteBuildProps(string content) => WriteFile("Directory.Build.props", content);
+
+    private void WriteFile(string relativePath, string content)
+    {
+        var fullPath = Path.Combine(_testDirectory, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        File.WriteAllText(fullPath, content);
+    }
 }
