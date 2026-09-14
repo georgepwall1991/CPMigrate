@@ -346,6 +346,8 @@ Baselines rot as the debt gets paid down, and a run that reads one now says so: 
 
 **How `--bisect` thinks.** The whole set is verified first (one run if it's healthy). On failure it halves: a clean half is *banked* into the baseline every later probe builds on; a failing half splits again until one package is held back. Probing against the banked-good set — not each package alone — catches failures that need *two* packages together. Cost ≈ `2·log₂(n)` cycles. Exit `0` when green with ≥1 applied (check `summary.packagesHeldBack` in JSON for a partial), `7` when nothing could be kept. `--bisect` can't combine with `--dry-run`.
 
+**Transitive pins need the switch.** `--transitive` finds newer versions of packages your graph only reaches indirectly — but a `PackageVersion` for a package nothing references directly is inert unless the workspace sets `CentralPackageTransitivePinningEnabled`. Rather than write pins that change nothing and report them as applied, the run withholds them and names the property (in the terminal and as `packageUpdates[].withheld` / `summary.transitivePackagesWithheld` in JSON); set it in `Directory.Packages.props` or `Directory.Build.props` and they apply on the next run.
+
 </details>
 
 <details open>

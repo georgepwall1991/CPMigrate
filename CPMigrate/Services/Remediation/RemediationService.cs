@@ -1,4 +1,3 @@
-using System.Xml.Linq;
 using CPMigrate.Models;
 using CPMigrate.Services.Update;
 using Microsoft.Extensions.Logging;
@@ -196,7 +195,7 @@ public sealed class RemediationService : IRemediationService, IDisposable
         // scan -- leaving a dead entry behind and an exit 10 that reads like a missing fix rather
         // than an unusable one. Turning the property on unasked is not the answer either: it changes
         // how every transitive dependency in the repository resolves, far beyond this advisory.
-        var transitivePinningEnabled = HasTransitivePinningEnabled(propsPath);
+        var transitivePinningEnabled = TransitivePinning.IsEnabled(propsPath, basePath);
         var withheldTransitive = !transitivePinningEnabled && plannedActions.Any(a => a.IsTransitive);
 
         if (withheldTransitive)
@@ -649,37 +648,6 @@ public sealed class RemediationService : IRemediationService, IDisposable
     {
         _nuGetLookup.Dispose();
         _advisoryOracle.Dispose();
-    }
-
-    /// <summary>
-    /// Whether the props file opts into central transitive pinning, which is what makes a
-    /// <c>PackageVersion</c> for an undeclared package actually govern the resolved graph.
-    /// </summary>
-    /// <param name="propsPath">Path to <c>Directory.Packages.props</c>.</param>
-    /// <returns>True when the property is present and true.</returns>
-    private static bool HasTransitivePinningEnabled(string propsPath)
-    {
-        try
-        {
-            var document = XDocument.Load(propsPath);
-
-            return document
-                .Descendants()
-                .Any(e =>
-                    string.Equals(
-                        e.Name.LocalName,
-                        "CentralPackageTransitivePinningEnabled",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                    && bool.TryParse(e.Value.Trim(), out var enabled)
-                    && enabled
-                );
-        }
-        catch (Exception ex) when (ex is IOException or System.Xml.XmlException)
-        {
-            // Unreadable means unproven, and an unproven pin is one that might do nothing.
-            return false;
-        }
     }
 
     /// <summary>

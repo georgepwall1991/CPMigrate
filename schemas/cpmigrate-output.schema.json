@@ -330,6 +330,10 @@
         "transitivePackagesUpdated": {
           "type": "integer"
         },
+        "transitivePackagesWithheld": {
+          "type": "integer",
+          "description": "Transitive-only updates reported but not written because the workspace does not opt into CentralPackageTransitivePinningEnabled, under which the pin would be inert. Added in output schema 1.24.0."
+        },
         "testsPassed": {
           "type": "boolean"
         },
@@ -457,6 +461,10 @@
         "heldBack": {
           "type": "boolean",
           "description": "Excluded because it broke verification, and left at its old version"
+        },
+        "withheld": {
+          "type": "boolean",
+          "description": "Transitive-only update reported rather than written: without CentralPackageTransitivePinningEnabled the pin is inert, so nothing was attempted. Added in output schema 1.24.0."
         }
       },
       "additionalProperties": false

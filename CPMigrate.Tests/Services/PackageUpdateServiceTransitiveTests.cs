@@ -236,6 +236,133 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
     }
 
     [Fact]
+    public async Task TransitivePinningOff_WithholdsInertPins()
+    {
+        // Without CentralPackageTransitivePinningEnabled a PackageVersion for a package nothing
+        // references directly is a dead line restore ignores — writing it and reporting "updated"
+        // would claim coverage the graph does not have. The run reports instead of writes.
+        SetupProjectAnalyzer();
+        var propsPath = CreatePropsFile(enableTransitivePinning: false, ("Newtonsoft.Json", "13.0.3"));
+        CreateSolutionFile();
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        SetupTransitiveScan("System.Text.Encodings.Web", "7.0.0");
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("System.Text.Encodings.Web", false))
+            .ReturnsAsync(NuGetVersion.Parse("7.0.1"));
+
+        SetupBackupAndBuild();
+
+        var options = CreateOptions(includeTransitive: true);
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        result.TransitivePackagesUpdated.Should().Be(0);
+        result.TransitivePackagesWithheld.Should().Be(1);
+        result.Updates.Should().ContainSingle(u => u.PackageName == "System.Text.Encodings.Web")
+            .Which.Withheld.Should().BeTrue();
+        File.ReadAllText(propsPath).Should().NotContain("System.Text.Encodings.Web",
+            "an inert pin is not written");
+        _consoleService.OutputMessages.Should().Contain(m =>
+            m.Contains("withheld") && m.Contains("CentralPackageTransitivePinningEnabled"));
+    }
+
+    [Fact]
+    public async Task TransitivePinningOff_OnlyDirectUpdatesApply()
+    {
+        SetupProjectAnalyzer();
+        var propsPath = CreatePropsFile(enableTransitivePinning: false, ("Newtonsoft.Json", "13.0.1"));
+        CreateSolutionFile();
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        SetupTransitiveScan("System.Text.Encodings.Web", "7.0.0");
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("System.Text.Encodings.Web", false))
+            .ReturnsAsync(NuGetVersion.Parse("7.0.1"));
+
+        SetupBackupAndBuild();
+
+        var options = CreateOptions(includeTransitive: true);
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        result.PackagesUpdated.Should().Be(1, "the direct update still applies");
+        result.TransitivePackagesUpdated.Should().Be(0);
+        result.TransitivePackagesWithheld.Should().Be(1);
+
+        var propsContent = File.ReadAllText(propsPath);
+        propsContent.Should().Contain("13.0.3", "the direct update was written");
+        propsContent.Should().NotContain("System.Text.Encodings.Web");
+    }
+
+    [Fact]
+    public async Task TransitivePinningOff_DryRunPreviewExcludesWithheldPins()
+    {
+        SetupProjectAnalyzer();
+        var propsPath = CreatePropsFile(enableTransitivePinning: false, ("Newtonsoft.Json", "13.0.1"));
+        CreateSolutionFile();
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        SetupTransitiveScan("System.Text.Encodings.Web", "7.0.0");
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("System.Text.Encodings.Web", false))
+            .ReturnsAsync(NuGetVersion.Parse("7.0.1"));
+
+        var options = CreateOptions(dryRun: true, includeTransitive: true);
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        result.TransitivePackagesWithheld.Should().Be(1);
+        // The preview owes the same honesty the write does — a withheld pin never appears in it.
+        _consoleService.PropsPreviews.Should().ContainSingle()
+            .Which.Should().Contain("13.0.3").And.NotContain("System.Text.Encodings.Web");
+        File.ReadAllText(propsPath).Should().NotContain("13.0.3");
+    }
+
+    [Fact]
+    public async Task TransitivePinningViaBuildProps_AppliesTransitively()
+    {
+        // The property is a build property like any other — set in Directory.Build.props it opts the
+        // workspace in the same as setting it in the packages file.
+        SetupProjectAnalyzer();
+        var propsPath = CreatePropsFile(enableTransitivePinning: false, ("Newtonsoft.Json", "13.0.3"));
+        CreateSolutionFile();
+        File.WriteAllText(
+            Path.Combine(_testDirectory, "Directory.Build.props"),
+            """
+            <Project>
+              <PropertyGroup>
+                <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+              </PropertyGroup>
+            </Project>
+            """);
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        SetupTransitiveScan("System.Text.Encodings.Web", "7.0.0");
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("System.Text.Encodings.Web", false))
+            .ReturnsAsync(NuGetVersion.Parse("7.0.1"));
+
+        SetupBackupAndBuild();
+
+        var options = CreateOptions(includeTransitive: true);
+
+        var result = await _sut.UpdatePackagesAsync(options);
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        result.TransitivePackagesUpdated.Should().Be(1);
+        result.TransitivePackagesWithheld.Should().Be(0);
+        File.ReadAllText(propsPath).Should().Contain("System.Text.Encodings.Web");
+    }
+
+    [Fact]
     public async Task NoTransitiveFlag_DoesNotScanTransitive()
     {
         // Arrange
@@ -295,16 +422,22 @@ public class PackageUpdateServiceTransitiveTests : IDisposable
             .ReturnsAsync(("Tests passed", true));
     }
 
-    private string CreatePropsFile(params (string Name, string Version)[] packages)
+    private string CreatePropsFile(params (string Name, string Version)[] packages) =>
+        CreatePropsFile(enableTransitivePinning: true, packages);
+
+    private string CreatePropsFile(bool enableTransitivePinning, params (string Name, string Version)[] packages)
     {
         var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
         var items = string.Join("\n", packages.Select(p =>
             $"    <PackageVersion Include=\"{p.Name}\" Version=\"{p.Version}\" />"));
+        var pinning = enableTransitivePinning
+            ? "\n    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>"
+            : "";
 
         File.WriteAllText(propsPath, $"""
             <Project>
               <PropertyGroup>
-                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>{pinning}
               </PropertyGroup>
               <ItemGroup>
             {items}

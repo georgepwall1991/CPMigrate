@@ -1533,6 +1533,7 @@ internal static class CommandRouter
                 PackagesSkipped = result.PackagesSkipped,
                 TransitivePackagesFound = result.TransitivePackagesFound,
                 TransitivePackagesUpdated = result.TransitivePackagesUpdated,
+                TransitivePackagesWithheld = result.TransitivePackagesWithheld,
                 TestsPassed = result.TestsPassed,
                 WasRolledBack = result.WasRolledBack,
                 PackagesHeldBack = result.PackagesHeldBack,
@@ -1550,6 +1551,7 @@ internal static class CommandRouter
                     Accepted = update.Accepted,
                     Transitive = update.IsTransitive,
                     HeldBack = update.HeldBack,
+                    Withheld = update.Withheld,
                 })
                 .ToList(),
             DryRun = options.DryRun,

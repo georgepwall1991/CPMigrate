@@ -487,6 +487,13 @@ public class OperationSummary
     [JsonPropertyName("transitivePackagesUpdated")]
     public int? TransitivePackagesUpdated { get; init; }
 
+    /// <summary>
+    /// Transitive-only updates reported but not written because the workspace does not opt into
+    /// <c>CentralPackageTransitivePinningEnabled</c>, under which the pin would be inert.
+    /// </summary>
+    [JsonPropertyName("transitivePackagesWithheld")]
+    public int? TransitivePackagesWithheld { get; init; }
+
     [JsonPropertyName("testsPassed")]
     public bool? TestsPassed { get; init; }
 
@@ -609,6 +616,14 @@ public class PackageUpdateInfo
     /// </summary>
     [JsonPropertyName("heldBack")]
     public bool HeldBack { get; init; }
+
+    /// <summary>
+    /// Whether this transitive-only update was reported rather than written: without
+    /// <c>CentralPackageTransitivePinningEnabled</c> a pin for a package nothing references directly
+    /// is inert, so nothing was attempted.
+    /// </summary>
+    [JsonPropertyName("withheld")]
+    public bool Withheld { get; init; }
 }
 
 /// <summary>

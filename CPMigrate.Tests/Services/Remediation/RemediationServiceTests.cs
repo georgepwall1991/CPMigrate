@@ -404,6 +404,46 @@ public sealed class RemediationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ATransitiveOnlyFix_IsWrittenWhenBuildPropsEnablesPinning()
+    {
+        // The property is a build property like any other: set in Directory.Build.props it opts the
+        // workspace in the same as setting it in the packages file — a props-only check would
+        // withhold a fix that would have worked.
+        File.WriteAllText(
+            Path.Combine(_root, "Directory.Build.props"),
+            """
+            <Project>
+              <PropertyGroup>
+                <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+
+        var transitiveFinding = new VulnerabilityInfo(
+            "Vulnerable.Pkg",
+            "High",
+            AdvisoryUrl,
+            "1.0.0",
+            string.Empty,
+            "Api.csproj",
+            _projectPath,
+            IsTransitive: true
+        );
+
+        using var service = BuildService(
+            new StubOracle(AdvisoryFixedIn("1.2.0")),
+            new StubVersionLookup("1.0.0", "1.2.0"),
+            call => call == 1 ? ([transitiveFinding], true) : ([], true)
+        );
+
+        var result = await service.RemediateAsync(Request());
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        File.ReadAllText(_propsPath).Should().Contain("Vulnerable.Pkg").And.Contain("1.2.0");
+    }
+
+    [Fact]
     public async Task ADryRun_ReportsThePlanWithoutTouchingTheFile()
     {
         var before = File.ReadAllText(_propsPath);

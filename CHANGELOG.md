@@ -4,6 +4,20 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **`--update-packages --transitive` no longer writes pins that govern nothing.** A
+  `PackageVersion` for a package only reached transitively is inert unless the workspace sets
+  `CentralPackageTransitivePinningEnabled` — restore ignores it, and verification passed precisely
+  because the graph never moved, so the run reported coverage it had not created. Such updates are
+  now withheld and named (in the terminal and as `packageUpdates[].withheld` /
+  `summary.transitivePackagesWithheld` in JSON, output schema 1.24.0) until the property is set —
+  the same report-don't-write rule remediation already keeps.
+- **The transitive-pinning check now reads `Directory.Build.props` too.** The property is a build
+  property like any other; a workspace setting it there rather than in `Directory.Packages.props`
+  was previously treated as unopted, and `--remediate` withheld fixes that would have worked.
+
 ## [3.80.0] - 2026-09-14
 
 ### Added

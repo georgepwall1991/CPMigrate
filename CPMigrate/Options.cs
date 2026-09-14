@@ -224,7 +224,7 @@ public class Options
     [Option(
         "transitive",
         Default = false,
-        HelpText = "Include transitive dependencies in analysis and migration suggestions (requires 'dotnet restore')."
+        HelpText = "Include transitive dependencies in analysis and migration suggestions (requires 'dotnet restore'). Transitive pins under --update-packages apply only when CentralPackageTransitivePinningEnabled is set; without it they are reported, not written."
     )]
     public bool IncludeTransitive { get; set; }
 
