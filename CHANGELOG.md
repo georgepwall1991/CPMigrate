@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [4.3.0] - 2026-09-15
 
 ### Fixed
 - **An unreadable project file no longer reports "already consistent" from the casing fixer.**
