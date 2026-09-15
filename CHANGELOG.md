@@ -16,7 +16,9 @@ The format is based on Keep a Changelog and follows semantic versioning intent.
   backup manifest `--rollback` enumerates, baseline files, `--output-file` artifacts, `--init`
   and sample `.cpmigrate.json` configs, and batch reports now all go through the same
   temp-then-move path. A new synchronous `FileHelper.WriteAtomic` covers the call sites without
-  async plumbing.
+  async plumbing, and both atomic writes still refuse a read-only target — `File.Move` only needs
+  directory permission, so without an explicit check the move would silently replace a file a
+  plain write cannot open.
 
 ## [3.95.0] - 2026-09-14
 

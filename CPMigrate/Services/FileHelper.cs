@@ -53,6 +53,16 @@ public static class FileHelper
         // DirectoryPackagesPropsPath may point into one — so the parent is created rather
         // than assumed. No-op when it is already there.
         Directory.CreateDirectory(directory);
+
+        // rename() needs only directory write permission, so File.Move(overwrite) would happily
+        // replace a read-only target that File.WriteAllText refuses to open. Preserve the
+        // refusal: a file marked read-only was marked for a reason, and a fix run must report it
+        // as unwritable rather than silently replace it.
+        if (File.Exists(path) && new FileInfo(path).IsReadOnly)
+        {
+            throw new UnauthorizedAccessException($"Access to the path '{path}' is denied.");
+        }
+
         return directory;
     }
 

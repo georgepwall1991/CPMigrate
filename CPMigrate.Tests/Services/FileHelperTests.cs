@@ -103,4 +103,27 @@ public class FileHelperTests : IDisposable
         File.ReadAllText(blockingFile).Should().Be("untouched");
         Directory.GetFiles(_testDirectory).Should().HaveCount(1);
     }
+
+    [Fact]
+    public void WriteAtomic_ReadOnlyTarget_RefusesLikeAPlainWrite()
+    {
+        // rename() only needs directory write permission, so without an explicit check the move
+        // would silently replace a read-only file that File.WriteAllText refuses to open. A file
+        // marked read-only was marked for a reason.
+        var filePath = Path.Combine(_testDirectory, "locked.txt");
+        File.WriteAllText(filePath, "original");
+        File.SetAttributes(filePath, FileAttributes.ReadOnly);
+        try
+        {
+            var act = () => FileHelper.WriteAtomic(filePath, "changed");
+
+            act.Should().Throw<UnauthorizedAccessException>();
+            File.ReadAllText(filePath).Should().Be("original");
+            Directory.GetFiles(_testDirectory).Should().HaveCount(1);
+        }
+        finally
+        {
+            File.SetAttributes(filePath, FileAttributes.Normal);
+        }
+    }
 }
