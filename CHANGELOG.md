@@ -4,6 +4,16 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.91.0] - 2026-09-14
+
+### Fixed
+- **`--update-packages`, `--remediate`, and `--migrate --merge` now honor last-wins metadata on
+  `PackageVersion` items.** A `PackageVersion` that declares `<Version>` twice resolves to the
+  *last* element under MSBuild — the props writer previously read the *first*, so it could report
+  the wrong current version and, worse, write the update into the first element while the trailing
+  one kept pinning the old version: "updated to 3.0.0" while restore still resolved the old pin.
+  Reads now take the effective (last) declaration and writes update every matching element.
+
 ## [3.90.0] - 2026-09-14
 
 ### Fixed
