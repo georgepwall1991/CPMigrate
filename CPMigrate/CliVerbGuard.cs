@@ -31,9 +31,19 @@ internal static class CliVerbGuard
         ["doctor"] = ["--doctor"],
         ["init"] = ["--init"],
         ["status"] = ["--status"],
+        ["tree"] = ["--tree"],
         ["why"] = ["--why"],
         ["remediate"] = ["--remediate"],
         ["patch"] = ["--remediate"],
+        ["verify"] = ["--verify"],
+        ["outdated"] = ["--outdated"],
+        ["deprecated"] = ["--deprecated"],
+        ["unify-props"] = ["--unify-props"],
+        ["unify"] = ["--unify-props"],
+        ["completions"] = ["--completions"],
+        ["list-backups"] = ["--list-backups"],
+        ["prune-backups"] = ["--prune-backups"],
+        ["prune"] = ["--prune-backups", "--prune-all"],
     };
 
     /// <summary>
