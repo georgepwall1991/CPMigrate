@@ -4,6 +4,17 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.93.0] - 2026-09-14
+
+### Fixed
+- **The transitive-conflict fixer updates pins through the parsed document instead of regexes.**
+  The text-based update only matched `<PackageVersion Include="X" Version="…">` in that exact
+  attribute order — a pin written `Version="…" Include="X"` was reported as "not found in a
+  suitable format" — and only the first `<Version>` child, so a second declaration kept pinning
+  the old version under a "Pinned" report. Every `Version` declaration on every matching pin is
+  now updated in whichever form the file uses, and an `<?xml?>` declaration is preserved across
+  the rewrite.
+
 ## [3.92.0] - 2026-09-14
 
 ### Fixed

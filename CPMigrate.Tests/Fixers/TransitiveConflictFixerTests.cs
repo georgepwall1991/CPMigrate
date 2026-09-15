@@ -299,6 +299,150 @@ public class TransitiveConflictFixerTests : IDisposable
     }
 
     [Fact]
+    public void Fix_DuplicateVersionChildren_UpdatesEveryDeclaration()
+    {
+        // Item metadata is last-wins: updating only the first <Version> child leaves the trailing
+        // one pinning the old version under a "Pinned" report.
+        CreatePropsFile(@"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""Newtonsoft.Json""><Version>12.0.1</Version><Version>12.0.1</Version></PackageVersion>
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "12.0.1", "Project1.csproj", "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj")
+        });
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new Options { SolutionFileDir = _testDirectory, ConflictStrategy = ConflictStrategy.Highest },
+            dryRun: false
+        );
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        content.Should().NotContain("12.0.1");
+        content.Split("<Version>", StringSplitOptions.None).Length.Should().Be(3);
+    }
+
+    [Fact]
+    public void Fix_VersionAttributeBeforeInclude_StillUpdates()
+    {
+        // Attribute order is not significant in MSBuild, but the previous text-based update only
+        // matched Include-then-Version adjacency and reported this pin as unfixable.
+        CreatePropsFile(@"<Project>
+  <ItemGroup>
+    <PackageVersion Version=""12.0.1"" Include=""Newtonsoft.Json"" />
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "12.0.1", "Project1.csproj", "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj")
+        });
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new Options { SolutionFileDir = _testDirectory, ConflictStrategy = ConflictStrategy.Highest },
+            dryRun: false
+        );
+
+        result.Success.Should().BeTrue();
+        File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"))
+            .Should().Contain("Version=\"13.0.1\"");
+    }
+
+    [Fact]
+    public void Fix_AttributeAndChildVersion_UpdatesBoth()
+    {
+        // A child <Version> overrides the attribute under MSBuild — updating only the attribute
+        // leaves the child pinning the old version.
+        CreatePropsFile(@"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""Newtonsoft.Json"" Version=""9.0.0""><Version>12.0.1</Version></PackageVersion>
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "12.0.1", "Project1.csproj", "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj")
+        });
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new Options { SolutionFileDir = _testDirectory, ConflictStrategy = ConflictStrategy.Highest },
+            dryRun: false
+        );
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        content.Should().NotContain("12.0.1");
+        content.Should().NotContain("9.0.0");
+    }
+
+    [Fact]
+    public void Fix_XmlDeclaration_IsPreserved()
+    {
+        // The update path round-trips through XDocument — a file's <?xml?> declaration must not
+        // be dropped just because a pin was updated.
+        CreatePropsFile(@"<?xml version=""1.0"" encoding=""utf-8""?>
+<Project>
+  <ItemGroup>
+    <PackageVersion Include=""Newtonsoft.Json"" Version=""12.0.1"" />
+  </ItemGroup>
+</Project>");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Transitive dependency conflict",
+            Array.Empty<string>()
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "12.0.1", "Project1.csproj", "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", "Project2.csproj", "Project2.csproj")
+        });
+
+        var result = _fixer.Fix(
+            issue,
+            packageInfo,
+            new Options { SolutionFileDir = _testDirectory, ConflictStrategy = ConflictStrategy.Highest },
+            dryRun: false
+        );
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(_testDirectory, "Directory.Packages.props"));
+        content.Should().StartWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
+        content.Should().Contain("Version=\"13.0.1\"");
+    }
+
+    [Fact]
     public void Fix_ConditionalChildVersion_LeavesPinUnchanged()
     {
         // A conditional central pin may be valid for only one framework/configuration. Without
