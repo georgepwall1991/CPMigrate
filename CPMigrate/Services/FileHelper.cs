@@ -11,11 +11,7 @@ public static class FileHelper
     /// </summary>
     public static async Task WriteAtomicAsync(string path, string content)
     {
-        var directory = Path.GetDirectoryName(path) ?? ".";
-        // The target can live in a subtree that does not exist yet — a declared
-        // DirectoryPackagesPropsPath may point into one — so the parent is created rather
-        // than assumed. No-op when it is already there.
-        Directory.CreateDirectory(directory);
+        var directory = PrepareTarget(path);
         var tempPath = Path.Combine(directory, $".{Path.GetFileName(path)}.tmp.{Guid.NewGuid():N}");
 
         try
@@ -25,18 +21,64 @@ public static class FileHelper
         }
         finally
         {
-            // Clean up temp file if move failed
-            try
+            CleanupTemp(tempPath);
+        }
+    }
+
+    /// <summary>
+    /// The synchronous form of <see cref="WriteAtomicAsync"/> for call sites — fixer output,
+    /// reports, config files — that have no async plumbing. Same guarantee: the target is only
+    /// ever replaced by a fully-written file.
+    /// </summary>
+    public static void WriteAtomic(string path, string content)
+    {
+        var directory = PrepareTarget(path);
+        var tempPath = Path.Combine(directory, $".{Path.GetFileName(path)}.tmp.{Guid.NewGuid():N}");
+
+        try
+        {
+            File.WriteAllText(tempPath, content);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            CleanupTemp(tempPath);
+        }
+    }
+
+    private static string PrepareTarget(string path)
+    {
+        var directory = Path.GetDirectoryName(path) ?? ".";
+        // The target can live in a subtree that does not exist yet — a declared
+        // DirectoryPackagesPropsPath may point into one — so the parent is created rather
+        // than assumed. No-op when it is already there.
+        Directory.CreateDirectory(directory);
+
+        // rename() needs only directory write permission, so File.Move(overwrite) would happily
+        // replace a read-only target that File.WriteAllText refuses to open. Preserve the
+        // refusal: a file marked read-only was marked for a reason, and a fix run must report it
+        // as unwritable rather than silently replace it.
+        if (File.Exists(path) && new FileInfo(path).IsReadOnly)
+        {
+            throw new UnauthorizedAccessException($"Access to the path '{path}' is denied.");
+        }
+
+        return directory;
+    }
+
+    private static void CleanupTemp(string tempPath)
+    {
+        // Clean up temp file if move failed
+        try
+        {
+            if (File.Exists(tempPath))
             {
-                if (File.Exists(tempPath))
-                {
-                    File.Delete(tempPath);
-                }
+                File.Delete(tempPath);
             }
-            catch
-            {
-                // Best-effort cleanup
-            }
+        }
+        catch
+        {
+            // Best-effort cleanup
         }
     }
 }

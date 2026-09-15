@@ -4,6 +4,22 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.96.0] - 2026-09-14
+
+### Fixed
+- **Every user-visible file write is now atomic.** `FileHelper.WriteAtomicAsync` already guarded
+  migration output, but seven other writers still used plain `File.WriteAllText`, so an
+  interrupted run could leave a truncated file that parses as a complete answer — or fails to
+  parse at all. The worst was `FixRequest.WriteFile`: `--fix` wrote project files and props
+  directly, so a killed process could leave a half-written `.csproj` (recoverable via the backup
+  the fixer takes first, but corrupt until restored). `--fix`/`--remediate` file writes, the
+  backup manifest `--rollback` enumerates, baseline files, `--output-file` artifacts, `--init`
+  and sample `.cpmigrate.json` configs, and batch reports now all go through the same
+  temp-then-move path. A new synchronous `FileHelper.WriteAtomic` covers the call sites without
+  async plumbing, and both atomic writes still refuse a read-only target — `File.Move` only needs
+  directory permission, so without an explicit check the move would silently replace a file a
+  plain write cannot open.
+
 ## [3.95.0] - 2026-09-14
 
 ### Fixed

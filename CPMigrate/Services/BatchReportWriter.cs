@@ -115,13 +115,7 @@ public static class BatchReportWriter
     /// </summary>
     public static void Write(BatchResult result, string path)
     {
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        File.WriteAllText(path, Render(result));
+        FileHelper.WriteAtomic(path, Render(result));
     }
 
     /// <summary>Escapes a value for a Markdown table cell, so a pipe in a name cannot break a column.</summary>

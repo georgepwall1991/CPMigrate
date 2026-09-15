@@ -27,15 +27,11 @@ internal static class JsonOutputWriter
     {
         if (!string.IsNullOrEmpty(options.OutputFile))
         {
-            // A CI script writing to artifacts/report.json should not have to mkdir -p first —
-            // the file's parent is part of the path the caller named, so create it.
-            var parent = Path.GetDirectoryName(Path.GetFullPath(options.OutputFile));
-            if (!string.IsNullOrEmpty(parent))
-            {
-                Directory.CreateDirectory(parent);
-            }
-
-            await File.WriteAllTextAsync(options.OutputFile, json);
+            // Atomic: a CI artifact truncated by an interrupted write is a corrupt document that
+            // parses as "the run's answer", so the file only ever exists complete or not at all.
+            // WriteAtomicAsync creates the parent directory — a CI script writing to
+            // artifacts/report.json does not have to mkdir -p first.
+            await FileHelper.WriteAtomicAsync(options.OutputFile, json);
             if (announceFile && !options.Quiet && consoleService is not null)
             {
                 var format = options.Output switch
