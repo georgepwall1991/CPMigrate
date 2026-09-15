@@ -94,6 +94,57 @@ public class DependencyTreeServiceTests
         Render(tree).Should().Contain("Weird.[bold].Name");
     }
 
+    [Fact]
+    public void BuildProjectTree_SamePackagePerFramework_RendersOnce()
+    {
+        // dotnet package list reports a package once per target framework, so a multi-targeted
+        // project hands the tree an identical row per TFM. Showing Serilog twice reads as a
+        // duplicate declaration the project does not have.
+        var tree = DependencyTreeService.BuildProjectTree("App.csproj", new[]
+        {
+            Ref("Serilog", "4.0.0", transitive: false),
+            Ref("Serilog", "4.0.0", transitive: false),
+            Ref("Polly", "8.0.0", transitive: true),
+            Ref("Polly", "8.0.0", transitive: true),
+        });
+
+        var text = Render(tree);
+        text.Should().Contain("direct (1)");
+        text.Should().Contain("transitive (1)");
+        text.Should().Contain("Serilog 4.0.0");
+        Occurrences(text, "Serilog").Should().Be(1);
+        Occurrences(text, "Polly").Should().Be(1);
+    }
+
+    [Fact]
+    public void BuildProjectTree_DifferentVersionsPerFramework_ShowsEveryVersion()
+    {
+        // A conditional pin or per-TFM VersionOverride resolves different versions per framework.
+        // Collapsing to one would claim a single resolved version the project does not have;
+        // showing both is the finding a dependency tree exists to surface.
+        var tree = DependencyTreeService.BuildProjectTree("App.csproj", new[]
+        {
+            Ref("Legacy.Pkg", "2.0.0", transitive: false),
+            Ref("Legacy.Pkg", "1.0.0", transitive: false),
+        });
+
+        var text = Render(tree);
+        text.Should().Contain("direct (1)");
+        text.Should().Contain("Legacy.Pkg 1.0.0, 2.0.0");
+    }
+
+    private static int Occurrences(string text, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+        return count;
+    }
+
     private static PackageReference Ref(string name, string version, bool transitive)
     {
         return new PackageReference(name, version, "/repo/App.csproj", "App.csproj", IsTransitive: transitive);

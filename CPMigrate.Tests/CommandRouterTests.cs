@@ -10,7 +10,12 @@ namespace CPMigrate.Tests;
 
 /// <summary>
 /// Tests for CommandRouter covering routing logic, config merging, and mode execution.
+/// Sequential because these tests swap <c>Console.Out</c>: if Spectre's global console binds its
+/// backend inside a swap window it captures a <see cref="StringWriter"/> the test later disposes,
+/// and every subsequent <c>AnsiConsole.Write</c> anywhere in the suite throws
+/// ObjectDisposedException.
 /// </summary>
+[Collection("Sequential")]
 public class CommandRouterTests : IDisposable
 {
     private readonly string _testDirectory;

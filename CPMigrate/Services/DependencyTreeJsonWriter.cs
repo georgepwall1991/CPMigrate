@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CPMigrate.Models;
+using NuGet.Versioning;
 
 namespace CPMigrate.Services;
 
@@ -37,8 +38,13 @@ public sealed record TreeReportPayload(
 /// Whether this project's resolved packages could be read. False means the lists below are empty
 /// because the project could not be examined — not because it declares nothing.
 /// </param>
-/// <param name="Direct">Packages the project declares itself, in name order.</param>
-/// <param name="Transitive">Packages arriving only through another package's closure, in name order.</param>
+/// <param name="Direct">
+/// Packages the project declares itself, in name order — one entry per distinct (name, version)
+/// pair: the resolved scan reports a package once per target framework, so identical
+/// per-framework rows are collapsed, while a package that resolves different versions across
+/// frameworks keeps one entry per version.
+/// </param>
+/// <param name="Transitive">Packages arriving only through another package's closure, in name order, deduplicated the same way.</param>
 public sealed record TreeProjectPayload(
     [property: JsonPropertyName("projectPath")] string ProjectPath,
     [property: JsonPropertyName("relativePath")] string RelativePath,
@@ -138,8 +144,8 @@ internal static class DependencyTreeJsonWriter
             projectPayloads,
             new TreeSummaryPayload(
                 projects.Count,
-                packageInfo.References.Count(r => !r.IsTransitive),
-                packageInfo.References.Count(r => r.IsTransitive),
+                projectPayloads.Sum(p => p.Direct.Count),
+                projectPayloads.Sum(p => p.Transitive.Count),
                 projects.Count(p => !p.Scanned)
             )
         );
@@ -158,15 +164,23 @@ internal static class DependencyTreeJsonWriter
             return [];
         }
 
+        // The resolved scan reports a package once per target framework. Consumers get one entry
+        // per distinct (name, version) pair: identical per-TFM rows collapse, while a package that
+        // resolves different versions across frameworks keeps one entry per version — dropping one
+        // would silently claim a single resolved version the project does not have.
         return
         [
             .. references
                 .Where(r => r.IsTransitive != direct)
-                .OrderBy(r => r.PackageName, StringComparer.OrdinalIgnoreCase)
                 .Select(r => new TreePackagePayload(
                     r.PackageName,
                     string.IsNullOrEmpty(r.Version) ? null : r.Version
-                )),
+                ))
+                .Distinct()
+                .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(r => NuGetVersion.TryParse(r.Version, out _) ? 0 : 1)
+                .ThenBy(r => NuGetVersion.TryParse(r.Version, out var parsed) ? parsed : null)
+                .ThenBy(r => r.Version, StringComparer.OrdinalIgnoreCase),
         ];
     }
 }

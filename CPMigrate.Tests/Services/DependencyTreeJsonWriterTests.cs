@@ -135,6 +135,56 @@ public class DependencyTreeJsonWriterTests
         summary.GetProperty("transitive").GetInt32().Should().Be(2);
     }
 
+    [Fact]
+    public void Serialize_PerFrameworkDuplicates_CollapseToOneEntry()
+    {
+        // dotnet package list emits a package once per target framework, so a multi-targeted
+        // project produces identical rows. The document must name the package once — a consumer
+        // reading two entries would count a dependency the project does not have twice.
+        var root = Parse(Serialize(
+            references:
+            [
+                Direct("App", "Serilog", "4.0.0"),
+                Direct("App", "Serilog", "4.0.0"),
+                Transitive("App", "Polly", "8.0.0"),
+                Transitive("App", "Polly", "8.0.0"),
+            ],
+            projects: [("/ws/src/App/App.csproj", true)]
+        ));
+
+        var app = root.GetProperty("projects").EnumerateArray().Single();
+        app.GetProperty("direct").EnumerateArray()
+            .Select(p => p.GetProperty("name").GetString())
+            .Should().Equal("Serilog");
+        app.GetProperty("transitive").EnumerateArray()
+            .Select(p => p.GetProperty("name").GetString())
+            .Should().Equal("Polly");
+
+        var summary = root.GetProperty("summary");
+        summary.GetProperty("direct").GetInt32().Should().Be(1);
+        summary.GetProperty("transitive").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public void Serialize_DifferentVersionsPerFramework_KeepsOneEntryPerVersion()
+    {
+        // A package pinned differently per TFM resolves two versions; collapsing to one would
+        // claim a resolved version the project does not have. Each version gets its own entry.
+        var root = Parse(Serialize(
+            references:
+            [
+                Direct("App", "Legacy.Pkg", "2.0.0"),
+                Direct("App", "Legacy.Pkg", "1.0.0"),
+            ],
+            projects: [("/ws/src/App/App.csproj", true)]
+        ));
+
+        var direct = root.GetProperty("projects")[0].GetProperty("direct").EnumerateArray().ToList();
+        direct.Should().HaveCount(2);
+        direct.Select(p => p.GetProperty("version").GetString()).Should().Equal("1.0.0", "2.0.0");
+        root.GetProperty("summary").GetProperty("direct").GetInt32().Should().Be(2);
+    }
+
     private static string Serialize(
         IReadOnlyList<PackageReference> references,
         IReadOnlyList<(string Path, bool Scanned)> projects
