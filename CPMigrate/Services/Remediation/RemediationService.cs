@@ -103,7 +103,11 @@ public sealed class RemediationService : IRemediationService, IDisposable
             return Failed(ExitCodes.ValidationError, "Central Package Management is not enabled");
         }
 
-        var currentVersions = PropsGenerator.ReadExistingPackageVersions(propsPath, out _);
+        var currentVersions = PropsGenerator.ReadExistingPackageVersions(
+            propsPath,
+            out _,
+            out var expressionVersions
+        );
 
         _consoleService.Info($"Scanning {projectPaths.Count} project(s) for known advisories...");
         var (vulnerabilities, scanComplete) = await ScanAsync(projectPaths);
@@ -120,7 +124,12 @@ public sealed class RemediationService : IRemediationService, IDisposable
             return Failed(ExitCodes.IncompleteAnalysis, "vulnerability scan did not complete");
         }
 
-        var unknownOnly = FindUnknownOnlyPackages(request.OnlyPackages, currentVersions, vulnerabilities);
+        var unknownOnly = FindUnknownOnlyPackages(
+            request.OnlyPackages,
+            currentVersions,
+            expressionVersions,
+            vulnerabilities
+        );
 
         if (unknownOnly.Count > 0)
         {
@@ -501,6 +510,7 @@ public sealed class RemediationService : IRemediationService, IDisposable
     private static IReadOnlyList<string> FindUnknownOnlyPackages(
         IReadOnlyList<string>? onlyPackages,
         Dictionary<string, HashSet<string>> currentVersions,
+        Dictionary<string, HashSet<string>> expressionVersions,
         IReadOnlyList<VulnerabilityInfo> vulnerabilities
     )
     {
@@ -510,6 +520,7 @@ public sealed class RemediationService : IRemediationService, IDisposable
         }
 
         var known = new HashSet<string>(currentVersions.Keys, StringComparer.OrdinalIgnoreCase);
+        known.UnionWith(expressionVersions.Keys);
 
         foreach (var vulnerability in vulnerabilities)
         {

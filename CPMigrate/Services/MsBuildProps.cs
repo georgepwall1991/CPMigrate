@@ -17,6 +17,21 @@ internal static class MsBuildProps
     /// </summary>
     internal const string RedirectProperty = "DirectoryPackagesPropsPath";
 
+    /// <summary>
+    /// Whether a metadata value is an MSBuild expression — <c>$(prop)</c>, <c>@(item)</c>, or
+    /// <c>%(metadata)</c> — rather than a literal. An expression is not a version: it cannot be
+    /// compared, pinned over, or looked up on a feed, only evaluated in the scope that defines it.
+    /// </summary>
+    internal static bool IsExpressionValue(string? value)
+    {
+        return value is not null
+            && (
+                value.Contains("$(", StringComparison.Ordinal)
+                || value.Contains("@(", StringComparison.Ordinal)
+                || value.Contains("%(", StringComparison.Ordinal)
+            );
+    }
+
     private const string BuildPropsFileName = "Directory.Build.props";
 
     /// <summary>

@@ -108,6 +108,28 @@ public class PackageUpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatePackagesAsync_ExpressionPin_ReportedAsUnchecked_NotUpToDate()
+    {
+        // A pin written as "$(LibVer)" has no literal to compare against the feed — the package
+        // was never checked, so it must not fold into the clean claim.
+        SetupProjectAnalyzer();
+        CreatePropsFile(("Newtonsoft.Json", "13.0.3"), ("LibA", "$(LibAVer)"));
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        var result = await _sut.UpdatePackagesAsync(CreateOptions());
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        _consoleService.OutputMessages.Should().Contain(
+            m => m.Contains("LibA") && m.Contains("expression"),
+            "an expression-pinned package is named as uncheckable");
+        _consoleService.OutputMessages.Should().NotContain(
+            m => m.Contains("Everything up to date"),
+            "the run never checked LibA, so the clean claim would be false");
+    }
+
+    [Fact]
     public async Task UpdatePackagesAsync_AllPublicPackagesCurrent_StillClaimsUpToDate()
     {
         // The gate only holds back the clean claim when something was actually unchecked.

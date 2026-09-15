@@ -121,11 +121,17 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         return false;
     }
 
+    /// <param name="expressionPinnedPackages">
+    /// Packages whose existing central pin is an MSBuild expression. A literal <c>Version</c> on
+    /// one of these becomes a <c>VersionOverride</c> — the pin must not be displaced by a literal,
+    /// which would rebind every other project resolving through the expression.
+    /// </param>
     public string ProcessProject(
         string projectFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
         bool keepVersionAttributes = false,
-        Dictionary<string, HashSet<string>>? expressionVersions = null
+        Dictionary<string, HashSet<string>>? expressionVersions = null,
+        IReadOnlySet<string>? expressionPinnedPackages = null
     )
     {
         using var projectCollection = new ProjectCollection();
@@ -163,7 +169,7 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     continue;
                 }
 
-                if (ContainsMsBuildExpression(versionMetadata.Value))
+                if (MsBuildProps.IsExpressionValue(versionMetadata.Value))
                 {
                     // Version="$(X)" cannot be compared or pinned literally. VersionOverride="$(X)"
                     // evaluates in the same project scope, so the rename preserves the resolution
@@ -217,6 +223,48 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     continue;
                 }
 
+                var pinIsExpression =
+                    expressionPinnedPackages is not null
+                    && packageNames.Any(expressionPinnedPackages.Contains);
+                if (pinIsExpression)
+                {
+                    // An existing expression pin decides the package's version at restore — a
+                    // literal pin must not displace it, which would rebind every project resolving
+                    // through the expression. The declared version becomes a VersionOverride so
+                    // this project keeps exactly what it asked for while the pin stays. On a
+                    // multi-name item the names without an expression pin still need their literal
+                    // recorded — the override covers them, but only a pin makes it resolve.
+                    if (!keepVersionAttributes)
+                    {
+                        if (item.Metadata.Any(m => m.Name == "VersionOverride"))
+                        {
+                            versionMetadata.Parent.RemoveChild(versionMetadata);
+                        }
+                        else
+                        {
+                            versionMetadata.Name = "VersionOverride";
+                        }
+                    }
+
+                    foreach (
+                        var freeName in packageNames.Where(n =>
+                            !expressionPinnedPackages!.Contains(n)
+                        )
+                    )
+                    {
+                        if (packageVersions.TryGetValue(freeName, out var freeVersions))
+                        {
+                            freeVersions.Add(versionMetadata.Value);
+                        }
+                        else
+                        {
+                            packageVersions.Add(freeName, [versionMetadata.Value]);
+                        }
+                    }
+
+                    continue;
+                }
+
                 foreach (var expandedName in packageNames)
                 {
                     if (packageVersions.TryGetValue(expandedName, out var versions))
@@ -241,17 +289,6 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         {
             projectCollection.UnloadAllProjects();
         }
-    }
-
-    /// <summary>
-    /// Whether a metadata value contains an MSBuild expression — <c>$(prop)</c>, <c>@(item)</c>, or
-    /// <c>%(metadata)</c> — rather than a literal version.
-    /// </summary>
-    private static bool ContainsMsBuildExpression(string value)
-    {
-        return value.Contains("$(", StringComparison.Ordinal)
-            || value.Contains("@(", StringComparison.Ordinal)
-            || value.Contains("%(", StringComparison.Ordinal);
     }
 
     /// <summary>

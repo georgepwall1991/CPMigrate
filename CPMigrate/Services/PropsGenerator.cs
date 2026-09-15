@@ -107,7 +107,26 @@ public class PropsGenerator
         out bool hasConditionalPackageVersions
     )
     {
+        return ReadExistingPackageVersions(propsFilePath, out hasConditionalPackageVersions, out _);
+    }
+
+    /// <param name="expressionVersions">
+    /// Receives pins whose <c>Version</c> is an MSBuild expression rather than a literal — keyed
+    /// by package name, same shape as the literal result. Expressions are not versions: they
+    /// cannot be compared, conflict-resolved, or looked up on a feed, so they do not belong in
+    /// the literal set. A caller that only wants literals can ignore this; a caller that rewrites
+    /// the file needs it to know which pins it must not overwrite.
+    /// </param>
+    public static Dictionary<string, HashSet<string>> ReadExistingPackageVersions(
+        string propsFilePath,
+        out bool hasConditionalPackageVersions,
+        out Dictionary<string, HashSet<string>> expressionVersions
+    )
+    {
         hasConditionalPackageVersions = false;
+        expressionVersions = new Dictionary<string, HashSet<string>>(
+            StringComparer.OrdinalIgnoreCase
+        );
         Dictionary<string, HashSet<string>> packageVersions = new(StringComparer.OrdinalIgnoreCase);
         if (!File.Exists(propsFilePath))
         {
@@ -141,10 +160,13 @@ public class PropsGenerator
                 continue;
             }
 
-            if (!packageVersions.TryGetValue(packageName, out var versions))
+            var target = MsBuildProps.IsExpressionValue(version)
+                ? expressionVersions
+                : packageVersions;
+            if (!target.TryGetValue(packageName, out var versions))
             {
                 versions = [];
-                packageVersions.Add(packageName, versions);
+                target.Add(packageName, versions);
             }
 
             versions.Add(version);

@@ -19,11 +19,16 @@ public interface IProjectFileScanner
     /// package's central pin when no literal version exists. When null, expression values fall
     /// back into <paramref name="packageVersions"/> for callers that cannot track them.
     /// </param>
+    /// <param name="expressionPinnedPackages">
+    /// Packages whose existing central pin is an MSBuild expression — their literal
+    /// <c>Version</c> declarations become <c>VersionOverride</c> rather than displacing the pin.
+    /// </param>
     string ProcessProject(
         string projectFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
         bool keepVersionAttributes = false,
-        Dictionary<string, HashSet<string>>? expressionVersions = null);
+        Dictionary<string, HashSet<string>>? expressionVersions = null,
+        IReadOnlySet<string>? expressionPinnedPackages = null);
     (List<PackageReference> References, bool Success) ScanProjectPackages(string projectFilePath);
 
     /// <summary>

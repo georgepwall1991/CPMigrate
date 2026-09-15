@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using CPMigrate.Models;
+using CPMigrate.Services;
 using CPMigrate.Services.Migration;
 
 namespace CPMigrate.Fixers;
@@ -174,16 +175,7 @@ public class InlineVersionFixer : IFixer
     }
 
     /// <summary>
-    /// Whether a metadata value is an MSBuild expression — <c>$(prop)</c>, <c>@(item)</c>, or
-    /// <c>%(metadata)</c> — rather than a literal version. Mirrors the migration writer's rule.
+    /// Whether a metadata value is an MSBuild expression rather than a literal version.
     /// </summary>
-    private static bool IsExpression(string? value)
-    {
-        return value is not null
-            && (
-                value.Contains("$(", StringComparison.Ordinal)
-                || value.Contains("@(", StringComparison.Ordinal)
-                || value.Contains("%(", StringComparison.Ordinal)
-            );
-    }
+    private static bool IsExpression(string? value) => MsBuildProps.IsExpressionValue(value);
 }
