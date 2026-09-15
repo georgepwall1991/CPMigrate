@@ -4,6 +4,18 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **Framework divergence no longer counts property text as runtimes.** `FrameworkAlignmentAnalyzer`
+  keyed each project on its raw `TargetFramework(s)` string, so `net8.0;net10.0` and
+  `net10.0;net8.0` reported a divergence that does not exist, an expression like `$(SharedTfms)`
+  was listed as a framework, and an unreadable project counted as "Unknown". Projects are now
+  compared by their declared target set (order- and case-insensitive), and files that cannot be
+  inspected are named as unexamined rather than invented. The interactive environment summary
+  (`EnvironmentAnalyzer`) now uses the same declared-framework read, so it no longer counts
+  expression text or "Unknown" as target frameworks.
+
 ## [4.3.0] - 2026-09-15
 
 ### Fixed
