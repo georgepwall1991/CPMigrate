@@ -4,6 +4,19 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.92.0] - 2026-09-14
+
+### Fixed
+- **The drift analyzer's metadata reads now match MSBuild evaluation order.** Item metadata
+  children evaluate *after* attributes, and last-wins among the children themselves — but the
+  analyzer read the attribute first and only the first child. A `PackageVersion` written as
+  `Version="1.0.0"` with a `<Version>2.0.0</Version>` child was read as pinning 1.0.0 while
+  restore applies 2.0.0, and a `PrivateAssets` child could silently override the attribute in
+  either direction — hiding a real leak, or flagging coverage that exists. Reads now take the last
+  child element and fall back to the attribute only when no child declares the metadata. For
+  `PrivateAssets`, a *trailing conditional* child is treated as conditional coverage — i.e., not
+  coverage — matching how the check already treated a conditioned `ItemGroup`.
+
 ## [3.91.0] - 2026-09-14
 
 ### Fixed

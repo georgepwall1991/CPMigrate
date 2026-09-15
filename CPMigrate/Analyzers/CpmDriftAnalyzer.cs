@@ -953,19 +953,29 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// </summary>
     private static string? ReadPrivateAssets(XElement element)
     {
-        var attribute = element.Attribute("PrivateAssets");
-        if (attribute is not null && !string.IsNullOrWhiteSpace(attribute.Value))
+        // Item metadata children evaluate after attributes, so they override one — the attribute
+        // only counts when no child declares PrivateAssets. Among children the LAST decides
+        // coverage: a trailing unconditional element overrides every earlier one, and a trailing
+        // conditional one means coverage depends on the condition — which is not coverage.
+        var children = element
+            .Elements()
+            .Where(e =>
+                e.Name.LocalName.Equals("PrivateAssets", StringComparison.OrdinalIgnoreCase)
+            )
+            .ToList();
+
+        if (children.Count > 0)
         {
-            return attribute.Value.Trim();
+            var last = children[^1];
+            return last.Attribute("Condition") is null && !string.IsNullOrWhiteSpace(last.Value)
+                ? last.Value.Trim()
+                : null;
         }
 
-        var child = element
-            .Elements()
-            .FirstOrDefault(e =>
-                e.Name.LocalName.Equals("PrivateAssets", StringComparison.OrdinalIgnoreCase)
-            );
-
-        return child?.Attribute("Condition") is null ? child?.Value.Trim() : null;
+        var attribute = element.Attribute("PrivateAssets");
+        return attribute is null || string.IsNullOrWhiteSpace(attribute.Value)
+            ? null
+            : attribute.Value.Trim();
     }
 
     /// <summary>
@@ -975,18 +985,21 @@ public class CpmDriftAnalyzer : IAnalyzer
     /// </summary>
     private static string? ReadAttributeOrChild(XElement element, string name)
     {
-        var attribute = element.Attribute(name)?.Value;
-        if (!string.IsNullOrWhiteSpace(attribute))
-        {
-            return attribute.Trim();
-        }
-
+        // MSBuild evaluates item metadata children after attributes, and last-wins among the
+        // children themselves — the effective value is the last child element, or the attribute
+        // only when no child declares it.
         var child = element
             .Elements()
-            .FirstOrDefault(e => e.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .LastOrDefault(e => e.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))
             ?.Value;
 
-        return string.IsNullOrWhiteSpace(child) ? null : child.Trim();
+        if (!string.IsNullOrWhiteSpace(child))
+        {
+            return child.Trim();
+        }
+
+        var attribute = element.Attribute(name)?.Value;
+        return string.IsNullOrWhiteSpace(attribute) ? null : attribute.Trim();
     }
 
     /// <summary>
