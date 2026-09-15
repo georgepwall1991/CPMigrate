@@ -13,12 +13,12 @@
     <Product>CPMigrate</Product>
     <Title>CPMigrate — NuGet Central Package Management Migration &amp; Dependency Analysis CLI</Title>
     <Description>Migrate .NET solutions to NuGet Central Package Management (CPM). Generate Directory.Packages.props, analyze dependency health (version drift, transitive conflicts, vulnerabilities), auto-fix package issues, unify Directory.Build.props, and update NuGet packages with test verification and rollback — including --bisect to keep the largest green subset. --remediate clears CVEs with the smallest version bump that fixes them, test-verified and re-scanned to prove it.</Description>
-    <PackageReleaseNotes>3.99.0 fixes batch-mode honesty: sequential --batch without --batch-continue now stops on a returned failure (previously only a thrown exception stopped it, while the parallel path already stopped on either), and a stopped-early batch can no longer pass for a complete one — totals.solutionsDiscovered (output schema 1.26.0) records how many were found, the console says "BATCH STOPPED EARLY", and the Markdown report names the attempted scope.</PackageReleaseNotes>
+    <PackageReleaseNotes>4.0.0 fixes migration write-path honesty: Update=-only PackageReference items no longer record under an empty name (which produced a bogus PackageVersion Include="" pin), Version="$(X)" expressions rename to VersionOverride and forward as the central pin when no literal exists instead of polluting conflict detection and being stripped, and version ranges/floats stay in place with a warning since neither PackageVersion nor VersionOverride accepts them.</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://georgepwall1991.github.io/CPMigrate/</PackageProjectUrl>
     <TargetFramework>net10.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
-    <Version>3.99.0</Version>
+    <Version>4.0.0</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/georgepwall1991/CPMigrate</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
