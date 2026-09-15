@@ -4,6 +4,16 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **An unreadable project file no longer reports "already consistent" from the casing fixer.**
+  `DuplicatePackageFixer` swallowed IO/parse failures into `null`, which the caller read as
+  "nothing to change" — a locked or malformed project produced "All references already use
+  consistent casing" over a finding that was still real. It now throws `FixWriteException` like
+  every other fixer, and the result is `Failed` when nothing could change or `PartiallyApplied`
+  when some files did.
+
 ## [4.2.0] - 2026-09-15
 
 ### Fixed
