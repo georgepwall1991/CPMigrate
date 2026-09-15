@@ -124,11 +124,13 @@ public sealed class ProjectFileScanner : IProjectFileScanner
     public string ProcessProject(
         string projectFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
-        bool keepVersionAttributes = false
+        bool keepVersionAttributes = false,
+        Dictionary<string, HashSet<string>>? expressionVersions = null
     )
     {
         using var projectCollection = new ProjectCollection();
         var projectRoot = ProjectRootElement.Open(projectFilePath, projectCollection);
+        var projectName = Path.GetFileName(projectFilePath);
 
         try
         {
@@ -139,19 +141,92 @@ public sealed class ProjectFileScanner : IProjectFileScanner
                     continue;
                 }
 
+                // Update, not Include, is how a project amends a reference. Reading Include alone
+                // recorded those versions under an empty package name — which is how a props file
+                // ends up with <PackageVersion Include="">.
+                var packageName = !string.IsNullOrWhiteSpace(item.Include)
+                    ? item.Include
+                    : item.Update;
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    continue;
+                }
+
+                // Include/Update can name several references at once ("A;B") — a version on such
+                // an item applies to each of them, the same expansion the declared-package scan
+                // performs.
+                var packageNames = ExpandPackageNames(packageName).ToList();
+
                 var versionMetadata = item.Metadata.FirstOrDefault(m => m.Name == "Version");
                 if (versionMetadata == null || string.IsNullOrEmpty(versionMetadata.Value))
                 {
                     continue;
                 }
 
-                if (packageVersions.TryGetValue(item.Include, out var versions))
+                if (ContainsMsBuildExpression(versionMetadata.Value))
                 {
-                    versions.Add(versionMetadata.Value);
+                    // Version="$(X)" cannot be compared or pinned literally. VersionOverride="$(X)"
+                    // evaluates in the same project scope, so the rename preserves the resolution
+                    // exactly — while an expression that reaches the props file would evaluate
+                    // there, against properties the project may not have defined yet.
+                    expressionVersions ??= packageVersions;
+                    foreach (var expandedName in packageNames)
+                    {
+                        if (expressionVersions.TryGetValue(expandedName, out var expressions))
+                        {
+                            expressions.Add(versionMetadata.Value);
+                        }
+                        else
+                        {
+                            expressionVersions.Add(expandedName, [versionMetadata.Value]);
+                        }
+                    }
+
+                    if (!keepVersionAttributes)
+                    {
+                        if (item.Metadata.Any(m => m.Name == "VersionOverride"))
+                        {
+                            // Two VersionOverride entries on one item is legal but last-wins —
+                            // renaming would let the existing one quietly decide. Left for the
+                            // user to untangle.
+                            _consoleService.Warning(
+                                $"{projectName}: {packageName} already declares VersionOverride; "
+                                    + $"Version=\"{versionMetadata.Value}\" was left in place."
+                            );
+                        }
+                        else
+                        {
+                            versionMetadata.Name = "VersionOverride";
+                        }
+                    }
+
+                    continue;
                 }
-                else
+
+                if (!NuGet.Versioning.NuGetVersion.TryParse(versionMetadata.Value, out _))
                 {
-                    packageVersions.Add(item.Include, [versionMetadata.Value]);
+                    // A range ("[1.0,2.0)") or float ("1.*") has no central form: PackageVersion and
+                    // VersionOverride both require an exact version. Removing it would silently
+                    // rebind the project to whatever pin the literals resolve to, so it stays and
+                    // the user is told what remains manual.
+                    _consoleService.Warning(
+                        $"{projectName}: {packageName} Version=\"{versionMetadata.Value}\" is a "
+                            + "version range — it cannot be expressed as a central pin and was left "
+                            + "in place. Convert it to an exact version or add a PackageVersion by hand."
+                    );
+                    continue;
+                }
+
+                foreach (var expandedName in packageNames)
+                {
+                    if (packageVersions.TryGetValue(expandedName, out var versions))
+                    {
+                        versions.Add(versionMetadata.Value);
+                    }
+                    else
+                    {
+                        packageVersions.Add(expandedName, [versionMetadata.Value]);
+                    }
                 }
 
                 if (!keepVersionAttributes)
@@ -166,6 +241,17 @@ public sealed class ProjectFileScanner : IProjectFileScanner
         {
             projectCollection.UnloadAllProjects();
         }
+    }
+
+    /// <summary>
+    /// Whether a metadata value contains an MSBuild expression — <c>$(prop)</c>, <c>@(item)</c>, or
+    /// <c>%(metadata)</c> — rather than a literal version.
+    /// </summary>
+    private static bool ContainsMsBuildExpression(string value)
+    {
+        return value.Contains("$(", StringComparison.Ordinal)
+            || value.Contains("@(", StringComparison.Ordinal)
+            || value.Contains("%(", StringComparison.Ordinal);
     }
 
     /// <summary>

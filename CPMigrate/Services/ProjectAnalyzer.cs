@@ -67,10 +67,11 @@ public partial class ProjectAnalyzer : IProjectAnalyzer
     public static string ProcessProject(
         string projectFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
-        bool keepVersionAttributes = false)
+        bool keepVersionAttributes = false,
+        Dictionary<string, HashSet<string>>? expressionVersions = null)
     {
         return new ProjectFileScanner(SilentConsoleService.Instance)
-            .ProcessProject(projectFilePath, packageVersions, keepVersionAttributes);
+            .ProcessProject(projectFilePath, packageVersions, keepVersionAttributes, expressionVersions);
     }
 
     public bool ScanProjectPackages(string projectFilePath, Dictionary<string, HashSet<string>> packageVersions)

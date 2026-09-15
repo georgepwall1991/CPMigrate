@@ -12,10 +12,18 @@ public interface IProjectFileScanner
     /// declared — callers must treat empty as "unexamined", never as "supported".
     /// </summary>
     IReadOnlyList<string> GetDeclaredTargetFrameworks(string projectFilePath);
+    /// <param name="expressionVersions">
+    /// Collects version values that are MSBuild expressions (<c>$(X)</c>) rather than literals,
+    /// keyed by package name. Those references keep their value as a <c>VersionOverride</c> —
+    /// project-scoped, where it still resolves — and the caller forwards the expression as the
+    /// package's central pin when no literal version exists. When null, expression values fall
+    /// back into <paramref name="packageVersions"/> for callers that cannot track them.
+    /// </param>
     string ProcessProject(
         string projectFilePath,
         Dictionary<string, HashSet<string>> packageVersions,
-        bool keepVersionAttributes = false);
+        bool keepVersionAttributes = false,
+        Dictionary<string, HashSet<string>>? expressionVersions = null);
     (List<PackageReference> References, bool Success) ScanProjectPackages(string projectFilePath);
 
     /// <summary>

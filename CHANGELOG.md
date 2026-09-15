@@ -4,6 +4,27 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **`Update=`-only package references no longer mint a `PackageVersion Include=""` pin.** The
+  migration rewrite read `item.Include` only, so a `<PackageReference Update="X" Version="…">`
+  recorded its version under an empty package name — the generated props file shipped a pin for
+  a package called nothing while `X`'s version went unattributed. The rewrite now resolves the
+  name the same way every other reader does: `Include`, else `Update`, else nothing to name.
+- **`Version="$(X)"` is preserved as project-scoped intent instead of becoming a literal pin.**
+  An MSBuild property expression was recorded as the version string `"$(X)"` — which polluted
+  conflict detection (an expression is not a version competing with `1.2.3`) and then got
+  stripped, rebinding the project to whatever pin the literals resolved to. The declaration is
+  now renamed to `VersionOverride` — same evaluation scope, legal under CPM — and, when the
+  package has no literal versions anywhere, the expression is forwarded as its `PackageVersion`
+  so restore still resolves it. Distinct expressions across projects pick one deterministically
+  and say so.
+- **A version range or float stays put and says so.** `Version="[1.0,2.0)"` and `Version="1.*"`
+  have no central form — `PackageVersion` and `VersionOverride` both require an exact version —
+  so instead of being stripped into a silent rebind, the declaration is left in place with a
+  warning naming what remains manual.
+
 ## [3.99.0] - 2026-09-15
 
 ### Fixed
