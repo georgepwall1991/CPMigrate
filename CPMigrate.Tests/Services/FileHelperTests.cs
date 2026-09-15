@@ -56,4 +56,51 @@ public class FileHelperTests : IDisposable
         files.Should().HaveCount(1);
         files[0].Should().EndWith("test.txt");
     }
+
+    [Fact]
+    public void WriteAtomic_WritesContentCorrectly()
+    {
+        var filePath = Path.Combine(_testDirectory, "test.txt");
+
+        FileHelper.WriteAtomic(filePath, "Hello, World!");
+
+        File.ReadAllText(filePath).Should().Be("Hello, World!");
+    }
+
+    [Fact]
+    public void WriteAtomic_OverwritesExistingFileAndLeavesNoTemp()
+    {
+        var filePath = Path.Combine(_testDirectory, "test.txt");
+        File.WriteAllText(filePath, "old content");
+
+        FileHelper.WriteAtomic(filePath, "new content");
+
+        File.ReadAllText(filePath).Should().Be("new content");
+        Directory.GetFiles(_testDirectory).Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void WriteAtomic_CreatesMissingParentDirectories()
+    {
+        var filePath = Path.Combine(_testDirectory, "sub", "dir", "test.txt");
+
+        FileHelper.WriteAtomic(filePath, "content");
+
+        File.ReadAllText(filePath).Should().Be("content");
+    }
+
+    [Fact]
+    public void WriteAtomic_WhenTargetPathIsImpossible_ThrowsAndLeavesNoTemp()
+    {
+        // The guarantee the temp-file dance exists for: a failed write never leaves a partial
+        // target or a stray temp file behind.
+        var blockingFile = Path.Combine(_testDirectory, "blocker");
+        File.WriteAllText(blockingFile, "untouched");
+
+        var act = () => FileHelper.WriteAtomic(Path.Combine(blockingFile, "nested.txt"), "x");
+
+        act.Should().Throw<Exception>();
+        File.ReadAllText(blockingFile).Should().Be("untouched");
+        Directory.GetFiles(_testDirectory).Should().HaveCount(1);
+    }
 }

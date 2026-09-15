@@ -581,6 +581,6 @@ public class ConfigService
         };
 
         var json = JsonSerializer.Serialize(sampleConfig, _writeOptions);
-        File.WriteAllText(path, json);
+        FileHelper.WriteAtomic(path, json);
     }
 }

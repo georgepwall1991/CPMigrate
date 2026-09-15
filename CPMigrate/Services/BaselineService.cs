@@ -98,13 +98,12 @@ public sealed class BaselineService
     {
         ArgumentNullException.ThrowIfNull(baseline);
 
-        var directory = Path.GetDirectoryName(Path.GetFullPath(path));
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(baseline, _writeOptions));
+        // The baseline is the accepted-findings ledger a CI gate trusts; a write interrupted
+        // midway would leave a file that fails to parse rather than one that merely lags.
+        await FileHelper.WriteAtomicAsync(
+            Path.GetFullPath(path),
+            JsonSerializer.Serialize(baseline, _writeOptions)
+        );
     }
 
     /// <summary>

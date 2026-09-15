@@ -1,3 +1,4 @@
+using CPMigrate.Fixers;
 using CPMigrate.Models;
 using CPMigrate.Services;
 using FluentAssertions;
@@ -271,6 +272,51 @@ public class CommandRequestsTests
 
             dryRun.ReadFile(target).Should().Be("on disk");
             realRun.ReadFile(target).Should().Be("on disk");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void FixRequest_WriteFile_WritesAtomically_LeavingNoTempBehind()
+    {
+        // Fixer output is a user's project file: the write goes through FileHelper.WriteAtomic so
+        // an interrupted run never leaves a truncated .csproj — the target is only ever replaced
+        // by a fully-written file, and no temp file survives a successful one.
+        var dir = Directory.CreateTempSubdirectory("cpmigrate-fixreq").FullName;
+        try
+        {
+            var target = Path.Combine(dir, "App.csproj");
+            File.WriteAllText(target, "original");
+            var request = new FixRequest("props.props", ConflictStrategy.Highest, DryRun: false);
+
+            request.WriteFile(target, "changed");
+
+            File.ReadAllText(target).Should().Be("changed");
+            Directory.GetFiles(dir, "*.tmp.*").Should().BeEmpty();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void FixRequest_WriteFile_ToUnwritableTarget_ThrowsFixWriteException()
+    {
+        // The atomic path still surfaces failures as FixWriteException, the contract fixers rely on.
+        var dir = Directory.CreateTempSubdirectory("cpmigrate-fixreq").FullName;
+        try
+        {
+            var blockingFile = Path.Combine(dir, "blocker");
+            File.WriteAllText(blockingFile, "untouched");
+            var request = new FixRequest("props.props", ConflictStrategy.Highest, DryRun: false);
+
+            var act = () => request.WriteFile(Path.Combine(blockingFile, "nested.csproj"), "x");
+
+            act.Should().Throw<FixWriteException>();
         }
         finally
         {

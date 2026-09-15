@@ -153,6 +153,6 @@ internal sealed class InitService
         };
 
         var json = JsonSerializer.Serialize(config, options);
-        File.WriteAllText(path, json + Environment.NewLine);
+        FileHelper.WriteAtomic(path, json + Environment.NewLine);
     }
 }

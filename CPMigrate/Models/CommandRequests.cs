@@ -158,7 +158,7 @@ public sealed record FixRequest(
         try
         {
             BeforeFileWrite?.Invoke(path);
-            File.WriteAllText(path, contents);
+            FileHelper.WriteAtomic(path, contents);
         }
         catch (Exception ex) when (ex is not FixWriteException)
         {

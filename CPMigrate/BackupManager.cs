@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CPMigrate.Models;
+using CPMigrate.Services;
 
 namespace CPMigrate;
 
@@ -259,7 +260,9 @@ public class BackupManager : IBackupManager
 
         var manifestPath = Path.Combine(backupPath, ManifestFileName);
         var json = JsonSerializer.Serialize(manifest, JsonOptions);
-        await File.WriteAllTextAsync(manifestPath, json);
+        // The manifest is what --rollback enumerates backups from; a manifest truncated by an
+        // interrupted write would strand every staged backup with no index to find them by.
+        await FileHelper.WriteAtomicAsync(manifestPath, json);
     }
 
     /// <summary>
