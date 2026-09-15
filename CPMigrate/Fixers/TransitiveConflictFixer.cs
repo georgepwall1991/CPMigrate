@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using CPMigrate.Models;
@@ -55,11 +54,12 @@ public class TransitiveConflictFixer : IFixer
         var originalContent = request.ReadFile(propsPath);
         var hasActivePackagePin = false;
         XDocument? propsDocument = null;
+        List<XElement>? targetPins = null;
 
         try
         {
             propsDocument = XDocument.Parse(originalContent, LoadOptions.PreserveWhitespace);
-            var targetPins = propsDocument
+            targetPins = propsDocument
                 .Descendants()
                 .Where(element => element.Name.LocalName.Equals("PackageVersion", StringComparison.OrdinalIgnoreCase))
                 .Where(element => element.Attributes().Any(attribute =>
@@ -87,22 +87,32 @@ public class TransitiveConflictFixer : IFixer
         // Check if package already exists in props
         if (hasActivePackagePin)
         {
-            // Update existing version
-            var pattern = $@"(<PackageVersion\s+(?:Include|Update)=""{Regex.Escape(issue.PackageName)}""\s+Version="")([^""]+)("")";
-            updatedContent = Regex.Replace(originalContent, pattern,
-                match => match.Groups[1].Value + bestVersion + match.Groups[3].Value,
-                RegexOptions.IgnoreCase, TimeSpan.FromSeconds(2));
+            // Update through the parsed document, not text: a regex on the raw file only matched
+            // <Include="X" Version="…"> in that exact order, and only the first <Version> child —
+            // while item metadata is last-wins, so a trailing declaration kept pinning the old
+            // version under a "Pinned" report. Every Version declaration on every matching pin is
+            // set, in whichever form the file wrote it.
+            foreach (var pin in targetPins)
+            {
+                var versionAttribute = pin.Attributes().FirstOrDefault(a =>
+                    a.Name.LocalName.Equals("Version", StringComparison.OrdinalIgnoreCase));
+                if (versionAttribute is not null)
+                {
+                    versionAttribute.Value = bestVersion;
+                }
 
-            // MSBuild also accepts Version metadata as a child element. Keep the surrounding XML
-            // layout intact while changing only the value, so a repository using that form is not
-            // left with the original conflicting pin.
-            var childPattern = $@"(<PackageVersion\b[^>]*(?:Include|Update)=""{Regex.Escape(issue.PackageName)}""[^>]*(?<!/)>(?:(?!</?PackageVersion\b)[\s\S])*?<Version>\s*)([^<]*?)(\s*</Version>)";
-            updatedContent = Regex.Replace(
-                updatedContent,
-                childPattern,
-                match => match.Groups[1].Value + bestVersion + match.Groups[3].Value,
-                RegexOptions.IgnoreCase,
-                TimeSpan.FromSeconds(2)
+                foreach (
+                    var versionElement in pin.Elements().Where(e =>
+                        e.Name.LocalName.Equals("Version", StringComparison.OrdinalIgnoreCase))
+                )
+                {
+                    versionElement.Value = bestVersion;
+                }
+            }
+
+            updatedContent = Serialize(
+                propsDocument,
+                originalContent.Contains("\r\n", StringComparison.Ordinal)
             );
         }
         else
@@ -227,7 +237,15 @@ public class TransitiveConflictFixer : IFixer
 
     private static string Serialize(XDocument document, bool fileUsesCrlf)
     {
+        var newline = fileUsesCrlf ? "\r\n" : "\n";
         var serialized = document.ToString();
+        if (document.Declaration is not null)
+        {
+            // ToString omits the <?xml …?> declaration a props file can carry — re-emit it rather
+            // than silently dropping a line the file had.
+            serialized = document.Declaration.ToString() + newline + serialized;
+        }
+
         var serializedUsesCrlf = serialized.Contains("\r\n", StringComparison.Ordinal);
         if (fileUsesCrlf == serializedUsesCrlf)
         {
