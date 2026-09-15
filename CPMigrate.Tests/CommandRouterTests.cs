@@ -45,6 +45,20 @@ public class CommandRouterTests : IDisposable
     }
 
     [Fact]
+    public void ToJsonOutcome_EveryOutcomeHasItsOwnToken()
+    {
+        // The mapper ends in a catch-all "unknown": a new RemediationOutcome that nobody maps
+        // would serialize under a token that means "something else went wrong" — silent contract
+        // drift. Enumerate the enum so adding a member without a token fails here.
+        var tokens = Enum.GetValues<CPMigrate.Services.Remediation.RemediationOutcome>()
+            .Select(o => CommandRouter.ToJsonOutcome(o))
+            .ToList();
+
+        tokens.Should().NotContain("unknown");
+        tokens.Should().OnlyHaveUniqueItems("each outcome is a distinct contract token");
+    }
+
+    [Fact]
     public async Task RouteCommand_InteractiveMode_CallsInteractiveService()
     {
         // Arrange

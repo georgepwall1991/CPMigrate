@@ -177,8 +177,14 @@ public static class OutputMetadata
     /// <c>heldBack</c> — nothing was attempted, so no verification failure is implied. Absent/zero
     /// when every transitive update could apply or none was found.
     /// </para>
+    /// <para>
+    /// 1.25.0 widened <c>remediated[].outcome</c> with <c>packageNotOnFeed</c>: the package ID is
+    /// not published on the checked feed — private-feed, unpublished, or typo'd — so no fix
+    /// version can be computed. Definitive, unlike <c>advisoryDataUnavailable</c> whose correct
+    /// response is to re-run.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.24.0";
+    public const string SchemaVersion = "1.25.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

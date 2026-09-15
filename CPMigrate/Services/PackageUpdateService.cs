@@ -63,13 +63,17 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         var (updates, transitiveFound) = await QueryAllUpdatesAsync(load.CurrentVersions, load.ProjectPaths, request);
 
         ReportFailedLookups();
+        ReportNotFoundLookups();
 
         var availableUpdates = ApplyOnlyFilter(FilterAvailableUpdates(updates), request);
         if (availableUpdates.Count == 0)
         {
-            // Deliberately not "Everything up to date!" when a lookup failed: that claim would be
-            // false, and it is the claim a user acts on.
-            if (_nuGetLookup.GetFailedLookups().Count > 0)
+            // Deliberately not "Everything up to date!" when a lookup failed or a package is not
+            // on the feed at all: that claim would be false, and it is the claim a user acts on.
+            if (
+                _nuGetLookup.GetFailedLookups().Count > 0
+                || _nuGetLookup.GetNotFoundLookups().Count > 0
+            )
             {
                 _consoleService.Warning(
                     "No updates found, but some packages could not be checked — see above."
@@ -670,6 +674,26 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         _consoleService.Warning(
             $"Could not check {failed.Count} package(s) after retries: "
                 + string.Join(", ", failed.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+        );
+        _consoleService.Dim("These are reported as unchanged, not as up to date.");
+    }
+
+    /// <summary>
+    /// Names the packages the feed answered 404 for. That is a definitive answer, not a failure —
+    /// but it means the tool never saw the package's versions, so a private-feed or unpublished
+    /// package must not read as "checked and current".
+    /// </summary>
+    private void ReportNotFoundLookups()
+    {
+        var notFound = _nuGetLookup.GetNotFoundLookups();
+        if (notFound.Count == 0)
+        {
+            return;
+        }
+
+        _consoleService.Warning(
+            $"Not found on nuget.org — private feed or unpublished?: "
+                + string.Join(", ", notFound.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
         );
         _consoleService.Dim("These are reported as unchanged, not as up to date.");
     }

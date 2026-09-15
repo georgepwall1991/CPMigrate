@@ -53,10 +53,25 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
         StringComparer.OrdinalIgnoreCase
     );
 
+    /// <summary>
+    /// Packages the feed answered 404 for. Kept apart from <see cref="_failedLookups"/> because the
+    /// caller's advice differs: a failure says "ask again", a 404 says "this feed does not carry
+    /// that ID" — the signature of a private-feed or unpublished package.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, byte> _notFoundLookups = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+
     /// <inheritdoc />
     public IReadOnlyCollection<string> GetFailedLookups()
     {
         return _failedLookups.Keys.ToList();
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<string> GetNotFoundLookups()
+    {
+        return _notFoundLookups.Keys.ToList();
     }
 
     /// <summary>
@@ -155,9 +170,11 @@ public sealed class NuGetVersionLookupService : INuGetVersionLookupService
 
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
-                    // Definitive: the package does not exist. Not a failure to report, and not worth
-                    // three attempts.
+                    // Definitive: the feed does not carry this ID — private-feed, unpublished, or
+                    // typo'd — and it will not start existing inside this run, so no retry. Still
+                    // recorded: without it a package the tool never checked reports as "up to date".
                     _logger.LogDebug("Package {PackageId} not found on the feed", packageId);
+                    _notFoundLookups.TryAdd(packageId, 0);
                     ClearFailure(packageId);
                     return null;
                 }

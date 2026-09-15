@@ -575,8 +575,10 @@
             "advisoryNotInDatabase",
             "transitivePinningDisabled",
             "advisoryDoesNotCoverResolvedVersion",
+            "packageNotOnFeed",
             "unknown"
-          ]
+          ],
+          "description": "What happened to this package. packageNotOnFeed — added in output schema 1.25.0 — is definitive: the ID is not on the checked feed, so no fix version can be computed and re-running will not change it"
         },
         "transitive": {
           "type": "boolean"

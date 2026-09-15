@@ -18,6 +18,17 @@ public interface INuGetVersionLookupService : IDisposable
     IReadOnlyCollection<string> GetFailedLookups();
 
     /// <summary>
+    /// Packages the feed definitively answered for with "not here" — a 404, meaning the ID is
+    /// unpublished, typo'd, or served only from a private feed this tool does not read.
+    ///
+    /// Distinct from <see cref="GetFailedLookups"/>: a failed lookup means "ask again", while a
+    /// 404 will say the same thing forever. It is still worth reporting: an update run that
+    /// silently skips an internal package reads as "checked and current", which is false.
+    /// </summary>
+    /// <returns>Package IDs the feed answered 404 for.</returns>
+    IReadOnlyCollection<string> GetNotFoundLookups();
+
+    /// <summary>
     /// Gets the latest version of a NuGet package.
     /// </summary>
     /// <param name="packageId">The NuGet package ID.</param>

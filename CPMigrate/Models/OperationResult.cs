@@ -180,8 +180,9 @@ public class RemediationActionInfo
     public string? TargetVersion { get; init; }
 
     /// <summary>
-    /// <c>planned</c>, <c>withheldMajor</c>, <c>noFixAvailable</c>, <c>advisoryDataUnavailable</c>, or
-    /// <c>advisoryDoesNotCoverResolvedVersion</c>.
+    /// <c>planned</c>, <c>withheldMajor</c>, <c>noFixAvailable</c>, <c>advisoryDataUnavailable</c>,
+    /// <c>advisoryNotInDatabase</c>, <c>transitivePinningDisabled</c>,
+    /// <c>advisoryDoesNotCoverResolvedVersion</c>, or <c>packageNotOnFeed</c>.
     /// </summary>
     [JsonPropertyName("outcome")]
     public string Outcome { get; init; } = string.Empty;

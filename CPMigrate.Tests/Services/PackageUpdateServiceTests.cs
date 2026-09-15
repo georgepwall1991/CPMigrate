@@ -27,6 +27,7 @@ public class PackageUpdateServiceTests : IDisposable
         _projectAnalyzerMock = new Mock<IProjectAnalyzer>();
         _nuGetLookupMock = new Mock<INuGetVersionLookupService>();
         _nuGetLookupMock.Setup(x => x.GetFailedLookups()).Returns(Array.Empty<string>());
+        _nuGetLookupMock.Setup(x => x.GetNotFoundLookups()).Returns(Array.Empty<string>());
         _dotNetCliMock = new Mock<IDotNetCliService>();
         _backupManagerMock = new Mock<IBackupManager>();
         _propsGenerator = new PropsGenerator();
@@ -81,6 +82,47 @@ public class PackageUpdateServiceTests : IDisposable
         // Assert
         result.ExitCode.Should().Be(ExitCodes.Success);
         _consoleService.OutputMessages.Should().Contain(m => m.Contains("up to date"));
+    }
+
+    [Fact]
+    public async Task UpdatePackagesAsync_PackageNotOnFeed_ReportsItAndStaysOffTheCleanClaim()
+    {
+        // A private-feed or unpublished package 404s on nuget.org forever. Reporting "Everything
+        // up to date!" claims the tool checked it — it never saw a single version.
+        SetupProjectAnalyzer();
+        CreatePropsFile(("Internal.Pkg", "1.0.0"));
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Internal.Pkg", false))
+            .ReturnsAsync((NuGetVersion?)null);
+        _nuGetLookupMock.Setup(n => n.GetNotFoundLookups()).Returns(["Internal.Pkg"]);
+
+        var result = await _sut.UpdatePackagesAsync(CreateOptions());
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        _consoleService.OutputMessages.Should().Contain(
+            m => m.Contains("Internal.Pkg") && m.Contains("not found", StringComparison.OrdinalIgnoreCase),
+            "a package the feed does not carry is named, not silently skipped");
+        _consoleService.OutputMessages.Should().NotContain(
+            m => m.Contains("Everything up to date"),
+            "the run never checked the package, so the clean claim would be false");
+    }
+
+    [Fact]
+    public async Task UpdatePackagesAsync_AllPublicPackagesCurrent_StillClaimsUpToDate()
+    {
+        // The gate only holds back the clean claim when something was actually unchecked.
+        SetupProjectAnalyzer();
+        CreatePropsFile(("Newtonsoft.Json", "13.0.3"));
+
+        _nuGetLookupMock.Setup(n => n.GetLatestVersionAsync("Newtonsoft.Json", false))
+            .ReturnsAsync(NuGetVersion.Parse("13.0.3"));
+
+        var result = await _sut.UpdatePackagesAsync(CreateOptions());
+
+        result.ExitCode.Should().Be(ExitCodes.Success);
+        _consoleService.OutputMessages.Should().Contain(m => m.Contains("Everything up to date"));
+        _consoleService.OutputMessages.Should().NotContain(
+            m => m.Contains("not found", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -575,6 +617,11 @@ public class PackageUpdateServiceTests : IDisposable
         public bool Disposed { get; private set; }
 
         public IReadOnlyCollection<string> GetFailedLookups()
+        {
+            return Array.Empty<string>();
+        }
+
+        public IReadOnlyCollection<string> GetNotFoundLookups()
         {
             return Array.Empty<string>();
         }

@@ -4,6 +4,20 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.98.0] - 2026-09-15
+
+### Fixed
+- **Packages absent from nuget.org are reported, not silently skipped.** A 404 from the flat
+  container is a definitive answer — private-feed, unpublished, or typo'd ID — and previously it
+  flowed through as "no newer version", so `--update-packages` could print "Everything up to
+  date!" about packages it never checked. The lookup service now tracks not-found IDs separately
+  from transient failures, the update report names them, and the clean claim is withheld while any
+  are unaccounted for. Output schema 1.25.0.
+- **Remediation calls a private package what it is.** A vulnerable package whose ID is not on
+  nuget.org reported `advisoryDataUnavailable` — "the published version list could not be read",
+  which invites a retry that can only ever get the same answer. It now reports the new
+  `packageNotOnFeed` outcome, which does not abort the run or suggest re-running.
+
 ## [3.97.0] - 2026-09-15
 
 ### Fixed
