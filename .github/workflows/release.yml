@@ -61,6 +61,9 @@ jobs:
           path: ./artifacts/CPMigrate-portable-win-x64.zip
 
   publish:
+    # Hold: this job runs only when the repo Actions variable NUGET_PUBLISH_ENABLED is 'true'.
+    # Unset/false skips publish even if a Release/tag fires.
+    if: vars.NUGET_PUBLISH_ENABLED == 'true'
     runs-on: ubuntu-latest
     needs: [build-and-test, portable-windows-package]
     permissions:
