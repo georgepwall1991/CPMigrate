@@ -560,6 +560,66 @@ public class DuplicatePackageFixerTests : IDisposable
 
     // Helper methods
 
+    [Fact]
+    public void Fix_UnreadableProjectFile_ReportsFailure_NotAlreadyConsistent()
+    {
+        // A malformed project file cannot be checked at all. Swallowing the parse error used to
+        // return "All references already use consistent casing" — the finding stays real while
+        // the file is unreadable, and that claim said the opposite.
+        var project1Path = CreateTestProject("Project1.csproj", "Newtonsoft.Json", "13.0.1");
+        var project2Path = Path.Combine(_testDirectory, "Project2.csproj");
+        File.WriteAllText(project2Path, "<Project><ItemGroup><PackageReference Update=\"newtonsoft.json\"");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Package has casing variations",
+            new[] { project1Path, project2Path },
+            AnalysisIssueCode.DuplicatePackageCasing
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", project1Path, "Project1.csproj"),
+            new("newtonsoft.json", "13.0.1", project2Path, "Project2.csproj")
+        });
+
+        var result = _fixer.Fix(issue, packageInfo, new Options(), dryRun: false);
+
+        result.Success.Should().BeFalse("the one project needing the change could not be read");
+        result.Description.Should().NotContain("consistent casing");
+    }
+
+    [Fact]
+    public void Fix_OneUnreadableAmongFixed_ReportsPartiallyApplied()
+    {
+        var project1Path = CreateTestProject("Project1.csproj", "Newtonsoft.Json", "13.0.1");
+        var project2Path = CreateTestProject("Project2.csproj", "Newtonsoft.Json", "13.0.1");
+        var project3Path = CreateTestProject("Project3.csproj", "newtonsoft.json", "13.0.1");
+        var project4Path = Path.Combine(_testDirectory, "Project4.csproj");
+        File.WriteAllText(project4Path, "<Project><ItemGroup><PackageReference Update=\"newtonsoft.json\"");
+
+        var issue = new AnalysisIssue(
+            "Newtonsoft.Json",
+            "Package has casing variations",
+            new[] { project1Path, project2Path, project3Path, project4Path },
+            AnalysisIssueCode.DuplicatePackageCasing
+        );
+
+        var packageInfo = new ProjectPackageInfo(new List<PackageReference>
+        {
+            new("Newtonsoft.Json", "13.0.1", project1Path, "Project1.csproj"),
+            new("Newtonsoft.Json", "13.0.1", project2Path, "Project2.csproj"),
+            new("newtonsoft.json", "13.0.1", project3Path, "Project3.csproj"),
+            new("newtonsoft.json", "13.0.1", project4Path, "Project4.csproj")
+        });
+
+        var result = _fixer.Fix(issue, packageInfo, new Options(), dryRun: false);
+
+        result.Success.Should().BeFalse("a partial outcome is not a success — the issue survives in the unwritable file");
+        result.Changes.Should().HaveCount(1);
+        File.ReadAllText(project3Path).Should().Contain("Newtonsoft.Json");
+    }
+
     private string CreateTestProject(string projectName, string packageName, string version)
     {
         var content = $@"<Project Sdk=""Microsoft.NET.Sdk"">

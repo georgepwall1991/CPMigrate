@@ -53,21 +53,43 @@ public class DuplicatePackageFixer : IFixer
             .Where(r => r.PackageName != standardCasing)
             .GroupBy(r => r.ProjectPath);
 
-        var changes = nonStandardRefs
-            .Select(group => StandardizePackageCasing(group.Key, issue.PackageName, standardCasing, request))
-            .Where(result => result != null)
-            .Cast<FileChange>()
-            .ToList();
+        var changes = new List<FileChange>();
+        List<string> failures = [];
+
+        foreach (var group in nonStandardRefs)
+        {
+            try
+            {
+                var result = StandardizePackageCasing(group.Key, issue.PackageName, standardCasing, request);
+                if (result != null)
+                {
+                    changes.Add(result);
+                }
+            }
+            catch (FixWriteException ex)
+            {
+                // One file that cannot be read or written must not stop the others — but it must
+                // not pass for "already consistent" either.
+                failures.Add(ex.Message);
+            }
+        }
 
         if (changes.Count == 0)
         {
-            return FixResult.NoFixNeeded($"All references already use consistent casing");
+            return failures.Count > 0
+                ? FixResult.Failed(string.Join("; ", failures))
+                : FixResult.NoFixNeeded($"All references already use consistent casing");
         }
 
-        return FixResult.Succeeded(
-            $"Standardized {issue.PackageName} casing to '{standardCasing}' in {changes.Count} project(s)",
-            changes
-        );
+        var description =
+            $"Standardized {issue.PackageName} casing to '{standardCasing}' in {changes.Count} project(s)";
+
+        return failures.Count > 0
+            ? FixResult.PartiallyApplied(
+                $"{description}, but could not change {failures.Count} other file(s): {string.Join("; ", failures)}",
+                changes
+            )
+            : FixResult.Succeeded(description, changes);
     }
 
     private static FileChange? StandardizePackageCasing(string projectPath, string packageNameInsensitive, string standardCasing, FixRequest request)
@@ -133,11 +155,12 @@ public class DuplicatePackageFixer : IFixer
                 standardCasing
             );
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException)
+        catch (Exception ex) when (ex is not FixWriteException)
         {
-            // File may be locked, inaccessible, or contain invalid XML.
-            // Returns null to skip this file; callers handle the absence gracefully.
-            return null;
+            // Same contract the other fixers keep: a locked or malformed project file is a failure
+            // with a cause, not "already consistent" — the finding stays real while the file is
+            // unwritable.
+            throw new FixWriteException(projectPath, ex);
         }
     }
 
