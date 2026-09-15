@@ -1,4 +1,5 @@
 using CPMigrate.Models;
+using NuGet.Versioning;
 using Spectre.Console;
 
 namespace CPMigrate.Services;
@@ -31,8 +32,8 @@ internal sealed class DependencyTreeService
             AnsiConsole.WriteLine();
         }
 
-        var totalDirect = packageInfo.References.Count(r => !r.IsTransitive);
-        var totalTransitive = packageInfo.References.Count(r => r.IsTransitive);
+        var totalDirect = CountDistinctPackages(packageInfo.References, transitive: false);
+        var totalTransitive = CountDistinctPackages(packageInfo.References, transitive: true);
         _console.Dim($"  {projects.Count()} project(s), {totalDirect} direct, {totalTransitive} transitive package(s).");
         _console.WriteLine();
 
@@ -43,16 +44,17 @@ internal sealed class DependencyTreeService
     /// Builds one project's package tree: direct packages first in case-insensitive name order,
     /// then transitive capped at 20 with an overflow remainder. Pure, so the shape is testable
     /// without a console; the caller owns rendering.
+    ///
+    /// The resolved scan lists a package once per target framework, so the rows are grouped by
+    /// package name here — a multi-targeted project would otherwise show every package once per
+    /// TFM. When frameworks resolve different versions (a conditional pin or per-TFM
+    /// VersionOverride), every distinct version is shown rather than silently picking one: that
+    /// split is exactly the kind of finding a dependency tree exists to surface.
     /// </summary>
     internal static Tree BuildProjectTree(string projectName, IReadOnlyList<PackageReference> references)
     {
-        var packages = references
-            .OrderByDescending(p => p.IsTransitive ? 1 : 0)
-            .ThenBy(p => p.PackageName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var direct = packages.Where(p => !p.IsTransitive).ToList();
-        var transitive = packages.Where(p => p.IsTransitive).ToList();
+        var direct = GroupByPackage(references.Where(p => !p.IsTransitive));
+        var transitive = GroupByPackage(references.Where(p => p.IsTransitive));
 
         var root = new Tree($"[bold {SpectrePalette.Ink.Primary}]{Markup.Escape(projectName)}[/]")
         {
@@ -62,20 +64,20 @@ internal sealed class DependencyTreeService
         if (direct.Count > 0)
         {
             var directNode = root.AddNode($"[{SpectrePalette.Ink.Secondary}]direct ({direct.Count})[/]");
-            foreach (var pkg in direct)
+            foreach (var (name, versions) in direct)
             {
-                var versionInk = string.IsNullOrEmpty(pkg.Version) ? SpectrePalette.Ink.Dim : SpectrePalette.Ink.Text;
-                var version = string.IsNullOrEmpty(pkg.Version) ? "(central)" : pkg.Version;
-                directNode.AddNode($"[{SpectrePalette.Ink.Success}]{Markup.Escape(pkg.PackageName)}[/] [{versionInk}]{Markup.Escape(version)}[/]");
+                var version = string.Join(", ", versions);
+                var versionInk = string.IsNullOrEmpty(version) ? SpectrePalette.Ink.Dim : SpectrePalette.Ink.Text;
+                directNode.AddNode($"[{SpectrePalette.Ink.Success}]{Markup.Escape(name)}[/] [{versionInk}]{Markup.Escape(string.IsNullOrEmpty(version) ? "(central)" : version)}[/]");
             }
         }
 
         if (transitive.Count > 0)
         {
             var transitiveNode = root.AddNode($"[{SpectrePalette.Ink.Dim}]transitive ({transitive.Count})[/]");
-            foreach (var pkg in transitive.Take(20))
+            foreach (var (name, versions) in transitive.Take(20))
             {
-                transitiveNode.AddNode($"[{SpectrePalette.Ink.Muted}]{Markup.Escape(pkg.PackageName)}[/] [{SpectrePalette.Ink.Dim}]{Markup.Escape(pkg.Version)}[/]");
+                transitiveNode.AddNode($"[{SpectrePalette.Ink.Muted}]{Markup.Escape(name)}[/] [{SpectrePalette.Ink.Dim}]{Markup.Escape(string.Join(", ", versions))}[/]");
             }
 
             if (transitive.Count > 20)
@@ -90,5 +92,38 @@ internal sealed class DependencyTreeService
         }
 
         return root;
+    }
+
+    /// <summary>
+    /// Collapses per-framework rows into one entry per package, carrying its distinct resolved
+    /// versions in ascending order. Versions that do not parse as NuGet versions sort after ones
+    /// that do, in ordinal order — a resolved version that will not parse is already unusual, and
+    /// a stable order matters more than a clever one.
+    /// </summary>
+    private static IReadOnlyList<(string Name, IReadOnlyList<string> Versions)> GroupByPackage(
+        IEnumerable<PackageReference> references
+    )
+    {
+        return references
+            .GroupBy(r => r.PackageName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (Name: g.Key, Versions: (IReadOnlyList<string>)[.. g
+                .Select(r => r.Version)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(v => NuGetVersion.TryParse(v, out _) ? 0 : 1)
+                .ThenBy(v => NuGetVersion.TryParse(v, out var parsed) ? parsed : null)
+                .ThenBy(v => v, StringComparer.OrdinalIgnoreCase)]))
+            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static int CountDistinctPackages(
+        IReadOnlyList<PackageReference> references,
+        bool transitive
+    )
+    {
+        return references
+            .Where(r => r.IsTransitive == transitive)
+            .DistinctBy(r => (r.ProjectPath, r.PackageName.ToUpperInvariant()))
+            .Count();
     }
 }

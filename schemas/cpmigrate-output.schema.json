@@ -1139,12 +1139,12 @@
         },
         "direct": {
           "type": "array",
-          "description": "Packages the project declares itself, in name order",
+          "description": "Packages the project declares itself, in name order — one entry per distinct (name, version) pair; the resolved scan reports a package once per target framework, and identical per-framework rows are collapsed",
           "items": { "$ref": "#/definitions/treePackage" }
         },
         "transitive": {
           "type": "array",
-          "description": "Packages arriving only through another package's closure, in name order",
+          "description": "Packages arriving only through another package's closure, in name order — one entry per distinct (name, version) pair; a package resolving different versions per target framework produces one entry per version",
           "items": { "$ref": "#/definitions/treePackage" }
         }
       },
@@ -1181,11 +1181,11 @@
         },
         "direct": {
           "type": "integer",
-          "description": "Direct package references across every scanned project"
+          "description": "Direct package entries across every scanned project — the total of the per-project direct arrays, which carry one entry per distinct (name, version) pair"
         },
         "transitive": {
           "type": "integer",
-          "description": "Transitive package references across every scanned project"
+          "description": "Transitive package entries across every scanned project — the total of the per-project transitive arrays, which carry one entry per distinct (name, version) pair"
         },
         "failedScans": {
           "type": "integer",

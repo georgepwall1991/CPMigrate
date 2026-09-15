@@ -8,7 +8,12 @@ namespace CPMigrate.Tests;
 /// <summary>
 /// The <c>--output-file</c> contract: the file's parent is part of the path the caller named, so
 /// a CI script writing to <c>artifacts/report.json</c> should not have to <c>mkdir -p</c> first.
+/// Sequential because these tests swap <c>Console.Out</c>: if Spectre's global console binds its
+/// backend inside a swap window it captures a <see cref="StringWriter"/> the test later disposes,
+/// and every subsequent <c>AnsiConsole.Write</c> anywhere in the suite throws
+/// ObjectDisposedException.
 /// </summary>
+[Collection("Sequential")]
 public class JsonOutputWriterTests : IDisposable
 {
     private readonly string _testDirectory = Path.Combine(

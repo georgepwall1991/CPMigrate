@@ -4,6 +4,23 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.95.0] - 2026-09-14
+
+### Fixed
+- **`--tree` no longer lists a package once per target framework.** `dotnet package list` reports
+  each package once per TFM, so a `net8.0;net10.0` project rendered every package twice — and
+  the `tree` JSON document carried the duplicates with summary counts to match. The console tree
+  now shows one row per package, listing every distinct resolved version (`Legacy.Pkg 1.0.0,
+  2.0.0`) when a conditional pin or per-TFM `VersionOverride` splits the versions — the exact
+  signal a dependency tree exists to surface. The JSON document emits one entry per distinct
+  (name, version) pair and the summary counts those entries.
+- **The test suite no longer poisons Spectre's global console.** `CommandRouterTests` and
+  `JsonOutputWriterTests` swap `Console.Out` for a `StringWriter`; if the lazily-bound global
+  `AnsiConsole` backend was first created inside that window it captured a writer the test then
+  disposed, and every subsequent `AnsiConsole.Write` in the run failed with
+  `ObjectDisposedException` — an intermittent, order-dependent suite failure. Both classes now
+  join the `Sequential` collection that already quarantines the other console-global mutators.
+
 ## [3.94.0] - 2026-09-14
 
 ### Added
