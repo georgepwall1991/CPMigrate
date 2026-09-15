@@ -111,8 +111,13 @@ internal class EnvironmentAnalyzer
         {
             analyzer.ScanProjectPackages(project, packages);
 
-            var targetFrameworks = _projectFileScanner.GetTargetFramework(project);
-            AccumulateTargetFrameworks(ctx, targetFrameworks);
+            // GetDeclaredTargetFrameworks splits TargetFrameworks lists and drops expression or
+            // conditional declarations, so the summary counts runtimes the project really targets
+            // rather than the raw property text ("$(SharedTfms)" is not a framework).
+            foreach (var tf in _projectFileScanner.GetDeclaredTargetFrameworks(project))
+            {
+                AccumulateTargetFramework(ctx, tf);
+            }
         }
 
         ctx.ConflictCount = VersionResolver.DetectConflicts(packages).Count;
@@ -121,17 +126,10 @@ internal class EnvironmentAnalyzer
     /// <summary>
     /// Accumulates target framework statistics.
     /// </summary>
-    private static void AccumulateTargetFrameworks(EnvironmentContext ctx, string targetFrameworks)
+    private static void AccumulateTargetFramework(EnvironmentContext ctx, string tf)
     {
-        foreach (var tf in targetFrameworks.Split(';', StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (!ctx.TargetFrameworks.ContainsKey(tf))
-            {
-                ctx.TargetFrameworks[tf] = 0;
-            }
-
-            ctx.TargetFrameworks[tf]++;
-        }
+        ctx.TargetFrameworks.TryGetValue(tf, out var count);
+        ctx.TargetFrameworks[tf] = count + 1;
     }
 }
 
