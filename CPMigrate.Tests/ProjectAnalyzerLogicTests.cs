@@ -340,4 +340,53 @@ public class ProjectAnalyzerLogicTests : IDisposable
         versions["LibB"].Should().Contain("1.5.0");
         versions.Should().NotContainKey("LibA;LibB");
     }
+
+    [Fact]
+    public void ProcessProject_LiteralOnExpressionPinnedPackage_BecomesVersionOverride()
+    {
+        // The existing pin is "$(LibAVer)" — overwriting it with this project's literal would
+        // rebind every other project resolving through the expression. The declared version
+        // becomes a VersionOverride: this project keeps 2.0.0, the pin stays an expression.
+        var projectContent = "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+                             "  <ItemGroup>\n" +
+                             "    <PackageReference Include=\"LibA\" Version=\"2.0.0\" />\n" +
+                             "    <PackageReference Include=\"LibB\" Version=\"3.0.0\" />\n" +
+                             "  </ItemGroup>\n" +
+                             "</Project>";
+        var filePath = CreateTestProject("TestExprPinned.csproj", projectContent);
+        var versions = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var expressionPinned = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "LibA" };
+
+        var resultXml = ProjectAnalyzer.ProcessProject(
+            filePath,
+            versions,
+            expressionPinnedPackages: expressionPinned);
+
+        versions.Should().NotContainKey("LibA");
+        versions["LibB"].Should().Contain("3.0.0");
+        resultXml.Should().Contain("VersionOverride=\"2.0.0\"");
+        resultXml.Should().NotContain("Version=\"2.0.0\"");
+    }
+
+    [Fact]
+    public void ProcessProject_ExpressionPinnedLiteral_WithExistingOverride_IsRemoved()
+    {
+        var projectContent = "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+                             "  <ItemGroup>\n" +
+                             "    <PackageReference Include=\"LibA\" Version=\"2.0.0\" VersionOverride=\"9.9.9\" />\n" +
+                             "  </ItemGroup>\n" +
+                             "</Project>";
+        var filePath = CreateTestProject("TestExprPinnedOverride.csproj", projectContent);
+        var versions = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var expressionPinned = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "LibA" };
+
+        var resultXml = ProjectAnalyzer.ProcessProject(
+            filePath,
+            versions,
+            expressionPinnedPackages: expressionPinned);
+
+        versions.Should().NotContainKey("LibA");
+        resultXml.Should().Contain("VersionOverride=\"9.9.9\"");
+        resultXml.Should().NotContain("Version=\"2.0.0\"");
+    }
 }

@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using CPMigrate.Models;
+using CPMigrate.Services;
 using CPMigrate.Services.Migration;
 using NuGet.Versioning;
 
@@ -883,9 +884,7 @@ public class VersionInconsistencyFixer : IFixer
     }
 
     private static bool IsExpandableMetadata(string value) =>
-        value.Contains("$(", StringComparison.Ordinal)
-        || value.Contains("@(", StringComparison.Ordinal)
-        || value.Contains("%(", StringComparison.Ordinal);
+        MsBuildProps.IsExpressionValue(value);
 
     private static (bool Modified, bool Unresolved) UpdateVersionMetadata(
         XAttribute? metadata,

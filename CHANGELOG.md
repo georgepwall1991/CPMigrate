@@ -4,6 +4,24 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **An expression-valued pin is no longer treated as a literal version anywhere.**
+  `ReadExistingPackageVersions` split its result: pins written as `$(X)` now arrive on a
+  separate channel, so `--update-packages` stops shipping them to NuGet (where the parse
+  failure read as "checked, no newer version" and folded into "Everything up to date!" —
+  they are now named as uncheckable and hold the clean claim back), `--remediate --only`
+  no longer calls an expression-pinned package "not referenced", and merge-path conflict
+  resolution never compares `$(X)` against real versions.
+- **`--merge` preserves an expression pin instead of overwriting it.** A props file pinning
+  `P` as `$(LibVer)` plus a project declaring `Version="2.0"` used to end with the pin
+  rewritten to the literal — rebinding every project resolving through the property. The
+  project's literal now becomes a `VersionOverride`: this project keeps exactly what it
+  declared, and the shared pin stays an expression.
+- The three private copies of the `$(…)`/`@(…)`/`%(…)` detector are now one
+  `MsBuildProps.IsExpressionValue`.
+
 ## [4.1.0] - 2026-09-15
 
 ### Fixed

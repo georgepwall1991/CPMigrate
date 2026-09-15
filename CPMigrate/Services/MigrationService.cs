@@ -52,6 +52,14 @@ public class MigrationService
     private readonly Dictionary<string, HashSet<string>> _expressionVersions =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Packages whose existing central pin is an MSBuild expression. A project-side literal for one
+    /// of these must become a <c>VersionOverride</c>, never a literal pin — overwriting the
+    /// expression rebinds every other project that resolves through it.
+    /// </summary>
+    private readonly HashSet<string> _existingExpressionPins =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public MigrationService(
         IConsoleService consoleService,
         IProjectAnalyzer? projectAnalyzer = null,
@@ -158,6 +166,7 @@ public class MigrationService
         _directlyReferenced.Clear();
         _transitivelyPinned.Clear();
         _expressionVersions.Clear();
+        _existingExpressionPins.Clear();
 
         if (!string.IsNullOrEmpty(options.DiffFile))
         {
@@ -708,13 +717,32 @@ public class MigrationService
         {
             var existingPackages = PropsGenerator.ReadExistingPackageVersions(
                 propsFilePath,
-                out hasConditionalPackageVersions
+                out hasConditionalPackageVersions,
+                out var existingExpressions
             );
-            existingPackageCount = existingPackages.Count;
+            existingPackageCount = existingPackages.Count + existingExpressions.Count;
 
             foreach (var kvp in existingPackages)
             {
                 packages.Add(kvp.Key, new HashSet<string>(kvp.Value));
+            }
+
+            // An existing expression pin decides the package's version at restore — it is a pin,
+            // not a version candidate. Keep it out of `packages` so conflict resolution and the
+            // merge writer never overwrite it with a literal; ForwardExpressionPins still sees it
+            // (harmless — it writes the same value back), and ProcessProject converts project-side
+            // literals for these names into VersionOverride so the pin is never displaced.
+            foreach (var kvp in existingExpressions)
+            {
+                _existingExpressionPins.Add(kvp.Key);
+                if (!_expressionVersions.TryGetValue(kvp.Key, out var expressions))
+                {
+                    _expressionVersions.Add(kvp.Key, new HashSet<string>(kvp.Value));
+                }
+                else
+                {
+                    expressions.UnionWith(kvp.Value);
+                }
             }
 
             return true;
@@ -1514,7 +1542,8 @@ public class MigrationService
             projectFilePath,
             packages,
             options.KeepAttributes,
-            _expressionVersions
+            _expressionVersions,
+            _existingExpressionPins
         );
 
         // Handle transitive dependencies if requested

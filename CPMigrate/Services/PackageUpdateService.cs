@@ -64,15 +64,18 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
 
         ReportFailedLookups();
         ReportNotFoundLookups();
+        ReportExpressionPins(load.ExpressionVersions);
 
         var availableUpdates = ApplyOnlyFilter(FilterAvailableUpdates(updates), request);
         if (availableUpdates.Count == 0)
         {
-            // Deliberately not "Everything up to date!" when a lookup failed or a package is not
-            // on the feed at all: that claim would be false, and it is the claim a user acts on.
+            // Deliberately not "Everything up to date!" when a lookup failed, a package is not
+            // on the feed at all, or a pin is an expression there is no literal to compare:
+            // that claim would be false, and it is the claim a user acts on.
             if (
                 _nuGetLookup.GetFailedLookups().Count > 0
                 || _nuGetLookup.GetNotFoundLookups().Count > 0
+                || load.ExpressionVersions.Count > 0
             )
             {
                 _consoleService.Warning(
@@ -220,14 +223,18 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
             return UpdateLoadContext.FromEarly(new PackageUpdateResult { ExitCode = ExitCodes.ValidationError });
         }
 
-        var currentVersions = PropsGenerator.ReadExistingPackageVersions(propsPath, out _);
-        if (currentVersions.Count == 0)
+        var currentVersions = PropsGenerator.ReadExistingPackageVersions(
+            propsPath,
+            out _,
+            out var expressionVersions
+        );
+        if (currentVersions.Count == 0 && expressionVersions.Count == 0)
         {
             _consoleService.Info("No packages found in Directory.Packages.props.");
             return UpdateLoadContext.FromEarly(new PackageUpdateResult { ExitCode = ExitCodes.Success });
         }
 
-        return new UpdateLoadContext(basePath, projectPaths, propsPath, currentVersions);
+        return new UpdateLoadContext(basePath, projectPaths, propsPath, currentVersions, expressionVersions);
     }
 
     private async Task<(List<PackageUpdateEntry> Updates, int TransitiveFound)> QueryAllUpdatesAsync(
@@ -698,6 +705,28 @@ public sealed class PackageUpdateService : IPackageUpdateService, IDisposable
         _consoleService.Dim("These are reported as unchanged, not as up to date.");
     }
 
+    /// <summary>
+    /// Names the packages whose central pin is an MSBuild expression. There is no literal to
+    /// compare against the feed, so the package was never checked — it must not fold into a
+    /// "Everything up to date!" claim.
+    /// </summary>
+    private void ReportExpressionPins(Dictionary<string, HashSet<string>> expressionVersions)
+    {
+        if (expressionVersions.Count == 0)
+        {
+            return;
+        }
+
+        _consoleService.Warning(
+            $"Pinned by an MSBuild expression — cannot check for updates: "
+                + string.Join(
+                    ", ",
+                    expressionVersions.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                )
+        );
+        _consoleService.Dim("These are reported as unchecked, not as up to date.");
+    }
+
     private void ShowUpdatesTable(List<PackageUpdateEntry> updates)
     {
         var directUpdates = updates.Where(u => !u.IsTransitive).OrderBy(u => u.PackageName).ToList();
@@ -942,12 +971,13 @@ internal sealed record UpdateLoadContext(
     string BasePath,
     List<string> ProjectPaths,
     string PropsPath,
-    Dictionary<string, HashSet<string>> CurrentVersions)
+    Dictionary<string, HashSet<string>> CurrentVersions,
+    Dictionary<string, HashSet<string>> ExpressionVersions)
 {
     public PackageUpdateResult? EarlyResult { get; private init; }
 
     public static UpdateLoadContext FromEarly(PackageUpdateResult result) =>
-        new(string.Empty, new(), string.Empty, new()) { EarlyResult = result };
+        new(string.Empty, new(), string.Empty, new(), new()) { EarlyResult = result };
 }
 
 internal sealed record UpdateBackupContext(string Path, BackupManifest Manifest)

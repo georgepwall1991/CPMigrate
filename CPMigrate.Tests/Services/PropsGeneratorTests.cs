@@ -206,6 +206,52 @@ public class PropsGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void ReadExistingPackageVersions_ExpressionPin_SplitsFromLiterals()
+    {
+        // "$(X)" is not a version — it cannot be compared, resolved, or looked up on a feed.
+        // It belongs to a separate channel so conflict detection and NuGet queries never see it.
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""Newtonsoft.Json"" Version=""13.0.1"" />
+    <PackageVersion Include=""LibA"" Version=""$(LibAVer)"" />
+  </ItemGroup>
+</Project>");
+
+        var result = PropsGenerator.ReadExistingPackageVersions(
+            propsPath,
+            out var hasConditional,
+            out var expressions);
+
+        result.Should().HaveCount(1);
+        result.Should().ContainKey("Newtonsoft.Json");
+        result.Should().NotContainKey("LibA");
+        expressions.Should().ContainKey("LibA");
+        expressions["LibA"].Should().Contain("$(LibAVer)");
+        hasConditional.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ReadExistingPackageVersions_TwoArgOverload_ExcludesExpressions()
+    {
+        // Callers that only take the literal set must not see expression values at all —
+        // a "$(X)" reaching a NuGet lookup reports nothing parseable and silently skips.
+        var propsPath = Path.Combine(_testDirectory, "Directory.Packages.props");
+        File.WriteAllText(propsPath, @"<Project>
+  <ItemGroup>
+    <PackageVersion Include=""LibA"" Version=""$(LibAVer)"" />
+    <PackageVersion Include=""LibB"" Version=""2.0.0"" />
+  </ItemGroup>
+</Project>");
+
+        var result = PropsGenerator.ReadExistingPackageVersions(propsPath, out _);
+
+        result.Should().HaveCount(1);
+        result.Should().ContainKey("LibB");
+        result.Should().NotContainKey("LibA");
+    }
+
+    [Fact]
     public void ReadExistingPackageVersions_NonExistentFile_ThrowsFileNotFoundException()
     {
         // Arrange
