@@ -183,8 +183,14 @@ public static class OutputMetadata
     /// version can be computed. Definitive, unlike <c>advisoryDataUnavailable</c> whose correct
     /// response is to re-run.
     /// </para>
+    /// <para>
+    /// 1.26.0 additively introduced <c>totals.solutionsDiscovered</c> on the batch report: how many
+    /// solutions discovery found before any ran. It exceeds <c>totals.solutions</c> when the batch
+    /// stopped early — until now a stopped-early batch and a complete small batch reported
+    /// identical totals.
+    /// </para>
     /// </remarks>
-    public const string SchemaVersion = "1.25.0";
+    public const string SchemaVersion = "1.26.0";
 
     /// <summary>
     /// Gets the current CPMigrate application version at runtime.

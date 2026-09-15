@@ -4,6 +4,19 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.99.0] - 2026-09-15
+
+### Fixed
+- **Sequential `--batch` now stops on a failed solution, not just a thrown one.** A run without
+  `--batch-continue` only broke the loop on exceptions — a solution that *returned* a non-zero
+  exit code let the batch continue, contradicting the flag's contract and the parallel path's
+  behavior. Sequential and parallel now stop on the same condition.
+- **A stopped-early batch can no longer pass for a complete one.** `totals` counts only attempted
+  solutions, so a batch that halted at solution 2 of 10 and one that found 2 and ran both produced
+  identical output. `totals.solutionsDiscovered` now records how many were found (output schema
+  1.26.0), the console headline reads "BATCH STOPPED EARLY", and the Markdown report names the
+  attempted scope.
+
 ## [3.98.0] - 2026-09-15
 
 ### Fixed

@@ -186,6 +186,8 @@ public class BatchService
         }
         _consoleService.WriteLine();
 
+        result.SolutionsDiscovered = solutions.Count;
+
         List<SolutionResult> solutionResults;
 
         if (options.BatchParallel)
@@ -328,6 +330,17 @@ public class BatchService
                             migrationResult.BaselineUnevaluatedRuleCodes,
                     }
                 );
+
+                // A returned failure is still a failure: only a thrown exception stopped the batch
+                // here, so without --batch-continue a solution that merely reported failure let the
+                // run continue — the parallel path already stops on either.
+                if (migrationResult.ExitCode != ExitCodes.Success && !options.BatchContinue)
+                {
+                    _consoleService.Warning(
+                        "Stopping batch (use --batch-continue to continue on failure)"
+                    );
+                    break;
+                }
             }
             catch (Exception ex)
             {
@@ -532,6 +545,10 @@ public class BatchService
 
         var totals = result.Totals;
 
+        // "Complete" only describes a run that attempted every discovered solution; a stopped-early
+        // batch claims that about a subset.
+        var stoppedEarly = totals.Solutions < totals.SolutionsDiscovered;
+
         if (result.Success)
         {
             _consoleService.Success(
@@ -540,8 +557,12 @@ public class BatchService
         }
         else
         {
+            var skipped = stoppedEarly
+                ? $" ({totals.SolutionsDiscovered - totals.Solutions} never attempted)"
+                : string.Empty;
             _consoleService.Warning(
-                $"BATCH COMPLETE: {totals.Succeeded}/{totals.Solutions} succeeded, {totals.Failed} failed"
+                $"{(stoppedEarly ? "BATCH STOPPED EARLY" : "BATCH COMPLETE")}: "
+                    + $"{totals.Succeeded}/{totals.Solutions} succeeded, {totals.Failed} failed{skipped}"
             );
         }
 

@@ -38,12 +38,22 @@ public partial class BatchResult
     public List<SolutionResult> Solutions { get; init; } = new();
 
     /// <summary>
+    /// How many solutions discovery found before any ran. Greater than <see cref="Solutions"/>' count
+    /// when the batch stopped early — without it, a stopped-early run and a complete small batch
+    /// report identical totals.
+    /// </summary>
+    [JsonIgnore]
+    public int SolutionsDiscovered { get; set; }
+
+    /// <summary>
     /// Aggregated totals across all solutions.
     /// </summary>
     [JsonPropertyName("totals")]
     public BatchTotals Totals => new()
     {
         Solutions = Solutions.Count,
+        // 0 means the property was never set — a hand-built result, where attempted is all there is.
+        SolutionsDiscovered = SolutionsDiscovered > 0 ? SolutionsDiscovered : Solutions.Count,
         Succeeded = Solutions.Count(s => s.Success),
         Failed = Solutions.Count(s => !s.Success),
         ProjectsProcessed = Solutions.Sum(s => s.Summary?.ProjectsProcessed ?? 0),
@@ -158,6 +168,13 @@ public class BatchTotals
 {
     [JsonPropertyName("solutions")]
     public int Solutions { get; init; }
+
+    /// <summary>
+    /// How many solutions discovery found before any ran — exceeds <see cref="Solutions"/> when the
+    /// batch stopped early, which is the only way a consumer can tell the two apart.
+    /// </summary>
+    [JsonPropertyName("solutionsDiscovered")]
+    public int SolutionsDiscovered { get; init; }
 
     [JsonPropertyName("succeeded")]
     public int Succeeded { get; init; }

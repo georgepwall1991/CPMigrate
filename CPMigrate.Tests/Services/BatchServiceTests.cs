@@ -328,6 +328,65 @@ public class BatchServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunBatchAsync_Sequential_FailureResult_NoContinue_StopsAfterFailure()
+    {
+        // A returned non-zero exit is a failure just like a thrown one — only exceptions stopped the
+        // sequential loop, so without --batch-continue a normally-failing solution let the run
+        // continue. The parallel path already stops on either.
+        CreateSolutionFile("Solution1.sln");
+        CreateSolutionFile("Solution2.sln");
+        CreateSolutionFile("Solution3.sln");
+
+        var processedCount = 0;
+        var batchService = CreateBatchService(async options =>
+        {
+            var count = Interlocked.Increment(ref processedCount);
+            await Task.CompletedTask;
+            return new MigrationResult
+            {
+                ExitCode = count == 1 ? ExitCodes.ValidationError : ExitCodes.Success,
+                ProjectsProcessed = 1
+            };
+        });
+
+        var options = new Options
+        {
+            BatchDir = _testDirectory,
+            BatchParallel = false,
+            BatchContinue = false
+        };
+
+        var result = await batchService.RunBatchAsync(options);
+
+        result.Solutions.Should().HaveCount(1);
+        result.Solutions[0].Success.Should().BeFalse();
+        processedCount.Should().Be(1, "the run must stop at the first failed solution");
+        result.Totals.SolutionsDiscovered.Should().Be(3);
+        result.Totals.Solutions.Should().Be(1, "attempted and discovered differ on a stopped-early batch");
+    }
+
+    [Fact]
+    public async Task RunBatchAsync_CompleteBatch_DiscoveredEqualsAttempted()
+    {
+        CreateSolutionFile("Solution1.sln");
+        CreateSolutionFile("Solution2.sln");
+
+        var batchService = CreateBatchService(async options =>
+        {
+            await Task.CompletedTask;
+            return new MigrationResult { ExitCode = ExitCodes.Success, ProjectsProcessed = 1 };
+        });
+
+        var options = new Options { BatchDir = _testDirectory, BatchParallel = false };
+
+        var result = await batchService.RunBatchAsync(options);
+
+        result.Totals.SolutionsDiscovered.Should().Be(2);
+        result.Totals.SolutionsDiscovered.Should().Be(result.Totals.Solutions,
+            "a complete batch attempted everything it found");
+    }
+
+    [Fact]
     public async Task RunBatchAsync_ExceptionThrown_CapturesError()
     {
         // Arrange
