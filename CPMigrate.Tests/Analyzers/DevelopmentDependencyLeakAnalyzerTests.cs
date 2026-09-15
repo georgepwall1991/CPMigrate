@@ -195,6 +195,76 @@ public class DevelopmentDependencyLeakAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_ChildPrivateAssetsOverridesAttribute_IsStillReported()
+    {
+        // Item metadata children evaluate after attributes, so a child element beats the
+        // PrivateAssets attribute on the same item — effective coverage here is "none", and
+        // reading the attribute would suppress a real leak.
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="SonarAnalyzer.CSharp" Version="1.0.0" PrivateAssets="all"><PrivateAssets>none</PrivateAssets></PackageVersion>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        Analyze(DeclaredReference("SonarAnalyzer.CSharp", ""))
+            .Issues.Should()
+            .ContainSingle();
+    }
+
+    [Fact]
+    public void Analyze_TrailingConditionalPrivateAssetsChild_DoesNotSuppress()
+    {
+        // The last declaration is conditional: when it holds, coverage is "none". Conditional
+        // coverage is not coverage — even though an earlier child says "all".
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="SonarAnalyzer.CSharp" Version="1.0.0"><PrivateAssets>all</PrivateAssets><PrivateAssets Condition="'$(TargetFramework)' == 'net8.0'">none</PrivateAssets></PackageVersion>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        Analyze(DeclaredReference("SonarAnalyzer.CSharp", ""))
+            .Issues.Should()
+            .ContainSingle();
+    }
+
+    [Fact]
+    public void Analyze_DuplicatePrivateAssetsChildren_LastWins()
+    {
+        // Two unconditional children: the last is what MSBuild applies — "all" here, so the
+        // earlier "none" must not produce a finding.
+        WriteProps(
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="SonarAnalyzer.CSharp" Version="1.0.0"><PrivateAssets>none</PrivateAssets><PrivateAssets>all</PrivateAssets></PackageVersion>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        Analyze(DeclaredReference("SonarAnalyzer.CSharp", ""))
+            .Issues.Should()
+            .BeEmpty();
+    }
+
+    [Fact]
     public void Analyze_GlobalPackageReferenceWithoutPrivateAssets_IsReportedAgainstThePropsFile()
     {
         // A global reference injects the package into every project — the leak is in the props

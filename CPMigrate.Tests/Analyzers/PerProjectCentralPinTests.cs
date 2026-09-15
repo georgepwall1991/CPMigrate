@@ -254,6 +254,54 @@ public class PerProjectCentralPinTests : IDisposable
     }
 
     [Fact]
+    public void ReadEffectiveCentralVersions_ChildVersionOverridesTheAttribute()
+    {
+        // Item metadata children evaluate after attributes, so the attribute is the losing
+        // declaration here — reading it first reports a pin of 1.0.0 while restore applies 2.0.0.
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Serilog" Version="1.0.0"><Version>2.0.0</Version></PackageVersion>
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject("src/Api/Api.csproj", "Serilog");
+
+        var pins = CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root, [project]);
+
+        pins.Should().ContainSingle(pin => pin.Package == "Serilog" && pin.Version == "2.0.0");
+    }
+
+    [Fact]
+    public void ReadEffectiveCentralVersions_DuplicateVersionChildren_LastWins()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, CpmDriftAnalyzer.PropsFileName),
+            """
+            <Project>
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageVersion Include="Serilog"><Version>1.0.0</Version><Version>2.0.0</Version></PackageVersion>
+              </ItemGroup>
+            </Project>
+            """
+        );
+        var project = WriteProject("src/Api/Api.csproj", "Serilog");
+
+        var pins = CpmDriftAnalyzer.ReadEffectiveCentralVersions(_root, [project]);
+
+        pins.Should().ContainSingle(pin => pin.Package == "Serilog" && pin.Version == "2.0.0");
+    }
+
+    [Fact]
     public void Analyze_EnablementFromANearerDirectoryBuildProps_IsHonoured()
     {
         // The property is resolved from the governed project's own directory. Reading it from the
