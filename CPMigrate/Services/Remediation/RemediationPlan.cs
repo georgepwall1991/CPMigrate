@@ -44,6 +44,14 @@ public enum RemediationOutcome
     /// than none: it looks like the fix was applied.
     /// </summary>
     TransitivePinningDisabled,
+
+    /// <summary>
+    /// The package ID is not published on the checked feed at all — private-feed, unpublished, or
+    /// typo'd — so no fix version can be computed. Deliberately not
+    /// <see cref="AdvisoryDataUnavailable"/>: that one means "ask again", and a 404 will say the same
+    /// thing forever, so CI retrying it only delays the answer it already has.
+    /// </summary>
+    PackageNotOnFeed,
 }
 
 /// <summary>

@@ -197,6 +197,12 @@ public sealed class RemediationPlanner
 
         if (available == null || available.Count == 0)
         {
+            // A 404 is a definitive answer, not a transient gap: the feed does not carry this ID
+            // (private feed, unpublished, or typo), so "could not be read — retry" misleads.
+            var notOnFeed = _versionLookup
+                .GetNotFoundLookups()
+                .Contains(packageName, StringComparer.OrdinalIgnoreCase);
+
             return Unresolvable(
                 packageName,
                 resolvedVersionText,
@@ -204,8 +210,12 @@ public sealed class RemediationPlanner
                 advisoryIds,
                 severity,
                 projects,
-                RemediationOutcome.AdvisoryDataUnavailable,
-                "the published version list could not be read"
+                notOnFeed
+                    ? RemediationOutcome.PackageNotOnFeed
+                    : RemediationOutcome.AdvisoryDataUnavailable,
+                notOnFeed
+                    ? "the package is not published on nuget.org — private feed or unpublished package? — so no fix version can be computed"
+                    : "the published version list could not be read"
             );
         }
 

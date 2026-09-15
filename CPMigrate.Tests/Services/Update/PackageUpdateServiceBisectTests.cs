@@ -19,12 +19,13 @@ public class PackageUpdateServiceBisectTests : IDisposable
     private readonly Mock<INuGetVersionLookupService> _nuGet = CreateLookupMock();
 
     /// <summary>
-    /// The interface promises a non-null FailedLookups; Moq would return null for it.
+    /// The interface promises non-null lookup lists; Moq would return null for them.
     /// </summary>
     private static Mock<INuGetVersionLookupService> CreateLookupMock()
     {
         var mock = new Mock<INuGetVersionLookupService>();
         mock.Setup(x => x.GetFailedLookups()).Returns(Array.Empty<string>());
+        mock.Setup(x => x.GetNotFoundLookups()).Returns(Array.Empty<string>());
         return mock;
     }
     private readonly Mock<IDotNetCliService> _cli = new();

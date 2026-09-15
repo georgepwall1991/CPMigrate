@@ -58,6 +58,27 @@ public class NuGetLookupResilienceTests
         latest.Should().BeNull();
         handler.Requests.Should().Be(1);
         service.GetFailedLookups().Should().BeEmpty("a missing package is an answer, not a failure");
+        service.GetNotFoundLookups().Should().Contain("Does.Not.Exist",
+            "a definitive absence still means the tool never saw the package's versions");
+    }
+
+    [Fact]
+    public async Task GetLatestVersion_MixedResults_OnlyTheMissingAreReported()
+    {
+        var handler = new ScriptedHandler(
+            request => request.RequestUri!.AbsoluteUri.Contains("internal", StringComparison.OrdinalIgnoreCase)
+                ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"versions":["1.0.0","2.0.0"]}""")
+                });
+        using var service = CreateService(handler);
+
+        await service.GetLatestVersionAsync("Newtonsoft.Json");
+        await service.GetLatestVersionAsync("Internal.Package");
+
+        service.GetNotFoundLookups().Should().BeEquivalentTo(["Internal.Package"]);
+        service.GetFailedLookups().Should().BeEmpty();
     }
 
     [Fact]
@@ -281,6 +302,13 @@ public class NuGetLookupResilienceTests
         : HttpMessageHandler
     {
         private int _index;
+        private readonly Func<HttpRequestMessage, HttpResponseMessage>? _byRequest;
+
+        public ScriptedHandler(Func<HttpRequestMessage, HttpResponseMessage> byRequest)
+            : this([])
+        {
+            _byRequest = byRequest;
+        }
 
         public int Requests { get; private set; }
 
@@ -290,6 +318,11 @@ public class NuGetLookupResilienceTests
         )
         {
             Requests++;
+            if (_byRequest is not null)
+            {
+                return Task.FromResult(_byRequest(request));
+            }
+
             var responder = responses[Math.Min(_index, responses.Length - 1)];
             _index++;
 

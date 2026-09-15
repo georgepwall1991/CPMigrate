@@ -1628,7 +1628,7 @@ internal static class CommandRouter
     /// out rather than derived from the enum name, so renaming the enum cannot silently change a
     /// contract CI branches on.
     /// </summary>
-    private static string ToJsonOutcome(RemediationOutcome outcome)
+    internal static string ToJsonOutcome(RemediationOutcome outcome)
     {
         return outcome switch
         {
@@ -1638,6 +1638,7 @@ internal static class CommandRouter
             RemediationOutcome.AdvisoryDataUnavailable => "advisoryDataUnavailable",
             RemediationOutcome.AdvisoryNotInDatabase => "advisoryNotInDatabase",
             RemediationOutcome.TransitivePinningDisabled => "transitivePinningDisabled",
+            RemediationOutcome.PackageNotOnFeed => "packageNotOnFeed",
             RemediationOutcome.AdvisoryDoesNotCoverResolvedVersion =>
                 "advisoryDoesNotCoverResolvedVersion",
             _ => "unknown",

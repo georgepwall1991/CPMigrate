@@ -90,6 +90,8 @@ public sealed class RemediationServiceTests : IDisposable
     {
         public IReadOnlyCollection<string> GetFailedLookups() => [];
 
+        public IReadOnlyCollection<string> GetNotFoundLookups() => [];
+
         public Task<NuGetVersion?> GetLatestVersionAsync(string p, bool includePrerelease = false) =>
             Task.FromResult<NuGetVersion?>(null);
 

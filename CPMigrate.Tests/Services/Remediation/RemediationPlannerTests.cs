@@ -101,7 +101,19 @@ public class RemediationPlannerTests
             return this;
         }
 
+        /// <summary>The feed answered 404 for this ID: private-feed or unpublished.</summary>
+        public FakeVersionLookup NotOnFeed(string packageId)
+        {
+            _versions[packageId] = null;
+            _notFound.Add(packageId);
+            return this;
+        }
+
+        private readonly HashSet<string> _notFound = new(StringComparer.OrdinalIgnoreCase);
+
         public IReadOnlyCollection<string> GetFailedLookups() => [];
+
+        public IReadOnlyCollection<string> GetNotFoundLookups() => _notFound.ToList();
 
         public Task<NuGetVersion?> GetLatestVersionAsync(string packageId, bool includePrerelease = false) =>
             Task.FromResult<NuGetVersion?>(null);
@@ -214,6 +226,29 @@ public class RemediationPlannerTests
 
         plan.Actions[0].Outcome.Should().Be(RemediationOutcome.AdvisoryNotInDatabase);
         plan.HasUnavailableAdvisoryData.Should().BeFalse("nothing needs re-running");
+    }
+
+    [Fact]
+    public async Task APackageTheFeedDoesNotCarry_IsDefinitiveNotRetryable()
+    {
+        // Private-feed and unpublished packages 404 on nuget.org forever. Reporting them as
+        // AdvisoryDataUnavailable — "ask again" — makes CI retry a permanent answer and, because
+        // unavailable data aborts the run, blocks every other package's fix behind it.
+        var oracle = new FakeOracle().Knows("GHSA-aaaa-bbbb-cccc", "1.2.0");
+        var lookup = new FakeVersionLookup().NotOnFeed("Internal.Pkg");
+        var planner = new RemediationPlanner(oracle, lookup);
+
+        var plan = await planner.PlanAsync(
+            [Finding("Internal.Pkg", "1.0.0")],
+            allowMajor: false,
+            includePrerelease: false
+        );
+
+        plan.Actions[0].Outcome.Should().Be(RemediationOutcome.PackageNotOnFeed);
+        plan.Actions[0].TargetVersion.Should().BeNull();
+        plan.Actions[0].Reason.Should().Contain("not published");
+        plan.HasUnavailableAdvisoryData.Should().BeFalse("a 404 will say the same thing forever");
+        plan.GetApplicable().Should().BeEmpty();
     }
 
     [Fact]
