@@ -88,8 +88,44 @@ public static class TelemetryService
                value.Equals("yes", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The command the run actually executed, mirroring the dispatch order in
+    /// <c>ProgramRunner</c>: the standalone modes are checked first because they return before the
+    /// migrate/analyze pipeline. Recording one of them as "migrate" — the previous fallthrough —
+    /// mislabels the one fact this recorder exists to get right.
+    /// </summary>
     private static string GetOperation(Options options)
     {
+        if (options.Completions is not null)
+        {
+            return "completions";
+        }
+
+        if (options.Doctor)
+        {
+            return "doctor";
+        }
+
+        if (options.Init)
+        {
+            return "init";
+        }
+
+        if (options.Status)
+        {
+            return "status";
+        }
+
+        if (options.Tree)
+        {
+            return "tree";
+        }
+
+        if (options.Why is not null)
+        {
+            return "why";
+        }
+
         if (options.UpdatePackages)
         {
             return "update-packages";
@@ -98,6 +134,11 @@ public static class TelemetryService
         if (options.Update)
         {
             return "update";
+        }
+
+        if (options.Remediate)
+        {
+            return "remediate";
         }
 
         if (options.Rollback)

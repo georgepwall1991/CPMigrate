@@ -4,6 +4,20 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.97.0] - 2026-09-15
+
+### Fixed
+- **Telemetry records the command that actually ran.** `GetOperation` only knew the
+  migrate-era flags, so `--doctor`, `--init`, `--status`, `--tree`, `--why`, `--remediate`,
+  `--completions`, and several backup commands all recorded `migrate` — mislabeling the one fact
+  the opt-in recorder exists to get right. The label now mirrors `ProgramRunner`'s dispatch
+  order.
+- **The verb guard suggests a flag for every command users reach for.** `cpmigrate tree`,
+  `verify`, `outdated`, `deprecated`, `unify-props`, `completions`, `list-backups`, and
+  `prune-backups` previously produced "unrecognized" with no hint — the dead end the guard
+  exists to prevent. Each now suggests the correct flag (`prune` offers both prune variants;
+  `completions` carries the shell argument through the suggestion).
+
 ## [3.96.0] - 2026-09-14
 
 ### Fixed

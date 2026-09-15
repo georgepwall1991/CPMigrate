@@ -126,6 +126,57 @@ public class TelemetryServiceTests : IDisposable
         Directory.Exists(cwdMarker).Should().Be(existed, "telemetry must never scatter into the working directory");
     }
 
+    [Theory]
+    [InlineData(nameof(Options.Doctor), "doctor")]
+    [InlineData(nameof(Options.Init), "init")]
+    [InlineData(nameof(Options.Status), "status")]
+    [InlineData(nameof(Options.Tree), "tree")]
+    [InlineData(nameof(Options.Remediate), "remediate")]
+    [InlineData(nameof(Options.UnifyProps), "unify-props")]
+    [InlineData(nameof(Options.Update), "update")]
+    [InlineData(nameof(Options.ListBackups), "list-backups")]
+    [InlineData(nameof(Options.PruneBackups), "prune-backups")]
+    [InlineData(nameof(Options.PruneAll), "prune-all")]
+    public void RecordEvent_RecordsTheCommandThatRan(string flag, string operation)
+    {
+        // The operation label is the one fact this recorder exists to get right: a --doctor run
+        // recorded as "migrate" is not close enough — it makes the data wrong.
+        var options = new Options();
+        typeof(Options).GetProperty(flag)!.SetValue(options, true);
+
+        TelemetryService.RecordEvent(_home, options, ExitCodes.Success, TimeSpan.Zero);
+
+        JsonDocument.Parse(ReadSingleEvent()).RootElement
+            .GetProperty("operation").GetString().Should().Be(operation);
+    }
+
+    [Fact]
+    public void RecordEvent_Why_RecordsWhy()
+    {
+        TelemetryService.RecordEvent(_home, new Options { Why = "Serilog" }, ExitCodes.Success, TimeSpan.Zero);
+
+        JsonDocument.Parse(ReadSingleEvent()).RootElement
+            .GetProperty("operation").GetString().Should().Be("why");
+    }
+
+    [Fact]
+    public void RecordEvent_Completions_RecordsCompletions()
+    {
+        TelemetryService.RecordEvent(_home, new Options { Completions = CompletionShell.Bash }, ExitCodes.Success, TimeSpan.Zero);
+
+        JsonDocument.Parse(ReadSingleEvent()).RootElement
+            .GetProperty("operation").GetString().Should().Be("completions");
+    }
+
+    [Fact]
+    public void RecordEvent_DefaultOptions_RecordsMigrate()
+    {
+        TelemetryService.RecordEvent(_home, new Options(), ExitCodes.Success, TimeSpan.Zero);
+
+        JsonDocument.Parse(ReadSingleEvent()).RootElement
+            .GetProperty("operation").GetString().Should().Be("migrate");
+    }
+
     private string ReadSingleEvent()
     {
         var file = Path.Combine(_home, ".cpmigrate", "telemetry", "events.ndjson");
