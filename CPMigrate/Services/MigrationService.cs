@@ -42,6 +42,16 @@ public class MigrationService
     /// <summary>Package names a transitive scan introduced to the pin set.</summary>
     private readonly HashSet<string> _transitivelyPinned = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Version values that were MSBuild expressions (<c>$(X)</c>) rather than literals, keyed by
+    /// package name. They never enter <c>packages</c> — conflict detection would treat an
+    /// expression as a competing version — but a package with no literal versions still needs a
+    /// pin, so the expression is forwarded as its <c>PackageVersion</c> where it evaluates at
+    /// restore.
+    /// </summary>
+    private readonly Dictionary<string, HashSet<string>> _expressionVersions =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public MigrationService(
         IConsoleService consoleService,
         IProjectAnalyzer? projectAnalyzer = null,
@@ -147,6 +157,7 @@ public class MigrationService
         // previous run's view of what is direct or transitive-only.
         _directlyReferenced.Clear();
         _transitivelyPinned.Clear();
+        _expressionVersions.Clear();
 
         if (!string.IsNullOrEmpty(options.DiffFile))
         {
@@ -262,6 +273,8 @@ public class MigrationService
             {
                 return conflictError;
             }
+
+            ForwardExpressionPins(options, packages);
 
             var propsFilePath = await GeneratePropsFileAsync(options, packages);
 
@@ -1012,6 +1025,49 @@ public class MigrationService
         return backupEntries;
     }
 
+    /// <summary>
+    /// A package whose only version declarations were MSBuild expressions gets no literal pin —
+    /// without one, the reference it keeps (now a VersionOverride) resolves against nothing and
+    /// restore fails with NU1010. The expression is forwarded as the PackageVersion instead: it
+    /// still evaluates at restore, which is the behavior migrating produced before the reference
+    /// was renamed. Runs after conflict resolution so an expression is never compared as a
+    /// version — a "$(X)" is not competing with "1.2.3", it just isn't readable yet.
+    /// </summary>
+    private void ForwardExpressionPins(
+        Options options,
+        Dictionary<string, HashSet<string>> packages
+    )
+    {
+        foreach (
+            var (packageName, expressions) in _expressionVersions.OrderBy(
+                e => e.Key,
+                StringComparer.OrdinalIgnoreCase
+            )
+        )
+        {
+            if (packages.ContainsKey(packageName))
+            {
+                continue;
+            }
+
+            var expression = expressions.OrderBy(e => e, StringComparer.Ordinal).First();
+            if (expressions.Count > 1)
+            {
+                _consoleService.Warning(
+                    $"{packageName} is declared with {expressions.Count} different version "
+                        + $"expressions — pinning \"{expression}\". Confirm each project overrides "
+                        + "with the expression it intends."
+                );
+            }
+
+            packages.Add(packageName, [expression]);
+            _consoleService.Info(
+                $"{(options.DryRun ? "Would pin" : "Pinning")} {packageName} as \"{expression}\" — "
+                    + "the version is an MSBuild expression, which resolves at restore time."
+            );
+        }
+    }
+
     private async Task<string> GeneratePropsFileAsync(
         Options options,
         Dictionary<string, HashSet<string>> packages
@@ -1452,11 +1508,13 @@ public class MigrationService
             _directlyReferenced.Add(reference.PackageName);
         }
 
-        // Process project file
-        var projectFileContent = ProjectAnalyzer.ProcessProject(
+        // Process project file. Instance scanner (not the silent facade) so warnings about
+        // version declarations that cannot be centralized reach the console.
+        var projectFileContent = new ProjectFileScanner(_consoleService).ProcessProject(
             projectFilePath,
             packages,
-            options.KeepAttributes
+            options.KeepAttributes,
+            _expressionVersions
         );
 
         // Handle transitive dependencies if requested
