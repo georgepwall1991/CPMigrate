@@ -4,7 +4,7 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
-## [Unreleased]
+## [4.4.0] - 2026-09-15
 
 ### Fixed
 - **Framework divergence no longer counts property text as runtimes.** `FrameworkAlignmentAnalyzer`
