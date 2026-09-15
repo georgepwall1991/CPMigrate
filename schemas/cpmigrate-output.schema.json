@@ -1206,6 +1206,7 @@
         "solutions",
         "projectCount",
         "cpmEnabled",
+        "shadowedPropsFiles",
         "configPresent",
         "gitRepository",
         "backupSets",
@@ -1243,6 +1244,11 @@
           "type": "integer",
           "description": "PackageVersion entries in the props file; absent when CPM is not enabled or the file could not be read"
         },
+        "shadowedPropsFiles": {
+          "type": "array",
+          "description": "Directory.Packages.props files sharing one ancestry — NuGet evaluates only the nearest per project, so projects beneath the deeper file ignore the shallower one's pins",
+          "items": { "type": "string" }
+        },
         "configPresent": {
           "type": "boolean",
           "description": "Whether a .cpmigrate.json exists"
@@ -1261,7 +1267,7 @@
         },
         "targetFrameworks": {
           "type": "object",
-          "description": "Target framework to project count, over top-level project files",
+          "description": "Target framework to project count, over all project files found recursively; a multi-targeted project counts once per framework",
           "additionalProperties": { "type": "integer" }
         }
       },

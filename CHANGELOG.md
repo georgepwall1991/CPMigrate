@@ -4,6 +4,22 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [3.94.0] - 2026-09-14
+
+### Added
+- **`status` now reports shadowed `Directory.Packages.props` files.** The same ancestry check
+  `--doctor` runs now surfaces in the status dashboard and the `status` JSON document
+  (`shadowedPropsFiles`, additive to the output schema): when one props file's directory is an
+  ancestor of another's, the "CPM active: N packages" line is accompanied by a warning that
+  projects beneath the deeper file ignore the shallower one's pins.
+
+### Fixed
+- **`status` counts projects and frameworks honestly.** Project discovery now uses the shared
+  exclusion set (bin, obj, node_modules, `.git`, …) with symlink protection — the previous
+  substring check also excluded projects under directories merely *named* like `obin/` — and
+  target-framework counts cover every project found, not only top-level ones. A multi-targeted
+  project contributes to each of its TFMs instead of only the first.
+
 ## [3.93.0] - 2026-09-14
 
 ### Fixed
