@@ -817,7 +817,12 @@
       "description": "Aggregates across every solution processed",
       "properties": {
         "solutions": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Solutions that ran. Compare against solutionsDiscovered: a stopped-early batch reports fewer here"
+        },
+        "solutionsDiscovered": {
+          "type": "integer",
+          "description": "Solutions found before any ran — exceeds solutions when the batch stopped early, the only way a consumer can tell a partial run from a complete small one. Added in output schema 1.26.0."
         },
         "succeeded": {
           "type": "integer"

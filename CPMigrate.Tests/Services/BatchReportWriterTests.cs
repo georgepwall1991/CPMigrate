@@ -51,6 +51,42 @@ public class BatchReportWriterTests : IDisposable
     }
 
     [Fact]
+    public void Render_StoppedEarlyBatch_NamesTheAttemptedScope()
+    {
+        // The table lists only attempted solutions; without a marker the artifact reads as a
+        // complete run of a smaller scope.
+        var result = new BatchResult
+        {
+            SolutionsDiscovered = 10,
+            Solutions =
+            {
+                new SolutionResult { Name = "A", Path = "/r/A.sln", ExitCode = 0, Success = true },
+                new SolutionResult { Name = "B", Path = "/r/B.sln", ExitCode = 1, Success = false },
+            },
+        };
+
+        var report = BatchReportWriter.Render(result);
+
+        report.Should().Contain("- Stopped early: 2 of 10 solutions attempted");
+    }
+
+    [Fact]
+    public void Render_CompleteBatch_OmitsTheStoppedEarlyLine()
+    {
+        var result = new BatchResult
+        {
+            SolutionsDiscovered = 2,
+            Solutions =
+            {
+                new SolutionResult { Name = "A", Path = "/r/A.sln", ExitCode = 0, Success = true },
+                new SolutionResult { Name = "B", Path = "/r/B.sln", ExitCode = 0, Success = true },
+            },
+        };
+
+        BatchReportWriter.Render(result).Should().NotContain("Stopped early");
+    }
+
+    [Fact]
     public void Render_TableHasOneRowPerSolutionInBatchOrder()
     {
         var result = new BatchResult

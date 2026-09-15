@@ -29,6 +29,14 @@ public static class BatchReportWriter
         builder.AppendLine($"- Date: {result.Timestamp}");
         builder.AppendLine($"- Tool version: {OutputMetadata.CurrentVersion}");
         builder.AppendLine($"- Dry run: {(result.DryRun ? "yes" : "no")}");
+        if (totals.SolutionsDiscovered > totals.Solutions)
+        {
+            // A stopped-early batch lists only attempted rows; without this the artifact reads as
+            // a complete run of a smaller scope.
+            builder.AppendLine(
+                $"- Stopped early: {totals.Solutions} of {totals.SolutionsDiscovered} solutions attempted"
+            );
+        }
         builder.AppendLine();
         builder.AppendLine("## Solutions");
         builder.AppendLine();
