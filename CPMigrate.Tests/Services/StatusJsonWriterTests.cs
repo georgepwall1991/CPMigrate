@@ -78,12 +78,23 @@ public class StatusJsonWriterTests
         frameworks.GetProperty("net8.0").GetInt32().Should().Be(1);
     }
 
+    [Fact]
+    public void Serialize_ShadowedPropsFiles_SerializeAsAnArray()
+    {
+        var root = Parse(Serialize(Status(shadowedProps: ["Directory.Packages.props", "src/Directory.Packages.props"])));
+
+        var files = root.GetProperty("shadowedPropsFiles");
+        files.GetArrayLength().Should().Be(2);
+        files[1].GetString().Should().Be("src/Directory.Packages.props");
+    }
+
     private static string Serialize(WorkspaceStatus status) =>
         StatusJsonWriter.Serialize(status, ExitCodes.Success);
 
     private static WorkspaceStatus Status(
         bool cpmEnabled = true,
         int? centralPackageCount = 3,
+        IReadOnlyList<string>? shadowedProps = null,
         bool gitRepository = true,
         bool gitDirty = false,
         IReadOnlyDictionary<string, int>? targetFrameworks = null
@@ -94,6 +105,7 @@ public class StatusJsonWriterTests
             ProjectCount: 2,
             cpmEnabled,
             centralPackageCount,
+            shadowedProps ?? [],
             ConfigPresent: true,
             gitRepository,
             gitDirty,

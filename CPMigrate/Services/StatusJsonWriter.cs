@@ -23,11 +23,16 @@ namespace CPMigrate.Services;
 /// PackageVersion entries in the props file; absent when CPM is not enabled or the file could not
 /// be read.
 /// </param>
+/// <param name="ShadowedPropsFiles">
+/// Directory.Packages.props files sharing one ancestry — NuGet evaluates only the nearest per
+/// project, so projects beneath the deeper file ignore the shallower one's pins. Empty when the
+/// workspace has at most one conventional file in any ancestry chain.
+/// </param>
 /// <param name="ConfigPresent">Whether a .cpmigrate.json exists.</param>
 /// <param name="GitRepository">Whether the directory is a git repository.</param>
 /// <param name="GitDirty">Whether the repository has unstaged changes; absent when not a repo.</param>
 /// <param name="BackupSets">Backup sets under .cpmigrate_backup.</param>
-/// <param name="TargetFrameworks">Target framework to project count, over top-level project files.</param>
+/// <param name="TargetFrameworks">Target framework to project count, over all project files found recursively; a multi-targeted project counts once per framework.</param>
 public sealed record StatusReportPayload(
     [property: JsonPropertyName("outputSchemaVersion")] string OutputSchemaVersion,
     [property: JsonPropertyName("version")] string Version,
@@ -38,6 +43,7 @@ public sealed record StatusReportPayload(
     [property: JsonPropertyName("projectCount")] int ProjectCount,
     [property: JsonPropertyName("cpmEnabled")] bool CpmEnabled,
     [property: JsonPropertyName("centralPackageCount")] int? CentralPackageCount,
+    [property: JsonPropertyName("shadowedPropsFiles")] IReadOnlyList<string> ShadowedPropsFiles,
     [property: JsonPropertyName("configPresent")] bool ConfigPresent,
     [property: JsonPropertyName("gitRepository")] bool GitRepository,
     [property: JsonPropertyName("gitDirty")] bool? GitDirty,
@@ -74,6 +80,7 @@ internal static class StatusJsonWriter
             status.ProjectCount,
             status.CpmEnabled,
             status.CpmEnabled ? status.CentralPackageCount : null,
+            status.ShadowedPropsFiles,
             status.ConfigPresent,
             status.GitRepository,
             status.GitRepository ? status.GitDirty : null,

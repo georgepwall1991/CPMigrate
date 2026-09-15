@@ -99,5 +99,82 @@ public class StatusServiceTests : IDisposable
         _discovery.Verify(d => d.GetSolutionFiles(_dir), Times.Once);
     }
 
+    [Fact]
+    public async Task RunAsync_ShadowedPropsFiles_Warns()
+    {
+        // A nested props file shadows the root one for projects beneath it — the "CPM active:
+        // N packages" line alone would misdescribe those projects' restore.
+        File.WriteAllText(
+            Path.Combine(_dir, "Directory.Packages.props"),
+            "<Project><ItemGroup><PackageVersion Include=\"A\" Version=\"1.0\" /></ItemGroup></Project>");
+        var nested = Directory.CreateDirectory(Path.Combine(_dir, "src")).FullName;
+        File.WriteAllText(
+            Path.Combine(nested, "Directory.Packages.props"),
+            "<Project><ItemGroup><PackageVersion Include=\"B\" Version=\"2.0\" /></ItemGroup></Project>");
+
+        var exit = await CreateService().RunAsync(_dir);
+
+        exit.Should().Be(ExitCodes.Success);
+        _console.Verify(
+            c => c.Warning(It.Is<string>(s => s.Contains("share one ancestry"))),
+            Times.Once);
+    }
+
+    [Fact]
+    public void Collect_ShadowedPropsFiles_ReportsRelativePaths()
+    {
+        File.WriteAllText(
+            Path.Combine(_dir, "Directory.Packages.props"),
+            "<Project />");
+        var nested = Directory.CreateDirectory(Path.Combine(_dir, "src")).FullName;
+        File.WriteAllText(
+            Path.Combine(nested, "Directory.Packages.props"),
+            "<Project />");
+
+        var status = CreateService().Collect(_dir);
+
+        status.ShadowedPropsFiles.Should().HaveCount(2);
+        status.ShadowedPropsFiles.Should().Contain(p => p.Contains("src"));
+    }
+
+    [Fact]
+    public void Collect_ProjectsUnderNodeModules_AreNotCounted()
+    {
+        var nested = Directory.CreateDirectory(Path.Combine(_dir, "web", "node_modules", "pkg")).FullName;
+        File.WriteAllText(Path.Combine(nested, "Pkg.csproj"), "<Project />");
+        File.WriteAllText(Path.Combine(_dir, "App.csproj"), "<Project />");
+
+        var status = CreateService().Collect(_dir);
+
+        status.ProjectCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void Collect_ProjectsInSubdirectories_ContributeTargetFrameworks()
+    {
+        // The dashboard used to read only top-level project files — a project in src/ counted
+        // toward the project total but vanished from the framework breakdown.
+        var nested = Directory.CreateDirectory(Path.Combine(_dir, "src")).FullName;
+        File.WriteAllText(
+            Path.Combine(nested, "App.csproj"),
+            "<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>");
+
+        var status = CreateService().Collect(_dir);
+
+        status.TargetFrameworks.Should().ContainKey("net8.0");
+    }
+
+    [Fact]
+    public void Collect_MultiTargetedProject_CountsEveryFramework()
+    {
+        File.WriteAllText(
+            Path.Combine(_dir, "App.csproj"),
+            "<Project><PropertyGroup><TargetFrameworks>net8.0;net9.0</TargetFrameworks></PropertyGroup></Project>");
+
+        var status = CreateService().Collect(_dir);
+
+        status.TargetFrameworks.Should().ContainKey("net8.0").And.ContainKey("net9.0");
+    }
+
     private StatusService CreateService() => new(_console.Object, _discovery.Object);
 }
