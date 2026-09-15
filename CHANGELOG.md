@@ -4,6 +4,18 @@ All notable changes to CPMigrate are documented in this file.
 
 The format is based on Keep a Changelog and follows semantic versioning intent.
 
+## [Unreleased]
+
+### Fixed
+- **`--fix` no longer deletes a `Version="$(X)"` it cannot read.** The `InlineVersionUnderCpm`
+  fixer removed every inline `Version` outright — fine for a literal (the advertised fix is that
+  the central pin applies), but an MSBuild expression is a project-scoped indirection: removing
+  it silently rebinds the project to the pin. Expression-valued declarations now rename to
+  `VersionOverride`, which evaluates in the same scope, is legal under CPM, and still clears the
+  finding — matching the migration writer's behavior from 4.0.0. When a `VersionOverride`
+  already exists, the stray `Version` is dead weight and is removed; the file-change note says
+  "expression preserved as VersionOverride" rather than claiming the central pin now applies.
+
 ## [4.0.0] - 2026-09-15
 
 ### Fixed

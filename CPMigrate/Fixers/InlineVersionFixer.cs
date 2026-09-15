@@ -90,7 +90,8 @@ public class InlineVersionFixer : IFixer
             var originalContent = request.ReadFile(projectPath);
             var doc = XDocument.Parse(originalContent);
 
-            var removed = 0;
+            var changed = 0;
+            var renamed = 0;
             foreach (var reference in doc.Descendants("PackageReference"))
             {
                 var name = reference.Attribute("Include")?.Value
@@ -102,8 +103,8 @@ public class InlineVersionFixer : IFixer
 
                 // The attribute form is the common one; the child-element form is legal MSBuild and
                 // carries the same override. A reference can declare the element twice and item
-                // metadata is last-wins, so every <Version> child must go — removing only the
-                // first would leave a second one still overriding the central pin.
+                // metadata is last-wins, so every <Version> child must be handled — removing only
+                // the first would leave a second one still overriding the central pin.
                 var attribute = reference.Attribute("Version");
                 var children = reference.Elements("Version").ToList();
                 if (attribute is null && children.Count == 0)
@@ -111,16 +112,45 @@ public class InlineVersionFixer : IFixer
                     continue;
                 }
 
-                attribute?.Remove();
-                foreach (var child in children)
+                // An existing VersionOverride already decides this reference's version, so a stray
+                // Version next to it is dead weight — removing it changes nothing resolved.
+                var hasOverride =
+                    reference.Attribute("VersionOverride") is not null
+                    || reference.Elements("VersionOverride").Any();
+
+                // An MSBuild expression cannot be dropped onto the central pin without rebinding
+                // the project — "$(X)" evaluates in project scope, against properties the props
+                // file may not see. Renaming to VersionOverride evaluates in the same scope, is
+                // legal under CPM, and still clears the finding. A literal or range has no such
+                // indirection to preserve: the finding's own fix is removal.
+                if (!hasOverride && IsExpression(attribute?.Value))
                 {
-                    child.Remove();
+                    reference.SetAttributeValue("VersionOverride", attribute!.Value);
+                    attribute.Remove();
+                    renamed++;
+                }
+                else
+                {
+                    attribute?.Remove();
                 }
 
-                removed++;
+                foreach (var child in children)
+                {
+                    if (!hasOverride && IsExpression(child.Value))
+                    {
+                        child.Name = "VersionOverride";
+                        renamed++;
+                    }
+                    else
+                    {
+                        child.Remove();
+                    }
+                }
+
+                changed++;
             }
 
-            if (removed == 0)
+            if (changed == 0)
             {
                 return null;
             }
@@ -132,7 +162,7 @@ public class InlineVersionFixer : IFixer
                 projectPath,
                 "Modified",
                 $"Version on {packageName}",
-                "central pin applies"
+                renamed > 0 ? "expression preserved as VersionOverride" : "central pin applies"
             );
         }
         catch (Exception ex) when (ex is not FixWriteException)
@@ -141,5 +171,19 @@ public class InlineVersionFixer : IFixer
             // a failure with a cause, not "nothing to change".
             throw new FixWriteException(projectPath, ex);
         }
+    }
+
+    /// <summary>
+    /// Whether a metadata value is an MSBuild expression — <c>$(prop)</c>, <c>@(item)</c>, or
+    /// <c>%(metadata)</c> — rather than a literal version. Mirrors the migration writer's rule.
+    /// </summary>
+    private static bool IsExpression(string? value)
+    {
+        return value is not null
+            && (
+                value.Contains("$(", StringComparison.Ordinal)
+                || value.Contains("@(", StringComparison.Ordinal)
+                || value.Contains("%(", StringComparison.Ordinal)
+            );
     }
 }

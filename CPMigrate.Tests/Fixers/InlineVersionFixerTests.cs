@@ -183,6 +183,118 @@ public class InlineVersionFixerTests : IDisposable
         content.Should().Contain("Version=\"4.0.0\"");
     }
 
+    [Fact]
+    public void Fix_ExpressionVersionAttribute_BecomesVersionOverride()
+    {
+        // "$(LibVer)" is not a version — it is a project-scoped indirection. Dropping it onto the
+        // central pin would silently rebind the project; VersionOverride evaluates in the same
+        // scope and is legal under CPM.
+        var projectPath = WriteProject(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="$(LibVer)" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var result = _fixer.Fix(Issue("Newtonsoft.Json"), PackageInfo(projectPath), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("VersionOverride=\"$(LibVer)\"");
+        content.Should().NotContain("Version=\"$(LibVer)\"");
+    }
+
+    [Fact]
+    public void Fix_ExpressionVersionChild_BecomesVersionOverride()
+    {
+        var projectPath = WriteProject(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json"><Version>$(LibVer)</Version></PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var result = _fixer.Fix(Issue("Newtonsoft.Json"), PackageInfo(projectPath), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("<VersionOverride>$(LibVer)</VersionOverride>");
+        content.Should().NotContain("<Version>");
+    }
+
+    [Fact]
+    public void Fix_ExpressionVersionNextToVersionOverride_IsRemoved()
+    {
+        // VersionOverride already decides the version; the stray expression Version is dead
+        // weight under CPM — removing it changes nothing resolved.
+        var projectPath = WriteProject(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="$(LibVer)" VersionOverride="12.0.3" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var result = _fixer.Fix(Issue("Newtonsoft.Json"), PackageInfo(projectPath), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("VersionOverride=\"12.0.3\"");
+        content.Should().NotContain("Version=\"$(LibVer)\"");
+    }
+
+    [Fact]
+    public void Fix_ConditionalExpressionVersionChild_KeepsItsCondition()
+    {
+        var projectPath = WriteProject(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json"><Version Condition="'$(TF)'=='net8.0'">$(LibVer)</Version></PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var result = _fixer.Fix(Issue("Newtonsoft.Json"), PackageInfo(projectPath), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(projectPath);
+        content.Should().Contain("<VersionOverride Condition=\"");
+        content.Should().Contain("$(LibVer)");
+    }
+
+    [Fact]
+    public void Fix_LiteralVersionNextToExpression_StillRemoved()
+    {
+        // Mixed declarations: the literal was the effective version (last-wins) — removing it is
+        // the advertised fix; the expression is preserved as the override.
+        var projectPath = WriteProject(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="$(LibVer)"><Version>12.0.3</Version></PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        );
+
+        var result = _fixer.Fix(Issue("Newtonsoft.Json"), PackageInfo(projectPath), Request(dryRun: false));
+
+        result.Success.Should().BeTrue();
+        var content = File.ReadAllText(projectPath);
+        content.Should().NotContain("<Version>");
+        content.Should().Contain("VersionOverride=\"$(LibVer)\"");
+    }
+
     private string WriteProject(string content)
     {
         var path = Path.Combine(_testDirectory, "App.csproj");
